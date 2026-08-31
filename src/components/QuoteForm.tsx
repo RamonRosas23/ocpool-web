@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
+import { DirectionalIcon } from '@/components/DirectionalIcon';
 import { contactDetails } from '@/lib/pool-content';
 
 type QuoteFormData = {
@@ -127,7 +128,7 @@ export default function QuoteForm() {
 
           <div className="form-actions">
             <button className="button button--dark" type="submit" disabled={!isValid || isSubmitting}>
-              {isSubmitting ? 'Preparando…' : 'Enviar solicitud'} <span aria-hidden="true">↗</span>
+              {isSubmitting ? 'Preparando…' : 'Enviar solicitud'} <DirectionalIcon />
             </button>
             <span className="form-note">Atención inicial por correo o WhatsApp.</span>
           </div>
@@ -145,9 +146,9 @@ export default function QuoteForm() {
             <li>Alcance deseado: nueva, remodelación o equipamiento</li>
           </ul>
           <div className="direct-links">
-            <a href={`mailto:${contactDetails.email}`}>{contactDetails.email} <span aria-hidden="true">↗</span></a>
-            <a href={contactDetails.phoneHref}>{contactDetails.phone} <span aria-hidden="true">↗</span></a>
-            <a href={contactDetails.whatsappHref} target="_blank" rel="noreferrer">WhatsApp <span aria-hidden="true">↗</span></a>
+            <a href={`mailto:${contactDetails.email}`}>{contactDetails.email} <DirectionalIcon /></a>
+            <a href={contactDetails.phoneHref}>{contactDetails.phone} <DirectionalIcon /></a>
+            <a href={contactDetails.whatsappHref} target="_blank" rel="noreferrer">WhatsApp <DirectionalIcon /></a>
           </div>
         </div>
       </aside>

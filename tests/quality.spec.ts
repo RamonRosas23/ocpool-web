@@ -185,6 +185,23 @@ test.describe('OCPOOL quality contract', () => {
     }
   });
 
+  test('renders the scope marker as a portable line icon', async ({ page }) => {
+    await page.goto('/#manifiesto');
+
+    const marker = page.locator('.manifesto__mark');
+    await expect(marker).not.toContainText('↘');
+    await expect(marker.locator('svg')).toHaveCount(1);
+    await expect(marker.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+    await expect(marker.locator('svg')).toHaveAttribute('viewBox', '0 0 48 48');
+
+    await page.getByRole('button', { name: 'Ver ficha del proyecto' }).first().click();
+    const legacySymbols = await page.locator('body').evaluate((body) => body.textContent?.match(/[↗↘→←↑↓×✕✖]/g) ?? []);
+    expect(legacySymbols).toEqual([]);
+    const arrowTags = await page.locator('.arrow').evaluateAll((elements) => elements.map((element) => element.tagName.toLowerCase()));
+    expect(arrowTags.every((tagName) => tagName === 'svg')).toBe(true);
+    await expect(page.locator('.dialog-close svg')).toHaveCount(1);
+  });
+
   test('keeps project type cards compact without trailing whitespace', async ({ page }) => {
     for (const width of [390, 1440]) {
       await page.setViewportSize({ width, height: 900 });

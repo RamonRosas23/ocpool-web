@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { DirectionalIcon } from '@/components/DirectionalIcon';
 
 const links = [
   { href: '#inicio', label: 'Inicio' },
@@ -59,7 +60,7 @@ export default function Navbar() {
             ))}
           </div>
           <a className="button button--small button--outline" href="#contacto" onClick={() => closeMenu()}>
-            Cotizar <span aria-hidden="true">↗</span>
+            Cotizar <DirectionalIcon />
           </a>
         </nav>
 

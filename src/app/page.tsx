@@ -3,6 +3,7 @@ import Navbar from '@/components/Navbar';
 import ProjectShowcase from '@/components/ProjectShowcase';
 import QuoteForm from '@/components/QuoteForm';
 import RevealObserver from '@/components/RevealObserver';
+import { DirectionalIcon } from '@/components/DirectionalIcon';
 import { constructionStory, processSteps, services, visualProof, contactDetails } from '@/lib/pool-content';
 
 const organizationSchema = {
@@ -18,7 +19,7 @@ const organizationSchema = {
 };
 
 function Arrow() {
-  return <span className="arrow" aria-hidden="true">↗</span>;
+  return <DirectionalIcon />;
 }
 
 type ProfileIconType = 'residencial' | 'hospitalidad' | 'existente';
@@ -105,7 +106,7 @@ export default function Home() {
 
         <section id="manifiesto" className="manifesto page-section" data-section-motif="field-notes">
           <div className="page-shell manifesto__grid" data-reveal="section">
-            <div className="manifesto__mark" aria-hidden="true">↘</div>
+            <div className="manifesto__mark" aria-hidden="true"><DirectionalIcon direction="down-right" className="manifesto__mark-icon" /></div>
             <div>
               <p className="eyebrow">Alcance completo</p>
               <h2>Una sola coordinación para resolver la <em>alberca.</em></h2>
@@ -195,7 +196,7 @@ export default function Home() {
               <a className="text-link" href="#proyectos">Revisar proyectos <Arrow /></a>
             </div>
           </div>
-          <div className="page-shell construction-hint" data-reveal="section">Desliza para revisar propuesta, obra y entrega <span aria-hidden="true">→</span></div>
+          <div className="page-shell construction-hint" data-reveal="section">Desliza para revisar propuesta, obra y entrega <DirectionalIcon direction="right" className="construction-hint__icon" /></div>
         </section>
 
         <section id="servicios" className="services-section page-section" data-section-motif="hydraulic-plan">

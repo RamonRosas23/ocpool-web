@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CloseIcon, DirectionalIcon } from '@/components/DirectionalIcon';
 import { projects, type Project } from '@/lib/pool-content';
 
 type ProjectFilter = 'Todos' | 'Entregados' | 'Con etapas' | 'En desarrollo';
@@ -50,7 +51,7 @@ function ProjectCard({ project, index, featured, onOpen }: { project: Project; i
             </ol>
           </div>
           <button className="text-link" type="button" onClick={(event) => onOpen(project, event.currentTarget)}>
-            Ver ficha del proyecto <span className="arrow" aria-hidden="true">↗</span>
+            Ver ficha del proyecto <DirectionalIcon />
           </button>
         </div>
       </motion.article>
@@ -69,7 +70,7 @@ function ProjectCard({ project, index, featured, onOpen }: { project: Project; i
         <h3>{project.title}</h3>
         <p className="project-card__summary">{project.summary}</p>
         <button className="text-link text-link--card" type="button" onClick={(event) => onOpen(project, event.currentTarget)}>
-          Ver ficha del proyecto <span className="arrow" aria-hidden="true">↗</span>
+          Ver ficha del proyecto <DirectionalIcon />
         </button>
       </div>
     </motion.article>
@@ -215,21 +216,21 @@ export default function ProjectShowcase() {
                       <h2 id={`project-dialog-title-${activeProject.id}`}>{activeProject.title}</h2>
                       <p>{activeProject.location} {activeProject.year !== '—' ? `· ${activeProject.year}` : ''}</p>
                     </div>
-                    <button ref={closeButtonRef} className="dialog-close" type="button" onClick={() => closeProject()} aria-label="Cerrar proyecto"><span aria-hidden="true">×</span></button>
+                    <button ref={closeButtonRef} className="dialog-close" type="button" onClick={() => closeProject()} aria-label="Cerrar proyecto"><CloseIcon /></button>
                   </div>
                   <div className="project-dialog__body">
                     <div className="project-dialog__intro"><p>{activeProject.summary}</p><div className="capability-list" aria-label="Capacidades del proyecto">{activeProject.capabilities.map((capability) => <span key={capability}>{capability}</span>)}</div></div>
-                    <div className="phase-list">{activeProject.phases.map((phase) => <figure className="project-dialog__phase" key={phase.label}><div className="project-dialog__phase-media"><Image src={phase.image} alt={phase.alt} fill sizes="(max-width: 800px) 100vw, 45vw" className="media-cover" /></div><figcaption><span>{phase.label}</span><span aria-hidden="true">↗</span></figcaption></figure>)}</div>
+                    <div className="phase-list">{activeProject.phases.map((phase) => <figure className="project-dialog__phase" key={phase.label}><div className="project-dialog__phase-media"><Image src={phase.image} alt={phase.alt} fill sizes="(max-width: 800px) 100vw, 45vw" className="media-cover" /></div><figcaption><span>{phase.label}</span><DirectionalIcon /></figcaption></figure>)}</div>
                     <div className="gallery-heading"><p className="section-kicker section-kicker--dark">Registro del proyecto</p><span>{activeProject.gallery.length} vistas disponibles</span></div>
                     <div className="project-gallery" aria-label={`Registro visual de ${activeProject.title}`}>
                       {activeProject.gallery.map((media) => (
                         <figure className={`project-gallery__item project-gallery__item--${media.kind}`} key={media.src}>
                           <div className="project-gallery__media"><Image src={media.src} alt={media.alt} fill sizes="(max-width: 800px) 100vw, 33vw" className="media-cover" /></div>
-                          <figcaption><span>{media.label}</span><span aria-hidden="true">↗</span></figcaption>
+                          <figcaption><span>{media.label}</span><DirectionalIcon /></figcaption>
                         </figure>
                       ))}
                     </div>
-                    <a className="button button--dark" href="#contacto" onClick={() => closeProject(false)}>Solicitar un proyecto similar <span aria-hidden="true">↗</span></a>
+                    <a className="button button--dark" href="#contacto" onClick={() => closeProject(false)}>Solicitar un proyecto similar <DirectionalIcon /></a>
                   </div>
                 </motion.section>
               </motion.div>
