@@ -352,6 +352,70 @@ test.describe('OCPOOL quality contract', () => {
     await expect(footer.locator('.footer-bottom')).toContainText('OCPOOL');
   });
 
+  test('builds the editorial footer with a full-bleed pool backdrop', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+
+    const visual = page.locator('.footer-media');
+    const image = visual.locator('img');
+
+    await expect(visual).toHaveAttribute('aria-hidden', 'true');
+    await expect(image).toHaveAttribute('src', /footer-pool-scene/);
+    await expect(image).toHaveAttribute('alt', '');
+    await expect(visual).toHaveCSS('position', 'absolute');
+    await expect(page.locator('.footer-media__veil')).toHaveCSS('position', 'absolute');
+  });
+
+  test('balances the evidence gallery with an editorial card rhythm', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+
+    const proof = page.locator('.proof-section');
+    await proof.scrollIntoViewIfNeeded();
+    const cardStyles = await proof.locator('.proof-card--4').evaluate((card) => {
+      const styles = getComputedStyle(card);
+      return {
+        gridColumnStart: styles.gridColumnStart,
+        gridColumnEnd: styles.gridColumnEnd,
+        borderRadius: styles.borderTopLeftRadius,
+      };
+    });
+    const proofSpacing = await proof.evaluate((section) => ({
+      paddingTop: getComputedStyle(section).paddingTop,
+      headingMarginBottom: getComputedStyle(section.querySelector('.section-heading')!).marginBottom,
+    }));
+
+    expect(cardStyles.gridColumnStart).toBe('2');
+    expect(cardStyles.gridColumnEnd).toBe('-1');
+    expect(cardStyles.borderRadius).toBe('6px');
+    expect(proofSpacing.paddingTop).toBe('64px');
+    expect(proofSpacing.headingMarginBottom).toBe('24px');
+  });
+
+  test('uses a copper keyline and upright serif captions in visual sections', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+
+    const proof = page.locator('.proof-section');
+    const headingCopy = proof.locator('.section-heading > p');
+    const caption = proof.locator('.proof-card figcaption strong').first();
+
+    await expect(headingCopy).toHaveCSS('border-left-style', 'solid');
+    await expect(headingCopy).toHaveCSS('border-left-width', '1px');
+    await expect(caption).toHaveCSS('font-style', 'normal');
+  });
+
+  test('keeps process outcomes concise without repeated lead-in copy', async ({ page }) => {
+    await page.goto('/');
+
+    const process = page.locator('.process-section');
+    const outcomes = process.locator('.process-step__outcome');
+
+    await expect(page.locator('body')).not.toContainText('Se define:');
+    await expect(outcomes).toHaveCount(4);
+    await expect(outcomes.first()).toHaveText('Alcance de intervención');
+  });
+
   test('gives secondary project CTAs a 44px mobile hit area', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/#proyectos');

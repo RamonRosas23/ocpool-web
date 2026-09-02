@@ -43,7 +43,7 @@ export type ProcessStep = {
   focus: string;
   title: string;
   description: string;
-  deliverable: string;
+  outcome: string;
 };
 
 export type ProofItem = {
@@ -193,10 +193,10 @@ export const services: Service[] = [
 ];
 
 export const processSteps: ProcessStep[] = [
-  { number: '01', focus: 'Diagnóstico', title: 'Levantamos el punto de partida', description: 'Revisamos ubicación, terreno, arquitectura, instalaciones existentes y objetivo de uso.', deliverable: 'Alcance de intervención' },
-  { number: '02', focus: 'Proyecto', title: 'Definimos la propuesta', description: 'Aterrizamos geometría, materiales, sistema hidráulico, iluminación y alcance de obra.', deliverable: 'Criterios y especificaciones' },
-  { number: '03', focus: 'Coordinación', title: 'Coordinamos la ejecución', description: 'Damos seguimiento a contratistas, instalaciones, acabados y ajustes necesarios en sitio.', deliverable: 'Avance controlado' },
-  { number: '04', focus: 'Entrega', title: 'Entregamos el sistema', description: 'Verificamos que la alberca y sus equipos queden listos para operar.', deliverable: 'Sistema listo para operar' },
+  { number: '01', focus: 'Diagnóstico', title: 'Levantamos el punto de partida', description: 'Revisamos ubicación, terreno, arquitectura, instalaciones existentes y objetivo de uso.', outcome: 'Alcance de intervención' },
+  { number: '02', focus: 'Proyecto', title: 'Definimos la propuesta', description: 'Aterrizamos geometría, materiales, sistema hidráulico, iluminación y alcance de obra.', outcome: 'Criterios y especificaciones' },
+  { number: '03', focus: 'Coordinación', title: 'Coordinamos la ejecución', description: 'Damos seguimiento a contratistas, instalaciones, acabados y ajustes necesarios en sitio.', outcome: 'Avance controlado' },
+  { number: '04', focus: 'Entrega', title: 'Entregamos el sistema', description: 'Verificamos que la alberca y sus equipos queden listos para operar.', outcome: 'Sistema listo para operar' },
 ];
 
 export const visualProof: ProofItem[] = [

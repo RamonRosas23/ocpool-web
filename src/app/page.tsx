@@ -257,7 +257,7 @@ export default function Home() {
                 <article className="process-step" key={step.number}>
                   <span className="process-step__number">{step.number}</span>
                   <div className="process-step__content">
-                    <div className="process-step__topline"><span>{step.focus}</span><span>Se define: {step.deliverable}</span></div>
+                    <div className="process-step__topline"><span>{step.focus}</span><span className="process-step__outcome">{step.outcome}</span></div>
                     <h3>{step.title}</h3>
                     <p>{step.description}</p>
                   </div>
@@ -300,6 +300,10 @@ export default function Home() {
       </main>
 
       <footer className="site-footer" data-section-motif="horizon">
+        <div className="footer-media" aria-hidden="true">
+          <Image src="/brand/footer-pool-scene.png?v=1" alt="" fill sizes="100vw" className="footer-media__image" />
+        </div>
+        <div className="footer-media__veil" aria-hidden="true" />
         <div className="page-shell footer-main">
           <div className="footer-intro" data-reveal="section">
             <div>
