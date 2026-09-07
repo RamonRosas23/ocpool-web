@@ -12,6 +12,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    setupFiles: ['tests/setup-env.ts'],
     include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     exclude: ['node_modules/**', '.next/**', 'test-results/**'],
     restoreMocks: true,

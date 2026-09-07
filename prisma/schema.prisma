@@ -1,0 +1,64 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AuditOutcome {
+  SUCCESS
+  DENIED
+  FAILURE
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+model SystemSetting {
+  key       String   @id @db.VarChar(120)
+  value     Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("system_settings")
+}
+
+model AuditLog {
+  id          String       @id @default(uuid()) @db.Uuid
+  actorUserId String?      @db.Uuid
+  action      String       @db.VarChar(120)
+  entityType  String       @db.VarChar(120)
+  entityId    String?      @db.Uuid
+  outcome     AuditOutcome
+  metadata    Json?
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("audit_logs")
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  eventType     String       @db.VarChar(160)
+  aggregateType String       @db.VarChar(120)
+  aggregateId   String?      @db.Uuid
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  availableAt   DateTime     @default(now()) @db.Timestamptz(3)
+  processedAt   DateTime?    @db.Timestamptz(3)
+  lastError     String?      @db.VarChar(1000)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([status, availableAt])
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}
