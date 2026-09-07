@@ -67,6 +67,7 @@ Mailpit captura el correo SMTP de desarrollo y permite inspeccionarlo en su inte
 ## Pruebas y calidad
 
 ```powershell
+npm test
 npm run test:unit
 npm run test:integration
 npm run test:content

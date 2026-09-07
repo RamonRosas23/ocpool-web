@@ -97,6 +97,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 Gate final ejecutado después de `npm ci`:
 
+- `npm test` — suite unificada documentada; se repetirá como verificación final de cierre.
 - `npm run db:up` — PostgreSQL y Mailpit activos.
 - `npm run db:validate` — schema válido.
 - `npm run db:generate` — cliente Prisma 7.10.0 generado.
