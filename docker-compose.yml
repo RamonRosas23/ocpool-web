@@ -1,0 +1,27 @@
+name: ocpool
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ocpool
+      POSTGRES_PASSWORD: ocpool_dev
+      POSTGRES_DB: ocpool_dev
+    ports:
+      - "55432:5432"
+    volumes:
+      - ocpool-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ocpool -d ocpool_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "11025:1025"
+      - "18025:8025"
+
+volumes:
+  ocpool-postgres-data:
