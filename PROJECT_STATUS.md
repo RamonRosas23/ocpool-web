@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 0 — Auditoría, alcance y diseño arquitectónico.
-- **Estado:** Diseño base documentado; pendiente de revisión documental antes de crear el plan de implementación.
+- **Estado:** Diseño aprobado; plan de Fase 1 documentado y pendiente de ejecución.
 - **Última actualización:** 2026-09-07.
 - **Rama base auditada:** `main`.
 - **Working tree al iniciar esta fase:** limpio.
@@ -117,7 +117,10 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - El endpoint de contacto actual no debe considerarse backend comercial.
 - El lint independiente necesita diagnóstico para quedar reproducible y documentado.
 
+## Planes vigentes
+
+- `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos.
+
 ## Próximo paso autorizado
 
-Revisar la especificación `docs/superpowers/specs/2026-09-07-ocpool-commercial-platform-design.md`. Después de su aprobación se creará el plan de implementación ordenado, sin iniciar código funcional antes de ese plan.
-
+Ejecutar el plan de Fase 1 usando el ciclo de pruebas y commits definido en el propio plan. La implementación de Fase 2 no inicia hasta cerrar Fase 1 y actualizar este archivo con evidencia.
