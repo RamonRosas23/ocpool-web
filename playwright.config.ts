@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
+  testMatch: '**/*.spec.ts',
   // Keep the visual/interaction contract deterministic against the local Next dev server.
   fullyParallel: false,
   workers: 1,
