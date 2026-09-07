@@ -1,3 +1,5 @@
+import 'dotenv/config';
+
 const required = process.argv.slice(2);
 const missing = required.filter((name) => !process.env[name]);
 
