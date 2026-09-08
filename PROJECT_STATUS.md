@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 3 — Clientes, solicitudes y expedientes, planificación iniciada.
-- **Estado:** Fase 2 está terminada con criterios verificables. El plan ordenado de Fase 3 ya existe; todavía no se ha modificado el schema comercial ni se ha iniciado código de dominio.
+- **Estado:** Fase 2 está terminada con criterios verificables. Tarea 1 de Fase 3 está terminada; Tarea 2 prepara el schema comercial y la migración, todavía sin tablas aplicadas.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`.
@@ -62,10 +62,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Rate limit por email/IP confiable sin bucket global `unknown-client`; circuit breaker global separado sólo para solicitudes sin IP confiable.
 - Parser de cuerpos JSON con límite streaming de 16 KiB y cancelación temprana para requests chunked.
 - Typecheck explícito (`npm run typecheck`) integrado en `npm test`.
+- Contratos puros iniciales de solicitudes: estados, transiciones, folio provisional `OCQ-YYYY-NNNNNN`, normalización y permisos RBAC de solicitudes.
 
 ### En desarrollo
 
-- Fase 3 — Tarea 1: contratos de dominio y pruebas rojas, siguiente unidad de trabajo.
+- Fase 3 — Tarea 2: schema relacional, migración e índices comerciales.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -116,6 +117,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - `npm run db:migrate:deploy` — sin migraciones pendientes.
 - `npm run db:seed` — correcto e idempotente.
 - `npm test` — correcto en el estado final: typecheck, 29 unitarias, 9 integraciones PostgreSQL, contrato de contenido, build, 29 E2E públicos con 2 omitidas explícitamente y 1 E2E foundation dedicado.
+- Tras Tarea 1 de Fase 3: `npm run test:unit` 34/34, `npm run test:integration` 9/9, `npm run typecheck` y `npm run lint` correctos.
 - `npm run lint` — correcto.
 - `npm run test:e2e:auth` — 1 flujo correcto: fixture desechable, login, sesión, rechazo de logout foreign-origin y logout.
 - `npm run test:content` — correcto.
@@ -196,4 +198,4 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 
 ## Próximo paso autorizado
 
-Ejecutar Tarea 1 de Fase 3: escribir contratos, transiciones, folios, permisos y pruebas rojas antes de tocar la migración comercial.
+Ejecutar Tarea 2 de Fase 3: diseñar schema relacional, constraints, índices, migración e idempotencia del seed comercial antes de construir servicios HTTP.
