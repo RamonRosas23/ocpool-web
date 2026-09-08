@@ -173,7 +173,6 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 ### Pendientes
 
 - Arquitectura de aplicación comercial por dominios de negocio.
-- Detalle completo del expediente y cotización versionada dentro del portal.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
 - Siguiente fase: definir el siguiente vertical slice comercial con especificación, revisión, plan y gate propios; no se inicia por código sin esa secuencia documental.
@@ -415,7 +414,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 
 ## Deuda técnica conocida
 
-- El portal ya tiene shell y dashboard; todavía faltan detalle versionado completo, mensajería, archivos y aceptación digital.
+- El portal ya tiene shell, detalle versionado, mensajería, archivos privados, PDF y aceptación dentro del alcance local; permanecen pendientes la revisión legal y los controles productivos externos.
 - El endpoint de contacto actual no debe considerarse backend comercial.
 - El timestamp de la migración foundation es el generado por Prisma en la ejecución local (`20260907231807_foundation`); no se renombró después de aplicarlo para no desalinear el historial de migraciones.
 - Las versiones transitorias de Prisma están fijadas en `package.json` para mantener la auditoría limpia; deben revisarse cuando Prisma publique una actualización estable que incorpore esas versiones de forma nativa.
