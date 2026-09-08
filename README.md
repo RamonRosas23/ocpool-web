@@ -11,6 +11,7 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Next.js App Router, React y TypeScript en modo ESM.
 - PostgreSQL 16 local mediante Docker Compose.
 - Mailpit local para correo de desarrollo.
+- MinIO local privado para probar el contrato S3 de archivos.
 - Prisma ORM 7.10.0 con adaptador PostgreSQL.
 - Validación tipada de entorno con Zod.
 - Logs estructurados con redacción de campos sensibles.
@@ -30,7 +31,7 @@ El inbox operativo, catálogo, cotizaciones, portal y aceptación pertenecen a f
 - Node.js 22.14.0 o una versión compatible de Node 22.x.
 - npm 11.x.
 - Docker Desktop/Engine con Docker Compose v2.
-- Puertos locales disponibles: `3000`, `55432`, `11025` y `18025`.
+- Puertos locales disponibles: `3000`, `55432`, `11025`, `18025`, `19000` y `19001`.
 
 ## Instalación local
 
@@ -51,6 +52,8 @@ Direcciones locales:
 - Aplicación: [http://localhost:3000](http://localhost:3000)
 - Salud de la aplicación: [http://localhost:3000/api/health](http://localhost:3000/api/health)
 - Mailpit: [http://localhost:18025](http://localhost:18025)
+- MinIO API privada: `http://localhost:19000`
+- MinIO Console local: [http://localhost:19001](http://localhost:19001)
 - PostgreSQL: `localhost:55432`
 
 El archivo `.env` es local y nunca debe confirmarse en Git. `.env.example` contiene únicamente valores de desarrollo no secretos.
@@ -98,6 +101,9 @@ La suite de identidad también es opt-in: crea un empleado desechable en Postgre
 - `AUTH_TOKEN_TTL_MINUTES`: duración de magic links y recovery.
 - `AUTH_RATE_LIMIT_MAX_ATTEMPTS` y `AUTH_RATE_LIMIT_WINDOW_MINUTES`: ventana fija del rate limit PostgreSQL por email/IP confiable.
 - `AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` y `AUTH_GLOBAL_RATE_LIMIT_WINDOW_MINUTES`: circuit breaker global de respaldo, aplicado sólo cuando no existe una IP confiable; no sustituye el rate limit del proxy.
+- `STORAGE_S3_ENDPOINT`, `STORAGE_S3_REGION`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY` y `STORAGE_S3_SECRET_KEY`: conexión local al bucket privado S3-compatible; usa un gestor de secretos en producción.
+- `STORAGE_S3_FORCE_PATH_STYLE`: necesario para MinIO local; en producción se decide según el proveedor.
+- `STORAGE_MAX_FILE_BYTES`: límite de aplicación, alineado con el constraint de 25 MiB de la migración inicial.
 
 Endpoints disponibles:
 

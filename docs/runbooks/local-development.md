@@ -10,6 +10,8 @@ Los servicios usan estos puertos:
 - PostgreSQL: `55432`.
 - SMTP Mailpit: `11025`.
 - UI Mailpit: `18025`.
+- API MinIO: `19000`.
+- Console MinIO: `19001`.
 
 Identifica el proceso que ocupa un puerto antes de detenerlo:
 
@@ -77,6 +79,18 @@ Invoke-WebRequest http://localhost:18025/api/v1/info
 ```
 
 Si el contenedor no está levantado, ejecuta `npm run db:up`. Mailpit es un servicio local de desarrollo; no sustituye la configuración de correo transaccional de producción.
+
+## MinIO no está disponible
+
+Comprueba el contenedor y su endpoint de salud:
+
+```powershell
+docker compose ps minio
+docker compose logs minio
+Invoke-WebRequest http://localhost:19000/minio/health/live
+```
+
+MinIO debe permanecer privado: el navegador sólo recibe URLs efímeras emitidas por la aplicación después de la autorización. No publiques el puerto ni cambies las credenciales locales a valores de producción.
 
 ## Identidad y pruebas locales
 

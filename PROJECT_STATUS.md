@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 7 — Archivos privados por expediente.
-- **Estado:** Fases 1–6 están terminadas con gates verdes. Fase 7 tiene especificación y plan aprobados; Tarea 1 — contrato de dominio, permisos y persistencia — está terminada con evidencia. Tarea 2 — storage privado y servicio transaccional — es la siguiente. No hay bytes de archivos ni cambios de infraestructura implementados todavía.
+- **Estado:** Fases 1–6 están terminadas con gates verdes. Fase 7 tiene especificación y plan aprobados; Tareas 1 y 2 — contrato, persistencia, storage privado y servicio transaccional — están terminadas con evidencia. Tarea 3 — APIs privadas y seguridad negativa — es la siguiente.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -113,10 +113,13 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Contrato de dominio de archivos: categorías, visibilidades, estados, nombres seguros, tipos permitidos, límite de 25 MiB y keys opacas.
 - RBAC de archivos con seis capacidades explícitas y asignación mínima por rol; no se modificó la autorización de expedientes existente.
 - Schema relacional `StorageObject`/`FileAttachment` y migración `20260908083258_private_files` con FK compuesto, soft delete, índices y constraints de tamaño/hash/key/visibilidad.
+- Storage S3-compatible privado con MinIO local versionado en Docker, presigned PUT/GET, bucket creado bajo demanda, lectura HEAD/bytes y delete encapsulados en `PrivateStorage`.
+- Scanner local `basic-signature-v1` para PDF/JPEG/PNG/WebP, estados de reserva/análisis, hash SHA-256 servidor, expiración y cleanup físico de reservas huérfanas.
+- Servicio transaccional de archivos con idempotencia por actor, concurrencia serializada por expediente, aislamiento de visibilidad, descarga sólo `AVAILABLE`, auditoría y Outbox sin bytes/URLs.
 
 ### En desarrollo
 
-- Fase 7 — Tarea 2: storage privado y servicio transaccional.
+- Fase 7 — Tarea 3: APIs privadas y seguridad negativa.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -187,6 +190,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 49. El servidor no entregará archivos que no estén en `AVAILABLE`; la validación local de firma/tipo no se presentará como antivirus productivo, y ese proveedor será un gate explícito de salida.
 50. Los adjuntos de mensajes quedan fuera de Fase 7 para no mezclar dos superficies de visibilidad; primero se estabiliza el ciclo de vida del archivo por expediente.
 51. La primera persistencia separa `scanStatus` del storage y `status` del adjunto: un objeto puede estar validado físicamente mientras el vínculo comercial conserva su ciclo de vida y borrado lógico.
+52. El upload usa reserva DB idempotente por `(uploadedById, reservationKeyHash)` y expiración explícita; una URL presigned es sólo transporte temporal, nunca autorización.
+53. El bucket MinIO/S3 es privado y la aplicación valida HEAD, bytes, firma y hash antes de marcar `AVAILABLE`; el scanner básico no se presenta como antivirus.
 
 ## Pruebas realizadas
 
@@ -231,6 +236,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 6 de Fase 6: commit `6e1037c` (`test: harden messaging security matrix`) más cierre documental; API `messaging-api.test.ts` 4/4 con negative checks finales, E2E cliente 2/2, staff 2/2, auth 1/1 y constructor 1/1. Gate `npm test` 45 unitarias, 38 integraciones, contenido, build, 34 E2E públicas ejecutadas con 7 omitidas explícitamente y foundation 1/1; `npm run db:validate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron IDOR, sesión/RBAC, same-origin, rate limit, idempotencia concurrente, cierre, UUID inválido, Axe, responsive, consola, cleanup y ausencia de cuerpos sensibles en HTML/payloads/logs/Outbox.
 - Fase 7 — planificación: especificación `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` y plan `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` creados y revisados; aún no cuenta como evidencia de implementación ni como fase terminada.
 - Fase 7 — Tarea 1: prueba dirigida de dominio 6/6, schema 1/1, migración aplicada, Prisma validate/generate, seed, typecheck, lint y diff check correctos. No se agregaron dependencias ni servicios externos.
+- Fase 7 — Tarea 2: scanner 3/3, servicio transaccional 3/3, storage MinIO 1/1, unitarias completas 54/54, typecheck/lint, Compose y auditoría de dependencias correctos. Se verificaron replay/concurrencia, rechazo por firma, expiración, cleanup, soft delete, URL efímera y no exposición de keys/bytes.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -259,7 +265,8 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La infraestructura de identidad ya está expuesta por endpoints y escribe Outbox, pero el worker SMTP que entrega esos eventos pertenece a la siguiente etapa de mensajería.
 - El Outbox de mensajería está listo como contrato transaccional, pero la entrega asíncrona y sus reintentos siguen pendientes de la fase de notificaciones; no se considera una omisión del cierre de Fase 6.
 - El scanner local de Fase 7 validará firma y tipo, pero no sustituirá antivirus; antes de producción deberá existir proveedor, política de cuarentena, pruebas de evasión y operación de reintentos.
-- MinIO local y sus credenciales/bucket aún no están incorporados al Compose; se agregarán junto con Tarea 2, después de cerrar el modelo relacional.
+- MinIO local está incorporado al Compose con credenciales de desarrollo; producción deberá reemplazarlas mediante secretos y política de bucket privada.
+- El scanner local sólo valida firma/tipo/hash; proveedor antivirus productivo, cuarentena operacional, backups y restauración de objetos siguen pendientes de hardening.
 - Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
@@ -330,7 +337,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-messaging-ui.md` — especificación aprobada y ejecutada para la UI staff de la Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
 - `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; implementación aún no iniciada.
-- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tarea 1 cerrada y Tarea 2 es la siguiente.
+- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–2 cerradas y Tarea 3 es la siguiente.
 
 ## Criterio de terminado de Fase 5
 
@@ -338,4 +345,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 7, Tarea 2: storage privado S3-compatible local y servicio transaccional de reserva, verificación, análisis, descarga y cleanup.
+Ejecutar Fase 7, Tarea 3: APIs privadas de archivos y matriz de seguridad negativa, conservando scope backend y URLs efímeras.

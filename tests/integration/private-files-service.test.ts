@@ -1,0 +1,201 @@
+import { describe, expect, it } from 'vitest';
+import { permissionKeysForRoles } from '@/server/auth/permissions';
+import type { Actor } from '@/server/auth/types';
+import { getPrisma } from '@/server/db/client';
+import { createQuoteRequest } from '@/server/modules/quote-requests/service';
+import {
+  completePrivateFile,
+  cleanupExpiredPrivateFiles,
+  deletePrivateFile,
+  getPrivateFileDownload,
+  listPrivateFiles,
+  reservePrivateFile,
+} from '@/server/modules/private-files/service';
+import type { PrivateStorage } from '@/server/modules/private-files/storage';
+
+class MemoryPrivateStorage implements PrivateStorage {
+  private readonly objects = new Map<string, { body: Uint8Array; contentType: string }>();
+  private readonly tokens = new Map<string, string>();
+
+  async ensureBucket(): Promise<void> {}
+
+  async createUploadUrl({ key }: { key: string; contentType: string; expiresInSeconds: number }): Promise<string> {
+    const token = `upload-${crypto.randomUUID()}`;
+    this.tokens.set(token, key);
+    return `memory://${token}`;
+  }
+
+  async createDownloadUrl({ key }: { key: string; expiresInSeconds: number }): Promise<string> {
+    const token = `download-${crypto.randomUUID()}`;
+    this.tokens.set(token, key);
+    return `memory://${token}`;
+  }
+
+  async head(key: string) {
+    const object = this.objects.get(key);
+    return object ? { contentLength: object.body.byteLength, contentType: object.contentType, etag: null } : null;
+  }
+
+  async read(key: string): Promise<Uint8Array> {
+    const object = this.objects.get(key);
+    if (!object) throw new Error('missing');
+    return object.body;
+  }
+
+  async delete(key: string): Promise<void> {
+    this.objects.delete(key);
+  }
+
+  put(uploadUrl: string, body: Uint8Array, contentType: string): void {
+    const token = uploadUrl.replace('memory://', '');
+    const key = this.tokens.get(token);
+    if (!key) throw new Error('invalid upload token');
+    this.objects.set(key, { body, contentType });
+  }
+
+  keyForToken(tokenUrl: string): string | undefined {
+    return this.tokens.get(tokenUrl.replace('memory://', ''));
+  }
+}
+
+function actor(userId: string, type: Actor['type'], clientId: string | null, roles: readonly string[]): Actor {
+  return { userId, type, clientId, permissionKeys: permissionKeysForRoles(roles), mfaVerified: true };
+}
+
+describe('private file transactional service', () => {
+  it('reserves, verifies, completes and replays a customer upload without exposing storage keys', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    const prisma = getPrisma();
+    const storage = new MemoryPrivateStorage();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-09-08T09:00:00.000Z');
+    const request = await createQuoteRequest({ idempotencyKey: `private-files-service-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: `Private service ${suffix}`, email: `private-service-${suffix}@example.test` }, detail: { projectType: 'Residencial', location: 'Culiacán', description: 'Private service fixture', consentAt: now } }, { prisma, now });
+    const user = await prisma.user.create({ data: { email: `private-customer-${suffix}@example.test`, emailNormalized: `private-customer-${suffix}@example.test`, displayName: 'Private customer', type: 'CUSTOMER', status: 'ACTIVE', clientId: request.clientId } });
+    const customer = actor(user.id, 'CUSTOMER', request.clientId, ['customer']);
+    const pdf = new TextEncoder().encode('%PDF-');
+    const fileIds: string[] = [];
+
+    try {
+      const reserved = await reservePrivateFile(customer, { quoteRequestId: request.quoteRequestId, originalFileName: 'planos.pdf', contentType: 'application/pdf', byteSize: pdf.byteLength, category: 'TECHNICAL_DOCUMENT', visibility: 'CUSTOMER', idempotencyKey: `file-upload-${suffix}` }, { prisma, storage, now });
+      fileIds.push(reserved.file.id);
+      expect(reserved.file.status).toBe('PENDING_SCAN');
+      expect(reserved.uploadUrl).toBeTypeOf('string');
+      expect(JSON.stringify(reserved)).not.toContain('private-files/');
+      const storageKey = storage.keyForToken(reserved.uploadUrl!);
+      expect(storageKey).toMatch(/^private-files\//u);
+      storage.put(reserved.uploadUrl!, pdf, 'application/pdf');
+
+      const completed = await completePrivateFile(customer, request.quoteRequestId, reserved.file.id, { prisma, storage, now });
+      expect(completed.file.status).toBe('AVAILABLE');
+      expect(completed.file.downloadAvailable).toBe(true);
+      expect(completed.file.byteSize).toBe('5');
+      const replay = await reservePrivateFile(customer, { quoteRequestId: request.quoteRequestId, originalFileName: 'planos.pdf', contentType: 'application/pdf', byteSize: pdf.byteLength, category: 'TECHNICAL_DOCUMENT', visibility: 'CUSTOMER', idempotencyKey: `file-upload-${suffix}` }, { prisma, storage, now: new Date(now.getTime() + 1_000) });
+      expect(replay.file.id).toBe(reserved.file.id);
+      expect(replay.uploadUrl).toBeNull();
+      const concurrent = await Promise.all([
+        reservePrivateFile(customer, { quoteRequestId: request.quoteRequestId, originalFileName: 'concurrent.pdf', contentType: 'application/pdf', byteSize: pdf.byteLength, category: 'TECHNICAL_DOCUMENT', visibility: 'CUSTOMER', idempotencyKey: `concurrent-upload-${suffix}` }, { prisma, storage, now }),
+        reservePrivateFile(customer, { quoteRequestId: request.quoteRequestId, originalFileName: 'concurrent.pdf', contentType: 'application/pdf', byteSize: pdf.byteLength, category: 'TECHNICAL_DOCUMENT', visibility: 'CUSTOMER', idempotencyKey: `concurrent-upload-${suffix}` }, { prisma, storage, now }),
+      ]);
+      concurrent.forEach(({ file }) => fileIds.push(file.id));
+      expect(new Set(concurrent.map(({ file }) => file.id)).size).toBe(1);
+
+      const listed = await listPrivateFiles(customer, request.quoteRequestId, {}, { prisma });
+      expect(listed).toHaveLength(2);
+      expect(listed.find(({ id }) => id === reserved.file.id)).toMatchObject({ status: 'AVAILABLE' });
+      const download = await getPrivateFileDownload(customer, request.quoteRequestId, reserved.file.id, { prisma, storage, now });
+      expect(download.downloadUrl).toMatch(/^memory:\/\/download-/u);
+      expect(JSON.stringify(download.file)).not.toContain('private-files/');
+      expect(await prisma.outboxEvent.count({ where: { aggregateId: reserved.file.id, eventType: 'FILE.AVAILABLE' } })).toBe(1);
+      await expect(deletePrivateFile(customer, request.quoteRequestId, reserved.file.id, { prisma, storage, now })).resolves.toMatchObject({ status: 'DELETED' });
+      await expect(getPrivateFileDownload(customer, request.quoteRequestId, reserved.file.id, { prisma, storage, now })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    } finally {
+      const storageObjects = await prisma.fileAttachment.findMany({ where: { quoteRequestId: request.quoteRequestId }, select: { storageObjectId: true } });
+      await prisma.fileAttachment.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.storageObject.deleteMany({ where: { id: { in: storageObjects.map(({ storageObjectId }) => storageObjectId) } } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: request.quoteRequestId } });
+      if (fileIds.length) await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: fileIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: request.quoteRequestId } });
+      if (fileIds.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: fileIds } } });
+      await prisma.user.delete({ where: { id: user.id } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+    }
+  }, 30_000);
+
+  it('keeps internal files out of customer projections and blocks customer internal uploads', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    const prisma = getPrisma();
+    const storage = new MemoryPrivateStorage();
+    const suffix = `${Date.now()}-internal`;
+    const now = new Date('2026-09-08T09:10:00.000Z');
+    const request = await createQuoteRequest({ idempotencyKey: `private-files-internal-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: `Private internal ${suffix}`, email: `private-internal-${suffix}@example.test` }, detail: { projectType: 'Comercial', location: 'Mazatlán', description: 'Private internal fixture', consentAt: now } }, { prisma, now });
+    const [customerUser, managerUser] = await Promise.all([
+      prisma.user.create({ data: { email: `private-customer-${suffix}@example.test`, emailNormalized: `private-customer-${suffix}@example.test`, displayName: 'Private customer', type: 'CUSTOMER', status: 'ACTIVE', clientId: request.clientId } }),
+      prisma.user.create({ data: { email: `private-manager-${suffix}@example.test`, emailNormalized: `private-manager-${suffix}@example.test`, displayName: 'Private manager', type: 'EMPLOYEE', status: 'ACTIVE' } }),
+    ]);
+    const customer = actor(customerUser.id, 'CUSTOMER', request.clientId, ['customer']);
+    const manager = actor(managerUser.id, 'EMPLOYEE', null, ['manager']);
+    const pdf = new TextEncoder().encode('%PDF-');
+    let fileId: string | undefined;
+
+    try {
+      await expect(reservePrivateFile(customer, { quoteRequestId: request.quoteRequestId, originalFileName: 'interno.pdf', contentType: 'application/pdf', byteSize: pdf.byteLength, category: 'INTERNAL_DOCUMENT', visibility: 'INTERNAL', idempotencyKey: `internal-customer-${suffix}` }, { prisma, storage, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+      const reserved = await reservePrivateFile(manager, { quoteRequestId: request.quoteRequestId, originalFileName: 'interno.pdf', contentType: 'application/pdf', byteSize: pdf.byteLength, category: 'INTERNAL_DOCUMENT', visibility: 'INTERNAL', idempotencyKey: `internal-manager-${suffix}` }, { prisma, storage, now });
+      fileId = reserved.file.id;
+      storage.put(reserved.uploadUrl!, pdf, 'application/pdf');
+      await completePrivateFile(manager, request.quoteRequestId, reserved.file.id, { prisma, storage, now });
+      expect(await listPrivateFiles(customer, request.quoteRequestId, {}, { prisma })).toEqual([]);
+      expect((await listPrivateFiles(manager, request.quoteRequestId, {}, { prisma }))[0]).toMatchObject({ visibility: 'INTERNAL', status: 'AVAILABLE' });
+      await expect(getPrivateFileDownload(customer, request.quoteRequestId, reserved.file.id, { prisma, storage, now })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    } finally {
+      const storageObjects = await prisma.fileAttachment.findMany({ where: { quoteRequestId: request.quoteRequestId }, select: { storageObjectId: true } });
+      await prisma.fileAttachment.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.storageObject.deleteMany({ where: { id: { in: storageObjects.map(({ storageObjectId }) => storageObjectId) } } });
+      if (fileId) {
+        await prisma.outboxEvent.deleteMany({ where: { aggregateId: fileId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: fileId } });
+      }
+      await prisma.user.deleteMany({ where: { id: { in: [customerUser.id, managerUser.id] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+    }
+  }, 30_000);
+
+  it('cleans expired reservations without exposing or retaining the object', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    const prisma = getPrisma();
+    const storage = new MemoryPrivateStorage();
+    const suffix = `${Date.now()}-expiry`;
+    const now = new Date('2026-09-08T09:20:00.000Z');
+    const request = await createQuoteRequest({ idempotencyKey: `private-files-expiry-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: `Private expiry ${suffix}`, email: `private-expiry-${suffix}@example.test` }, detail: { projectType: 'Residencial', location: 'Culiacán', description: 'Private expiry fixture', consentAt: now } }, { prisma, now });
+    const user = await prisma.user.create({ data: { email: `private-expiry-user-${suffix}@example.test`, emailNormalized: `private-expiry-user-${suffix}@example.test`, displayName: 'Private expiry user', type: 'CUSTOMER', status: 'ACTIVE', clientId: request.clientId } });
+    const customer = actor(user.id, 'CUSTOMER', request.clientId, ['customer']);
+    let fileId: string | undefined;
+
+    try {
+      const reserved = await reservePrivateFile(customer, { quoteRequestId: request.quoteRequestId, originalFileName: 'pending.pdf', contentType: 'application/pdf', byteSize: 5, category: 'TECHNICAL_DOCUMENT', visibility: 'CUSTOMER', idempotencyKey: `expiry-${suffix}` }, { prisma, storage, now });
+      fileId = reserved.file.id;
+      storage.put(reserved.uploadUrl!, new TextEncoder().encode('%PDF-'), 'application/pdf');
+      await expect(cleanupExpiredPrivateFiles({ prisma, storage, now: new Date(now.getTime() + 16 * 60_000) })).resolves.toEqual({ cleaned: 1 });
+      await expect(listPrivateFiles(customer, request.quoteRequestId, {}, { prisma })).resolves.toEqual([]);
+      const storageKey = storage.keyForToken(reserved.uploadUrl!);
+      expect(storageKey).toMatch(/^private-files\//u);
+      await expect(storage.head(storageKey!)).resolves.toBeNull();
+      await expect(completePrivateFile(customer, request.quoteRequestId, reserved.file.id, { prisma, storage, now })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    } finally {
+      const storageObjects = await prisma.fileAttachment.findMany({ where: { quoteRequestId: request.quoteRequestId }, select: { storageObjectId: true } });
+      await prisma.fileAttachment.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.storageObject.deleteMany({ where: { id: { in: storageObjects.map(({ storageObjectId }) => storageObjectId) } } });
+      if (fileId) {
+        await prisma.outboxEvent.deleteMany({ where: { aggregateId: fileId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: fileId } });
+      }
+      await prisma.user.delete({ where: { id: user.id } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+    }
+  }, 30_000);
+});

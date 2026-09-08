@@ -336,7 +336,7 @@ model StorageObject {
   storageKey    String          @unique @db.VarChar(255)
   contentType   String          @db.VarChar(120)
   byteSize      BigInt
-  sha256        String          @db.Char(64)
+  sha256        String?         @db.Char(64)
   etag          String?         @db.VarChar(128)
   scanStatus    FileScanStatus  @default(PENDING)
   scannerName   String?         @db.VarChar(120)
@@ -362,6 +362,8 @@ model FileAttachment {
   visibility       FileVisibility
   status           FileAttachmentStatus  @default(PENDING_SCAN)
   uploadedById     String                @db.Uuid
+  reservationKeyHash String?             @db.Char(64)
+  reservationExpiresAt DateTime?         @db.Timestamptz(3)
   createdAt        DateTime              @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime              @updatedAt @db.Timestamptz(3)
   deletedAt        DateTime?             @db.Timestamptz(3)
@@ -373,6 +375,8 @@ model FileAttachment {
   @@index([quoteRequestId, status, createdAt])
   @@index([clientId, visibility, status, createdAt])
   @@index([uploadedById, createdAt])
+  @@unique([uploadedById, reservationKeyHash])
+  @@index([status, reservationExpiresAt])
   @@map("file_attachments")
 }
 

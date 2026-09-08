@@ -36,13 +36,22 @@ Evidencia de cierre:
 
 **Riesgos:** path traversal, presigned URLs permanentes, carrera reserve/complete, objeto huérfano, hash incorrecto o entrega antes del scan.
 
-- [ ] Agregar MinIO privado a Compose y variables de entorno no secretas en `.env.example`; documentar bucket/bootstrap.
-- [ ] Agregar sólo dependencias justificadas para cliente S3/presign y detección de tipo real; fijar razones en README/runbook.
-- [ ] Implementar `PrivateStorage` con `reserve`, `put/complete`, `head`, `presignDownload` y `delete` sin aceptar claves del cliente.
-- [ ] Implementar scanner adapter de firma/tipo y estados `PENDING_SCAN`, `AVAILABLE`, `REJECTED`, dejando explícito el límite antivirus local.
-- [ ] Implementar servicio de reserva, finalización idempotente, cuota, cleanup, soft delete, descarga y auditoría.
-- [ ] Probar transacciones, concurrencia, cleanup y payload/log audit.
-- [ ] Commit `feat: add private file storage service`.
+- [x] Agregar MinIO privado a Compose y variables de entorno no secretas en `.env.example`; documentar bucket/bootstrap.
+- [x] Agregar sólo dependencias justificadas para cliente S3/presign y detección de tipo real; fijar razones en README/runbook.
+- [x] Implementar `PrivateStorage` con `reserve`, `put/complete`, `head`, `presignDownload` y `delete` sin aceptar claves del cliente.
+- [x] Implementar scanner adapter de firma/tipo y estados `PENDING_SCAN`, `AVAILABLE`, `REJECTED`, dejando explícito el límite antivirus local.
+- [x] Implementar servicio de reserva, finalización idempotente, cuota, cleanup, soft delete, descarga y auditoría.
+- [x] Probar transacciones, concurrencia, cleanup y payload/log audit.
+- [x] Commit `feat: add private file storage service`.
+
+Evidencia de cierre:
+
+- MinIO `RELEASE.2025-04-22T22-12-26Z` quedó versionado en Compose, saludable en `localhost:19000` y con bucket privado creado bajo demanda; Console local en `localhost:19001`.
+- Dependencias justificadas y fijadas por lockfile: `@aws-sdk/client-s3@3.1127.0` y `@aws-sdk/s3-request-presigner@3.1127.0`; el scanner usa firmas mágicas propias para PDF/JPEG/PNG/WebP sin sumar otra dependencia.
+- `PrivateStorage` encapsula S3, path-style local, presigned PUT/GET de 15/60 segundos, HEAD, lectura acotada y delete; el dominio sólo trabaja con keys generadas por servidor.
+- `private-files-scanner.test.ts` pasó 3/3; `private-files-service.test.ts` pasó 3/3 con replay, reserva concurrente, rechazo por firma, aislamiento interno, descarga, soft delete y expiración; storage real pasó 1/1.
+- La reserva idempotente quedó persistida por actor con `reservationKeyHash` y `reservationExpiresAt` en migración `20260908083900_private_file_reservations`; `sha256` se vuelve nullable en reserva mediante `20260908084000_private_file_hash_nullable` y sólo se llena tras validación.
+- `npm run typecheck`, `npm run lint`, `npm run test:unit` 54/54, `docker compose config --quiet`, `npm audit --audit-level=moderate` y `npm audit --omit=dev --audit-level=high` correctos.
 
 ## Tarea 3 — APIs privadas y seguridad negativa
 
