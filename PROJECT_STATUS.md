@@ -176,6 +176,9 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 ### Prototipo o incompletos para el producto comercial
 
 - Contacto directo por correo/WhatsApp: canal informativo, todavía fuera del expediente persistido.
+- Alta y vinculación de usuarios: la captación pública crea cliente/contacto y expediente, pero todavía no crea ni invita automáticamente al usuario cliente del portal; el onboarding administrativo es requisito para cerrar el flujo comercial completo.
+- El correo de recepción puede generarse para el contacto, pero su acción `/portal` requiere que exista un usuario cliente activo y vinculado; debe validarse junto con el módulo de onboarding antes de considerar cerrado el recorrido post-solicitud.
+- Revisión UX de captación: el formulario actual es correcto como primer contacto, pero todavía es mínimo para una solicitud comercial premium; debe evaluarse la incorporación de dimensiones/alcance, etapa o plazo, presupuesto opcional, adjuntos, enlace al aviso de privacidad, validación por campo y medidas anti-spam antes del cierre comercial.
 
 ### Pendientes
 
