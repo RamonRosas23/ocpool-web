@@ -120,14 +120,14 @@ Un desarrollador puede generar un backup local y verificar una restauración en 
 - Consumes: `assertProductionPolicy`, migration status, dependency audit output and documented provider/backup decisions.
 - Produces: JSON/text report with `PASS`, `BLOCKED`, `WARN`, stable check IDs and safe summaries.
 
-- [ ] Escribir pruebas de reportes PASS/BLOCKED/WARN y de ausencia de secretos, rutas internas o valores completos de conexión.
-- [ ] Implementar el gate como agregador de checks, no como bypass de políticas: un bloqueo de configuración siempre produce exit code distinto de cero.
-- [ ] Integrar checks técnicos disponibles localmente: env policy, migrations, seed, typecheck, lint, tests, audit, build y documentación.
-- [ ] Mantener como `BLOCKED` los checks que requieren decisión externa: legal, proveedor SMTP, DNS autenticado, antivirus, backup externo, retención y destino de despliegue.
-- [ ] Ejecutar el gate local, confirmar que el resultado es reproducible y que el output no revela secretos.
-- [ ] Ejecutar suite completa proporcional: unitarias, integración serial, E2E dedicadas, typecheck, lint, build, audit y diff check.
-- [ ] Actualizar `PROJECT_STATUS.md` con evidencia, pendientes, riesgos, decisiones y siguiente fase.
-- [ ] Commit: `docs: add production readiness gate`.
+- [x] Escribir pruebas de reportes PASS/BLOCKED/WARN y de ausencia de secretos, rutas internas o valores completos de conexión.
+- [x] Implementar el gate como agregador de checks, no como bypass de políticas: un bloqueo de configuración siempre produce exit code distinto de cero.
+- [x] Integrar checks técnicos disponibles localmente: env policy, migrations, seed, typecheck, lint, tests, audit, build y documentación.
+- [x] Mantener como `BLOCKED` los checks que requieren decisión externa: legal, proveedor SMTP, DNS autenticado, antivirus, backup externo, retención y destino de despliegue.
+- [x] Ejecutar el gate local, confirmar que el resultado es reproducible y que el output no revela secretos.
+- [x] Ejecutar suite completa proporcional: unitarias, integración serial, E2E dedicadas, typecheck, lint, build, audit y diff check.
+- [x] Actualizar `PROJECT_STATUS.md` con evidencia, pendientes, riesgos, decisiones y siguiente fase.
+- [x] Commit: `docs: add production readiness gate`.
 
 ### Criterio de terminado
 
@@ -135,9 +135,9 @@ El gate permite saber exactamente qué está comprobado, qué está bloqueado y 
 
 ## Gate final de Fase 10
 
-- [ ] Todos los commits de Tasks 1–4 existen y el árbol está limpio.
-- [ ] `npm run validate:production` bloquea `.env.example` con mensajes seguros.
-- [ ] `/api/ready` responde correctamente con PostgreSQL disponible y no disponible.
-- [ ] Headers, runbooks, backup verify y gate de readiness tienen cobertura de pruebas.
-- [ ] `npm run test:unit`, `npm run test:integration`, `npm run test:content`, E2E seleccionadas, `npm run typecheck`, `npx eslint ...`, `npm run build`, `npm audit --omit=dev --audit-level=high` y `git diff --check` pasan.
-- [ ] `PROJECT_STATUS.md` y README distinguen implementación local, bloqueos de producción y próximos pasos.
+- [x] Todos los commits de Tasks 1–4 existen y el árbol está limpio.
+- [x] `npm run validate:production` bloquea `.env.example` con mensajes seguros.
+- [x] `/api/ready` responde correctamente con PostgreSQL disponible y no disponible.
+- [x] Headers, runbooks, backup verify y gate de readiness tienen cobertura de pruebas.
+- [x] `npm run test:unit`, `npm run test:integration`, `npm run test:content`, E2E seleccionadas, `npm run typecheck`, `npx eslint ...`, `npm run build`, `npm audit --omit=dev --audit-level=high` y `git diff --check` pasan.
+- [x] `PROJECT_STATUS.md` y README distinguen implementación local, bloqueos de producción y próximos pasos.

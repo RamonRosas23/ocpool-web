@@ -163,6 +163,7 @@ La política de runtime productivo se valida de forma explícita y permanece sep
 
 ```powershell
 npm run validate:production
+npm run readiness:production:quick
 ```
 
 Con `.env.example` el resultado esperado es `BLOCKED`; no se deben reutilizar secretos ni endpoints locales para publicar el sistema. `/api/health` indica liveness y `/api/ready` indica disponibilidad de PostgreSQL para un supervisor o balanceador.

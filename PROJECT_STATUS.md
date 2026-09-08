@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 9 — notificaciones y entrega, gate local cerrado.
-- **Estado:** Fases 1–9 están implementadas y verificadas en local con gates verdes. La entrega local es reproducible y operable; el producto aún no está listo para lanzamiento porque permanecen controles de producción, legales, de correo y continuidad documentados como riesgos abiertos.
+- **Fase:** Fase 10 — hardening de producción, gate local cerrado; lanzamiento bloqueado por dependencias externas.
+- **Estado:** Fases 1–10 están implementadas y verificadas dentro del alcance local. El gate completo de Fase 10 reporta 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED` (runtime local y siete prerequisitos externos). El producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -152,10 +152,14 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 9 — Tarea 5: servicio y API staff de diagnóstico con proyección mínima, filtros, salud agregada, RBAC, same-origin y reintento manual condicionado a errores recuperables.
 - Fase 9 — Tarea 5: panel `/staff/notifications` responsive con estados de carga/vacío/error, feedback de reintento, Axe, teclado, reduced motion, consola limpia y no overflow.
 - Fase 9 — Gate Tarea 6: schema válido, 16 migraciones al día, seed idempotente, unitarias 77/77, integración serial 63/63, worker one-shot con 4 entregas SMTP aceptadas y 0 fallos, Mailpit limpiado por IDs exactos, E2E staff 1/1, contenido, typecheck, lint, build, auditoría de dependencias sin vulnerabilidades altas y diff check.
+- Fase 10 — Tareas 1–2: política de runtime productivo, cabeceras HTTP seguras, HSTS condicionado a HTTPS, readiness `/api/ready` separado de liveness y cobertura unitaria/integración/E2E.
+- Fase 10 — Tarea 3: scripts PowerShell de backup PostgreSQL con checksum y restauración únicamente en `ocpool_restore_verify`, runbooks de continuidad, retención sin plazos inventados y documentación enlazada desde README.
+- Fase 10 — Tarea 4: gate `readiness:production` con checks estables, salida JSON segura, precedencia `BLOCKED > WARN > PASS`, ejecución rápida/completa y bloqueos externos explícitos.
+- Fase 10 — Gate local: 11 checks técnicos `PASS` (schema, migraciones, seed, typecheck, unitarias, integración serial, lint, contenido, auditoría, build y documentación), 0 `WARN` y 8 `BLOCKED`; no autoriza publicación.
 
 ### En desarrollo
 
-- Ningún módulo bloqueado en el slice local actual. El siguiente trabajo ordenado será el hardening de producción y después dashboards/métricas, sin confundirlos con funcionalidades terminadas.
+- Ningún módulo del slice local está bloqueado. La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue; el siguiente bloque ordenado será dashboards/métricas operativas.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -168,7 +172,12 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
 - Dashboard y métricas.
-- Hardening, backups, observabilidad y preparación para producción.
+- Selección y configuración de proveedores productivos.
+- Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
+- Antivirus productivo, cuarentena y política de objetos.
+- Retención legal, privacidad, aceptación y operación de auditoría.
+- Destino de despliegue, proxy/WAF, supervisor del worker, alertas y rollback.
+- Prueba explícita de restauración local aislada antes de cerrar continuidad operativa.
 
 ## Decisiones arquitectónicas vigentes
 
@@ -272,6 +281,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 98. El reintento manual sólo permite `FAILED` con códigos recuperables (`TEMPORARY_PROVIDER` o `RATE_LIMIT`), reinicia intentos/lease de forma explícita y registra auditoría sin PII; una repetición o carrera que ya dejó `PENDING` es idempotente.
 99. `notifications.read` y `notifications.manage` siguen separados en backend; `same-origin` sólo protege la mutación y la interfaz nunca se considera una frontera de autorización.
 100. La operación staff se presenta como una superficie de diagnóstico, no como visor de contenido; sus breakpoints usan `calc()` para que la evidencia responsive no dependa de una interpretación ambigua de CSS.
+101. La política productiva se valida fuera del build local; `.env.example`, hosts de desarrollo, claves conocidas y endpoints locales son bloqueos explícitos, no advertencias silenciosas.
+102. `/api/health` conserva liveness y `/api/ready` expresa disponibilidad de PostgreSQL con `no-store`; un balanceador no debe usar liveness para enviar tráfico a una instancia no lista.
+103. Las cabeceras de seguridad se centralizan en `next.config.ts`; HSTS sólo se emite cuando el runtime es HTTPS productivo y no se añade un cache global que pueda afectar datos privados.
+104. Los backups locales usan el servicio Compose y una base de restauración fija y desechable; no reciben `DATABASE_URL` desde formularios, no sobrescriben archivos y no ejecutan purgas productivas.
+105. El gate de preparación agrega evidencia técnica y prerrequisitos externos sin ocultar bloqueos; su salida no incluye stdout/stderr de herramientas, secretos, conexiones ni rutas internas.
 
 ## Pruebas realizadas
 
@@ -338,6 +352,10 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 9 — Tarea 5: `npm run test:unit` 77/77, `npm run test:integration` 63/63 serializado, `npm run typecheck`, `npm run lint`, `npm run build` y `git diff --check` correctos. El rate limit de login local no se relajó: el E2E de superficie usa sesión de fixture explícita y limpia su sesión/entregas por ID.
 - Fase 9 — Gate Tarea 6: `npm run db:validate`, `npx prisma migrate status` con 16 migraciones al día y `npm run db:seed` correctos. `npm run worker:notifications:once` reclamó 25 eventos Outbox, canceló 25 no soportados, procesó 4 entregas y envió 4 mensajes sin retries/fallos; se verificó su contenido en Mailpit y se eliminaron únicamente esos 4 IDs, quedando el buzón en 0.
 - Fase 9 — Gate Tarea 6: `npm run test:unit` 77/77, `npm run test:integration` 63/63 serializado, `npm run test:content`, `npm run typecheck`, `npx eslint src/app src/components src/lib scripts tests playwright.config.ts`, `npm run build`, `npm audit --omit=dev --audit-level=high` con 0 vulnerabilidades, E2E staff 1/1 y `git diff --check` correctos.
+- Fase 10 — Tarea 1: prueba dirigida 4/4 para política de runtime; `npm run validate:production` bloquea `.env.example` con códigos seguros, typecheck, lint dirigido y diff check correctos.
+- Fase 10 — Tarea 2: unitarias de headers/readiness 4/4, integración readiness 34 archivos/64 pruebas, typecheck, lint, build y foundation E2E 2/2 correctos. `/api/ready` mantiene `no-store`, request ID y no expone SQL/secretos.
+- Fase 10 — Tarea 3: contrato de runbooks 4/4, parser PowerShell sin errores y diff check correctos; no se ejecutó restauración destructiva ni se tocó `ocpool_dev`.
+- Fase 10 — Tarea 4: unitarias/integración del gate 4/4; `readiness:production:full` reportó 11 `PASS`, 0 `WARN`, 8 `BLOCKED`; `npm run test:e2e:foundation` pasó 2/2; `npm run test:e2e` pasó 34/34 con 9 omitidas opt-in; typecheck, lint, auditoría, build e integración serial correctos.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -345,12 +363,11 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 
 - Pruebas unitarias restantes de servicios comerciales y reglas persistidas.
 - Pruebas de IDOR sobre clientes, solicitudes, expedientes y futuras cotizaciones.
-- E2E cliente y empleado de los flujos comerciales.
+- Matrices E2E opt-in adicionales para escenarios prolongados de cliente/empleado y recuperación.
 - Pruebas finales de archivos privados: staff, seguridad de fase, URLs temporales, cleanup y proveedor antivirus productivo.
-- Pruebas de snapshots e inmutabilidad.
-- Pruebas de cálculo de cotizaciones.
+- Casos límite adicionales de snapshots, inmutabilidad y cálculo de cotizaciones.
 - Prueba de larga duración del worker continuo bajo apagado coordinado; la lógica de shutdown, recuperación y proveedor no disponible sí tiene cobertura dirigida del servicio.
-- Pruebas de carga y restauración de backups.
+- Pruebas de carga del worker y restauración de backups en destino aislado.
 
 ## Riesgos abiertos
 
@@ -360,6 +377,9 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Política de retención y eliminación de datos personales pendiente de revisión formal.
 - Requisitos legales de aceptación y evidencia pendientes de revisión jurídica.
 - Destino de despliegue de producción aún no definido.
+- El gate de Fase 10 permanece `BLOCKED` por SMTP productivo, DNS/TLS/SPF/DKIM/DMARC, antivirus, backup externo, retención legal, destino de despliegue y runtime no productivo.
+- El backup/restore local está implementado y protegido por destino fijo, pero la restauración verificable todavía requiere una ejecución operativa explícita; no se ejecuta automáticamente para no destruir datos locales.
+- El gate técnico no sustituye aprobación legal, elección de proveedores, gestión de secretos, RPO/RTO, monitoreo, rollback ni aceptación del responsable del servicio.
 - La protección por IP requiere `TRUST_PROXY_HEADERS=true` sólo detrás de un proxy confiable que sobrescriba la IP. Sin IP confiable, el backend usa límites por identificador y un circuit breaker global separado; el proxy de producción debe aportar rate limiting por origen.
 - La infraestructura de identidad, solicitudes, cotizaciones, aceptación, mensajería y archivos ya escribe Outbox y la Fase 9 Tareas 4–5 lo materializan y operan; siguen pendientes el proveedor productivo y el hardening operacional.
 - El Outbox de mensajería conserva eventos de cierre/reapertura fuera de la allowlist de correo; no se cancelan porque quedan disponibles para futuros consumidores de dominio.
@@ -402,6 +422,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 9 Tarea 2 dependió de los contratos/persistencia de `NotificationDelivery`, `readServerEnv()` y el Outbox transaccional; Tarea 3 consumió sus mappers, templates y provider.
 - Fase 9 Tarea 3 dejó disponible el dispatcher, el fan-out idempotente, los estados, leases, intentos, proveedor, payloads safe y diagnóstico; Tarea 4 consumió ese contrato para resolver destinatarios reales por evento y Tarea 5 lo expuso de forma segura al staff.
 - Fase 9 Tarea 6 cerró el gate local con Mailpit como proveedor de desarrollo; el origen configurado para E2E debe coincidir exactamente con `APP_URL` para que la protección same-origin se pruebe sin falsos negativos.
+- Fase 10 depende de la configuración de entorno, schema/migraciones, Outbox/worker, storage privado y evidencia de todas las fases anteriores; no introduce un servicio de datos paralelo.
+- La política de runtime alimenta el gate de producción; `/api/ready` depende de PostgreSQL; los runbooks dependen del Compose local; el gate no puede convertir evidencia local en autorización externa.
 
 ## Problemas encontrados y resolución
 
@@ -438,6 +460,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - La primera verificación del proveedor con `tsx -e` usó await de nivel superior en salida CommonJS; se repitió con una IIFE async y la entrega a Mailpit pasó, sin cambio de producto asociado.
 - La revisión de concurrencia de Tarea 3 detectó una carrera en el manejo de fallos: una entrega podía volver a `PENDING` y ser reclamada antes de la segunda escritura. Se corrigió con una única actualización condicional ligada al lease reclamado y se añadió una prueba de dos workers.
 - La primera prueba de máximo de intentos no aislaba correctamente el umbral configurable; se ajustó el fixture para verificar explícitamente la transición terminal `FAILED` y el código persistido `TEMPORARY_PROVIDER`.
+- El primer gate Windows intentó ejecutar `npm.cmd` sin shell y marcó falsamente todos los comandos como fallidos (`EINVAL`); se corrigió usando shell sólo para comandos internos fijos y se verificó nuevamente el gate completo.
+- Las opciones `--dry-run`/`--no-*` de npm pueden ser interpretadas por npm antes de llegar al script; se añadieron scripts npm explícitos `readiness:production:quick` y `readiness:production:full` para evitar ambigüedad.
 
 ## Criterio de terminado de Fase 1
 
@@ -468,6 +492,12 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tareas 1–6 cerradas para el gate local, con hardening productivo y revisión legal todavía explícitos como riesgos de lanzamiento.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
+- `docs/superpowers/specs/2026-09-08-ocpool-production-hardening.md` — especificación aprobada para Fase 10; separa controles técnicos locales de decisiones externas.
+- `docs/superpowers/plans/2026-09-08-ocpool-production-hardening.md` — plan ordenado de Fase 10; Tareas 1–4 ejecutadas con gate local `BLOCKED` de forma intencional.
+
+## Criterio de terminado de Fase 10
+
+La fase se considera terminada para el alcance local porque la política de runtime, headers, readiness, continuidad, runbooks y gate tienen implementación, pruebas, documentación y evidencia reproducible. No se considera autorización de lanzamiento: los checks externos permanecen `BLOCKED` hasta contar con proveedores, decisiones legales, backups, observabilidad y destino operativo aprobados.
 
 ## Criterio de terminado de Fase 5
 
@@ -475,4 +505,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 9, Tarea 5: crear la operación staff de entregas, diagnóstico seguro y reintentos manuales con RBAC.
+Iniciar la especificación de Fase 11 — dashboards y métricas operativas — manteniendo el gate de lanzamiento bloqueado hasta resolver los riesgos externos documentados.

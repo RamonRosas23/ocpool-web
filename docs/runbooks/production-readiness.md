@@ -20,6 +20,17 @@ Este checklist separa evidencia técnica local de decisiones que requieren infra
 | Dependencias | `PASS` sin vulnerabilidades altas | `npm audit --omit=dev --audit-level=high` |
 | Pruebas y build | `PASS` | unitarias, integración, E2E, typecheck, lint y build |
 
+## Ejecución del gate
+
+El comando produce únicamente JSON seguro con IDs estables y resúmenes controlados:
+
+```powershell
+npm run readiness:production:quick
+npm run readiness:production:full
+```
+
+`readiness:production:quick` comprueba el contrato del reporte sin ejecutar herramientas; `readiness:production:full` añade migraciones, seed, integración y build. Un código de salida distinto de cero es obligatorio cuando existe cualquier `BLOCKED`. Los bloqueos externos permanecen visibles aunque toda la evidencia local pase.
+
 ## Bloqueos obligatorios antes del lanzamiento
 
 - proveedor SMTP productivo, credenciales gestionadas, SPF, DKIM, DMARC, rebotes y límites;
