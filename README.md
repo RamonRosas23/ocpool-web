@@ -136,7 +136,7 @@ node scripts/require-env.mjs DATABASE_URL
 
 La identidad y RBAC tienen schema, seed, criptografía, sesiones, MFA, rate limiting, servicios, endpoints seguros, pruebas unitarias/integración/E2E y documentación operativa. La captación pública y el inbox interno de solicitudes ya están persistidos y verificados; el siguiente bloque será el catálogo y el constructor de cotizaciones después del gate de Fase 3.
 
-La auditoría actual mantiene 4 advisories altos transitorios en la cadena de Prisma (`deepmerge-ts`/`mysql2`); no se aplicó el downgrade automático a Prisma 6.19.3. Este riesgo debe resolverse o aprobarse formalmente antes de producción.
+La auditoría de producción local termina en 0 vulnerabilidades: `deepmerge-ts@8.0.2` y `mysql2@3.24.3` están fijados mediante overrides compatibles con Prisma 7.10.0. Estas versiones deben revisarse cuando Prisma las incorpore de forma nativa.
 
 ## Alcance de Fase 1
 

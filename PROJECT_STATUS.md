@@ -5,10 +5,10 @@
 ## Estado actual
 
 - **Fase:** Fase 3 — Clientes, solicitudes y expedientes.
-- **Estado:** Fase 2 está terminada con criterios verificables. Tareas 1–5 de Fase 3 están terminadas; Tarea 6 ejecuta el gate de fase y la revisión final antes del catálogo/cotizaciones.
+- **Estado:** Fases 1–3 están terminadas con criterios verificables. Fase 3 cerró sus seis tareas; inicia la planificación ordenada de Fase 4 — catálogo, precios y cotizaciones.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`, `bad4317`, `22c73ba`, `633d1d6`, `9a8af1c`, `b47dbfe`, `cadc616`, `493d9ff`.
+- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`, `bad4317`, `22c73ba`, `633d1d6`, `9a8af1c`, `b47dbfe`, `cadc616`, `493d9ff`, `7d19de9`, `2024fc4`.
 
 ## Orden documental obligatorio
 
@@ -73,10 +73,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Idempotencia pública mediante huella SHA-256 de clave de reintento limitada; migración `20260908030200_quote_request_idempotency` aplicada.
 - Captación pública E2E sobre navegador de producción local; el endpoint legado de `mailto` fue retirado para evitar flujos no persistentes.
 - Servicio operativo de inbox: listado/detalle con proyección segura, responsables activos, asignación con cierre de asignación previa y eventos Outbox de operación.
+- Gate reproducible de Fase 3: migraciones/seed al día, auditoría de producción sin vulnerabilidades conocidas y lockfile con overrides compatibles de dependencias transitorias.
 
 ### En desarrollo
 
-- Fase 3 — Tarea 6: gate de fase, revisión final, migración/seed reproducibles y cierre documental.
+- Fase 4 — planificación de catálogo, precios, plantillas y cotizaciones versionadas.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -129,7 +130,8 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tras Tarea 2 de Fase 3: `npm run test:integration` 10/10, `npm run db:validate`, `npm run db:generate`, migración aplicada/inspeccionada, `npm run db:seed`, `npm run typecheck` y `npm run lint` correctos.
 - Tras Tarea 3 de Fase 3: prueba dirigida del servicio 2/2 y `npm run test:integration` 12/12; incluye concurrencia de folios, replay idempotente, agregado atómico, historial, auditoría y Outbox.
 - Tras Tarea 4 de Fase 3: `npm run test:integration` 14/14, prueba E2E dirigida del formulario 1/1 y `npm run build`, `npm run typecheck` y `npm run lint` correctos; la suite pública valida API, responsive, accesibilidad, consola y folio.
-- Tras Tarea 5 de Fase 3: `npm run test:unit` 35/35, `npm run test:integration` 20/20, `npm run build`, E2E pública 31/31 con 2 omitidas explícitamente y foundation E2E 1/1; incluye 401/403, same-origin, ID inexistente, asignación, historial y transiciones inválidas.
+- Gate final de Fase 3: `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy` sin pendientes, `npm run db:seed` idempotente, `npm run test:unit` 35/35, `npm run test:integration` 20/20, `npm run test:content`, `npm run build`, E2E pública 31/31 con 2 omitidas explícitamente, foundation E2E 1/1 y auth E2E 1/1.
+- `npm audit --omit=dev --audit-level=high` — 0 vulnerabilidades después de fijar `deepmerge-ts@8.0.2` y `mysql2@3.24.3` mediante overrides compatibles con Prisma 7.10.0.
 - `npm run lint` — correcto.
 - `npm run test:e2e:auth` — 1 flujo correcto: fixture desechable, login, sesión, rechazo de logout foreign-origin y logout.
 - `npm run test:content` — correcto.
@@ -151,7 +153,6 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Pruebas de PDF y aceptación.
 - Pruebas de notificaciones y reintentos.
 - Pruebas de carga y restauración de backups.
-- Resolución de advisories transitorios de Prisma antes del despliegue de producción.
 
 ## Riesgos abiertos
 
@@ -161,17 +162,16 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Política de retención y eliminación de datos personales pendiente de revisión formal.
 - Requisitos legales de aceptación y evidencia pendientes de revisión jurídica.
 - Destino de despliegue de producción aún no definido.
-- `npm audit --omit=dev` reporta exactamente 4 vulnerabilidades altas transitorias en la cadena de Prisma 7.10.0: `deepmerge-ts <8.0.0` y `mysql2 <=3.23.0`. `npm audit fix --force` propone instalar Prisma 6.19.3, un downgrade rompedor; no se aplicó. Debe resolverse o exceptuarse formalmente antes de producción.
 - La protección por IP requiere `TRUST_PROXY_HEADERS=true` sólo detrás de un proxy confiable que sobrescriba la IP. Sin IP confiable, el backend usa límites por identificador y un circuit breaker global separado; el proxy de producción debe aportar rate limiting por origen.
 - La infraestructura de identidad ya está expuesta por endpoints y escribe Outbox, pero el worker SMTP que entrega esos eventos pertenece a la siguiente etapa de mensajería.
 - Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
 
-- Los módulos comerciales todavía no existen: no hay capa de dominio de clientes, solicitudes, cotizaciones ni portal.
+- Todavía no existen catálogo, cotizaciones versionadas, portal de cliente, archivos ni aceptación digital.
 - El endpoint de contacto actual no debe considerarse backend comercial.
 - El timestamp de la migración foundation es el generado por Prisma en la ejecución local (`20260907231807_foundation`); no se renombró después de aplicarlo para no desalinear el historial de migraciones.
-- Los advisories de `npm audit` pertenecen a la cadena de Prisma y requieren decisión de upgrade/override compatible antes de producción.
+- Las versiones transitorias de Prisma están fijadas en `package.json` para mantener la auditoría limpia; deben revisarse cuando Prisma publique una actualización estable que incorpore esas versiones de forma nativa.
 
 ## Dependencias entre módulos
 
@@ -199,6 +199,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La prueba del seed asumía que el contador de folios siempre era `1`; se corrigió para verificar que el seed sea idempotente y preserve secuencias ya consumidas.
 - El typecheck conservó referencias generadas al endpoint legado después de retirarlo; el build de producción regeneró `.next` y confirmó el árbol de rutas final sin `send-email`.
 - La ejecución paralela de integración expuso aserciones frágiles sobre folios y buckets de rate limit; se corrigieron para tolerar concurrencia controlada y limpiar únicamente fixtures identificables.
+- El gate de seguridad encontró vulnerabilidades transitorias de Prisma; se resolvieron con overrides verificables y se repitió la suite completa antes de cerrar Fase 3.
 - `npx tsc --noEmit` encontró tipos incompletos en pruebas existentes; se corrigieron sin relajar `strict`.
 
 ## Criterio de terminado de Fase 1
@@ -209,8 +210,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico en ejecución; Tareas 1–5 terminadas y Tarea 6 en curso.
+- `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
 
 ## Próximo paso autorizado
 
-Ejecutar Tarea 6 de Fase 3: confirmar migración/seed desde entorno limpio, repetir checks finales, revisar seguridad/dependencias y cerrar la fase sólo con evidencia completa.
+Crear y revisar el plan ordenado de Fase 4: catálogo, precios, plantillas, snapshots y cotizaciones versionadas.

@@ -1,6 +1,6 @@
 # OCPOOL — Plan Fase 3: Clientes, solicitudes y expedientes
 
-> Estado: ejecución activa. Tareas 1–5 terminadas con evidencia; Tarea 6 en desarrollo. Cada tarea requiere pruebas y evidencia antes de pasar a la siguiente.
+> Estado: ejecutado. Tareas 1–6 terminadas con evidencia y gate final aprobado; la siguiente fase requiere un plan documental nuevo.
 
 ## Objetivo
 
@@ -112,7 +112,7 @@ Los Route Handlers sólo adaptarán HTTP; la lógica de dominio vivirá en `src/
 - [x] Tarea 3 — servicio transaccional de creación, folio concurrente e idempotencia. Commit: `9a8af1c`.
 - [x] Tarea 4 — API pública y UI de captación. Commit: `cadc616`.
 - [x] Tarea 5 — inbox interno y operaciones protegidas. Commit: `493d9ff`.
-- [ ] Tarea 6 — gate de fase.
+- [x] Tarea 6 — gate de fase. Commits de cierre: `7d19de9`, `2024fc4`.
 
 ### Tarea 1 — Contratos de dominio y pruebas rojas
 
@@ -147,6 +147,10 @@ Evidencia de cierre: `POST /api/quote-requests` valida el contrato con Zod, same
 ### Tarea 5 — Inbox interno y operaciones protegidas
 
 Evidencia de cierre: se implementaron `GET /api/staff/quote-requests`, detalle, assignees, asignación y transición, junto con `/staff/requests`. El backend exige sesión de empleado y permisos explícitos, usa `FOR UPDATE` para mutaciones concurrentes, mantiene historial/auditoría/Outbox y serializa presupuestos sin exponer huellas de idempotencia. El inbox tiene filtros, paginación, estados vacíos/carga/error, responsive y protección visible para acceso no autenticado. Pasaron 6 pruebas específicas de servicio/API, 20 integraciones totales, build y E2E dirigido/completo.
+
+### Tarea 6 — Gate de Fase 3
+
+Evidencia de cierre: schema válido, cliente generado, cinco migraciones aplicadas sin pendientes, seed idempotente, 35 pruebas unitarias, 20 de integración, contrato de contenido, build, E2E pública 31/31 con 2 omitidas explícitamente, foundation E2E 1/1 y auth E2E 1/1. `npm audit --omit=dev --audit-level=high` terminó en 0 vulnerabilidades mediante overrides compatibles de Prisma 7.10.0. `git diff --check` y el estado final del worktree quedaron limpios.
 
 ### Tarea 5 — Inbox interno y operaciones protegidas
 
