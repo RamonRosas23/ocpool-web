@@ -36,7 +36,7 @@ export async function createSession(input: {
   return { sessionId: session.id, rawToken, expiresAt };
 }
 
-export async function getActorFromSession(rawToken: string, dependencies: SessionDependencies = {}): Promise<Actor | null> {
+export async function getSessionContext(rawToken: string, dependencies: SessionDependencies = {}): Promise<{ sessionId: string; actor: Actor } | null> {
   if (!rawToken || rawToken.length < 40) return null;
 
   const prisma = dependencies.prisma ?? getPrisma();
@@ -68,12 +68,19 @@ export async function getActorFromSession(rawToken: string, dependencies: Sessio
   );
 
   return {
-    userId: session.user.id,
-    type: session.user.type,
-    clientId: session.user.clientId,
-    permissionKeys,
-    mfaVerified: session.mfaVerified,
+    sessionId: session.id,
+    actor: {
+      userId: session.user.id,
+      type: session.user.type,
+      clientId: session.user.clientId,
+      permissionKeys,
+      mfaVerified: session.mfaVerified,
+    },
   };
+}
+
+export async function getActorFromSession(rawToken: string, dependencies: SessionDependencies = {}): Promise<Actor | null> {
+  return (await getSessionContext(rawToken, dependencies))?.actor ?? null;
 }
 
 export async function revokeSession(sessionId: string, _reason: string, dependencies: SessionDependencies = {}): Promise<void> {
@@ -97,6 +104,10 @@ export function createSessionCookie(rawToken: string, expiresAt: Date, now = new
     expires: expiresAt,
     maxAge: Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000)),
   };
+}
+
+export function clearSessionCookie(secure = process.env.NODE_ENV === 'production'): SessionCookieOptions {
+  return createSessionCookie('', new Date(0), new Date(), secure);
 }
 
 export function serializeSessionCookie(rawToken: string, expiresAt: Date, now = new Date(), secure = process.env.NODE_ENV === 'production'): string {
