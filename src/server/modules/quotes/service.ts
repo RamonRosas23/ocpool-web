@@ -57,6 +57,17 @@ export type QuoteVersionResult = Readonly<{
   totalMinor: bigint;
 }>;
 
+export function serializeQuoteVersionResult(result: QuoteVersionResult) {
+  return {
+    ...result,
+    subtotalMinor: result.subtotalMinor.toString(),
+    discountTotalMinor: result.discountTotalMinor.toString(),
+    taxableTotalMinor: result.taxableTotalMinor.toString(),
+    taxTotalMinor: result.taxTotalMinor.toString(),
+    totalMinor: result.totalMinor.toString(),
+  };
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const QUOTE_BUILDABLE_REQUEST_STATUSES: readonly QuoteRequestStatus[] = ['EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'];
 
@@ -79,6 +90,7 @@ type LockedQuoteVersion = {
   versionNumber: number;
   status: QuoteVersionStatus;
   currencyCode: string;
+  discountTotalMinor: bigint;
   currentVersionId: string | null;
   quoteRequestId: string;
   folio: string;
@@ -151,7 +163,7 @@ async function lockQuote(transaction: Prisma.TransactionClient, quoteId: string)
 
 async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<LockedQuoteVersion | null> {
   const rows = await transaction.$queryRaw<LockedQuoteVersion[]>(Prisma.sql`
-    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", q."currentVersionId",
+    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."discountTotalMinor", q."currentVersionId",
            q."quoteRequestId", qr."folio", qr."status" AS "requestStatus", qrd."currencyCode" AS "requestCurrencyCode"
     FROM "quote_versions" qv
     INNER JOIN "quotes" q ON q."id" = qv."quoteId"
@@ -468,6 +480,7 @@ export async function transitionQuoteVersion(actor: Actor, quoteVersionId: strin
     if (!version) throw new AppError('NOT_FOUND', 'La versión no existe.', 404);
     if (version.currentVersionId !== version.id) conflict('Sólo la versión vigente puede cambiar de estado.');
     if (!canTransitionQuoteVersion(version.status, toStatus)) conflict('La transición de cotización no está permitida.');
+    if (toStatus === 'ENVIADA' && version.discountTotalMinor > 0n) requireEmployeePermission(actor, 'quotes.approve_discount');
     if (toStatus === 'ENVIADA' && await transaction.quoteLineSnapshot.count({ where: { quoteVersionId: version.id } }) === 0) {
       conflict('No se puede enviar una cotización sin conceptos.');
     }

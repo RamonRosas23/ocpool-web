@@ -162,6 +162,16 @@ describe('quote pricing and versioning service', () => {
       expect([second, concurrent].filter((result) => result.status === 'rejected')).toHaveLength(1);
       expect(await prisma.quoteVersion.count({ where: { quote: { quoteRequestId: request.quoteRequestId } } })).toBe(2);
       expect(await prisma.quoteRequest.findUnique({ where: { id: request.quoteRequestId }, select: { status: true } })).toMatchObject({ status: 'COTIZACION_DISPONIBLE' });
+
+      const draftResult = second.status === 'fulfilled' ? second.value : concurrent.status === 'fulfilled' ? concurrent.value : null;
+      expect(draftResult).not.toBeNull();
+      const discountEditor = salesActor(employee.id, ['quotes.create', 'quotes.send', 'quotes.apply_discount', 'prices.read']);
+      await replaceQuoteDraft(discountEditor, draftResult!.versionId, {
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 500 }],
+      }, { prisma, now });
+      await transitionQuoteVersion(discountEditor, draftResult!.versionId, 'EN_REVISION', { prisma, now });
+      await expect(transitionQuoteVersion(discountEditor, draftResult!.versionId, 'ENVIADA', { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
     } finally {
       const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
