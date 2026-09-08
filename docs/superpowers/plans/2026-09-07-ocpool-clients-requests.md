@@ -108,7 +108,7 @@ Los Route Handlers sólo adaptarán HTTP; la lógica de dominio vivirá en `src/
 ## Seguimiento de ejecución
 
 - [x] Tarea 1 — contratos de dominio, transiciones, folio provisional, normalización y permisos RBAC. Commit: `bad4317`.
-- [ ] Tarea 2 — schema y migración relacional.
+- [x] Tarea 2 — schema y migración relacional. Commit: `22c73ba`.
 - [ ] Tarea 3 — servicio transaccional de creación.
 - [ ] Tarea 4 — API pública y UI de captación.
 - [ ] Tarea 5 — inbox interno y operaciones protegidas.
