@@ -1,6 +1,6 @@
 # OCPOOL — Plan Fase 4: Catálogo, precios y cotizaciones versionadas
 
-> Estado: Tareas 1 y 2 ejecutadas y verificadas. Tarea 3 lista para ejecución. No se implementará una pantalla de cotización antes de cerrar contratos monetarios, snapshots e invariantes.
+> Estado: Tareas 1–3 ejecutadas y verificadas. Tarea 4 lista para ejecución. No se implementará una pantalla de cotización antes de cerrar contratos monetarios, snapshots e invariantes.
 
 ## Objetivo
 
@@ -98,7 +98,7 @@ Los permisos existentes de cotizaciones se conservarán y se separará explícit
 
 - [x] Tarea 1 — contratos monetarios, estados, snapshots y permisos adicionales.
 - [x] Tarea 2 — schema relacional de catálogo, listas y cotizaciones.
-- [ ] Tarea 3 — servicio de precios y creación de versión reproducible.
+- [x] Tarea 3 — servicio de precios y creación de versión reproducible.
 - [ ] Tarea 4 — API y UI de catálogo/listas de precios.
 - [ ] Tarea 5 — constructor de cotizaciones y operaciones protegidas.
 - [ ] Tarea 6 — gate de fase.
@@ -147,6 +147,15 @@ Evidencia de cierre:
 - Rechazar cambios en versiones no editables.
 - Auditar creación, edición, envío y aprobación.
 - Probar concurrencia, replay, conflicto de versiones e invariancia histórica.
+
+Evidencia de cierre:
+
+- Commit `4236430` (`feat: add transactional quote version service`).
+- `createQuoteVersion` resuelve una lista y precio vigentes dentro de la transacción, valida moneda/solicitud/estado, toma snapshots completos y escribe auditoría + Outbox sin descripciones ni correos.
+- `replaceQuoteDraft` sólo permite editar la versión vigente en `BORRADOR`; cualquier versión enviada o antigua se rechaza.
+- `transitionQuoteVersion` audita estados, bloquea aceptación digital, exige líneas antes del envío y actualiza `QuoteRequest` a `COTIZACION_DISPONIBLE` de forma atómica.
+- El bloqueo de solicitud/cotización serializa la creación concurrente de versiones; la prueba verifica un único ganador.
+- Verificación: `npm run test:integration` 25/25, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Los fixtures se limpiaron y se comprobó ausencia de auditorías comerciales residuales.
 
 ### Tarea 4 — API y UI de catálogo
 

@@ -5,10 +5,10 @@
 ## Estado actual
 
 - **Fase:** Fase 4 — Catálogo, precios y cotizaciones versionadas.
-- **Estado:** Fase 4 está en ejecución. Las Tareas 1 y 2 están terminadas con evidencia verificable; la Tarea 3 — servicio transaccional de precios y versiones — es el siguiente incremento autorizado.
+- **Estado:** Fase 4 está en ejecución. Las Tareas 1–3 están terminadas con evidencia verificable; la Tarea 4 — API y UI de catálogo/listas — es el siguiente incremento autorizado.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`.
+- **Commits de la fase:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`.
 
 ## Orden documental obligatorio
 
@@ -83,10 +83,12 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Migración `20260908032000_catalog_quotes` aplicada con extensión `btree_gist`, exclusión de vigencias solapadas y constraints monetarios.
 - FK compuesto de `Quote` a solicitud+cliente para impedir cruces de expedientes desde la base de datos.
 - Seed local demo (`DEMO-SERVICES`, `DEMO-CONSULTA`, `DEMO-MXN`) idempotente y explícitamente no comercial.
+- Servicio transaccional de cotizaciones: resolución de precio vigente, snapshots completos, reemplazo de borrador, versionado concurrente, auditoría y Outbox.
+- Envío de versión que actualiza la solicitud a `COTIZACION_DISPONIBLE` sólo dentro de la misma transacción.
 
 ### En desarrollo
 
-- Fase 4 — Tarea 3: servicio transaccional de precios, versiones y snapshots reproducibles.
+- Fase 4 — Tarea 4: API y UI de catálogo y listas de precios con RBAC.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -129,6 +131,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 17. Congelar snapshots de dominio y persistirlos como datos históricos en la siguiente tarea; ninguna versión distinta de `BORRADOR` será editable.
 18. Evitar solapamientos de precios con constraint PostgreSQL `EXCLUDE USING gist`; el servicio además resolverá la vigencia dentro de transacción.
 19. Relacionar una cotización con solicitud y cliente mediante FK compuesto, además de FK directo al cliente.
+20. Resolver precios dentro de transacción con bloqueo de solicitud/cotización; una carrera de creación de versión produce una sola versión ganadora.
+21. La operación de envío de cotización y el cambio de estado de solicitud se auditan y publican como Outbox en la misma transacción.
 
 ## Pruebas realizadas
 
@@ -155,6 +159,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - `git diff --check` — correcto.
 - Tarea 1 de Fase 4: prueba roja inicial de contrato, después `npm run test:unit` 41/41, `npm run test:integration` 20/20, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 - Tarea 2 de Fase 4: migración `20260908032000_catalog_quotes`, `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npx prisma migrate status`, `npm run db:seed`, schema dirigido 3/3, integración completa 23/23, typecheck, lint y `git diff --check` correctos.
+- Tarea 3 de Fase 4: `npm run test:integration` 25/25, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint` y `git diff --check` correctos; se verificaron snapshots históricos, permisos, edición de borrador, transición de envío, aceptación bloqueada, concurrencia y limpieza de fixtures.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -201,6 +206,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Las rutas de autenticación dependerán de `sessions.ts`, `tokens.ts`, `mfa.ts`, `rate-limit.ts`, `permissions.ts`, el logger y el envelope de errores.
 - Los contratos de `src/server/modules/quotes/domain.ts` son dependencia de schema, servicio de precios, snapshots persistidos y constructor.
 - El schema de Fase 4 y la migración son dependencia del servicio de resolución de precios y creación de versiones.
+- El servicio de `src/server/modules/quotes/service.ts` es dependencia de las APIs internas y del constructor operativo.
 
 ## Problemas encontrados y resolución
 
@@ -230,8 +236,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
-- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–2 ejecutadas; Tarea 3 lista para iniciar.
+- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–3 ejecutadas; Tarea 4 lista para iniciar.
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 3 de Fase 4: resolver precio vigente dentro de transacción y crear versiones con snapshots reproducibles, auditoría y control de concurrencia.
+Ejecutar la Tarea 4 de Fase 4: construir API interna y UI responsive de catálogo/listas de precios con filtros, paginación, estados y autorización backend.
