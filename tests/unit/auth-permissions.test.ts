@@ -9,7 +9,7 @@ import {
 
 describe('authorization policy', () => {
   it('defines the approved least-privilege role catalog', () => {
-    expect(ALL_PERMISSION_KEYS).toHaveLength(39);
+    expect(ALL_PERMISSION_KEYS).toHaveLength(41);
     expect(permissionKeysForRoles(['customer'])).toEqual(new Set([
       'portal.self.read',
       'portal.self.authenticate',
@@ -56,6 +56,13 @@ describe('authorization policy', () => {
     expect(permissionKeysForRoles(['manager'])).toContain('prices.manage');
     expect(permissionKeysForRoles(['manager'])).toContain('quotes.approve_discount');
     expect(permissionKeysForRoles(['manager'])).toContain('metrics.read.global');
+    expect(permissionKeysForRoles(['manager'])).toContain('audit.read');
+    expect(permissionKeysForRoles(['manager'])).not.toContain('audit.security.read');
+    expect(permissionKeysForRoles(['sales'])).not.toContain('audit.read');
+    expect(permissionKeysForRoles(['customer'])).not.toContain('audit.read');
+    expect(permissionKeysForRoles(['customer'])).not.toContain('audit.security.read');
+    expect(permissionKeysForRoles(['admin'])).toContain('audit.read');
+    expect(permissionKeysForRoles(['admin'])).toContain('audit.security.read');
     expect(permissionKeysForRoles(['admin'])).toEqual(new Set(ALL_PERMISSION_KEYS));
     expect(ROLE_DEFINITIONS.admin.systemManaged).toBe(true);
   });
