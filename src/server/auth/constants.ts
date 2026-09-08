@@ -36,6 +36,8 @@ export const PERMISSION_CATALOG = [
   { key: 'quotes.pdf.read', description: 'Descargar documentos PDF de cotizaciones autorizadas.' },
   { key: 'quotes.pdf.generate', description: 'Generar y regenerar documentos PDF de cotizaciones.' },
   { key: 'quotes.accept', description: 'Aceptar cotizaciones autorizadas en nombre del cliente.' },
+  { key: 'notifications.read', description: 'Consultar el estado operativo de notificaciones autorizadas.' },
+  { key: 'notifications.manage', description: 'Reintentar o administrar entregas de notificaciones autorizadas.' },
   { key: 'metrics.read', description: 'Consultar métricas operativas.' },
 ] as const;
 
@@ -75,6 +77,7 @@ export const ROLE_DEFINITIONS = {
       'quotes.send',
       'quotes.pdf.read',
       'quotes.pdf.generate',
+      'notifications.read',
     ],
   },
   manager: {
@@ -113,6 +116,8 @@ export const ROLE_DEFINITIONS = {
       'quotes.approve_discount',
       'quotes.pdf.read',
       'quotes.pdf.generate',
+      'notifications.read',
+      'notifications.manage',
       'metrics.read',
     ],
   },

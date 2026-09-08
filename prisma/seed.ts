@@ -104,8 +104,8 @@ export async function seedCatalogDemo(client: PrismaClient): Promise<void> {
 export async function seedDatabase(client: PrismaClient): Promise<void> {
   await client.systemSetting.upsert({
     where: { key: 'system.schema_version' },
-    update: { value: { version: 2 } },
-    create: { key: 'system.schema_version', value: { version: 2 } },
+    update: { value: { version: 3 } },
+    create: { key: 'system.schema_version', value: { version: 3 } },
   });
   await seedIdentityCatalog(client);
   await seedCatalogDemo(client);

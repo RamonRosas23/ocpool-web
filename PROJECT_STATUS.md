@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 9 — notificaciones y entrega, planificación documental.
-- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 está cerrada con gate técnico completo; la siguiente fase comienza con especificación, autorrevisión y plan ordenados antes de modificar código.
+- **Fase:** Fase 9 — notificaciones y entrega, Tarea 2 siguiente.
+- **Estado:** Fases 1–8 están terminadas con gates verdes. Fase 9 Tarea 1 está cerrada con contratos, persistencia y protección de destinatarios verificados; Tarea 2 queda en desarrollo como siguiente slice.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -132,10 +132,15 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 8 — Tarea 4: `ClientQuoteActions` integrado en el portal con descarga PDF, aceptación explícita, diálogo accesible, feedback de éxito/error, estado vencido/aceptado y responsive.
 - Fase 8 — Tarea 5: endpoint de estado documental staff y `StaffQuoteDocumentPanel` integrados en el constructor; estados MISSING/PENDING/READY/FAILED/DELETED, descarga privada, generación condicionada, evidencia de aceptación y respuestas sin storage key/hash.
 - Gate de Fase 8 cerrado: PDF determinista, aceptación transaccional, portal/staff, storage privado, auditoría/Outbox, regresión, accesibilidad, build y auditoría de dependencias verificados.
+- Fase 9 — Tarea 1: contratos de canal email y estados `PENDING`/`PROCESSING`/`SENT`/`FAILED`/`CANCELLED`, con transiciones seguras y backoff inicial acotado.
+- Fase 9 — Tarea 1: permisos `notifications.read`/`notifications.manage`, separados de identidad y operación comercial; ventas sólo puede leer y gerencia administrar.
+- Fase 9 — Tarea 1: `NotificationDelivery` separado de Outbox, con destinatario cifrado, hash de deduplicación, template versionado, payload snapshot, lease/timestamps, proveedor y constraints de integridad.
+- Fase 9 — Tarea 1: migraciones `20260908113957_notifications` y `20260908114000_notifications_invariants`, seed de schema versión 3 y clave `NOTIFICATION_RECIPIENT_ENCRYPTION_KEY` independiente de MFA/auth.
+- Fase 9 — Tarea 1: pruebas de cifrado/hash/normalización/permisos 8/8 y persistencia PostgreSQL 1/1; typecheck, lint, schema, migraciones, seed y diff check verificados.
 
-### En planificación
+### En desarrollo
 
-- Fase 9 — notificaciones y entrega: especificación, autorrevisión y plan completados en orden; Tarea 1 lista para implementación.
+- Fase 9 — Tarea 2: mappers de eventos, plantillas HTML/texto y adaptador SMTP Mailpit.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -145,8 +150,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
-- Gate completo de PDF/aceptación y revisión legal de términos.
-- Notificaciones y Outbox.
+- Revisión legal de términos de PDF/aceptación.
+- Dispatcher, worker, reintentos y operación de notificaciones.
 - Auditoría comercial y de seguridad.
 - Dashboard y métricas.
 - Hardening, backups, observabilidad y preparación para producción.
@@ -232,6 +237,10 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 77. El primer canal de Fase 9 será email con Mailpit y adaptador SMTP; PostgreSQL gestionará claims y leases, y Redis/broker se reconsiderará sólo con evidencia de volumen o contención.
 78. Los eventos no soportados se cancelan como intención de notificación con causa controlada; nunca se renderizan por inferencia ni se pasa el JSON completo de Outbox a templates.
 79. `SENT` significará aceptación del adaptador/proveedor, no lectura del correo; el portal y el expediente seguirán siendo la fuente de verdad.
+80. Los destinatarios de notificación tendrán una clave de cifrado independiente de MFA y tokens de autenticación; la base conserva hash para deduplicar y ciphertext para reintentar sin exponer correo crudo.
+81. `NotificationDelivery` será una intención de entrega versionada y no una copia mutable del Outbox; la unicidad incluirá evento, canal, destinatario hash, template y versión.
+82. Los mappers y templates de notificaciones se implementarán con allowlist explícita en la siguiente tarea; ningún evento desconocido podrá inferirse desde JSON arbitrario.
+83. PostgreSQL conserva invariantes de intentos, hash, claves de template, snapshot cifrado y evidencia de procesamiento; Prisma no será la única capa de integridad.
 
 ## Pruebas realizadas
 
@@ -286,6 +295,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 8 — Tarea 3: `quote-acceptance-service.test.ts` 1/1 y `quote-documents-api.test.ts` 2/2 dirigidas; se verificaron aceptación concurrente con un ganador, replay, PDF READY/hash/HEAD, scope cruzado, 401/403/404/409, CSRF, schema estricto, permisos, no-store y no exposición de storage key/hash. `npm run typecheck` y `npm run lint` correctos.
 - Fase 8 — Tarea 4: `npx cross-env PORTAL_E2E=1 playwright test tests/client-portal.spec.ts` pasó 2/2; se verificaron descarga PDF, popup/API presigned, validación negativa del checkbox, diálogo accesible, aceptación, refresh, mensajería persistida, archivos, Axe, consola limpia y responsive móvil. `npm run typecheck` y `npm run lint` correctos.
 - Fase 8 — Tarea 5: `quote-documents-api.test.ts` pasó 2/2 con estado `MISSING`/`READY`, cliente bloqueado, acciones condicionadas, evidencia post-aceptación y ausencia de `storageKey`/`sha256`; `npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1 con generación real en MinIO, descarga presigned, Axe, consola limpia, payload mínimo y no overflow desktop/móvil. `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
+- Fase 9 — Tarea 1: prueba roja inicial de contratos; `tests/unit/notifications-domain.test.ts` y `tests/unit/env.test.ts` pasaron 8/8; `notifications-schema.test.ts` pasó 1/1 contra PostgreSQL con duplicados, hash inválido, destinatario sin cifrado y estados incompletos rechazados. `npm run db:validate`, `npx prisma migrate status`, `npm run db:seed`, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -344,6 +354,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 8 depende de snapshots/versiones de cotización de Fase 4, portal/sesiones de Fase 5, storage privado de Fase 7 y del contrato PDF/aceptación de Tareas 1–3 antes de la UI cliente.
 - Fase 8 Tarea 5 depende de las APIs de documento/aceptación de Tarea 3 y del workspace staff de cotizaciones; no puede inferir evidencia desde el portal cliente.
 - Fase 9 dependerá del Outbox transaccional de identidad, solicitudes, cotizaciones, mensajería y aceptación; el canal de entrega no podrá cambiar el resultado de la transacción comercial.
+- Fase 9 Tarea 2 depende de los contratos/persistencia de `NotificationDelivery`, `readServerEnv()` y el Outbox ya transaccional; Tareas 3–5 dependerán además de sus mappers, templates y provider.
 
 ## Problemas encontrados y resolución
 
@@ -372,6 +383,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - El cold build local agotó el timeout original de 120 segundos al iniciar Playwright; se amplió sólo `webServer.timeout` a 600 segundos y el build explícito terminó correctamente.
 - El gate de seguridad encontró vulnerabilidades transitorias de Prisma; se resolvieron con overrides verificables y se repitió la suite completa antes de cerrar Fase 3.
 - `npx tsc --noEmit` encontró tipos incompletos en pruebas existentes; se corrigieron sin relajar `strict`.
+- La primera ejecución dirigida de la integración de notificaciones omitió `RUN_DB_TESTS=1` y falló por el guard de entorno; se repitió con el script oficial y pasó 1/1, sin cambio productivo asociado.
 
 ## Criterio de terminado de Fase 1
 
@@ -398,8 +410,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-pdf-acceptance.md` — especificación aprobada para Fase 8; no implica firma electrónica avanzada por sí sola.
 - `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/specs/2026-09-08-ocpool-notifications.md` — especificación aprobada para Fase 9.
-- `docs/superpowers/reviews/2026-09-08-ocpool-notifications-review.md` — autorrevisión de Fase 9, con riesgos de exactly-once, PII, worker y proveedor.
-- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tarea 1 lista, sin implementación iniciada.
+- `docs/superpowers/reviews/2026-09-08-ocpool-notifications-review.md` — autorrevisión de Fase 9, completada antes de código.
+- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tarea 1 cerrada, Tarea 2 siguiente.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 
@@ -409,4 +421,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 9, Tarea 1: contratos, persistencia y seguridad de destinatarios.
+Ejecutar Fase 9, Tarea 2: mappers de eventos, plantillas HTML/texto y adaptador SMTP Mailpit.

@@ -4,13 +4,13 @@
 
 ## Tarea 1 — Contratos, persistencia y seguridad de destinatarios
 
-- [ ] Escribir pruebas rojas de estados, deduplicación, allowlist, backoff, clasificación de errores y no exposición de secretos.
-- [ ] Agregar permisos mínimos `notifications.read` y `notifications.manage`, separados de permisos comerciales y de identidad.
-- [ ] Crear `NotificationDelivery` con FK a Outbox, canal, template version, destinatario cifrado/hash, estado, lease, intentos, timestamps y constraints.
-- [ ] Implementar normalización/hash/cifrado de destinatario y retention-safe projections.
-- [ ] Crear migración y seed idempotente; verificar índices, FK, unicidad y cleanup de fixtures.
-- [ ] Verificar schema, typecheck y pruebas de persistencia.
-- [ ] Commit `feat: add notification delivery contracts`.
+- [x] Escribir pruebas rojas y verdes de estados, deduplicación, backoff, normalización/hash/cifrado y separación de permisos; allowlist y clasificación se mantienen para Tareas 2–3.
+- [x] Agregar permisos mínimos `notifications.read` y `notifications.manage`, separados de permisos comerciales y de identidad.
+- [x] Crear `NotificationDelivery` con FK a Outbox, canal, template version, destinatario cifrado/hash, estado, lease, intentos, timestamps y constraints.
+- [x] Implementar normalización/hash/cifrado de destinatario y retention-safe persistence fields.
+- [x] Crear migraciones y seed idempotente; verificar índices, FK, unicidad y cleanup de fixtures.
+- [x] Verificar schema, typecheck y pruebas de persistencia.
+- [x] Commit `feat: add notification delivery contracts`.
 
 ### Criterio de terminado
 

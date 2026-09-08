@@ -21,6 +21,18 @@ enum OutboxStatus {
   FAILED
 }
 
+enum NotificationChannel {
+  EMAIL
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
 enum UserType {
   CUSTOMER
   EMPLOYEE
@@ -184,21 +196,52 @@ model AuditLog {
 }
 
 model OutboxEvent {
-  id            String       @id @default(uuid()) @db.Uuid
-  eventType     String       @db.VarChar(160)
-  aggregateType String       @db.VarChar(120)
-  aggregateId   String?      @db.Uuid
-  payload       Json
-  status        OutboxStatus @default(PENDING)
-  attempts      Int          @default(0)
-  availableAt   DateTime     @default(now()) @db.Timestamptz(3)
-  processedAt   DateTime?    @db.Timestamptz(3)
-  lastError     String?      @db.VarChar(1000)
-  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  id                     String                 @id @default(uuid()) @db.Uuid
+  eventType              String                 @db.VarChar(160)
+  aggregateType          String                 @db.VarChar(120)
+  aggregateId            String?                @db.Uuid
+  payload                Json
+  status                 OutboxStatus           @default(PENDING)
+  attempts               Int                    @default(0)
+  availableAt            DateTime               @default(now()) @db.Timestamptz(3)
+  processedAt            DateTime?              @db.Timestamptz(3)
+  lastError              String?                @db.VarChar(1000)
+  createdAt              DateTime               @default(now()) @db.Timestamptz(3)
+  notificationDeliveries NotificationDelivery[]
 
   @@index([status, availableAt])
   @@index([aggregateType, aggregateId])
   @@map("outbox_events")
+}
+
+model NotificationDelivery {
+  id                         String                     @id @default(uuid()) @db.Uuid
+  outboxEventId              String                     @db.Uuid
+  channel                    NotificationChannel        @default(EMAIL)
+  recipientUserId            String?                    @db.Uuid
+  recipientAddressCiphertext String?                    @db.VarChar(600)
+  recipientAddressHash       String                     @db.Char(64)
+  templateKey                String                     @db.VarChar(120)
+  templateVersion            String                     @db.VarChar(64)
+  subjectSnapshot            String?                    @db.VarChar(240)
+  payload                    Json?
+  status                     NotificationDeliveryStatus @default(PENDING)
+  attempts                   Int                        @default(0)
+  availableAt                DateTime                   @default(now()) @db.Timestamptz(3)
+  processingStartedAt        DateTime?                  @db.Timestamptz(3)
+  processedAt                DateTime?                  @db.Timestamptz(3)
+  lastErrorCode              String?                    @db.VarChar(80)
+  providerMessageId          String?                    @db.VarChar(240)
+  createdAt                  DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime                   @updatedAt @db.Timestamptz(3)
+  outboxEvent                OutboxEvent                @relation(fields: [outboxEventId], references: [id], onDelete: Restrict)
+  recipientUser              User?                      @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
+
+  @@unique([outboxEventId, channel, recipientAddressHash, templateKey, templateVersion])
+  @@index([status, availableAt])
+  @@index([outboxEventId])
+  @@index([recipientUserId, createdAt])
+  @@map("notification_deliveries")
 }
 
 model Client {
@@ -247,6 +290,7 @@ model User {
   closedConversations        Conversation[]         @relation("ConversationCloser")
   conversationMessages       ConversationMessage[]  @relation("ConversationMessageSender")
   uploadedFileAttachments    FileAttachment[]       @relation("FileAttachmentUploader")
+  notificationDeliveries     NotificationDelivery[] @relation("NotificationRecipient")
   createdAt                  DateTime               @default(now()) @db.Timestamptz(3)
   updatedAt                  DateTime               @updatedAt @db.Timestamptz(3)
 

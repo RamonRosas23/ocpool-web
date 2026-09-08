@@ -20,6 +20,7 @@ const serverEnvSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   MFA_ENCRYPTION_KEY: encryptionKey,
   AUTH_DELIVERY_ENCRYPTION_KEY: encryptionKey,
+  NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: encryptionKey,
   STORAGE_S3_ENDPOINT: z.string().url().default('http://localhost:19000'),
   STORAGE_S3_REGION: z.string().min(1).max(32).default('us-east-1'),
   STORAGE_S3_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/).default('ocpool-private'),
