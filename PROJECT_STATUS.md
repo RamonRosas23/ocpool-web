@@ -5,10 +5,10 @@
 ## Estado actual
 
 - **Fase:** Fase 3 — Clientes, solicitudes y expedientes.
-- **Estado:** Fase 2 está terminada con criterios verificables. Tareas 1, 2 y 3 de Fase 3 están terminadas; Tarea 4 implementa la API pública y la captación conectada al expediente.
+- **Estado:** Fase 2 está terminada con criterios verificables. Tareas 1–4 de Fase 3 están terminadas; Tarea 5 implementa el inbox interno y las operaciones protegidas.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`, `bad4317`, `22c73ba`, `633d1d6`, `9a8af1c`.
+- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`, `bad4317`, `22c73ba`, `633d1d6`, `9a8af1c`, `b47dbfe`, `cadc616`.
 
 ## Orden documental obligatorio
 
@@ -34,6 +34,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Metadata, Open Graph, Twitter card, JSON-LD, robots y sitemap.
 - Contrato de contenido de la web.
 - Pruebas E2E de calidad visual, interacción, responsive, consola y accesibilidad.
+- Formulario público de cotización conectado al expediente persistido, con validación, consentimiento, estados de UI, folio e idempotencia de reintentos.
+- Endpoint público `POST /api/quote-requests` con protección same-origin, límite de body, rate limiting por email/IP confiable y respuesta sin IDs internos.
 
 ### Fundamentos terminados en esta fase
 
@@ -67,21 +69,20 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Seed idempotente de `FolioSequence.quote_request` y catálogo RBAC ampliado para solicitudes.
 - Servicio transaccional de solicitudes: cliente/contacto, folio bloqueado, detalle, historial inicial, auditoría y Outbox en una transacción.
 - Idempotencia pública mediante huella SHA-256 de clave de reintento limitada; migración `20260908030200_quote_request_idempotency` aplicada.
+- Captación pública E2E sobre navegador de producción local; el endpoint legado de `mailto` fue retirado para evitar flujos no persistentes.
 
 ### En desarrollo
 
-- Fase 3 — Tarea 4: API pública y UI de captación conectadas al servicio transaccional.
+- Fase 3 — Tarea 5: inbox interno, detalle, asignación y transiciones protegidas por RBAC.
 
 ### Prototipo o incompletos para el producto comercial
 
-- Formulario de cotización: sólo valida datos y prepara un `mailto`; no crea una solicitud persistida.
-- Contacto: no existe confirmación transaccional ni expediente.
+- Contacto directo por correo/WhatsApp: canal informativo, todavía fuera del expediente persistido.
 
 ### Pendientes
 
 - Arquitectura de aplicación comercial por dominios de negocio.
-- Clientes, contactos y expedientes.
-- Solicitudes, folios, estados y asignaciones.
+- Inbox interno de solicitudes, detalle, asignaciones y transiciones.
 - Catálogo, precios y plantillas.
 - Constructor de cotizaciones.
 - Snapshots y versionado inmutable.
@@ -124,6 +125,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tras Tarea 1 de Fase 3: `npm run test:unit` 34/34, `npm run test:integration` 9/9, `npm run typecheck` y `npm run lint` correctos.
 - Tras Tarea 2 de Fase 3: `npm run test:integration` 10/10, `npm run db:validate`, `npm run db:generate`, migración aplicada/inspeccionada, `npm run db:seed`, `npm run typecheck` y `npm run lint` correctos.
 - Tras Tarea 3 de Fase 3: prueba dirigida del servicio 2/2 y `npm run test:integration` 12/12; incluye concurrencia de folios, replay idempotente, agregado atómico, historial, auditoría y Outbox.
+- Tras Tarea 4 de Fase 3: `npm run test:integration` 14/14, prueba E2E dirigida del formulario 1/1 y `npm run build`, `npm run typecheck` y `npm run lint` correctos; la suite pública valida API, responsive, accesibilidad, consola y folio.
 - `npm run lint` — correcto.
 - `npm run test:e2e:auth` — 1 flujo correcto: fixture desechable, login, sesión, rechazo de logout foreign-origin y logout.
 - `npm run test:content` — correcto.
@@ -191,6 +193,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - El E2E de producción local inicialmente no reenviaba cookies `Secure` sobre HTTP; se mantuvo `Secure` y la prueba valida atributos y transporta explícitamente el valor opaco para probar la API.
 - La primera compuerta final encontró contaminación de buckets sintéticos entre ejecuciones; el test de API ahora limpia únicamente sus hashes de fixture y quedó estable en la repetición completa.
 - La prueba del seed asumía que el contador de folios siempre era `1`; se corrigió para verificar que el seed sea idempotente y preserve secuencias ya consumidas.
+- El typecheck conservó referencias generadas al endpoint legado después de retirarlo; el build de producción regeneró `.next` y confirmó el árbol de rutas final sin `send-email`.
 - `npx tsc --noEmit` encontró tipos incompletos en pruebas existentes; se corrigieron sin relajar `strict`.
 
 ## Criterio de terminado de Fase 1
@@ -201,8 +204,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico en ejecución; Tareas 1–3 terminadas y Tarea 4 en curso.
+- `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico en ejecución; Tareas 1–4 terminadas y Tarea 5 en curso.
 
 ## Próximo paso autorizado
 
-Ejecutar Tarea 4 de Fase 3: reemplazar el `mailto` del formulario público por una API persistente con validación, idempotencia, estados de carga/error/éxito y folio visible.
+Ejecutar Tarea 5 de Fase 3: construir el inbox interno paginado y las operaciones de asignación/transición con autorización backend, auditoría y pruebas negativas.

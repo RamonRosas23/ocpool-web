@@ -20,8 +20,9 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Autenticación API con password Argon2id para empleados, MFA TOTP administrativo, magic link de cliente y recovery de contraseña.
 - Cookies de sesión HttpOnly/SameSite=Lax, autorización backend deny-by-default y protección same-origin.
 - Rate limit por email/IP confiable, circuit breaker de respaldo sin IP y límites streaming de body.
+- Captación pública persistente mediante `POST /api/quote-requests`, folio comercial, idempotencia, Outbox y formulario con feedback accesible.
 
-Los módulos de clientes operativos, solicitudes, catálogo, cotizaciones, portal y aceptación pertenecen a fases posteriores.
+El inbox operativo, catálogo, cotizaciones, portal y aceptación pertenecen a fases posteriores.
 
 ## Requisitos
 
@@ -104,6 +105,7 @@ Endpoints disponibles:
 - `POST /api/auth/customer/consume-link` — consume un link una sola vez.
 - `GET|POST /api/auth/session` — consulta o cierra la sesión actual.
 - `POST /api/auth/recovery/request` y `POST /api/auth/recovery/consume` — recovery de empleados.
+- `POST /api/quote-requests` — crea un expediente público con consentimiento, folio y respuesta idempotente mediante el header `Idempotency-Key`.
 
 Los tokens se guardan como huellas SHA-256. Los eventos Outbox de correo contienen el token únicamente cifrado para que el worker futuro pueda entregarlo; nunca se incluye el token crudo en payloads, respuestas o logs.
 
@@ -117,7 +119,7 @@ node scripts/require-env.mjs DATABASE_URL
 
 - `src/app/` — rutas de Next.js y API.
 - `src/components/` — componentes de la landing pública existente.
-- `src/server/` — configuración de entorno, base de datos, errores, logging e identidad del servidor.
+- `src/server/` — configuración de entorno, base de datos, errores, logging, identidad y dominios comerciales del servidor.
 - `prisma/` — schema, migraciones y seed.
 - `tests/unit/` — pruebas unitarias.
 - `tests/integration/` — pruebas contra PostgreSQL local.
@@ -129,7 +131,7 @@ node scripts/require-env.mjs DATABASE_URL
 
 ## Alcance de Fase 2 completado
 
-La identidad y RBAC tienen schema, seed, criptografía, sesiones, MFA, rate limiting, servicios, endpoints seguros, pruebas unitarias/integración/E2E y documentación operativa. El siguiente bloque es Fase 3: clientes, solicitudes y expedientes.
+La identidad y RBAC tienen schema, seed, criptografía, sesiones, MFA, rate limiting, servicios, endpoints seguros, pruebas unitarias/integración/E2E y documentación operativa. La captación pública de solicitudes ya está persistida y verificada; el siguiente bloque es el inbox interno de Fase 3.
 
 La auditoría actual mantiene 4 advisories altos transitorios en la cadena de Prisma (`deepmerge-ts`/`mysql2`); no se aplicó el downgrade automático a Prisma 6.19.3. Este riesgo debe resolverse o aprobarse formalmente antes de producción.
 
