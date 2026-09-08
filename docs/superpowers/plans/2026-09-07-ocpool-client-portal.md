@@ -85,15 +85,22 @@ Evidencia de cierre:
 - Consume: `requireCustomerActor` to be added only if the existing `requireStaffActor` cannot express customer scope; service functions from Tarea 1; `toErrorResponse` and `requestId`.
 - Produce: `GET /api/portal/requests`, `GET /api/portal/requests/:id` y `GET /api/portal/quotes/:id`, todos con `cache-control: no-store`.
 
-- [ ] Escribir pruebas rojas para 401 sin cookie, 403 con sesión de empleado, 404 genérico para UUID ajeno, folio ajeno, sesión revocada y respuesta sin secretos.
-- [ ] Ejecutar `npx vitest run tests/integration/client-portal-api.test.ts` y confirmar el fallo esperado antes de crear rutas.
-- [ ] Crear un guard de actor cliente que use `sessionToken` + `getActorFromSession`, rechace empleados y no acepte `clientId` externo.
-- [ ] Crear esquemas de query estrictos para `page`, `pageSize` y búsqueda; rechazar parámetros desconocidos, rangos inválidos y cuerpos innecesarios.
-- [ ] Implementar las tres rutas con `requestId`, `toErrorResponse`, `no-store` y mensajes que no distingan entre recurso ajeno e inexistente.
-- [ ] Probar que el portal no responde datos aunque se conozca un UUID de otro cliente y que ninguna respuesta contenga token, hash, asignación o actor interno.
-- [ ] Ejecutar integración, typecheck, lint y `git diff --check`; documentar el contrato API y hacer commit `feat: expose scoped client portal APIs`.
+- [x] Escribir pruebas rojas para 401 sin cookie, 403 con sesión de empleado, 404 genérico para UUID ajeno, folio ajeno, sesión revocada y respuesta sin secretos.
+- [x] Ejecutar `npx vitest run tests/integration/client-portal-api.test.ts` y confirmar el fallo esperado antes de crear rutas.
+- [x] Crear un guard de actor cliente que use `sessionToken` + `getActorFromSession`, rechace empleados y no acepte `clientId` externo.
+- [x] Crear esquemas de query estrictos para `page`, `pageSize` y búsqueda; rechazar parámetros desconocidos, rangos inválidos y cuerpos innecesarios.
+- [x] Implementar las tres rutas con `requestId`, `toErrorResponse`, `no-store` y mensajes que no distingan entre recurso ajeno e inexistente.
+- [x] Probar que el portal no responde datos aunque se conozca un UUID de otro cliente y que ninguna respuesta contenga token, hash, asignación o actor interno.
+- [x] Ejecutar integración, typecheck, lint y `git diff --check`; documentar el contrato API y hacer commit `feat: expose scoped client portal APIs`.
 
-### Tarea 3 — Shell visual, autenticación y dashboard
+Evidencia de cierre:
+
+- Commit `76214bd` (`feat: expose scoped client portal APIs`).
+- `requireCustomerActor` deriva sesión persistida, rechaza sesiones ausentes y empleados, y nunca recibe `clientId` desde el request.
+- Las rutas de `/api/portal/requests` y `/api/portal/quotes` son sólo lectura, `no-store`, validan query estricta y usan el envelope público de errores.
+- Verificación dirigida: integración API 1/1, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
+
+### Tarea 3 — Shell visual, autenticación y dashboard (actual)
 
 **Files:**
 
