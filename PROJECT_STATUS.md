@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 5 — Portal autenticado del cliente.
-- **Estado:** Fase 5 está terminada con gate verde. El portal cliente queda documentado, probado, construido y aislado; el siguiente frente será mensajería y trazabilidad conversacional.
+- **Fase:** Fase 6 — Mensajería y notas internas.
+- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tarea 1 — contrato, permisos y persistencia — está lista para iniciar.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -102,7 +102,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### En desarrollo
 
-- Ningún módulo de Fase 5; la fase está cerrada. El diseño de Fase 6 todavía no inicia.
+- Fase 6 — Tarea 1: contrato, permisos y persistencia.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -155,6 +155,9 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 30. Las versiones `BORRADOR` no se exponen al cliente; el portal sólo presenta versiones enviadas o posteriores y una proyección sin actores internos ni notas operativas.
 31. La resolución de sesión invalida a un cliente cuyo vínculo `Client` está archivado; un usuario cliente sin vínculo se conserva como actor para que cada guard de superficie responda 403 explícito sin convertirlo en una sesión inexistente.
 32. Las fechas comerciales del portal se formatean en UTC porque `validUntil` representa una fecha de vigencia persistida, no la zona horaria local arbitraria del navegador.
+33. Fase 6 usará una conversación única por `QuoteRequest`, con `clientId` redundante controlado para mantener scope e impedir cruces de expediente.
+34. Los mensajes serán append-only y tendrán visibilidad explícita `CUSTOMER` o `INTERNAL`; una nota interna nunca se filtra por proyección, conteo, HTML, log ni Outbox.
+35. Los eventos de mensajería publicarán sólo IDs, folio, visibilidad y metadatos mínimos en Outbox; el cuerpo se consultará desde PostgreSQL por el worker futuro.
 
 ## Pruebas realizadas
 
@@ -241,6 +244,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - El servicio de `src/server/modules/quotes/service.ts` es dependencia de las APIs internas y del constructor operativo.
 - El servicio y las rutas de `src/server/modules/catalog/` son dependencia del selector de conceptos, listas y precios del constructor.
 - Fase 5 depende de sesiones/actor de cliente de Fase 2, solicitudes de Fase 3 y snapshots/versiones de Fase 4.
+- Fase 6 depende de sesiones/RBAC de Fase 2, scope de solicitudes de Fase 3, Outbox/auditoría transaccional y portal de cliente de Fase 5.
 
 ## Problemas encontrados y resolución
 
@@ -273,6 +277,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-07-ocpool-client-portal.md` — especificación aprobada para Fase 5.
 - `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado y ejecutado; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
+- `docs/superpowers/specs/2026-09-07-ocpool-messaging.md` — especificación aprobada para Fase 6.
+- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tarea 1 lista para iniciar.
 
 ## Criterio de terminado de Fase 5
 
@@ -280,4 +286,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Realizar la auditoría ordenada y la especificación de Fase 6 — mensajería cliente–equipo, notas internas y trazabilidad — antes de modificar código.
+Ejecutar la Tarea 1 de Fase 6: contrato de mensajería, permisos, persistencia, migración y pruebas de dominio.
