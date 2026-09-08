@@ -84,6 +84,7 @@ Los procedimientos operativos están separados de la guía de instalación:
 - [Runbook de desarrollo local](docs/runbooks/local-development.md) — recuperación segura de servicios, pruebas y datos desechables.
 - [Runbook de backup y restauración](docs/runbooks/backup-restore.md) — backup local PostgreSQL y restauración sólo en un destino de verificación explícito.
 - [Runbook de preparación para producción](docs/runbooks/production-readiness.md) — evidencia `PASS`, bloqueos `BLOCKED` y advertencias `WARN` sin convertir decisiones externas en supuestos.
+- [Runbook del dashboard operativo](docs/runbooks/analytics-dashboard.md) — definiciones, scope, zona horaria, supresión, rendimiento y diagnóstico seguro.
 
 El worker de notificaciones se ejecuta separado de Next.js:
 
@@ -109,6 +110,7 @@ npm run test:e2e:auth
 npx cross-env PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts
 npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts
 npx cross-env AUTH_E2E=1 REUSE_E2E_SERVER=1 APP_URL=http://127.0.0.1:3100 playwright test tests/staff-notifications.spec.ts
+$env:DASHBOARD_E2E='1'; npx playwright test tests/dashboard.spec.ts
 ```
 
 La suite E2E pública conserva el contrato visual, responsive, de interacción, consola y accesibilidad de la landing. La prueba foundation requiere PostgreSQL activo y se ejecuta de forma opt-in.
@@ -186,7 +188,7 @@ Con `.env.example` el resultado esperado es `BLOCKED`; no se deben reutilizar se
 
 ## Estado de implementación
 
-La identidad, captación, expedientes, cotizaciones, portal, mensajería, archivos privados, PDF/aceptación, notificaciones y el backend del dashboard operativo tienen schema, servicios, endpoints protegidos, UI parcial, pruebas y documentación operativa dentro del alcance local. El siguiente bloque de Fase 11 es la superficie visual responsive del dashboard; el sistema no se presenta como listo para lanzamiento mientras existan riesgos de producción abiertos.
+La identidad, captación, expedientes, cotizaciones, portal, mensajería, archivos privados, PDF/aceptación, notificaciones y el dashboard operativo tienen schema, servicios, endpoints protegidos, UI responsive, pruebas y documentación operativa dentro del alcance local. El siguiente bloque de Fase 11 es el gate de rendimiento, seguridad y cierre documental; el sistema no se presenta como listo para lanzamiento mientras existan riesgos de producción abiertos.
 
 La auditoría de producción local termina en 0 vulnerabilidades: `deepmerge-ts@8.0.2` y `mysql2@3.24.3` están fijados mediante overrides compatibles con Prisma 7.10.0. Estas versiones deben revisarse cuando Prisma las incorpore de forma nativa.
 

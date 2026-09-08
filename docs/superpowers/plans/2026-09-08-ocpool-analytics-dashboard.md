@@ -245,6 +245,7 @@
 **Files:**
 - Create: `docs/runbooks/analytics-dashboard.md`
 - Create: `tests/unit/analytics-serialization.test.ts`
+- Create: `src/server/modules/analytics/serialization.ts`
 - Modify: `README.md`
 - Modify: `PROJECT_STATUS.md`
 - Modify: `docs/superpowers/specs/2026-09-08-ocpool-analytics-dashboard.md` only if the implementation reveals a verified contract correction.
@@ -253,23 +254,27 @@
 - Consumes: API, servicio, consultas y E2E de Tasks 1–4.
 - Produces: runbook de definiciones/frescura/zonas/performance, evidencia de serialization segura y registro de riesgos/decisiones.
 
-- [ ] **Step 1: Escribir pruebas rojas de serialización y contenido.**
+- [x] **Step 1: Escribir pruebas rojas de serialización y contenido.**
 
   Exigir que `BigInt` viaje como string, tasas como enteros, monedas permanezcan separadas, `suppressed` oculte valores, JSON no contenga PII/secretos y documentación enumere las métricas con fuente y límites.
 
-- [ ] **Step 2: Implementar serialización y runbook.**
+- [x] **Step 2: Implementar serialización y runbook.**
 
   Centralizar el mapper de respuesta para no repetir conversiones; documentar definiciones, `[from,to)`, `APP_TIMEZONE`, scope, supresión `<5`, frescura, objetivo P95, ausencia de cache global y procedimiento para revisar `EXPLAIN` sin incluir datos sensibles.
 
-- [ ] **Step 3: Ejecutar rendimiento y seguridad.**
+  Result: la prueba roja confirmó el import faltante; `serializeDashboardResponse()` ahora concentra `BigInt`→string, basis points, supresión, actor key opaca y fechas. `docs/runbooks/analytics-dashboard.md` documenta definiciones, scope, zona, seguridad, diagnóstico y comandos reproducibles.
+
+- [x] **Step 3: Ejecutar rendimiento y seguridad.**
 
   Run: `npm run db:validate`, `npx prisma migrate status`, `npm run db:seed`, `npm run test:integration`, `npm run typecheck`, `npm run lint`, `npm audit --omit=dev --audit-level=high` y `git diff --check`.
 
-  Expected: PASS; documentar consultas lentas o índices sólo si la evidencia de PostgreSQL lo justifica.
+  Result: `npm run db:validate`, `npx prisma migrate status`, `npm run db:seed`, `npm run test:unit` (99/99), `npm run test:integration` (37 archivos/70 pruebas), `npm run test:content`, typecheck, lint, `npm run build`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y diff check pasaron. Se ejecutaron cuatro `EXPLAIN (ANALYZE, BUFFERS)` sobre el volumen local (44 solicitudes/80 entregas); los scans secuenciales tardaron 0.043–0.173 ms por el tamaño actual, por lo que no se agregó un índice especulativo. La revisión de volumen representativo queda en el gate antes de introducir rollups.
 
-- [ ] **Step 4: Actualizar seguimiento.**
+- [x] **Step 4: Actualizar seguimiento.**
 
   Registrar en `PROJECT_STATUS.md` fase, módulos, dependencias, pruebas, riesgos, decisión de no usar rollups, estado del gate y siguiente fase. Mantener explícito que dashboard no es BI ni readiness de producción.
+
+  Result: `PROJECT_STATUS.md` actualizado con fase actual, commits, módulos, decisiones 106–111, pruebas, riesgos de P95/zona, dependencias, problemas resueltos y próximo gate.
 
 - [ ] **Step 5: Commit.**
 

@@ -4,10 +4,11 @@
 
 ## Estado actual
 
-- **Fase:** Fase 10 — hardening de producción, gate local cerrado; lanzamiento bloqueado por dependencias externas.
-- **Estado:** Fases 1–10 están implementadas y verificadas dentro del alcance local. El gate completo de Fase 10 reporta 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED` (runtime local y siete prerequisitos externos). El producto aún no está listo para lanzamiento.
+- **Fase:** Fase 11 — dashboard y métricas operativas; Tareas 1–4 cerradas y Tarea 5 en desarrollo.
+- **Estado:** Fases 1–10 están implementadas y verificadas dentro del alcance local. Fase 11 ya tiene contratos, scope/RBAC, agregados, API privada, UI responsive y E2E opt-in; falta cerrar documentación operativa, rendimiento, auditoría y gate completo. El gate de Fase 10 reporta 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
+- **Último commit de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`).
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -156,10 +157,14 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 10 — Tarea 3: scripts PowerShell de backup PostgreSQL con checksum y restauración únicamente en `ocpool_restore_verify`, runbooks de continuidad, retención sin plazos inventados y documentación enlazada desde README.
 - Fase 10 — Tarea 4: gate `readiness:production` con checks estables, salida JSON segura, precedencia `BLOCKED > WARN > PASS`, ejecución rápida/completa y bloqueos externos explícitos.
 - Fase 10 — Gate local: 11 checks técnicos `PASS` (schema, migraciones, seed, typecheck, unitarias, integración serial, lint, contenido, auditoría, build y documentación), 0 `WARN` y 8 `BLOCKED`; no autoriza publicación.
+- Fase 11 — Tareas 1–2: contratos de zona/fechas/cálculo, permiso `metrics.read.global`, repositorio parametrizado, agregados por scope y supresión de muestras; integración previa a la UI en 37 archivos/70 pruebas.
+- Fase 11 — Tarea 3: API privada `GET /api/staff/dashboard`, query estricta, `no-store`, errores con `requestId`, 401/403/400 y respuesta sin PII; integración dirigida 2/2 y build/typecheck/lint correctos.
+- Fase 11 — Tarea 4: dashboard `/staff` responsive con KPIs, alertas, pipeline, antigüedad, tiempos protegidos, carga y salud de notificaciones; E2E opt-in 1/1, Axe sin hallazgos serios, 390/768/1440 sin overflow, reduced motion y consola autenticada limpia. Commit `6fe361e`.
 
 ### En desarrollo
 
-- Ningún módulo del slice local está bloqueado. La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue; el siguiente bloque ordenado será dashboards/métricas operativas.
+- Tarea 5 de Fase 11: prueba de serialización segura, runbook de métricas, actualización de README/PROJECT_STATUS, revisión de rendimiento y auditoría de dependencias.
+- La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -171,7 +176,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Detalle completo del expediente y cotización versionada dentro del portal.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
-- Dashboard y métricas.
+- Gate completo de Fase 11: `db:validate`, migraciones/seed, unitarias, integración, contenido, typecheck, lint, build, E2E base, E2E dashboard opt-in y auditoría.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
@@ -286,6 +291,12 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 103. Las cabeceras de seguridad se centralizan en `next.config.ts`; HSTS sólo se emite cuando el runtime es HTTPS productivo y no se añade un cache global que pueda afectar datos privados.
 104. Los backups locales usan el servicio Compose y una base de restauración fija y desechable; no reciben `DATABASE_URL` desde formularios, no sobrescriben archivos y no ejecutan purgas productivas.
 105. El gate de preparación agrega evidencia técnica y prerrequisitos externos sin ocultar bloqueos; su salida no incluye stdout/stderr de herramientas, secretos, conexiones ni rutas internas.
+106. Fase 11 agrega un módulo `analytics` de lectura sobre PostgreSQL existente; no introduce rollups, materialized views, Redis, BI ni una fuente paralela de verdad sin evidencia de rendimiento.
+107. `metrics.read` entrega scope propio y `metrics.read.global` habilita scope global; el backend determina el alcance antes de agregar y la UI no es frontera de autorización.
+108. Las fechas del dashboard usan `[from,to)`, máximo de 93 días y `APP_TIMEZONE`; el navegador no puede enviar una zona para alterar alcance o límites.
+109. Los importes del dashboard conservan moneda separada y `BigInt` como string; las tasas se serializan como basis points y nunca se convierten monedas.
+110. La serialización analítica se concentra en un mapper puro que aplica supresión, claves opacas, fechas y valores seguros antes de construir el response HTTP; no devuelve PII, payloads, destinatarios, storage keys ni ciphertext.
+111. La UI del dashboard reutiliza la identidad staff existente con CSS/Intl nativos, sin dependencia de gráficas; los estados de carga, vacío, error, reduced motion, foco y contraste forman parte del módulo terminado.
 
 ## Pruebas realizadas
 
@@ -356,6 +367,9 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 10 — Tarea 2: unitarias de headers/readiness 4/4, integración readiness 34 archivos/64 pruebas, typecheck, lint, build y foundation E2E 2/2 correctos. `/api/ready` mantiene `no-store`, request ID y no expone SQL/secretos.
 - Fase 10 — Tarea 3: contrato de runbooks 4/4, parser PowerShell sin errores y diff check correctos; no se ejecutó restauración destructiva ni se tocó `ocpool_dev`.
 - Fase 10 — Tarea 4: unitarias/integración del gate 4/4; `readiness:production:full` reportó 11 `PASS`, 0 `WARN`, 8 `BLOCKED`; `npm run test:e2e:foundation` pasó 2/2; `npm run test:e2e` pasó 34/34 con 9 omitidas opt-in; typecheck, lint, auditoría, build e integración serial correctos.
+- Fase 11 — Tarea 4: `DASHBOARD_E2E=1 npm run test:e2e -- tests/dashboard.spec.ts` pasó 1/1. Se verificaron sesión restringida, sesión manager, rango histórico vacío, Axe sin violaciones serious/critical, no overflow a 390/768/1440, reduced motion, metadata privada, enlaces contextuales y consola autenticada limpia.
+- Fase 11 — Tarea 4: `npm run typecheck`, `npm run lint`, `npm run build` y `git diff --check` correctos. La primera E2E detectó una condición de carrera al hidratar fechas; se protegió la edición del usuario. Axe detectó contrastes bajos en índices/estado protegido; se corrigieron con tonos AA y se repitió la E2E.
+- Fase 11 — Tarea 5: prueba roja de serialización confirmó la ausencia del mapper; después `analytics-serialization.test.ts` pasó 1/1 verificando BigInt como string, monedas separadas, supresión, claves opacas y ausencia de identificadores/payloads/ciphertext/storage keys en JSON.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -368,6 +382,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Casos límite adicionales de snapshots, inmutabilidad y cálculo de cotizaciones.
 - Prueba de larga duración del worker continuo bajo apagado coordinado; la lógica de shutdown, recuperación y proveedor no disponible sí tiene cobertura dirigida del servicio.
 - Pruebas de carga del worker y restauración de backups en destino aislado.
+- Gate de Fase 11 pendiente: migraciones/seed, suite unitaria/integración completa, contenido, E2E base, E2E dashboard opt-in, auditoría, revisión de `EXPLAIN` y objetivo P95 con fixtures representativos.
+- Confirmar antes de producción la zona `APP_TIMEZONE`, definiciones comerciales de periodo y alcance por ejecutivo/sucursal.
 
 ## Riesgos abiertos
 
@@ -380,6 +396,9 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - El gate de Fase 10 permanece `BLOCKED` por SMTP productivo, DNS/TLS/SPF/DKIM/DMARC, antivirus, backup externo, retención legal, destino de despliegue y runtime no productivo.
 - El backup/restore local está implementado y protegido por destino fijo, pero la restauración verificable todavía requiere una ejecución operativa explícita; no se ejecuta automáticamente para no destruir datos locales.
 - El gate técnico no sustituye aprobación legal, elección de proveedores, gestión de secretos, RPO/RTO, monitoreo, rollback ni aceptación del responsable del servicio.
+- El dashboard calcula agregados transaccionales directos; falta medir P95 con fixtures representativos y revisar `EXPLAIN` antes de decidir si la escala futura requiere rollups.
+- La zona `America/Chihuahua` es configurable para el entorno local, pero la zona comercial definitiva y su calendario deben aprobarse antes de producción.
+- Las definiciones de alcance por ejecutivo, sucursal o zona no están confirmadas; Fase 11 sólo implementa self/global con permisos explícitos.
 - La protección por IP requiere `TRUST_PROXY_HEADERS=true` sólo detrás de un proxy confiable que sobrescriba la IP. Sin IP confiable, el backend usa límites por identificador y un circuit breaker global separado; el proxy de producción debe aportar rate limiting por origen.
 - La infraestructura de identidad, solicitudes, cotizaciones, aceptación, mensajería y archivos ya escribe Outbox y la Fase 9 Tareas 4–5 lo materializan y operan; siguen pendientes el proveedor productivo y el hardening operacional.
 - El Outbox de mensajería conserva eventos de cierre/reapertura fuera de la allowlist de correo; no se cancelan porque quedan disponibles para futuros consumidores de dominio.
@@ -424,6 +443,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 9 Tarea 6 cerró el gate local con Mailpit como proveedor de desarrollo; el origen configurado para E2E debe coincidir exactamente con `APP_URL` para que la protección same-origin se pruebe sin falsos negativos.
 - Fase 10 depende de la configuración de entorno, schema/migraciones, Outbox/worker, storage privado y evidencia de todas las fases anteriores; no introduce un servicio de datos paralelo.
 - La política de runtime alimenta el gate de producción; `/api/ready` depende de PostgreSQL; los runbooks dependen del Compose local; el gate no puede convertir evidencia local en autorización externa.
+- Fase 11 depende de identidad/RBAC, solicitudes, asignaciones, historial, cotizaciones snapshot, aceptación, notificaciones, `APP_TIMEZONE` y la API de errores; no introduce autorización duplicada.
+- `/staff` depende sólo del endpoint privado de dashboard y de los enlaces existentes de operación; la UI no accede a Prisma ni decide permisos.
 
 ## Problemas encontrados y resolución
 
@@ -462,6 +483,10 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - La primera prueba de máximo de intentos no aislaba correctamente el umbral configurable; se ajustó el fixture para verificar explícitamente la transición terminal `FAILED` y el código persistido `TEMPORARY_PROVIDER`.
 - El primer gate Windows intentó ejecutar `npm.cmd` sin shell y marcó falsamente todos los comandos como fallidos (`EINVAL`); se corrigió usando shell sólo para comandos internos fijos y se verificó nuevamente el gate completo.
 - Las opciones `--dry-run`/`--no-*` de npm pueden ser interpretadas por npm antes de llegar al script; se añadieron scripts npm explícitos `readiness:production:quick` y `readiness:production:full` para evitar ambigüedad.
+- La primera E2E del dashboard asumía una base vacía, pero el seed local ya contenía solicitudes recientes; se volvió determinista aplicando un periodo histórico válido sin datos.
+- La hidratación inicial del rango podía sobrescribir una edición rápida del usuario mientras llegaba una respuesta; se añadió una marca de edición y el mapper de carga sólo inicializa campos una vez.
+- Axe detectó contraste insuficiente en índices decorativos y en `Muestra protegida`; se conservaron los tonos de la identidad y se ajustaron a valores que cumplen AA.
+- Una corrida dirigida mezcló integraciones sin `RUN_DB_TESTS=1` y falló por el guard de entorno, no por producto; la evidencia válida de integración se mantiene en el comando serial oficial con PostgreSQL activo.
 
 ## Criterio de terminado de Fase 1
 
@@ -494,10 +519,17 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 - `docs/superpowers/specs/2026-09-08-ocpool-production-hardening.md` — especificación aprobada para Fase 10; separa controles técnicos locales de decisiones externas.
 - `docs/superpowers/plans/2026-09-08-ocpool-production-hardening.md` — plan ordenado de Fase 10; Tareas 1–4 ejecutadas con gate local `BLOCKED` de forma intencional.
+- `docs/superpowers/specs/2026-09-08-ocpool-analytics-dashboard.md` — especificación aprobada para Fase 11; métricas operativas, scope, privacidad, rendimiento y UI.
+- `docs/superpowers/plans/2026-09-08-ocpool-analytics-dashboard.md` — plan ordenado de Fase 11; Tareas 1–4 cerradas y Tarea 5 en ejecución.
+- `docs/runbooks/analytics-dashboard.md` — runbook operativo de definiciones, fechas, permisos, diagnóstico seguro y pruebas.
 
 ## Criterio de terminado de Fase 10
 
 La fase se considera terminada para el alcance local porque la política de runtime, headers, readiness, continuidad, runbooks y gate tienen implementación, pruebas, documentación y evidencia reproducible. No se considera autorización de lanzamiento: los checks externos permanecen `BLOCKED` hasta contar con proveedores, decisiones legales, backups, observabilidad y destino operativo aprobados.
+
+## Criterio de terminado de Fase 11
+
+La fase se considerará terminada cuando el dashboard esté documentado, serializado de forma segura, medido con fixtures representativos, revisado contra regresiones y cubierto por el gate completo de pruebas. La UI y API actuales no autorizan lanzamiento por sí mismas; el bloqueo productivo de Fase 10 permanece vigente.
 
 ## Criterio de terminado de Fase 5
 
@@ -505,4 +537,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Iniciar la especificación de Fase 11 — dashboards y métricas operativas — manteniendo el gate de lanzamiento bloqueado hasta resolver los riesgos externos documentados.
+Cerrar Tarea 5 de Fase 11 con pruebas de serialización, rendimiento y auditoría; después ejecutar el gate completo de Fase 11 y sólo entonces avanzar a la siguiente fase, manteniendo el gate de lanzamiento bloqueado hasta resolver los riesgos externos documentados.
