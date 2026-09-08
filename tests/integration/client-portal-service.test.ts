@@ -37,6 +37,7 @@ describe('customer portal scoped service', () => {
       quoteIds = [quoteA.quoteId, quoteB.quoteId];
       await transitionQuoteVersion(employeeActor, quoteA.versionId, 'EN_REVISION', { prisma, now });
       await transitionQuoteVersion(employeeActor, quoteA.versionId, 'ENVIADA', { prisma, now });
+      await prisma.catalogItem.update({ where: { id: item.id }, data: { name: 'Portal catálogo actualizado' } });
       const customerActor = actor('customer-user-a', requestA.clientId, 'CUSTOMER');
 
       const list = await listCustomerQuoteRequests(customerActor, {}, { prisma });
@@ -46,7 +47,7 @@ describe('customer portal scoped service', () => {
       const detail = await getCustomerQuoteRequest(customerActor, requestA.quoteRequestId, { prisma });
       expect(detail.request).toMatchObject({ id: requestA.quoteRequestId, client: { id: requestA.clientId }, detail: { description: 'Cliente A alcance compartido' } });
       expect(detail.quote?.currentVersion).toMatchObject({ id: quoteA.versionId, totalMinor: '18560' });
-      expect(detail.quote?.currentVersion?.lines[0]).toMatchObject({ quantityMilliunits: '2000', unitPriceMinor: '8000', taxMinor: '2560', totalMinor: '18560' });
+      expect(detail.quote?.currentVersion?.lines[0]).toMatchObject({ name: 'Portal snapshot item', quantityMilliunits: '2000', unitPriceMinor: '8000', taxMinor: '2560', totalMinor: '18560' });
       expect(JSON.stringify(detail)).not.toContain('Portal B privado');
       expect(JSON.stringify(detail)).not.toContain('createdBy');
       await expect(getCustomerQuoteRequest(customerActor, requestB.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });

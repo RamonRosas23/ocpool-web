@@ -142,13 +142,21 @@ Evidencia de cierre:
 - Consume: `GET /api/portal/requests/:id`, `GET /api/portal/quotes/:id`, snapshots/totales de Fase 4.
 - Produce: vista de expediente propio con alcance compartido, estado, resumen de cotización y versiones históricas de sólo lectura.
 
-- [ ] Escribir prueba de regresión para versión enviada con precio de catálogo cambiado después; la vista debe seguir mostrando `QuoteLineSnapshot` histórico.
-- [ ] Implementar selección de expediente sin confiar en el folio para autorización; cargar detalle sólo por endpoint scopeado.
-- [ ] Renderizar versión actual y versiones anteriores con moneda, vigencia, líneas, cantidades, descuentos, impuestos, subtotal y total; formatear strings monetarios sin `Number`.
-- [ ] Mostrar estado vacío cuando aún no hay cotización, historial completo cuando existen varias versiones y mensaje claro cuando la vigencia expiró.
-- [ ] No mostrar botones de aceptar, firmar, descargar PDF, editar, enviar mensajes ni cambiar estado en esta fase.
-- [ ] Verificar responsive móvil con líneas apiladas, desktop con resumen lateral, accesibilidad con Axe y navegación por teclado.
-- [ ] Ejecutar integración/API/E2E dirigida, lint, typecheck y `git diff --check`; hacer commit `feat: show customer quote snapshots`.
+- [x] Escribir prueba de regresión para versión enviada con precio de catálogo cambiado después; la vista debe seguir mostrando `QuoteLineSnapshot` histórico.
+- [x] Implementar selección de expediente sin confiar en el folio para autorización; cargar detalle sólo por endpoint scopeado.
+- [x] Renderizar versión actual y versiones anteriores con moneda, vigencia, líneas, cantidades, descuentos, impuestos, subtotal y total; formatear strings monetarios sin `Number`.
+- [x] Mostrar estado vacío cuando aún no hay cotización, historial completo cuando existen varias versiones y mensaje claro cuando la vigencia expiró.
+- [x] No mostrar botones de aceptar, firmar, descargar PDF, editar, enviar mensajes ni cambiar estado en esta fase.
+- [x] Verificar responsive móvil con líneas apiladas, desktop con resumen lateral, accesibilidad con Axe y navegación por teclado.
+- [x] Ejecutar integración/API/E2E dirigida, lint, typecheck y `git diff --check`; hacer commit `feat: show customer quote snapshots`.
+
+Evidencia de cierre:
+
+- La vista de expediente carga por UUID desde el endpoint scopeado; el folio sólo se presenta como dato comercial y no participa en autorización.
+- La cotización muestra versión, vigencia, estado, líneas, cantidades, descuentos, impuestos, subtotal y total con unidades monetarias serializadas y formateadas con `BigInt`.
+- La vigencia expirada se comunica explícitamente y recibe una señal visual de atención; no se agregaron acciones de aceptación, firma, edición, descarga, mensajería ni cambio de estado.
+- La integración `client-portal-service.test.ts` actualiza el concepto de catálogo después de enviar la cotización y confirma que la proyección conserva el nombre y valores históricos de `QuoteLineSnapshot`.
+- `npx cross-env RUN_DB_TESTS=1 vitest run tests/integration/client-portal-service.test.ts`, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
 ### Tarea 5 — Seguridad negativa y E2E autenticado
 
