@@ -11,7 +11,7 @@
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
 - **Últimos commits de Fase 12:** `a40d839` (`docs: close audit observability phase`), `d9a87e0` (`fix: stabilize audit verification fixtures`), `c341c66` (`feat: add staff audit workspace`), `df315e2` (`feat: expose staff audit api`), `23a9ab5` (`feat: add secure audit read service`).
 - **Documentos de Fase 12:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
-- **Documentos de Fase 13:** especificación, autorrevisión y plan ordenado versionados; ninguna tarea de implementación se marca como iniciada antes de su E2E contractual.
+- **Documentos de Fase 13:** especificación, autorrevisión y plan ordenado versionados. Tarea 1 ya tiene E2E contractual opt-in, fixtures desechables y una primera falla TDD esperada; las pantallas aún no existen.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -169,7 +169,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### En desarrollo
 
-- Fase 13 — superficies de acceso y recuperación: planificación cerrada; pendiente ejecutar Tarea 1 con E2E contractual y luego implementar por vertical slices.
+- Fase 13 — superficies de acceso y recuperación: Tarea 1 contractual iniciada; la primera corrida falló porque aún no existen los enlaces/páginas de acceso. La implementación seguirá por vertical slices.
 - La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
@@ -402,6 +402,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 11 no tiene pendientes técnicos locales para su alcance; antes de producción debe repetirse la revisión de rendimiento con volumen representativo y confirmar la política de operación.
 - Confirmar antes de producción la zona `APP_TIMEZONE`, definiciones comerciales de periodo y alcance por ejecutivo/sucursal.
 - Fase 12 no tiene pendientes técnicos locales dentro de su alcance; la siguiente revisión deberá tratar retención, exportación, SIEM, alertas y operación productiva como decisiones nuevas, no como deuda oculta de esta fase.
+- Fase 13 Tarea 1: `AUTH_SURFACES_E2E=1 npm run test:e2e -- tests/auth-surfaces.spec.ts` falló en el primer selector esperado (`/staff/requests` aún no enlaza `/login`); las cuatro pruebas siguientes no se ejecutaron por modo serial. Esta falla confirma el contrato rojo inicial.
 
 ## Riesgos abiertos
 

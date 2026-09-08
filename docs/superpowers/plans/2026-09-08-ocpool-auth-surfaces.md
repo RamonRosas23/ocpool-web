@@ -6,10 +6,10 @@
 
 ## Tarea 1 — Contratos de navegación y E2E opt-in
 
-- [ ] Crear `tests/auth-surfaces.spec.ts` opt-in con login, MFA, recovery, magic link, replay, expiry, URL limpia, redirecciones y estados restringidos.
-- [ ] Verificar inicialmente los fallos esperados por páginas inexistentes, manteniendo el ciclo TDD.
-- [ ] Añadir cobertura 390/768/1440, Axe, foco visible, reduced motion, no overflow, consola sin errores inesperados y ausencia de tokens en DOM/URL final.
-- [ ] Definir fixtures desechables, cleanup por IDs exactos y Mailpit aislado por mensaje.
+- [x] Crear `tests/auth-surfaces.spec.ts` opt-in con login, MFA, recovery, magic link, replay, expiry, URL limpia, redirecciones y estados restringidos.
+- [x] Verificar inicialmente los fallos esperados por páginas inexistentes, manteniendo el ciclo TDD. La primera corrida falló en el enlace aún inexistente hacia `/login`.
+- [x] Añadir cobertura 390/768/1440, Axe, foco visible, reduced motion, no overflow, consola sin errores inesperados y ausencia de tokens en DOM/URL final.
+- [x] Definir fixtures desechables, cleanup por IDs exactos y Mailpit aislado por mensaje.
 - [ ] Commit: `test: define auth surface journeys`.
 
 ## Tarea 2 — Contratos de presentación y acceso de empleado
@@ -57,4 +57,3 @@
 ## Gate de terminado
 
 No se marcará Fase 13 como terminada por tener páginas que renderizan. Deben funcionar los enlaces reales, sesión, errores, tokens de un solo uso, RBAC, rate limit, accesibilidad, responsive, Mailpit, pruebas negativas, documentación, build y regresión sin credenciales fijas.
-
