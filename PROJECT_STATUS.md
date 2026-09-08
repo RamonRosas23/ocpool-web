@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 8 — PDF comercial y aceptación digital, Tarea 4: integración en portal cliente.
-- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 Tareas 1–3 están terminadas y verificadas; el siguiente slice es integrar descarga y aceptación en el portal cliente con estados UX completos.
+- **Fase:** Fase 8 — PDF comercial y aceptación digital, Tarea 5: operación staff.
+- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 Tareas 1–4 están terminadas y verificadas; el siguiente slice es dar visibilidad operativa staff al documento y a la evidencia de aceptación.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -129,10 +129,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 8 — Tarea 2: dependencia directa `pdf-lib@1.17.1` justificada; no se añadió proveedor externo de PDF ni fuente no portable.
 - Fase 8 — Tarea 3: servicios de aceptación y acceso a PDF protegidos por scope `clientId`, RBAC, lock transaccional, validación de objeto privado, evidencia SHA-256, idempotencia y Outbox/auditoría sin datos sensibles.
 - Fase 8 — Tarea 3: APIs portal/staff de PDF y aceptación con same-origin, Zod estricto, `no-store`, URL presigned efímera y respuestas sin `storageKey`/hash.
+- Fase 8 — Tarea 4: `ClientQuoteActions` integrado en el portal con descarga PDF, aceptación explícita, diálogo accesible, feedback de éxito/error, estado vencido/aceptado y responsive.
 
 ### En desarrollo
 
-- Fase 8 — Tarea 4: integración de descarga y aceptación en el portal cliente.
+- Fase 8 — Tarea 5: visibilidad operativa staff de documentos PDF y evidencia de aceptación.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -221,6 +222,9 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 67. El lock de aceptación se toma sobre cotización y solicitud antes de crear evidencia; la clave única `(acceptedById, idempotencyKeyHash)` permite replay exacto y la unicidad por versión impide doble aceptación con claves distintas.
 68. La URL de descarga se emite sólo después de validar DB + HEAD del objeto privado, con expiración de 60 segundos y auditoría; el portal recibe metadata mínima y nunca una storage key.
 69. La ruta staff de generación requiere `{}` con schema estricto, para que incluso regeneraciones mantengan contrato JSON y protección same-origin uniforme.
+70. El portal muestra el éxito de aceptación antes de refrescar el expediente; el refresh ocurre al pulsar `Continuar`, evitando que un remount borre el feedback de una acción irreversible.
+71. La descarga cliente abre únicamente la URL presigned retornada por backend; el frontend no construye keys ni intenta leer bytes del PDF.
+72. El diálogo de aceptación usa nombre y checkbox explícitos, pero no se presenta como firma electrónica avanzada; el copy mantiene la revisión jurídica pendiente visible en riesgos.
 
 ## Pruebas realizadas
 
@@ -273,6 +277,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 8 — Tarea 1: prueba roja inicial del dominio; después `npm run test:unit` 57/57, `npm run typecheck`, `npm run db:validate`, `npm run db:generate`, migración aplicada y prueba de persistencia `quote-documents-schema.test.ts` 1/1. Se verificaron estados, elegibilidad, normalización, documentos READY incompletos, duplicados, hashes y aceptación vinculada.
 - Fase 8 — Tarea 2: `quote-pdf-renderer.test.ts` 3/3, `quote-pdf-service.test.ts` 1/1, `npm run typecheck`, fixture generado de 2 páginas, `pdftoppm` sin errores de fuente invalidante, `pdfinfo` metadata estable y `pypdf` con folio/resumen/total presentes y texto interno ausente.
 - Fase 8 — Tarea 3: `quote-acceptance-service.test.ts` 1/1 y `quote-documents-api.test.ts` 2/2 dirigidas; se verificaron aceptación concurrente con un ganador, replay, PDF READY/hash/HEAD, scope cruzado, 401/403/404/409, CSRF, schema estricto, permisos, no-store y no exposición de storage key/hash. `npm run typecheck` y `npm run lint` correctos.
+- Fase 8 — Tarea 4: `npx cross-env PORTAL_E2E=1 playwright test tests/client-portal.spec.ts` pasó 2/2; se verificaron descarga PDF, popup/API presigned, validación negativa del checkbox, diálogo accesible, aceptación, refresh, mensajería persistida, archivos, Axe, consola limpia y responsive móvil. `npm run typecheck` y `npm run lint` correctos.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -284,8 +289,8 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Pruebas finales de archivos privados: staff, seguridad de fase, URLs temporales, cleanup y proveedor antivirus productivo.
 - Pruebas de snapshots e inmutabilidad.
 - Pruebas de cálculo de cotizaciones.
-- Gate serial completo posterior a Tarea 3, incluyendo migración/seed, 61+ unitarias, integración global, build y E2E.
-- Pruebas E2E portal/staff del ciclo PDF y aceptación.
+- Gate serial completo posterior a Tarea 4, incluyendo migración/seed, integración global, build y E2E públicas.
+- E2E staff del ciclo PDF y evidencia de aceptación.
 - Pruebas de notificaciones y reintentos.
 - Pruebas de carga y restauración de backups.
 
@@ -303,7 +308,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - El scanner local de Fase 7 validará firma y tipo, pero no sustituirá antivirus; antes de producción deberá existir proveedor, política de cuarentena, pruebas de evasión y operación de reintentos.
 - MinIO local está incorporado al Compose con credenciales de desarrollo; producción deberá reemplazarlas mediante secretos y política de bucket privada.
 - El scanner local sólo valida firma/tipo/hash; proveedor antivirus productivo, cuarentena operacional, backups y restauración de objetos siguen pendientes de hardening.
-- La aceptación backend ya está operativa y protegida, pero ningún botón de aceptación debe exponerse hasta cerrar la UI, E2E portal/staff, revisión legal de términos y gate completo de Fase 8.
+- La aceptación backend y portal ya están operativos y protegidos, pero el lanzamiento requiere cerrar staff, E2E portal/staff, revisión legal de términos y gate completo de Fase 8.
 - Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
@@ -331,6 +336,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Fase 5 depende de sesiones/actor de cliente de Fase 2, solicitudes de Fase 3 y snapshots/versiones de Fase 4.
 - Fase 6 depende de sesiones/RBAC de Fase 2, scope de solicitudes de Fase 3, Outbox/auditoría transaccional y portal de cliente de Fase 5.
 - Fase 8 depende de snapshots/versiones de cotización de Fase 4, portal/sesiones de Fase 5, storage privado de Fase 7 y del contrato PDF/aceptación de Tareas 1–3 antes de la UI cliente.
+- Fase 8 Tarea 5 depende de las APIs de documento/aceptación de Tarea 3 y del workspace staff de cotizaciones; no puede inferir evidencia desde el portal cliente.
 
 ## Problemas encontrados y resolución
 
@@ -352,6 +358,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La primera regresión E2E completa tuvo dos timeouts de cierre del contexto bajo carga; ambos casos pasaron aislados y la segunda regresión completa terminó 34/34, sin cambios productivos derivados de ese falso negativo.
 - La primera E2E staff encontró que el estado de cierre se devolvía plano mientras el componente esperaba una propiedad `conversation`; se corrigió el mapeo y se añadió una prueba que valida que el composer desaparece al cerrar.
 - La primera E2E de archivos encontró selectores ambiguos porque el nombre del archivo también aparece en la acción de descarga; se ajustaron los asserts a nombres exactos y Axe detectó un contraste insuficiente en el distintivo `PDF`, corregido antes de cerrar Tarea 4. En Tarea 5, Axe detectó un `<ul role="tabpanel">` inválido; se separó el contenedor ARIA del listado.
+- La primera E2E de aceptación abrió el popup en `about:blank` antes de navegar al PDF; la aserción se trasladó a la respuesta API y se mantuvo el popup sólo como verificación de apertura. El primer flujo de éxito remonteaba el componente antes de mostrar confirmación; el refresh del expediente se movió a `Continuar`. Finalmente, la prueba de mensajería esperaba un mensaje optimista antes de que el fetch terminara; se añadió polling de persistencia DB antes de recargar.
 - Axe del inbox staff detectó contraste bajo y selects sin nombre; se corrigieron variables de color y `aria-label` explícitos, y la E2E staff volvió a pasar 2/2.
 - El cold build local agotó el timeout original de 120 segundos al iniciar Playwright; se amplió sólo `webServer.timeout` a 600 segundos y el build explícito terminó correctamente.
 - El gate de seguridad encontró vulnerabilidades transitorias de Prisma; se resolvieron con overrides verificables y se repitió la suite completa antes de cerrar Fase 3.
@@ -390,4 +397,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 8, Tarea 4: integración de descarga y aceptación en el portal cliente.
+Ejecutar Fase 8, Tarea 5: visibilidad operativa staff de documentos PDF y evidencia de aceptación.

@@ -59,10 +59,18 @@
 
 ## Tarea 4 — Portal cliente
 
-- [ ] Integrar descarga PDF y acción aceptar en la tarjeta de propuesta.
-- [ ] Añadir modal/panel de confirmación, nombre escrito, checkbox, estados elegible/vencida/aceptada/error y feedback accesible.
-- [ ] Añadir E2E portal: descargar, aceptar, reload, idempotencia visual, versión histórica sin acción y rechazo por vencimiento.
-- [ ] Commit `feat: add customer quote acceptance flow`.
+- [x] Integrar descarga PDF y acción aceptar en la tarjeta de propuesta.
+- [x] Añadir modal/panel de confirmación, nombre escrito, checkbox, estados elegible/vencida/aceptada/error y feedback accesible.
+- [x] Añadir E2E portal: descargar, aceptar, reload, idempotencia visual, versión histórica sin acción y rechazo por vencimiento.
+- [x] Commit `feat: add customer quote acceptance flow`.
+
+### Evidencia de Tarea 4
+
+- `ClientQuoteActions` integra descarga privada con URL efímera, estado de preparación/error, acción de aceptación sólo para versión vigente no vencida y estado explícito de aceptación.
+- El diálogo controla foco inicial, `Escape`, navegación `Tab`, click fuera no destructivo, reduced motion heredado, feedback `role=status`/`role=alert` y confirmación explícita con nombre y checkbox.
+- La UI no serializa hash, storage key ni datos internos; el refresh del expediente ocurre después de que el cliente ve el resultado de éxito y pulsa `Continuar`.
+- `tests/client-portal.spec.ts` pasó 2/2 con PostgreSQL/MinIO reales: descarga, popup/API firmado, validación negativa del checkbox, aceptación, estado posterior, reload, mensajería, archivos, Axe, consola y responsive móvil.
+- `npm run typecheck` y `npm run lint` pasaron después de la integración.
 
 ## Tarea 5 — Staff y operación
 
