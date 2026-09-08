@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getPrisma } from '@/server/db/client';
 import { consumeCustomerMagicLink, issueCustomerMagicLinkInTransaction } from '@/server/auth/service';
+import { fingerprintToken } from '@/server/auth/crypto';
 
 describe('customer auth invitation lifecycle', () => {
   it('activates an invited customer once without persisting the raw token', async () => {
@@ -50,6 +51,44 @@ describe('customer auth invitation lifecycle', () => {
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: user.id } });
       await prisma.user.delete({ where: { id: user.id } });
       await prisma.client.delete({ where: { id: client.id } });
+    }
+  }, 15_000);
+
+  it('rejects expired invitations and magic links belonging to employees', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-09-08T15:00:00.000Z');
+    const client = await prisma.client.create({ data: { displayName: `Invitation negative client ${suffix}` } });
+    const invited = await prisma.user.create({ data: { email: `expired-${suffix}@example.test`, emailNormalized: `expired-${suffix}@example.test`, displayName: 'Expired invitation', type: 'CUSTOMER', status: 'INVITED', clientId: client.id } });
+    const employee = await prisma.user.create({ data: { email: `employee-token-${suffix}@example.test`, emailNormalized: `employee-token-${suffix}@example.test`, displayName: 'Employee token', type: 'EMPLOYEE', status: 'ACTIVE' } });
+    const expiredRawToken = `expired-invite-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`;
+    const employeeRawToken = `employee-magic-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`;
+
+    try {
+      await prisma.$transaction(async (transaction) => {
+        await issueCustomerMagicLinkInTransaction(transaction, {
+          userId: invited.id,
+          context: { ipAddress: null, userAgent: 'integration-test' },
+          now,
+          rawToken: expiredRawToken,
+        });
+        await transaction.authToken.updateMany({ where: { userId: invited.id, type: 'MAGIC_LINK' }, data: { expiresAt: new Date(now.getTime() - 1_000) } });
+        await transaction.authToken.create({ data: { userId: employee.id, type: 'MAGIC_LINK', tokenHash: fingerprintToken(employeeRawToken), expiresAt: new Date(now.getTime() + 60_000) } });
+      });
+
+      await expect(consumeCustomerMagicLink(expiredRawToken, { ipAddress: '127.0.0.1', userAgent: 'integration-test' }, { prisma, now })).resolves.toEqual({ ok: false });
+      await expect(consumeCustomerMagicLink(employeeRawToken, { ipAddress: '127.0.0.1', userAgent: 'integration-test' }, { prisma, now })).resolves.toEqual({ ok: false });
+      expect((await prisma.user.findUnique({ where: { id: invited.id } }))?.status).toBe('INVITED');
+    } finally {
+      await prisma.session.deleteMany({ where: { userId: { in: [invited.id, employee.id] } } });
+      await prisma.authEvent.deleteMany({ where: { userId: { in: [invited.id, employee.id] } } });
+      await prisma.authToken.deleteMany({ where: { userId: { in: [invited.id, employee.id] } } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [invited.id, employee.id] } } });
+      await prisma.user.deleteMany({ where: { id: { in: [invited.id, employee.id] } } });
+      await prisma.client.delete({ where: { id: client.id } });
+      await prisma.$disconnect();
     }
   }, 15_000);
 });
