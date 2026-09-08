@@ -61,6 +61,11 @@ export async function seedDatabase(client: PrismaClient): Promise<void> {
     create: { key: 'system.schema_version', value: { version: 2 } },
   });
   await seedIdentityCatalog(client);
+  await client.folioSequence.upsert({
+    where: { key: 'quote_request' },
+    update: {},
+    create: { key: 'quote_request', nextValue: 1 },
+  });
 }
 
 const isEntrypoint = process.argv[1]

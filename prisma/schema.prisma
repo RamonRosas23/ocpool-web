@@ -38,6 +38,30 @@ enum ClientStatus {
   ARCHIVED
 }
 
+enum ContactStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum QuoteRequestOrigin {
+  PUBLIC_FORM
+  STAFF_CREATED
+}
+
+enum QuoteRequestStatus {
+  RECIBIDA
+  EN_REVISION
+  INFORMACION_REQUERIDA
+  EN_ELABORACION
+  COTIZACION_DISPONIBLE
+  EN_NEGOCIACION
+  PENDIENTE_DE_APROBACION
+  ACEPTADA
+  RECHAZADA
+  VENCIDA
+  CONVERTIDA_EN_PROYECTO
+}
+
 enum AuthTokenType {
   MAGIC_LINK
   PASSWORD_RESET
@@ -114,6 +138,8 @@ model Client {
   createdAt   DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime     @updatedAt @db.Timestamptz(3)
   users       User[]
+  contacts    ClientContact[]
+  quoteRequests QuoteRequest[]
 
   @@index([status, createdAt])
   @@map("clients")
@@ -133,16 +159,124 @@ model User {
   mfaLastAcceptedCounter Int?
   clientId            String?      @db.Uuid
   client              Client?      @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  contactProfile      ClientContact?
   roles               UserRole[]
   sessions            Session[]
   authTokens          AuthToken[]
   authEvents          AuthEvent[]
+  currentQuoteRequests QuoteRequest[] @relation("QuoteRequestCurrentAssignee")
+  requestAssignmentsAssigned RequestAssignment[] @relation("RequestAssignmentAssignee")
+  requestAssignmentsCreated RequestAssignment[] @relation("RequestAssignmentActor")
+  requestStatusChanges RequestStatusHistory[] @relation("RequestStatusHistoryActor")
   createdAt           DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime     @updatedAt @db.Timestamptz(3)
 
   @@index([clientId, status])
   @@index([type, status])
   @@map("users")
+}
+
+model ClientContact {
+  id              String        @id @default(uuid()) @db.Uuid
+  clientId        String        @db.Uuid
+  userId          String?       @unique @db.Uuid
+  displayName     String        @db.VarChar(180)
+  email           String        @db.VarChar(320)
+  emailNormalized String        @db.VarChar(320)
+  phone           String?       @db.VarChar(40)
+  roleTitle       String?       @db.VarChar(120)
+  isPrimary       Boolean       @default(false)
+  status          ContactStatus @default(ACTIVE)
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @db.Timestamptz(3)
+  client          Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  quoteRequests   QuoteRequest[]
+
+  @@unique([clientId, emailNormalized])
+  @@index([clientId, status, createdAt])
+  @@map("client_contacts")
+}
+
+model QuoteRequest {
+  id                String                  @id @default(uuid()) @db.Uuid
+  folio             String                  @unique @db.VarChar(24)
+  clientId          String                  @db.Uuid
+  contactId         String                  @db.Uuid
+  currentAssigneeId String?                 @db.Uuid
+  origin            QuoteRequestOrigin
+  status            QuoteRequestStatus      @default(RECIBIDA)
+  createdAt         DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                @updatedAt @db.Timestamptz(3)
+  client            Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  contact           ClientContact           @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  currentAssignee   User?                   @relation("QuoteRequestCurrentAssignee", fields: [currentAssigneeId], references: [id], onDelete: SetNull)
+  detail            QuoteRequestDetail?
+  assignments       RequestAssignment[]
+  statusHistory     RequestStatusHistory[]
+
+  @@index([status, createdAt])
+  @@index([currentAssigneeId, status, createdAt])
+  @@index([clientId, createdAt])
+  @@map("quote_requests")
+}
+
+model QuoteRequestDetail {
+  id             String       @id @default(uuid()) @db.Uuid
+  quoteRequestId String       @unique @db.Uuid
+  projectType    String       @db.VarChar(120)
+  location       String       @db.VarChar(180)
+  budgetCents    BigInt?
+  currencyCode   String       @default("MXN") @db.Char(3)
+  dimensions     String?      @db.VarChar(500)
+  description    String       @db.Text
+  consentAt      DateTime     @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
+  quoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+
+  @@map("quote_request_details")
+}
+
+model RequestAssignment {
+  id             String       @id @default(uuid()) @db.Uuid
+  quoteRequestId String       @db.Uuid
+  assignedToId   String       @db.Uuid
+  assignedById   String       @db.Uuid
+  reason         String?      @db.VarChar(500)
+  assignedAt     DateTime     @default(now()) @db.Timestamptz(3)
+  unassignedAt   DateTime?    @db.Timestamptz(3)
+  quoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  assignedTo     User         @relation("RequestAssignmentAssignee", fields: [assignedToId], references: [id], onDelete: Restrict)
+  assignedBy     User         @relation("RequestAssignmentActor", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@index([quoteRequestId, assignedAt])
+  @@index([assignedToId, unassignedAt, assignedAt])
+  @@map("request_assignments")
+}
+
+model RequestStatusHistory {
+  id             String            @id @default(uuid()) @db.Uuid
+  quoteRequestId String            @db.Uuid
+  fromStatus     QuoteRequestStatus?
+  toStatus       QuoteRequestStatus
+  changedById    String?           @db.Uuid
+  reason         String?           @db.VarChar(500)
+  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
+  quoteRequest   QuoteRequest       @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  changedBy      User?             @relation("RequestStatusHistoryActor", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([quoteRequestId, createdAt])
+  @@index([changedById, createdAt])
+  @@map("request_status_history")
+}
+
+model FolioSequence {
+  key       String   @id @db.VarChar(80)
+  nextValue Int      @default(1)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("folio_sequences")
 }
 
 model Role {
