@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const integerEnv = (defaultValue: number, minimum: number, maximum: number) => z.coerce.number().int().min(minimum).max(maximum).default(defaultValue);
 
-const mfaEncryptionKey = z.string().refine((value) => {
+const encryptionKey = z.string().refine((value) => {
   if (value.length !== 44 || !value.endsWith('=')) return false;
   try {
     const decoded = Buffer.from(value, 'base64');
@@ -18,7 +18,9 @@ const serverEnvSchema = z.object({
   }),
   APP_URL: z.string().url().default('http://localhost:3000'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  MFA_ENCRYPTION_KEY: mfaEncryptionKey,
+  MFA_ENCRYPTION_KEY: encryptionKey,
+  AUTH_DELIVERY_ENCRYPTION_KEY: encryptionKey,
+  TRUST_PROXY_HEADERS: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   SESSION_TTL_HOURS: integerEnv(24, 1, 168),
   AUTH_TOKEN_TTL_MINUTES: integerEnv(15, 5, 30),
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: integerEnv(5, 3, 20),

@@ -154,6 +154,14 @@ describe('identity and RBAC foundation', () => {
     expect(await consumeSingleUseToken(rawAuthToken, 'MAGIC_LINK', { prisma, now })).toBeNull();
     expect(issued.expiresAt.getTime()).toBeGreaterThan(now.getTime());
 
+    const concurrentRawToken = `concurrent-token-${suffix}-abcdefghijklmnopqrstuvwxyz`;
+    await issueAuthToken({ userId: user.id, type: 'MAGIC_LINK', requestedIp: null, userAgent: null }, { prisma, now, tokenGenerator: () => concurrentRawToken });
+    const concurrentResults = await Promise.all([
+      consumeSingleUseToken(concurrentRawToken, 'MAGIC_LINK', { prisma, now }),
+      consumeSingleUseToken(concurrentRawToken, 'MAGIC_LINK', { prisma, now }),
+    ]);
+    expect(concurrentResults.filter((result) => result !== null)).toHaveLength(1);
+
     await prisma.user.delete({ where: { id: user.id } });
     await prisma.client.delete({ where: { id: client.id } });
   }, 15_000);
@@ -164,6 +172,8 @@ describe('identity and RBAC foundation', () => {
     }
 
     const prisma = getPrisma();
+    await seedIdentityCatalog(prisma);
+    const adminRole = await prisma.role.findUniqueOrThrow({ where: { key: 'admin' } });
     const suffix = Date.now().toString();
     const email = `mfa-${suffix}@example.test`;
     const user = await prisma.user.create({
@@ -173,7 +183,7 @@ describe('identity and RBAC foundation', () => {
         displayName: 'MFA Test',
         type: 'EMPLOYEE',
         status: 'ACTIVE',
-        mfaRequired: true,
+        roles: { create: { roleId: adminRole.id } },
       },
     });
     const now = new Date('2026-01-01T00:00:00.000Z');
@@ -221,7 +231,8 @@ describe('identity and RBAC foundation', () => {
     const adminRole = await prisma.role.findUniqueOrThrow({ where: { key: 'admin' } });
     const suffix = Date.now().toString();
     const now = new Date('2026-01-02T00:00:00.000Z');
-    const context = { ipAddress: `10.0.0.${Number(suffix.slice(-3)) % 200 + 1}`, userAgent: 'integration-auth-test' };
+    const hostOctet = Number(suffix.slice(-3)) % 200 + 1;
+    const context = { ipAddress: `10.0.0.${hostOctet}`, userAgent: 'integration-auth-test' };
     const password = 'EmployeePassword123!';
     const passwordHash = await hashPassword(password);
 
@@ -259,12 +270,12 @@ describe('identity and RBAC foundation', () => {
         roles: { create: { roleId: adminRole.id } },
       },
     });
-    expect((await loginEmployee({ email: adminEmail, password, context: { ...context, ipAddress: '10.0.1.1' } }, { prisma, now, sessionTokenGenerator: () => `admin-no-mfa-${suffix}-abcdefghijklmnopqrstuvwxyz` })).ok).toBe(false);
-    const adminContext = { ...context, ipAddress: '10.0.1.2' };
+    expect((await loginEmployee({ email: adminEmail, password, context: { ...context, ipAddress: `10.0.1.${hostOctet}` } }, { prisma, now, sessionTokenGenerator: () => `admin-no-mfa-${suffix}-abcdefghijklmnopqrstuvwxyz` })).ok).toBe(false);
+    const adminContext = { ...context, ipAddress: `10.0.1.${(hostOctet % 200) + 1}` };
     const adminCode = generateTotpCode(enrollment.secret, now.getTime());
     const adminLogin = await loginEmployee({ email: adminEmail, password, mfaCode: adminCode, context: adminContext }, { prisma, now, sessionTokenGenerator: () => `admin-session-${suffix}-abcdefghijklmnopqrstuvwxyz` });
     expect(adminLogin.ok).toBe(true);
-    expect((await loginEmployee({ email: adminEmail, password, mfaCode: adminCode, context: { ...adminContext, ipAddress: '10.0.1.3' } }, { prisma, now, sessionTokenGenerator: () => `admin-replay-${suffix}-abcdefghijklmnopqrstuvwxyz` })).ok).toBe(false);
+    expect((await loginEmployee({ email: adminEmail, password, mfaCode: adminCode, context: { ...adminContext, ipAddress: `10.0.1.${(hostOctet % 198) + 3}` } }, { prisma, now, sessionTokenGenerator: () => `admin-replay-${suffix}-abcdefghijklmnopqrstuvwxyz` })).ok).toBe(false);
     expect((await prisma.user.findUnique({ where: { id: admin.id } }))?.mfaLastAcceptedCounter).not.toBeNull();
 
     const client = await prisma.client.create({ data: { displayName: `Customer Auth ${suffix}` } });
@@ -272,22 +283,26 @@ describe('identity and RBAC foundation', () => {
     const customer = await prisma.user.create({
       data: { email: customerEmail, emailNormalized: customerEmail, displayName: 'Customer Auth Test', type: 'CUSTOMER', status: 'ACTIVE', clientId: client.id },
     });
-    await requestCustomerMagicLink({ email: customerEmail, context: { ...context, ipAddress: '10.0.2.1' } }, { prisma, now, tokenGenerator: () => `customer-link-${suffix}-abcdefghijklmnopqrstuvwxyz` });
+    await requestCustomerMagicLink({ email: customerEmail, context: { ...context, ipAddress: `10.0.2.${hostOctet}` } }, { prisma, now, tokenGenerator: () => `customer-link-${suffix}-abcdefghijklmnopqrstuvwxyz` });
     const customerOutbox = await prisma.outboxEvent.findFirstOrThrow({ where: { aggregateId: customer.id, eventType: 'AUTH.CUSTOMER_MAGIC_LINK' }, orderBy: { createdAt: 'desc' } });
     const customerPayload = customerOutbox.payload as { tokenCiphertext: string };
-    const customerToken = decryptSecret(customerPayload.tokenCiphertext, readServerEnv().MFA_ENCRYPTION_KEY);
+    const customerToken = decryptSecret(customerPayload.tokenCiphertext, readServerEnv().AUTH_DELIVERY_ENCRYPTION_KEY);
     expect(JSON.stringify(customerOutbox.payload)).not.toContain(customerToken);
-    const customerLogin = await consumeCustomerMagicLink(customerToken, { ...context, ipAddress: '10.0.2.2' }, { prisma, now, sessionTokenGenerator: () => `customer-session-${suffix}-abcdefghijklmnopqrstuvwxyz` });
+    const customerLogin = await consumeCustomerMagicLink(customerToken, { ...context, ipAddress: `10.0.2.${(hostOctet % 200) + 1}` }, { prisma, now, sessionTokenGenerator: () => `customer-session-${suffix}-abcdefghijklmnopqrstuvwxyz` });
     expect(customerLogin.ok).toBe(true);
     expect((await consumeCustomerMagicLink(customerToken, context, { prisma, now, sessionTokenGenerator: () => `customer-replay-${suffix}-abcdefghijklmnopqrstuvwxyz` })).ok).toBe(false);
 
-    await requestPasswordRecovery({ email: employeeEmail, context: { ...context, ipAddress: '10.0.3.1' } }, { prisma, now, tokenGenerator: () => `recovery-${suffix}-abcdefghijklmnopqrstuvwxyz` });
+    await requestPasswordRecovery({ email: employeeEmail, context: { ...context, ipAddress: `10.0.3.${hostOctet}` } }, { prisma, now, tokenGenerator: () => `recovery-${suffix}-abcdefghijklmnopqrstuvwxyz` });
     const recoveryOutbox = await prisma.outboxEvent.findFirstOrThrow({ where: { aggregateId: employee.id, eventType: 'AUTH.EMPLOYEE_PASSWORD_RESET' }, orderBy: { createdAt: 'desc' } });
     const recoveryPayload = recoveryOutbox.payload as { tokenCiphertext: string };
-    const recoveryToken = decryptSecret(recoveryPayload.tokenCiphertext, readServerEnv().MFA_ENCRYPTION_KEY);
+    const recoveryToken = decryptSecret(recoveryPayload.tokenCiphertext, readServerEnv().AUTH_DELIVERY_ENCRYPTION_KEY);
     expect(JSON.stringify(recoveryOutbox.payload)).not.toContain(recoveryToken);
+    await requestPasswordRecovery({ email: employeeEmail, context: { ...context, ipAddress: `10.0.3.${(hostOctet % 200) + 1}` } }, { prisma, now, tokenGenerator: () => `recovery-two-${suffix}-abcdefghijklmnopqrstuvwxyz` });
+    const secondRecoveryOutbox = await prisma.outboxEvent.findFirstOrThrow({ where: { aggregateId: employee.id, eventType: 'AUTH.EMPLOYEE_PASSWORD_RESET', id: { not: recoveryOutbox.id } }, orderBy: { createdAt: 'desc' } });
+    const secondRecoveryPayload = secondRecoveryOutbox.payload as { tokenCiphertext: string };
+    const secondRecoveryToken = decryptSecret(secondRecoveryPayload.tokenCiphertext, readServerEnv().AUTH_DELIVERY_ENCRYPTION_KEY);
     expect(await consumePasswordRecovery({ rawToken: recoveryToken, newPassword: 'NewEmployeePassword123!', context }, { prisma, now })).toBe(true);
-    expect(await consumePasswordRecovery({ rawToken: recoveryToken, newPassword: 'AnotherPassword123!', context }, { prisma, now })).toBe(false);
+    expect(await consumePasswordRecovery({ rawToken: secondRecoveryToken, newPassword: 'AnotherPassword123!', context }, { prisma, now })).toBe(false);
     if (login.ok) expect(await getActorFromSession(login.rawToken, { prisma, now })).toBeNull();
     const authEvents = await prisma.authEvent.findMany({ where: { userId: { in: [employee.id, admin.id, customer.id] } } });
     const serializedEvents = JSON.stringify(authEvents);
@@ -295,6 +310,7 @@ describe('identity and RBAC foundation', () => {
     expect(serializedEvents).not.toContain(adminCode);
     expect(serializedEvents).not.toContain(customerToken);
     expect(serializedEvents).not.toContain(recoveryToken);
+    expect(serializedEvents).not.toContain(secondRecoveryToken);
 
     await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [employee.id, customer.id] } } });
     await prisma.user.deleteMany({ where: { id: { in: [employee.id, admin.id, customer.id] } } });
@@ -310,12 +326,15 @@ describe('identity and RBAC foundation', () => {
     const suffix = Date.now().toString();
     const email = `route-${suffix}@example.test`;
     const password = 'RoutePassword123!';
+    const routeIp = `10.10.0.${Number(suffix.slice(-3)) % 200 + 1}`;
+    const previousTrustProxyHeaders = process.env.TRUST_PROXY_HEADERS;
+    process.env.TRUST_PROXY_HEADERS = 'true';
     const user = await prisma.user.create({
       data: { email, emailNormalized: email, displayName: 'Route Test', type: 'EMPLOYEE', status: 'ACTIVE', passwordHash: await hashPassword(password) },
     });
     const request = (body: Record<string, unknown>) => new NextRequest('http://localhost:3000/api/auth/employee/login', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', origin: 'http://localhost:3000' },
+      headers: { 'content-type': 'application/json', origin: 'http://localhost:3000', 'x-real-ip': routeIp },
       body: JSON.stringify(body),
     });
 
@@ -326,7 +345,7 @@ describe('identity and RBAC foundation', () => {
     expect((await unknownResponse.json()).error.message).toBe((await wrongResponse.json()).error.message);
     const foreignLogin = await employeeLoginRoute(new NextRequest('http://localhost:3000/api/auth/employee/login', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', origin: 'https://attacker.example' },
+      headers: { 'content-type': 'application/json', origin: 'https://attacker.example', 'x-real-ip': routeIp },
       body: JSON.stringify({ email, password }),
     }));
     expect(foreignLogin.status).toBe(403);
@@ -352,6 +371,8 @@ describe('identity and RBAC foundation', () => {
     expect((await sessionGetRoute(new NextRequest('http://localhost:3000/api/auth/session', { headers: { cookie: `ocpool_session=${sessionCookie}` } }))).status).toBe(401);
 
     await prisma.user.delete({ where: { id: user.id } });
+    if (previousTrustProxyHeaders === undefined) delete process.env.TRUST_PROXY_HEADERS;
+    else process.env.TRUST_PROXY_HEADERS = previousTrustProxyHeaders;
   }, 30_000);
 
   afterAll(async () => {

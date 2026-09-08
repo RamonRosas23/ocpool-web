@@ -41,42 +41,50 @@ export async function getSessionContext(rawToken: string, dependencies: SessionD
 
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
-  const session = await prisma.session.findUnique({
-    where: { tokenHash: fingerprintToken(rawToken) },
-    include: {
-      user: {
-        include: {
-          roles: {
-            include: {
-              role: { include: { permissions: { include: { permission: true } } } },
+  return prisma.$transaction(async (transaction) => {
+    const session = await transaction.session.findUnique({
+      where: { tokenHash: fingerprintToken(rawToken) },
+      include: {
+        user: {
+          include: {
+            roles: {
+              include: {
+                role: { include: { permissions: { include: { permission: true } } } },
+              },
             },
           },
         },
       },
-    },
+    });
+
+    if (!session || !compareToken(rawToken, session.tokenHash)) return null;
+    if (session.revokedAt || session.expiresAt <= now) return null;
+    if (session.user.status !== 'ACTIVE') return null;
+    const requiresMfa = session.user.type === 'EMPLOYEE'
+      && (session.user.mfaRequired || session.user.roles.some(({ role }) => role.key === 'admin'));
+    if (requiresMfa && !session.mfaVerified) return null;
+
+    const touched = await transaction.session.updateMany({
+      where: { id: session.id, revokedAt: null, expiresAt: { gt: now } },
+      data: { lastSeenAt: now },
+    });
+    if (touched.count !== 1) return null;
+
+    const permissionKeys = new Set(
+      session.user.roles.flatMap(({ role }) => role.permissions.map(({ permission }) => permission.key)),
+    );
+
+    return {
+      sessionId: session.id,
+      actor: {
+        userId: session.user.id,
+        type: session.user.type,
+        clientId: session.user.clientId,
+        permissionKeys,
+        mfaVerified: session.mfaVerified,
+      },
+    };
   });
-
-  if (!session || !compareToken(rawToken, session.tokenHash)) return null;
-  if (session.revokedAt || session.expiresAt <= now) return null;
-  if (session.user.status !== 'ACTIVE') return null;
-  if (session.user.type === 'EMPLOYEE' && session.user.mfaRequired && !session.mfaVerified) return null;
-
-  await prisma.session.update({ where: { id: session.id }, data: { lastSeenAt: now } });
-
-  const permissionKeys = new Set(
-    session.user.roles.flatMap(({ role }) => role.permissions.map(({ permission }) => permission.key)),
-  );
-
-  return {
-    sessionId: session.id,
-    actor: {
-      userId: session.user.id,
-      type: session.user.type,
-      clientId: session.user.clientId,
-      permissionKeys,
-      mfaVerified: session.mfaVerified,
-    },
-  };
 }
 
 export async function getActorFromSession(rawToken: string, dependencies: SessionDependencies = {}): Promise<Actor | null> {

@@ -106,7 +106,7 @@ async function createDeliveryToken(client: Prisma.TransactionClient, input: {
       aggregateId: input.userId,
       payload: {
         tokenId: token.id,
-        tokenCiphertext: encryptSecret(input.rawToken, readServerEnv().MFA_ENCRYPTION_KEY),
+        tokenCiphertext: encryptSecret(input.rawToken, readServerEnv().AUTH_DELIVERY_ENCRYPTION_KEY),
         tokenType: input.type,
       },
     },
@@ -140,9 +140,7 @@ export async function loginEmployee(input: {
   const now = dependencies.now ?? new Date();
   const email = normalizeEmail(input.email);
   const allowedByEmail = await isAllowed({ scope: 'employee-login-email', key: email }, now);
-  const allowedByIp = input.context.ipAddress
-    ? await isAllowed({ scope: 'employee-login-ip', key: input.context.ipAddress }, now)
-    : true;
+  const allowedByIp = await isAllowed({ scope: 'employee-login-ip', key: input.context.ipAddress ?? 'unknown-client' }, now);
 
   const user = await prisma.user.findUnique({
     where: { emailNormalized: email },
@@ -218,9 +216,7 @@ export async function requestCustomerMagicLink(input: { email: string; context: 
   const now = dependencies.now ?? new Date();
   const email = normalizeEmail(input.email);
   const allowedByEmail = await isAllowed({ scope: 'customer-magic-link-email', key: email }, now);
-  const allowedByIp = input.context.ipAddress
-    ? await isAllowed({ scope: 'customer-magic-link-ip', key: input.context.ipAddress }, now)
-    : true;
+  const allowedByIp = await isAllowed({ scope: 'customer-magic-link-ip', key: input.context.ipAddress ?? 'unknown-client' }, now);
   if (!allowedByEmail || !allowedByIp) return;
 
   const user = await prisma.user.findUnique({ where: { emailNormalized: email }, include: { client: true } });
@@ -250,14 +246,15 @@ export async function consumeCustomerMagicLink(rawToken: string, context: AuthRe
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
   if (!rawToken || rawToken.length < 40) return { ok: false };
-  if (context.ipAddress && !(await isAllowed({ scope: 'customer-magic-link-consume-ip', key: context.ipAddress }, now))) return { ok: false };
+  if (!(await isAllowed({ scope: 'customer-magic-link-consume-ip', key: context.ipAddress ?? 'unknown-client' }, now))) return { ok: false };
 
   const sessionRawToken = (dependencies.sessionTokenGenerator ?? generateOpaqueToken)();
   const result = await prisma.$transaction(async (transaction) => {
     const token = await transaction.authToken.findUnique({ where: { tokenHash: fingerprintToken(rawToken) }, include: { user: { include: { client: true } } } });
     if (!token || token.type !== 'MAGIC_LINK' || token.consumedAt || token.expiresAt <= now) return null;
+    if (token.user.type !== 'CUSTOMER' || token.user.status !== 'ACTIVE' || token.user.client?.status !== 'ACTIVE') return null;
     const consumed = await transaction.authToken.updateMany({ where: { id: token.id, consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } });
-    if (consumed.count !== 1 || token.user.type !== 'CUSTOMER' || token.user.status !== 'ACTIVE' || token.user.client?.status !== 'ACTIVE') return null;
+    if (consumed.count !== 1) return null;
 
     const session = await createSessionInTransaction(transaction, { userId: token.userId, ipAddress: context.ipAddress, userAgent: context.userAgent, mfaVerified: true, now, rawToken: sessionRawToken });
     await recordAuthEvent(transaction, { eventType: 'MAGIC_LINK_CONSUMED', outcome: 'SUCCESS', userId: token.userId, context, metadata: { tokenId: token.id } });
@@ -273,9 +270,7 @@ export async function requestPasswordRecovery(input: { email: string; context: A
   const now = dependencies.now ?? new Date();
   const email = normalizeEmail(input.email);
   const allowedByEmail = await isAllowed({ scope: 'password-recovery-email', key: email }, now);
-  const allowedByIp = input.context.ipAddress
-    ? await isAllowed({ scope: 'password-recovery-ip', key: input.context.ipAddress }, now)
-    : true;
+  const allowedByIp = await isAllowed({ scope: 'password-recovery-ip', key: input.context.ipAddress ?? 'unknown-client' }, now);
   if (!allowedByEmail || !allowedByIp) return;
 
   const user = await prisma.user.findUnique({ where: { emailNormalized: email } });
@@ -295,17 +290,20 @@ export async function consumePasswordRecovery(input: { rawToken: string; newPass
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
   if (!input.rawToken || input.rawToken.length < 40) return false;
-  if (input.context.ipAddress && !(await isAllowed({ scope: 'password-recovery-consume-ip', key: input.context.ipAddress }, now))) return false;
+  if (!(await isAllowed({ scope: 'password-recovery-consume-ip', key: input.context.ipAddress ?? 'unknown-client' }, now))) return false;
+  const candidate = await prisma.authToken.findUnique({ where: { tokenHash: fingerprintToken(input.rawToken) }, include: { user: true } });
+  if (!candidate || candidate.type !== 'PASSWORD_RESET' || candidate.consumedAt || candidate.expiresAt <= now || candidate.user.type !== 'EMPLOYEE' || candidate.user.status !== 'ACTIVE') return false;
   const passwordHash = await hashPassword(input.newPassword);
 
   return prisma.$transaction(async (transaction) => {
     const token = await transaction.authToken.findUnique({ where: { tokenHash: fingerprintToken(input.rawToken) } });
     if (!token || token.type !== 'PASSWORD_RESET' || token.consumedAt || token.expiresAt <= now) return false;
-    const consumed = await transaction.authToken.updateMany({ where: { id: token.id, consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } });
-    if (consumed.count !== 1) return false;
     const user = await transaction.user.findUnique({ where: { id: token.userId } });
     if (!user || user.type !== 'EMPLOYEE' || user.status !== 'ACTIVE') return false;
+    const consumed = await transaction.authToken.updateMany({ where: { id: token.id, consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } });
+    if (consumed.count !== 1) return false;
     await transaction.user.update({ where: { id: user.id }, data: { passwordHash } });
+    await transaction.authToken.updateMany({ where: { userId: user.id, type: 'PASSWORD_RESET', consumedAt: null, id: { not: token.id } }, data: { consumedAt: now } });
     await transaction.session.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: now } });
     await recordAuthEvent(transaction, { eventType: 'PASSWORD_RESET_CONSUMED', outcome: 'SUCCESS', userId: user.id, context: input.context, metadata: { tokenId: token.id } });
     return true;
@@ -318,7 +316,8 @@ export async function logout(rawToken: string, context: AuthRequestContext, depe
   if (!session) return;
   const now = dependencies.now ?? new Date();
   await prisma.$transaction(async (transaction) => {
-    await transaction.session.updateMany({ where: { id: session.sessionId, revokedAt: null }, data: { revokedAt: now } });
+    const revoked = await transaction.session.updateMany({ where: { id: session.sessionId, revokedAt: null }, data: { revokedAt: now } });
+    if (revoked.count !== 1) return;
     await recordAuthEvent(transaction, { eventType: 'LOGOUT', outcome: 'SUCCESS', userId: session.actor.userId, context });
     await recordAuthEvent(transaction, { eventType: 'SESSION_REVOKED', outcome: 'SUCCESS', userId: session.actor.userId, context, metadata: { sessionId: session.sessionId } });
   });
