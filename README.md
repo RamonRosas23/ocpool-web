@@ -78,6 +78,12 @@ Usa migraciones Prisma para cambiar el schema. No uses `prisma db push` como flu
 
 Mailpit captura el correo SMTP de desarrollo y permite inspeccionarlo en su interfaz web. No envía mensajes a destinatarios reales.
 
+Los procedimientos operativos están separados de la guía de instalación:
+
+- [Runbook de desarrollo local](docs/runbooks/local-development.md) — recuperación segura de servicios, pruebas y datos desechables.
+- [Runbook de backup y restauración](docs/runbooks/backup-restore.md) — backup local PostgreSQL y restauración sólo en un destino de verificación explícito.
+- [Runbook de preparación para producción](docs/runbooks/production-readiness.md) — evidencia `PASS`, bloqueos `BLOCKED` y advertencias `WARN` sin convertir decisiones externas en supuestos.
+
 El worker de notificaciones se ejecuta separado de Next.js:
 
 ```powershell
@@ -152,6 +158,14 @@ Para validar una variable necesaria antes de un comando:
 ```powershell
 node scripts/require-env.mjs DATABASE_URL
 ```
+
+La política de runtime productivo se valida de forma explícita y permanece separada del build local:
+
+```powershell
+npm run validate:production
+```
+
+Con `.env.example` el resultado esperado es `BLOCKED`; no se deben reutilizar secretos ni endpoints locales para publicar el sistema. `/api/health` indica liveness y `/api/ready` indica disponibilidad de PostgreSQL para un supervisor o balanceador.
 
 ## Estructura relevante
 

@@ -89,17 +89,17 @@ Un balanceador puede distinguir liveness de readiness, las respuestas son segura
 - Test: `tests/unit/runbook-contract.test.ts`
 
 **Interfaces:**
-- Consumes: Compose PostgreSQL/MinIO, `DATABASE_URL`, migraciones Prisma y el contrato privado de storage.
+- Consumes: Compose PostgreSQL/MinIO, migraciones Prisma y el contrato privado de storage; los scripts locales usan el servicio Compose y no imprimen ni reciben credenciales en la línea de comandos.
 - Produces: comandos documentados para backup, restauración en destino desechable, verificación de schema/seed y checklist `PASS`/`BLOCKED`/`WARN`.
 
-- [ ] Escribir prueba de contrato que exija secciones de target explícito, confirmación, no producción, verificación de hash/restore, objetos privados y cleanup exacto.
-- [ ] Implementar backup PostgreSQL con archivo de salida explícito, creación segura de directorio y nombre timestamped sin incluir credenciales en logs.
-- [ ] Implementar restore verify bloqueado por defecto: exige parámetro de archivo, nombre de base local desechable y confirmación literal antes de eliminar/recrear datos.
-- [ ] Documentar estrategia de backup de objetos MinIO/S3 sin prometer snapshot productivo que el proveedor no haya confirmado.
-- [ ] Documentar retención por clase de dato como matriz de decisiones pendientes, sin plazos inventados ni comando de purga automática.
-- [ ] Documentar supervisor externo para el worker, shutdown, recuperación, alertas mínimas y significado de `SENT`.
-- [ ] Ejecutar prueba de contrato, revisar comandos en PowerShell y `git diff --check`.
-- [ ] Commit: `docs: add continuity and backup runbooks`.
+- [x] Escribir prueba de contrato que exija secciones de target explícito, confirmación, no producción, verificación de hash/restore, objetos privados y cleanup exacto.
+- [x] Implementar backup PostgreSQL con archivo de salida explícito, creación segura de directorio y nombre recomendado con fecha sin incluir credenciales en logs.
+- [x] Implementar restore verify bloqueado por defecto: exige parámetro de archivo, nombre de base local desechable y confirmación literal antes de eliminar/recrear datos.
+- [x] Documentar estrategia de backup de objetos MinIO/S3 sin prometer snapshot productivo que el proveedor no haya confirmado.
+- [x] Documentar retención por clase de dato como matriz de decisiones pendientes, sin plazos inventados ni comando de purga automática.
+- [x] Documentar supervisor externo para el worker, shutdown, recuperación, alertas mínimas y significado de `SENT`.
+- [x] Ejecutar prueba de contrato, revisar comandos en PowerShell y `git diff --check`.
+- [x] Commit: `docs: add continuity and backup runbooks`.
 
 ### Criterio de terminado
 

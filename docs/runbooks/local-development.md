@@ -146,6 +146,10 @@ npm audit --omit=dev
 
 `npm test` incluye `npm run typecheck`, pruebas unitarias, integración PostgreSQL, contrato de contenido, build y regresiones E2E públicas/foundation.
 
+## Backup y restauración verificable
+
+Para proteger el trabajo local o comprobar una recuperación, sigue [backup-restore.md](backup-restore.md). El procedimiento genera un checksum y restaura únicamente en `ocpool_restore_verify`, una base desechable que requiere confirmación literal. No restaures sobre `ocpool_dev` ni uses estos comandos con credenciales de producción.
+
 ## Restablecer únicamente los datos locales desechables
 
 Esta operación elimina todos los datos de desarrollo guardados en el volumen Docker `ocpool-postgres-data`. Requiere confirmación explícita del desarrollador responsable porque no es recuperable desde el entorno local:
