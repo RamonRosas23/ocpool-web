@@ -1,0 +1,80 @@
+export const AUTH_SESSION_COOKIE = 'ocpool_session';
+
+export const PERMISSION_CATALOG = [
+  { key: 'identity.session.read', description: 'Consultar sesiones propias o autorizadas.' },
+  { key: 'identity.session.revoke', description: 'Revocar sesiones de usuarios autorizados.' },
+  { key: 'identity.users.read', description: 'Consultar usuarios autorizados.' },
+  { key: 'identity.users.manage', description: 'Administrar usuarios y estados de acceso.' },
+  { key: 'identity.roles.manage', description: 'Administrar roles y permisos.' },
+  { key: 'portal.self.read', description: 'Consultar la información propia del portal.' },
+  { key: 'portal.self.authenticate', description: 'Autenticarse en el portal del cliente.' },
+  { key: 'quotes.read', description: 'Consultar solicitudes y cotizaciones autorizadas.' },
+  { key: 'quotes.create', description: 'Crear solicitudes o cotizaciones.' },
+  { key: 'quotes.edit_prices', description: 'Modificar precios de cotización.' },
+  { key: 'quotes.apply_discount', description: 'Aplicar descuentos a cotizaciones.' },
+  { key: 'quotes.approve_discount', description: 'Aprobar descuentos que requieren autorización.' },
+  { key: 'quotes.send', description: 'Enviar cotizaciones al cliente.' },
+  { key: 'metrics.read', description: 'Consultar métricas operativas.' },
+] as const;
+
+export const ROLE_DEFINITIONS = {
+  customer: {
+    name: 'Cliente',
+    description: 'Acceso al portal propio del cliente.',
+    systemManaged: true,
+    permissions: ['portal.self.read', 'portal.self.authenticate', 'identity.session.read'],
+  },
+  sales: {
+    name: 'Ventas',
+    description: 'Operación comercial de solicitudes y cotizaciones.',
+    systemManaged: true,
+    permissions: [
+      'identity.session.read',
+      'identity.session.revoke',
+      'identity.users.read',
+      'portal.self.read',
+      'quotes.read',
+      'quotes.create',
+      'quotes.send',
+    ],
+  },
+  manager: {
+    name: 'Gerencia',
+    description: 'Supervisión comercial y aprobación de descuentos.',
+    systemManaged: true,
+    permissions: [
+      'identity.session.read',
+      'identity.session.revoke',
+      'identity.users.read',
+      'portal.self.read',
+      'quotes.read',
+      'quotes.create',
+      'quotes.send',
+      'quotes.edit_prices',
+      'quotes.apply_discount',
+      'quotes.approve_discount',
+      'metrics.read',
+    ],
+  },
+  admin: {
+    name: 'Administrador',
+    description: 'Administración completa de la plataforma con MFA obligatorio.',
+    systemManaged: true,
+    permissions: PERMISSION_CATALOG.map(({ key }) => key),
+  },
+} as const;
+
+export const AUTH_POLICY = {
+  password: {
+    algorithm: 'argon2id',
+    memoryCostKiB: 19_456,
+    timeCost: 2,
+    parallelism: 1,
+    outputLength: 32,
+  },
+  opaqueTokenBytes: 32,
+  encryption: {
+    algorithm: 'aes-256-gcm',
+    ivBytes: 12,
+  },
+} as const;
