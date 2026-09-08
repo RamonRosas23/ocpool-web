@@ -62,6 +62,26 @@ enum QuoteRequestStatus {
   CONVERTIDA_EN_PROYECTO
 }
 
+enum CatalogStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum PriceListStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum QuoteVersionStatus {
+  BORRADOR
+  EN_REVISION
+  ENVIADA
+  EN_NEGOCIACION
+  ACEPTADA
+  RECHAZADA
+  VENCIDA
+}
+
 enum AuthTokenType {
   MAGIC_LINK
   PASSWORD_RESET
@@ -140,6 +160,7 @@ model Client {
   users       User[]
   contacts    ClientContact[]
   quoteRequests QuoteRequest[]
+  quotes      Quote[]
 
   @@index([status, createdAt])
   @@map("clients")
@@ -168,6 +189,8 @@ model User {
   requestAssignmentsAssigned RequestAssignment[] @relation("RequestAssignmentAssignee")
   requestAssignmentsCreated RequestAssignment[] @relation("RequestAssignmentActor")
   requestStatusChanges RequestStatusHistory[] @relation("RequestStatusHistoryActor")
+  quoteVersionsCreated QuoteVersion[] @relation("QuoteVersionCreator")
+  quoteStatusChanges QuoteStatusHistory[] @relation("QuoteStatusHistoryActor")
   createdAt           DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime     @updatedAt @db.Timestamptz(3)
 
@@ -213,12 +236,14 @@ model QuoteRequest {
   contact           ClientContact           @relation(fields: [contactId], references: [id], onDelete: Restrict)
   currentAssignee   User?                   @relation("QuoteRequestCurrentAssignee", fields: [currentAssigneeId], references: [id], onDelete: SetNull)
   detail            QuoteRequestDetail?
+  quotes            Quote[]
   assignments       RequestAssignment[]
   statusHistory     RequestStatusHistory[]
 
   @@index([status, createdAt])
   @@index([currentAssigneeId, status, createdAt])
   @@index([clientId, createdAt])
+  @@unique([id, clientId])
   @@map("quote_requests")
 }
 
@@ -237,6 +262,163 @@ model QuoteRequestDetail {
   quoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
 
   @@map("quote_request_details")
+}
+
+model CatalogCategory {
+  id          String        @id @default(uuid()) @db.Uuid
+  code        String        @unique @db.VarChar(64)
+  name        String        @db.VarChar(180)
+  description String?       @db.VarChar(500)
+  status      CatalogStatus @default(ACTIVE)
+  sortOrder   Int           @default(0)
+  parentId    String?       @db.Uuid
+  parent      CatalogCategory?  @relation("CatalogCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    CatalogCategory[] @relation("CatalogCategoryTree")
+  items       CatalogItem[]
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@index([parentId, status, sortOrder])
+  @@index([status, sortOrder, name])
+  @@map("catalog_categories")
+}
+
+model CatalogItem {
+  id          String        @id @default(uuid()) @db.Uuid
+  code        String        @unique @db.VarChar(64)
+  name        String        @db.VarChar(180)
+  description String?       @db.Text
+  unit        String        @db.VarChar(40)
+  status      CatalogStatus @default(ACTIVE)
+  categoryId  String?       @db.Uuid
+  category    CatalogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  prices      PriceListItem[]
+  quoteLines  QuoteLineSnapshot[]
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@index([status, name])
+  @@index([categoryId, status, name])
+  @@map("catalog_items")
+}
+
+model PriceList {
+  id          String          @id @default(uuid()) @db.Uuid
+  code        String          @unique @db.VarChar(64)
+  name        String          @db.VarChar(180)
+  currencyCode String         @db.Char(3)
+  status      PriceListStatus @default(ACTIVE)
+  validFrom   DateTime        @default(now()) @db.Timestamptz(3)
+  validUntil  DateTime?       @db.Timestamptz(3)
+  items       PriceListItem[]
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+
+  @@index([currencyCode, status, validFrom])
+  @@map("price_lists")
+}
+
+model PriceListItem {
+  id             String      @id @default(uuid()) @db.Uuid
+  priceListId    String      @db.Uuid
+  catalogItemId  String      @db.Uuid
+  unitPriceMinor BigInt
+  validFrom      DateTime    @default(now()) @db.Timestamptz(3)
+  validUntil     DateTime?   @db.Timestamptz(3)
+  priceList      PriceList   @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  catalogItem    CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@unique([priceListId, catalogItemId, validFrom])
+  @@index([priceListId, catalogItemId, validFrom, validUntil])
+  @@map("price_list_items")
+}
+
+model Quote {
+  id              String        @id @default(uuid()) @db.Uuid
+  quoteRequestId  String        @db.Uuid
+  clientId        String        @db.Uuid
+  currentVersionId String?      @unique @db.Uuid
+  quoteRequest    QuoteRequest  @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Restrict)
+  client          Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  currentVersion  QuoteVersion? @relation("QuoteCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions        QuoteVersion[] @relation("QuoteVersions")
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@unique([quoteRequestId])
+  @@index([clientId, createdAt])
+  @@map("quotes")
+}
+
+model QuoteVersion {
+  id              String            @id @default(uuid()) @db.Uuid
+  quoteId         String            @db.Uuid
+  versionNumber   Int               @default(1)
+  status          QuoteVersionStatus @default(BORRADOR)
+  currencyCode    String            @db.Char(3)
+  validUntil      DateTime?         @db.Timestamptz(3)
+  subtotalMinor   BigInt            @default(0)
+  discountTotalMinor BigInt         @default(0)
+  taxableTotalMinor  BigInt         @default(0)
+  taxTotalMinor   BigInt            @default(0)
+  totalMinor      BigInt            @default(0)
+  createdById     String            @db.Uuid
+  quote           Quote             @relation("QuoteVersions", fields: [quoteId], references: [id], onDelete: Cascade)
+  currentForQuote Quote?            @relation("QuoteCurrentVersion")
+  createdBy       User              @relation("QuoteVersionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  lines           QuoteLineSnapshot[]
+  statusHistory   QuoteStatusHistory[]
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(3)
+
+  @@unique([quoteId, versionNumber])
+  @@index([quoteId, status, createdAt])
+  @@index([createdById, createdAt])
+  @@map("quote_versions")
+}
+
+model QuoteLineSnapshot {
+  id                 String       @id @default(uuid()) @db.Uuid
+  quoteVersionId     String       @db.Uuid
+  catalogItemId      String       @db.Uuid
+  catalogItemCode    String       @db.VarChar(64)
+  name               String       @db.VarChar(180)
+  description        String?      @db.Text
+  unit               String       @db.VarChar(40)
+  quantityMilliunits BigInt
+  currencyCode       String       @db.Char(3)
+  unitPriceMinor     BigInt
+  discountBasisPoints Int         @default(0)
+  discountMinor      BigInt       @default(0)
+  taxableMinor       BigInt       @default(0)
+  taxBasisPoints     Int          @default(0)
+  taxMinor           BigInt       @default(0)
+  subtotalMinor      BigInt       @default(0)
+  totalMinor         BigInt       @default(0)
+  quoteVersion       QuoteVersion @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
+  catalogItem        CatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+
+  @@index([quoteVersionId])
+  @@index([catalogItemId, quoteVersionId])
+  @@map("quote_line_snapshots")
+}
+
+model QuoteStatusHistory {
+  id             String            @id @default(uuid()) @db.Uuid
+  quoteVersionId String            @db.Uuid
+  fromStatus     QuoteVersionStatus?
+  toStatus       QuoteVersionStatus
+  changedById    String?           @db.Uuid
+  reason         String?           @db.VarChar(500)
+  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
+  quoteVersion   QuoteVersion      @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
+  changedBy      User?             @relation("QuoteStatusHistoryActor", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([quoteVersionId, createdAt])
+  @@index([changedById, createdAt])
+  @@map("quote_status_history")
 }
 
 model RequestAssignment {
