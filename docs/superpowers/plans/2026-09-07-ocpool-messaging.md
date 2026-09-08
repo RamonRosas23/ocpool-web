@@ -137,12 +137,19 @@ Evidencia de cierre:
 
 **Riesgos:** mezclar visibilidad en el mismo composer, permisos visuales que no coincidan con backend, impacto en densidad del inbox.
 
-- [ ] Añadir pestañas o zonas separadas para mensajes compartidos y notas internas.
-- [ ] Ocultar acciones según capacidades, manteniendo validación backend.
-- [ ] Mostrar autor/fecha al staff, pero proyectar identidad de equipo al cliente cuando corresponda.
-- [ ] Añadir cierre/reapertura sólo con `messaging.manage`, confirmación y feedback accesible.
-- [ ] Verificar responsive, estados vacíos/error/locked, Axe y consola.
-- [ ] Hacer commit `feat: add staff messaging and internal notes`.
+- [x] Añadir pestañas o zonas separadas para mensajes compartidos y notas internas.
+- [x] Ocultar acciones según capacidades, manteniendo validación backend.
+- [x] Mostrar autor/fecha al staff, pero proyectar identidad de equipo al cliente cuando corresponda.
+- [x] Añadir cierre/reapertura sólo con `messaging.manage`, confirmación y feedback accesible.
+- [x] Verificar responsive, estados vacíos/error/locked, Axe y consola.
+- [x] Hacer commit `feat: add staff messaging and internal notes`.
+
+Evidencia de cierre:
+
+- Spec y plan enfocados: `docs/superpowers/specs/2026-09-08-ocpool-staff-messaging-ui.md` y `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md`.
+- `StaffMessagingPanel` separa `CUSTOMER`/`INTERNAL`, carga cursor estable, mantiene drafts por modo, genera idempotencia opaca y actualiza cierre/reapertura sólo con respuesta backend.
+- Manager 2/2 y rol limitado 1/1 verificados por E2E; la suite comprueba HTML/payload sin notas en compartidos, acciones de gestión ausentes sin `messaging.manage`, Axe, consola y no overflow.
+- Entrega distribuida en `09d979f`, `f2b0e4b` y `9eb9a04`; gate 45 unitarias, 38 integraciones, build, regresión pública 34/34 ejecutadas con 7 omitidas, audit 0 vulnerabilidades.
 
 **Criterios de terminado:** equipo puede coordinarse sin filtrar notas y el flujo no rompe inbox/cotizaciones.
 

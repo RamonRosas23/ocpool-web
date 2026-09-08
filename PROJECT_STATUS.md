@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 6 — Mensajería y notas internas.
-- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tareas 1, 2, 3 y 4 están terminadas con evidencia. Tarea 5 — UI staff y notas internas — es la siguiente en desarrollo.
+- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tareas 1, 2, 3, 4 y 5 están terminadas con evidencia. Tarea 6 — seguridad negativa, E2E y gate final de mensajería — es la siguiente en desarrollo.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -105,11 +105,13 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Auditoría y Outbox atómicos de mensajes y estados de conversación, con payloads sin cuerpo sensible.
 - APIs privadas de portal y staff para lectura, mensajes compartidos, notas internas y cierre/reapertura, con Zod estricto, same-origin, no-store, RBAC, rate limit y proyecciones sin datos internos.
 - Hilo de mensajería del portal cliente integrado en el detalle del expediente, con feed cronológico, cursor incremental, composer idempotente, estados de carga/vacío/error/cierre, responsive, foco/teclado, Axe y reduced motion.
-- Comando oficial de integración serializado a un worker DB para evitar timeouts de inicio de transacción por saturación local; se conserva la cobertura completa de 37 pruebas.
+- Workspace de mensajería staff integrado en `/staff/requests`, con vistas `Compartidos`/`Notas internas`, compositores separados, capacidades derivadas, cierre/reapertura con confirmación y estados de lectura/error/bloqueo.
+- Hardening de accesibilidad del inbox staff: contraste AA de la paleta operativa, nombres accesibles para selects, Axe sin hallazgos serios en el flujo staff y no overflow móvil.
+- Comando oficial de integración serializado a un worker DB para evitar timeouts de inicio de transacción por saturación local; se conserva la cobertura completa de 38 pruebas.
 
 ### En desarrollo
 
-- Fase 6 — Tarea 5: UI staff y notas internas.
+- Fase 6 — Tarea 6: seguridad negativa, E2E y gate final de mensajería.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -119,7 +121,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
-- UI staff para mensajería compartida y notas internas.
+- Cierre formal de Fase 6: matriz negativa final, E2E completa cliente/staff, auditoría de payloads/logs y gate de fase.
 - Archivos privados.
 - PDF comercial.
 - Aceptación digital.
@@ -170,6 +172,10 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 38. La paginación del hilo usa cursor opaco basado en `(createdAt, id)` y orden ascendente estable; la primera entrega prioriza continuidad y consistencia antes de agregar unread.
 39. La UI cliente consume una proyección mínima `CUSTOMER`, deriva la etiqueta de autor desde el tipo de remitente y nunca modela campos internos; la visibilidad sigue siendo una decisión de backend.
 40. Las pruebas de integración PostgreSQL se ejecutan con un worker en el comando oficial para privilegiar reproducibilidad y evitar timeouts de transacción en laptops con recursos compartidos; la concurrencia de negocio continúa cubierta dentro de las pruebas de servicio.
+41. La UI staff recibe capacidades booleanas derivadas de sesión y oculta acciones no autorizadas, pero nunca usa esas capacidades como autorización; cada mutación sigue validándose en backend.
+42. El staff usa vistas segmentadas por `visibility` y compositores distintos; una nota interna nunca se envía al endpoint compartido ni se oculta sólo con CSS.
+43. El timeout de `webServer` de Playwright es de 600 segundos porque el build frío local puede superar dos minutos bajo carga; el timeout de cada assertion conserva el límite normal de Playwright.
+44. La paleta staff usa variantes de cobre y texto muted con contraste suficiente, y los controles de operación tienen nombres accesibles explícitos; esto prioriza Axe y lectura real sobre conservar valores decorativos de bajo contraste.
 
 ## Pruebas realizadas
 
@@ -210,6 +216,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 2 de Fase 6: prueba dirigida `messaging-service.test.ts` 1/1 y `npm run test:integration` 34/34; `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Se verificaron dos clientes aislados, permisos de empleado, nota interna fuera de proyección cliente, idempotencia secuencial y concurrente, rate-limit injectable, cierre/reapertura y Outbox/auditoría sin cuerpos.
 - Tarea 3 de Fase 6: commit `8446663` (`feat: expose protected messaging APIs`); prueba API `messaging-api.test.ts` 3/3 y `npm run test:integration` 37/37; `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Se verificaron 401/403/404/409/429, scope IDOR, same-origin, schemas estrictos, `no-store`, RBAC limitado y ausencia de notas/IDs internos en portal.
 - Tarea 4 de Fase 6: implementación y cierre documental de UI cliente; E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2, `npm run test:unit` 45/45, `npm run test:integration` 37/37 serializado, `npm run test:e2e` 34/34 ejecutadas con 5 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content` y `git diff --check` correctos. Se verificaron lectura/envío/refresh, notas internas invisibles, cierre de conversación, error recuperable, responsive, Axe, consola limpia y payload cliente mínimo.
+- Tarea 5 de Fase 6: commits `09d979f`, `f2b0e4b` y `9eb9a04`; E2E opt-in `STAFF_MESSAGING_E2E=1 npx playwright test tests/client-messaging-staff.spec.ts` 2/2, `messaging-api.test.ts` 4/4, `npm run test:unit` 45/45, `npm run test:integration` 38/38, `npm run test:e2e` 34/34 ejecutadas con 7 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content`, migraciones/seed, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron separación de visibilidades, dos perfiles RBAC, compositores independientes, cierre/reapertura, Axe, consola y no overflow.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -279,6 +286,9 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La ejecución paralela de integración expuso aserciones frágiles sobre folios y buckets de rate limit; se corrigieron para tolerar concurrencia controlada y limpiar únicamente fixtures identificables.
 - La ejecución paralela completa de integración volvió a provocar timeouts de inicio de transacción y cascadas de cleanup con fixtures aún no creados; la corrida serializada pasó 18/18 archivos y 37/37 pruebas, y el script oficial quedó fijado a `--maxWorkers=1`.
 - La primera regresión E2E completa tuvo dos timeouts de cierre del contexto bajo carga; ambos casos pasaron aislados y la segunda regresión completa terminó 34/34, sin cambios productivos derivados de ese falso negativo.
+- La primera E2E staff encontró que el estado de cierre se devolvía plano mientras el componente esperaba una propiedad `conversation`; se corrigió el mapeo y se añadió una prueba que valida que el composer desaparece al cerrar.
+- Axe del inbox staff detectó contraste bajo y selects sin nombre; se corrigieron variables de color y `aria-label` explícitos, y la E2E staff volvió a pasar 2/2.
+- El cold build local agotó el timeout original de 120 segundos al iniciar Playwright; se amplió sólo `webServer.timeout` a 600 segundos y el build explícito terminó correctamente.
 - El gate de seguridad encontró vulnerabilidades transitorias de Prisma; se resolvieron con overrides verificables y se repitió la suite completa antes de cerrar Fase 3.
 - `npx tsc --noEmit` encontró tipos incompletos en pruebas existentes; se corrigieron sin relajar `strict`.
 
@@ -296,10 +306,12 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
 - `docs/superpowers/specs/2026-09-07-ocpool-messaging.md` — especificación aprobada para Fase 6.
 - `docs/superpowers/specs/2026-09-07-ocpool-messaging-apis.md` — contrato HTTP privado de la Tarea 3, aprobado y ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tareas 1–4 cerradas y Tarea 5 en desarrollo.
+- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tareas 1–5 cerradas y Tarea 6 en desarrollo.
 - `docs/superpowers/plans/2026-09-07-ocpool-messaging-apis.md` — plan enfocado de APIs, ejecutado.
 - `docs/superpowers/specs/2026-09-07-ocpool-customer-messaging-ui.md` — especificación aprobada y ejecutada para la UI cliente de la Tarea 4.
 - `docs/superpowers/plans/2026-09-07-ocpool-customer-messaging-ui.md` — plan enfocado de UI cliente, ejecutado.
+- `docs/superpowers/specs/2026-09-08-ocpool-staff-messaging-ui.md` — especificación aprobada y ejecutada para la UI staff de la Tarea 5.
+- `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
 
 ## Criterio de terminado de Fase 5
 
@@ -307,4 +319,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 5 de Fase 6: UI staff para mensajes compartidos, notas internas, permisos visuales, cierre/reapertura y productividad del inbox.
+Ejecutar la Tarea 6 de Fase 6: seguridad negativa, E2E cliente/staff, auditoría final de payloads/logs y gate de cierre de mensajería antes de iniciar archivos o notificaciones productivas.

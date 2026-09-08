@@ -44,17 +44,17 @@
 - Produces `{ messagingRead, messagingSend, messagingInternalNotesRead, messagingInternalNotesWrite, messagingManage }` como booleanos públicos derivados del actor.
 - E2E opt-in usará los endpoints actuales y una sesión de ventas/gerencia creada por fixture; no agregará bypass a la UI.
 
-- [ ] **Step 1: Escribir la prueba de contrato de capacidades**
+- [x] **Step 1: Escribir la prueba de contrato de capacidades**
 
   Añadir al test de integración una llamada a `GET /api/staff/capabilities` para un manager y verificar los cinco booleanos en `true`; crear un rol staff limitado con `messaging.read` y comprobar que sólo `messagingRead` es `true`.
 
-- [ ] **Step 2: Ejecutar la prueba roja**
+- [x] **Step 2: Ejecutar la prueba roja**
 
   Run: `npx cross-env RUN_DB_TESTS=1 vitest run tests/integration/messaging-api.test.ts --maxWorkers=1`
 
   Expected: FAIL porque el JSON actual no contiene capacidades de mensajería.
 
-- [ ] **Step 3: Implementar el contrato mínimo**
+- [x] **Step 3: Implementar el contrato mínimo**
 
   Agregar al objeto de `src/app/api/staff/capabilities/route.ts`:
 
@@ -66,28 +66,30 @@
   messagingManage: hasPermission(actor, 'messaging.manage'),
   ```
 
-- [ ] **Step 4: Ejecutar la prueba verde y typecheck**
+- [x] **Step 4: Ejecutar la prueba verde y typecheck**
 
   Run: `npx cross-env RUN_DB_TESTS=1 vitest run tests/integration/messaging-api.test.ts --maxWorkers=1`, `npm run typecheck`
 
   Expected: contrato verde y tipos correctos.
 
-- [ ] **Step 5: Añadir la prueba E2E roja del flujo staff**
+- [x] **Step 5: Añadir la prueba E2E roja del flujo staff**
 
   Crear fixture opt-in que use una sesión de manager, cree un expediente con `createQuoteRequest`, inserte un mensaje compartido y una nota interna mediante el servicio, visite `/staff/requests`, seleccione el folio y verifique que los tabs “Compartidos” y “Notas internas” aparecen sin cuerpos en el tab equivocado. Añadir después envío compartido, envío de nota, cierre y reapertura; un perfil limitado debe conservar sólo lectura.
 
-- [ ] **Step 6: Ejecutar la E2E roja**
+- [x] **Step 6: Ejecutar la E2E roja**
 
   Run: `npx cross-env STAFF_MESSAGING_E2E=1 playwright test tests/client-messaging-staff.spec.ts`
 
   Expected: FAIL porque el inbox aún no renderiza el módulo.
 
-- [ ] **Step 7: Commit del contrato**
+- [x] **Step 7: Commit del contrato**
 
   ```bash
   git add src/app/api/staff/capabilities/route.ts tests/integration/messaging-api.test.ts tests/client-messaging-staff.spec.ts
   git commit -m "test: define staff messaging capability contract"
   ```
+
+Evidencia: prueba roja del contrato, después `messaging-api.test.ts` 4/4; E2E staff roja antes de la UI; commit `09d979f`.
 
 ### Task 2: Modelo de estado y componente StaffMessagingPanel
 
@@ -102,38 +104,40 @@
 - Internal write: `POST /api/staff/quote-requests/:requestId/notes`.
 - Status write: `POST /api/staff/quote-requests/:requestId/conversation-status`.
 
-- [ ] **Step 1: Definir tipos internos sin datos inventados**
+- [x] **Step 1: Definir tipos internos sin datos inventados**
 
   Modelar `StaffMessage`, `StaffConversation`, `StaffConversationResponse` y `StaffMessagingCapabilities` dentro del componente o en un módulo compartido pequeño. Conservar `visibility` como unión literal y no permitir que el composer lo reciba desde un `<select>` libre.
 
-- [ ] **Step 2: Implementar lectura cancelable**
+- [x] **Step 2: Implementar lectura cancelable**
 
   Cargar al cambiar `requestId` con `AbortController`, resetear estado de sección, usar `no-store`, distinguir carga/error y deduplicar mensajes por `id` al cargar `nextCursor`. El botón “Reintentar” debe repetir sólo la lectura.
 
-- [ ] **Step 3: Implementar tabs por visibilidad**
+- [x] **Step 3: Implementar tabs por visibilidad**
 
   El tab Compartidos muestra `visibility === 'CUSTOMER'`; el tab Notas internas sólo se renderiza cuando `messagingInternalNotesRead` y muestra `visibility === 'INTERNAL'`. Usar botones con `aria-selected`, panel etiquetado y contadores calculados del payload ya autorizado.
 
-- [ ] **Step 4: Implementar composer compartido y nota privada**
+- [x] **Step 4: Implementar composer compartido y nota privada**
 
   Mantener un `draft` por modo o limpiar al cambiar de tab, contador de 10,000 caracteres, `aria-busy`, bloqueo durante request, clave `staff-${requestId}-${crypto.randomUUID()}` y recuperación con texto intacto. Enviar cada modo a su endpoint; sólo insertar el mensaje confirmado por servidor.
 
-- [ ] **Step 5: Implementar cierre/reapertura**
+- [x] **Step 5: Implementar cierre/reapertura**
 
   Si `messagingManage` está activo, mostrar botón según estado y una confirmación inline (“Confirmar cierre” / “Cancelar”), no `window.confirm`. Tras respuesta exitosa refrescar lectura; ante error mantener estado anterior y anunciarlo.
 
-- [ ] **Step 6: Ejecutar E2E dirigida**
+- [x] **Step 6: Ejecutar E2E dirigida**
 
   Run: `npx cross-env STAFF_MESSAGING_E2E=1 playwright test tests/client-messaging-staff.spec.ts`
 
   Expected: flujo manager verde; notas ausentes del tab compartido, composer limitado por capacidades y estado cerrado sin composer.
 
-- [ ] **Step 7: Commit del componente aislado**
+- [x] **Step 7: Commit del componente aislado**
 
   ```bash
   git add src/components/StaffMessagingPanel.tsx tests/client-messaging-staff.spec.ts
   git commit -m "feat: add staff messaging workspace"
   ```
+
+Evidencia: componente `StaffMessagingPanel` con fetch cancelable, cursor, dos compositores, idempotencia, confirmación inline y estado cerrado; commit `f2b0e4b`.
 
 ### Task 3: Integración con inbox y superficie visual
 
@@ -146,30 +150,32 @@
 - `StaffRequestsPanel` carga capacidades en paralelo con responsables y entrega el objeto al componente sólo cuando el expediente está seleccionado.
 - El módulo se monta después de `staff-actions-grid` y antes de `staff-history`.
 
-- [ ] **Step 1: Añadir estado de capacidades en el panel**
+- [x] **Step 1: Añadir estado de capacidades en el panel**
 
   Crear el tipo local completo, cargar `/api/staff/capabilities` con `readResponse`, conservar un objeto seguro con todos los flags en `false` mientras carga y no bloquear la lista de expedientes si el endpoint falla.
 
-- [ ] **Step 2: Montar `StaffMessagingPanel` en el detalle**
+- [x] **Step 2: Montar `StaffMessagingPanel` en el detalle**
 
   Renderizar `<StaffMessagingPanel requestId={selected.id} capabilities={capabilities} />` dentro del detalle y asegurar que cambia de expediente sin conservar mensajes del anterior.
 
-- [ ] **Step 3: Añadir CSS editorial de staff**
+- [x] **Step 3: Añadir CSS editorial de staff**
 
   Añadir clases con prefijo `staff-messaging`, reglas laterales para compartido/nota, tabs de 44 px, composer y confirmación inline, skeleton/error/empty/closed, breakpoints 768/430 y `@media (prefers-reduced-motion: reduce)`. Reutilizar variables/colores existentes y evitar sombras o radios genéricos.
 
-- [ ] **Step 4: Ejecutar typecheck, lint y E2E responsive**
+- [x] **Step 4: Ejecutar typecheck, lint y E2E responsive**
 
   Run: `npm run typecheck`, `npm run lint`, `npx cross-env STAFF_MESSAGING_E2E=1 playwright test tests/client-messaging-staff.spec.ts`
 
   Expected: tipos/lint correctos; E2E verifica Axe, consola limpia, no overflow a 390 px y foco visible.
 
-- [ ] **Step 5: Commit de integración visual**
+- [x] **Step 5: Commit de integración visual**
 
   ```bash
   git add src/components/StaffRequestsPanel.tsx src/app/globals.css tests/client-messaging-staff.spec.ts
   git commit -m "feat: integrate staff conversation into request inbox"
   ```
+
+Evidencia: integración en detalle después de acciones y antes del historial; corrección de contraste staff, nombres accesibles de selects y timeout de arranque E2E; commit `9eb9a04`.
 
 ### Task 4: QA de seguridad, regresión y cierre documental
 
@@ -182,32 +188,34 @@
 - No se cambian contratos de backend salvo la extensión de capacidades ya cubierta.
 - La evidencia final debe conservar conteos exactos y señalar omisiones opt-in.
 
-- [ ] **Step 1: Completar matriz negativa**
+- [x] **Step 1: Completar matriz negativa**
 
   Verificar con dos actores que una cuenta limitada no puede escribir nota ni cerrar/reabrir, que un actor sin scope recibe 404/403 seguro, que un origen extraño recibe 403, que una conversación cerrada rechaza mutaciones y que los mensajes internos no aparecen en el tab compartido ni en su HTML.
 
-- [ ] **Step 2: Ejecutar integración serializada y auditoría**
+- [x] **Step 2: Ejecutar integración serializada y auditoría**
 
   Run: `npm run test:unit`, `npm run test:integration`, `npm run test:content`, `npm audit --omit=dev --audit-level=high`, `git diff --check`
 
   Expected: todas verdes, 0 vulnerabilidades altas y sin whitespace inválido.
 
-- [ ] **Step 3: Ejecutar regresión completa**
+- [x] **Step 3: Ejecutar regresión completa**
 
   Run: `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e`, `npx cross-env STAFF_MESSAGING_E2E=1 playwright test tests/client-messaging-staff.spec.ts`
 
   Expected: build y regresión verde; las pruebas opt-in no quedan incluidas por accidente en la suite pública.
 
-- [ ] **Step 4: Revisar visualmente y actualizar documentación**
+- [x] **Step 4: Revisar visualmente y actualizar documentación**
 
   Comprobar que el panel no desborda el detalle en 360/390/768/1440 px, que el copy distingue “Visible para cliente” de “Sólo equipo” y que `PROJECT_STATUS.md` registra módulo, dependencias, pruebas, problema/resolución y siguiente tarea.
 
-- [ ] **Step 5: Commit de cierre de la tarea**
+- [x] **Step 5: Commit de cierre de la tarea**
 
   ```bash
   git add PROJECT_STATUS.md docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md docs/superpowers/specs/2026-09-08-ocpool-staff-messaging-ui.md tests/client-messaging-staff.spec.ts
   git commit -m "docs: close staff messaging UI task"
   ```
+
+Evidencia: `STAFF_MESSAGING_E2E=1` pasó 2/2 con manager y rol limitado; `npm run test:unit` 45/45; `npm run test:integration` 38/38; `npm run test:content`; `npm run typecheck`; `npm run lint`; `npm run build`; `npm run test:e2e` 34/34 ejecutadas con 7 omitidas explícitamente; `npm audit --omit=dev --audit-level=high` 0 vulnerabilidades; migraciones/seed sin pendientes y `git diff --check` correcto.
 
 ## Criterio de cierre
 
