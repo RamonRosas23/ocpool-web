@@ -199,13 +199,21 @@ Evidencia de cierre:
 - Modify: `PROJECT_STATUS.md`
 - Modify: `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md`
 
-- [ ] Ejecutar `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed` y `npx prisma migrate status`.
-- [ ] Ejecutar `npm run test:unit`, `npm run test:integration`, `npm run test:content`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` y `npm run test:e2e:foundation`.
-- [ ] Ejecutar `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` y registrar el resultado separado.
-- [ ] Ejecutar `npm audit --omit=dev --audit-level=high` y `git diff --check`.
-- [ ] Revisar que no se hayan agregado dependencias innecesarias, que la regresión pública no se rompa y que el árbol quede limpio tras el commit.
-- [ ] Actualizar módulos terminados, pruebas, riesgos, deuda y dependencias; cerrar la fase sólo si los criterios de la especificación tienen evidencia.
-- [ ] Hacer commit `docs: close phase five client portal`.
+- [x] Ejecutar `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed` y `npx prisma migrate status`.
+- [x] Ejecutar `npm run test:unit`, `npm run test:integration`, `npm run test:content`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` y `npm run test:e2e:foundation`.
+- [x] Ejecutar `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` y registrar el resultado separado.
+- [x] Ejecutar `npm audit --omit=dev --audit-level=high` y `git diff --check`.
+- [x] Revisar que no se hayan agregado dependencias innecesarias, que la regresión pública no se rompa y que el árbol quede limpio tras el commit.
+- [x] Actualizar módulos terminados, pruebas, riesgos, deuda y dependencias; cerrar la fase sólo si los criterios de la especificación tienen evidencia.
+- [x] Hacer commit `docs: close phase five client portal`.
+
+Evidencia de cierre:
+
+- Migraciones, seed y estado Prisma correctos; no hubo migraciones pendientes.
+- `npm test` correcto: 42 unitarias, 32 integraciones, contrato de contenido, build, 34 E2E públicas con 5 omitidas explícitamente y foundation 1/1.
+- E2E autenticada separada correcta: `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2.
+- `npm audit --omit=dev --audit-level=high` reportó 0 vulnerabilidades; `git diff --check` y árbol limpio.
+- No se agregaron dependencias nuevas en Fase 5. Los criterios de alcance, scope, snapshots, privacidad, estados de UI, responsive, accesibilidad y no enumeración tienen evidencia en pruebas y documentación.
 
 ## Criterios de terminado de Fase 5
 

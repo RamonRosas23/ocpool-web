@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 5 — Portal autenticado del cliente.
-- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación y plan aprobados; las Tareas 1–5 están terminadas y Tarea 6 — gate de fase — está en desarrollo.
+- **Estado:** Fase 5 está terminada con gate verde. El portal cliente queda documentado, probado, construido y aislado; el siguiente frente será mensajería y trazabilidad conversacional.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -98,10 +98,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Portal privado `/portal` con shell de cliente propio, metadata `noindex`, estados de sesión/carga/vacío/error, dashboard de expedientes, logout, responsive, foco visible y reduced motion.
 - Detalle de expediente y cotización versionada con líneas/totales snapshot, histórico de versiones, descuentos, impuestos y mensaje de vigencia expirada sin acciones fuera de alcance.
 - Hardening del portal: sesiones de clientes archivados invalidadas, pruebas IDOR/UUID/sesión revocada, E2E autenticada opt-in, Axe, auditoría de payloads y limpieza exacta de fixtures.
+- Gate de Fase 5 cerrado: migraciones/seed al día, regresión completa, E2E autenticada separada, auditoría de dependencias sin vulnerabilidades altas y árbol limpio.
 
 ### En desarrollo
 
-- Fase 5 — Tarea 6: gate de fase.
+- Ningún módulo de Fase 5; la fase está cerrada. El diseño de Fase 6 todavía no inicia.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -189,6 +190,8 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 3 de Fase 5: commit `0d90fc9` (`feat: add customer portal dashboard`); `npm run typecheck`, `npm run lint`, E2E dirigida `npx playwright test tests/quality.spec.ts --grep "customer portal"` 1/1 y `git diff --check` correctos. Se verificaron acceso restringido sin sesión, Axe sin violaciones serias, ausencia de overflow a 390 px, metadata privada, estados de carga/vacío/error/logout y shell responsive propio del cliente.
 - Tarea 4 de Fase 5: commit `c0da91e` (`feat: show customer quote snapshots`); integración dirigida, API dirigida, `npm run typecheck`, `npm run lint`, E2E de protección y `git diff --check` correctos. Se verificó que actualizar catálogo después del envío no altera nombre, precio, impuesto ni total del snapshot mostrado al cliente; la vista comunica vigencia expirada sin habilitar acciones fuera de alcance.
 - Tarea 5 de Fase 5: pendiente de commit en este cierre; `npm run test:unit` 42/42, `npm run test:integration` 32/32, `npm run typecheck`, `npm run lint`, E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2 y `git diff --check` correctos. Se verificaron sesiones revocadas/archivadas, aislamiento por cliente, UUID malformado, payloads sin secretos, Axe, estado vacío, error recuperable, consola limpia y responsive móvil.
+- Tarea 5 de Fase 5: commit `af55a09` (`test: harden customer portal isolation`); `npm run test:unit` 42/42, `npm run test:integration` 32/32, `npm run typecheck`, `npm run lint`, E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2 y `git diff --check` correctos. Se verificaron sesiones revocadas/archivadas, aislamiento por cliente, UUID malformado, payloads sin secretos, Axe, estado vacío, error recuperable, consola limpia y responsive móvil.
+- Gate de Fase 5: `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npx prisma migrate status`, `npm test`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y árbol limpio correctos. `npm test` quedó en 42 unitarias, 32 integraciones, contenido, build, 34 E2E públicas con 5 omitidas explícitamente y foundation 1/1.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -268,9 +271,13 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
 - `docs/superpowers/specs/2026-09-07-ocpool-client-portal.md` — especificación aprobada para Fase 5.
-- `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado; Tareas 1–5 cerradas y Tarea 6 en desarrollo.
+- `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado y ejecutado; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
+
+## Criterio de terminado de Fase 5
+
+La fase se considera terminada porque el cliente autenticado sólo lee recursos de su `clientId`, las cotizaciones históricas se sirven desde snapshots, las rutas privadas no enumeran recursos ajenos ni exponen secretos, la UI cubre estados de sesión/carga/vacío/error, responsive, teclado, reduced motion y Axe, y el gate de infraestructura, build, pruebas, auditoría y árbol limpio quedó registrado.
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 6 de Fase 5: gate reproducible de migraciones, build, regresión, auditoría de dependencias y cierre documental.
+Realizar la auditoría ordenada y la especificación de Fase 6 — mensajería cliente–equipo, notas internas y trazabilidad — antes de modificar código.
