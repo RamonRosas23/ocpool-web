@@ -74,6 +74,31 @@ enum QuoteRequestStatus {
   CONVERTIDA_EN_PROYECTO
 }
 
+enum QuoteRequestProjectStage {
+  IDEA
+  SITE_READY
+  UNDER_CONSTRUCTION
+  REMODEL
+  EQUIPMENT_ONLY
+  UNSURE
+}
+
+enum QuoteRequestTimeline {
+  ASAP
+  ONE_TO_THREE_MONTHS
+  THREE_TO_SIX_MONTHS
+  SIX_PLUS_MONTHS
+  UNSURE
+}
+
+enum QuoteRequestBudgetRange {
+  UNDER_250K
+  FROM_250K_TO_500K
+  FROM_500K_TO_1M
+  OVER_1M
+  UNSURE
+}
+
 enum CatalogStatus {
   ACTIVE
   ARCHIVED
@@ -492,18 +517,21 @@ model QuoteAcceptance {
 }
 
 model QuoteRequestDetail {
-  id             String       @id @default(uuid()) @db.Uuid
-  quoteRequestId String       @unique @db.Uuid
-  projectType    String       @db.VarChar(120)
-  location       String       @db.VarChar(180)
+  id             String                    @id @default(uuid()) @db.Uuid
+  quoteRequestId String                    @unique @db.Uuid
+  projectType    String                    @db.VarChar(120)
+  location       String                    @db.VarChar(180)
+  projectStage   QuoteRequestProjectStage?
+  dimensions     String?                   @db.VarChar(500)
+  timeline       QuoteRequestTimeline?
+  budgetRange    QuoteRequestBudgetRange?
   budgetCents    BigInt?
-  currencyCode   String       @default("MXN") @db.Char(3)
-  dimensions     String?      @db.VarChar(500)
-  description    String       @db.Text
-  consentAt      DateTime     @db.Timestamptz(3)
-  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
-  quoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  currencyCode   String                    @default("MXN") @db.Char(3)
+  description    String                    @db.Text
+  consentAt      DateTime                  @db.Timestamptz(3)
+  createdAt      DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime                  @updatedAt @db.Timestamptz(3)
+  quoteRequest   QuoteRequest              @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
 
   @@map("quote_request_details")
 }

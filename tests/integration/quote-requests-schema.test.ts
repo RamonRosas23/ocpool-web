@@ -40,6 +40,10 @@ describe('quote request relational schema', () => {
           create: {
             projectType: 'Alberca residencial',
             location: 'Culiacán, Sinaloa',
+            projectStage: 'SITE_READY',
+            dimensions: '8 x 4 m, profundidad aproximada 1.5 m',
+            timeline: 'ONE_TO_THREE_MONTHS',
+            budgetRange: 'FROM_250K_TO_500K',
             description: 'Solicitud de prueba de schema',
             consentAt: new Date(),
           },
@@ -52,6 +56,10 @@ describe('quote request relational schema', () => {
     expect(request.folio).toMatch(/^OCQ-2026-\d{6}$/);
     expect(request.status).toBe('RECIBIDA');
     expect(request.detail?.projectType).toBe('Alberca residencial');
+    expect(request.detail?.projectStage).toBe('SITE_READY');
+    expect(request.detail?.dimensions).toBe('8 x 4 m, profundidad aproximada 1.5 m');
+    expect(request.detail?.timeline).toBe('ONE_TO_THREE_MONTHS');
+    expect(request.detail?.budgetRange).toBe('FROM_250K_TO_500K');
     expect(request.statusHistory).toHaveLength(1);
     expect(firstContact.clientId).not.toBe(secondContact.clientId);
 

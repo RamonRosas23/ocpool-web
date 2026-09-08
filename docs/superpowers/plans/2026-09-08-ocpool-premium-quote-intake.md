@@ -25,7 +25,7 @@
 ### Task 1: Lock domain and schema contracts
 
 **Files:**
-- Create: `prisma/migrations/20260908150000_premium_quote_intake/migration.sql`
+- Create: `prisma/migrations/20260908201805_premium_quote_intake/migration.sql`
 - Modify: `prisma/schema.prisma`
 - Modify: `src/server/modules/quote-requests/domain.ts`
 - Test: `tests/unit/quote-requests-domain.test.ts`

@@ -12,6 +12,31 @@ export const QUOTE_REQUEST_STATUSES = [
   'CONVERTIDA_EN_PROYECTO',
 ] as const;
 
+export const QUOTE_REQUEST_PROJECT_STAGES = [
+  'IDEA',
+  'SITE_READY',
+  'UNDER_CONSTRUCTION',
+  'REMODEL',
+  'EQUIPMENT_ONLY',
+  'UNSURE',
+] as const;
+
+export const QUOTE_REQUEST_TIMELINES = [
+  'ASAP',
+  'ONE_TO_THREE_MONTHS',
+  'THREE_TO_SIX_MONTHS',
+  'SIX_PLUS_MONTHS',
+  'UNSURE',
+] as const;
+
+export const QUOTE_REQUEST_BUDGET_RANGES = [
+  'UNDER_250K',
+  'FROM_250K_TO_500K',
+  'FROM_500K_TO_1M',
+  'OVER_1M',
+  'UNSURE',
+] as const;
+
 export type QuoteRequestStatus = (typeof QUOTE_REQUEST_STATUSES)[number];
 
 const ALLOWED_TRANSITIONS: Record<QuoteRequestStatus, readonly QuoteRequestStatus[]> = {

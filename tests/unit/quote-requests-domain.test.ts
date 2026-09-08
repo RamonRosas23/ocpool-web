@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  QUOTE_REQUEST_BUDGET_RANGES,
+  QUOTE_REQUEST_PROJECT_STAGES,
   QUOTE_REQUEST_STATUSES,
+  QUOTE_REQUEST_TIMELINES,
   canStaffTransitionQuoteRequest,
   canTransitionQuoteRequest,
   formatQuoteRequestFolio,
@@ -10,6 +13,31 @@ import {
 import { hasPermission, permissionKeysForRoles } from '@/server/auth/permissions';
 
 describe('quote request domain contracts', () => {
+  it('defines controlled qualification options for the public intake', () => {
+    expect(QUOTE_REQUEST_PROJECT_STAGES).toEqual([
+      'IDEA',
+      'SITE_READY',
+      'UNDER_CONSTRUCTION',
+      'REMODEL',
+      'EQUIPMENT_ONLY',
+      'UNSURE',
+    ]);
+    expect(QUOTE_REQUEST_TIMELINES).toEqual([
+      'ASAP',
+      'ONE_TO_THREE_MONTHS',
+      'THREE_TO_SIX_MONTHS',
+      'SIX_PLUS_MONTHS',
+      'UNSURE',
+    ]);
+    expect(QUOTE_REQUEST_BUDGET_RANGES).toEqual([
+      'UNDER_250K',
+      'FROM_250K_TO_500K',
+      'FROM_500K_TO_1M',
+      'OVER_1M',
+      'UNSURE',
+    ]);
+  });
+
   it('defines the approved lifecycle in business order', () => {
     expect(QUOTE_REQUEST_STATUSES).toEqual([
       'RECIBIDA',
