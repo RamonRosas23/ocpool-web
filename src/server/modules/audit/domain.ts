@@ -324,6 +324,16 @@ export function classifyAuditAction(action: string): AuditActionDefinition | nul
   return AUDIT_ACTION_DEFINITIONS[action] ?? null;
 }
 
+export function auditActionsForCategory(category: Exclude<AuditCategory, 'security'> | null): string[] {
+  return Object.entries(AUDIT_ACTION_DEFINITIONS)
+    .filter(([, definition]) => category === null || definition.category === category)
+    .map(([action]) => action);
+}
+
+export function knownAuthEventTypes(): string[] {
+  return Object.keys(AUTH_EVENT_LABELS);
+}
+
 function safeDetailValue(value: unknown): string | null {
   if (typeof value === 'string') {
     if (value.length === 0 || value.length > MAX_DETAIL_LENGTH) return null;
