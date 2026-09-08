@@ -7,6 +7,7 @@ El dashboard operativo (`/staff`) ayuda al personal autorizado a priorizar traba
 ## Superficies y permisos
 
 - `GET /api/staff/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD` es una lectura privada y responde `Cache-Control: no-store`.
+- Cada empleado tiene un límite configurable mediante `ANALYTICS_RATE_LIMIT_MAX_ATTEMPTS` y `ANALYTICS_RATE_LIMIT_WINDOW_MINUTES`, coordinado en PostgreSQL con el mismo mecanismo de rate limit de identidad.
 - `sales` requiere `metrics.read` y recibe `scope: self`: solicitudes/cotizaciones asignadas a ese usuario.
 - `manager` y `admin` requieren `metrics.read.global` y reciben `scope: global`.
 - Clientes, sesiones revocadas y empleados sin la capacidad reciben una respuesta pública controlada (`401` o `403` según el guard), sin datos de la operación.
@@ -67,6 +68,7 @@ Para una revisión segura de rendimiento:
 ## Seguridad y privacidad
 
 - La ruta es de sólo lectura y no muta solicitudes, precios, cotizaciones o estados.
+- El rate limit se aplica después de validar actor, permiso y rango, pero antes de ejecutar agregados; un `429` no revela datos del dashboard.
 - Los errores públicos no incluyen SQL, stack traces, rutas internas ni secretos.
 - La respuesta no incluye emails, teléfonos, IDs de cliente, mensajes, archivos, storage keys, destinatarios ni payloads.
 - La supresión de muestras pequeñas evita inferencias sobre responsables.

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { seedIdentityCatalog } from '../../prisma/seed';
 import { getPrisma } from '@/server/db/client';
+import { fingerprintToken } from '@/server/auth/crypto';
 import type { Actor } from '@/server/auth/types';
 import { getStaffDashboard } from '@/server/modules/analytics/service';
 
@@ -229,8 +230,17 @@ describe('analytics dashboard service', () => {
     await expect(getStaffDashboard({ ...actor(manager.id), type: 'CUSTOMER', clientId: clientIds[1] }, { from: '2026-09-01', to: '2026-09-08', timezone: 'UTC' }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
 
+  it('rate limits expensive reads before executing aggregates', async () => {
+    await expect(getStaffDashboard(actor(sales.id), { from: '2026-09-01', to: '2026-09-08', timezone: 'UTC' }, {
+      prisma,
+      now,
+      rateLimit: async () => ({ allowed: false, retryAfterSeconds: 60 }),
+    })).rejects.toMatchObject({ code: 'RATE_LIMITED', status: 429 });
+  });
+
   afterAll(async () => {
     if (process.env.RUN_DB_TESTS !== '1') return;
+    await prisma.authRateLimit.deleteMany({ where: { scope: 'analytics-dashboard-read', keyHash: { in: [fingerprintToken(sales.id), fingerprintToken(manager.id)] } } });
     await prisma.requestAssignment.deleteMany({ where: { quoteRequestId: { in: requestIds } } });
     await prisma.quoteAcceptance.deleteMany({ where: { quoteId: { in: quoteIds } } });
     await prisma.generatedDocument.deleteMany({ where: { id: { in: generatedDocumentIds } } });

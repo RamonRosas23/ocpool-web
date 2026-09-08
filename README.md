@@ -130,6 +130,7 @@ La suite de identidad también es opt-in: crea un empleado desechable en Postgre
 - `AUTH_TOKEN_TTL_MINUTES`: duración de magic links y recovery.
 - `AUTH_RATE_LIMIT_MAX_ATTEMPTS` y `AUTH_RATE_LIMIT_WINDOW_MINUTES`: ventana fija del rate limit PostgreSQL por email/IP confiable.
 - `AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` y `AUTH_GLOBAL_RATE_LIMIT_WINDOW_MINUTES`: circuit breaker global de respaldo, aplicado sólo cuando no existe una IP confiable; no sustituye el rate limit del proxy.
+- `ANALYTICS_RATE_LIMIT_MAX_ATTEMPTS` y `ANALYTICS_RATE_LIMIT_WINDOW_MINUTES`: límite de lecturas del dashboard por empleado; evita consultas agregadas repetitivas sin sustituir el rate limit del proxy.
 - `STORAGE_S3_ENDPOINT`, `STORAGE_S3_REGION`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY` y `STORAGE_S3_SECRET_KEY`: conexión local al bucket privado S3-compatible; usa un gestor de secretos en producción.
 - `STORAGE_S3_FORCE_PATH_STYLE`: necesario para MinIO local; en producción se decide según el proveedor.
 - `STORAGE_MAX_FILE_BYTES`: límite de aplicación, alineado con el constraint de 25 MiB de la migración inicial.
