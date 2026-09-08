@@ -5,10 +5,10 @@
 ## Estado actual
 
 - **Fase:** Fase 4 — Catálogo, precios y cotizaciones versionadas.
-- **Estado:** Fase 4 está en ejecución. Las Tareas 1–4 están terminadas con evidencia verificable; la Tarea 5 — constructor interno de cotizaciones — es el incremento actual.
+- **Estado:** Fase 4 está en ejecución. Las Tareas 1–5 están terminadas con evidencia verificable; la Tarea 6 — gate de fase — es el incremento actual.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`.
+- **Commits de la fase:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`.
 
 ## Orden documental obligatorio
 
@@ -88,10 +88,14 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - API interna protegida de capacidades, categorías, conceptos, listas y precios con validación same-origin, RBAC y errores públicos seguros.
 - Servicio transaccional de catálogo con búsqueda, filtros, paginación, archivado no destructivo, vigencias sin solapamiento y auditoría/Outbox.
 - UI interna responsive de catálogo y listas de precios con permisos por capacidad, estados de carga/error/vacío, confirmación de archivado y formato monetario sin floats.
+- Servicio de lectura del espacio de trabajo de cotización con alcance de solicitud, cliente, contacto, versiones, líneas, historial y listas vigentes, sin BigInt crudo ni datos innecesarios.
+- API interna protegida para listar expedientes cotizables, crear/reemplazar borradores y transicionar versiones con same-origin, RBAC, serialización monetaria y errores seguros.
+- Constructor `/staff/quotes` responsive con selección de expediente, lista de precios, líneas, cantidades, descuentos, impuestos, resumen vivo, vigencia, historial y acciones de revisión/envío.
+- Política backend que separa editar precios, aplicar descuentos y aprobar descuentos antes del envío; versiones enviadas no son editables.
 
 ### En desarrollo
 
-- Fase 4 — Tarea 5: constructor interno de cotizaciones y operaciones protegidas.
+- Fase 4 — Tarea 6: gate de fase y cierre documental.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -100,8 +104,6 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 ### Pendientes
 
 - Arquitectura de aplicación comercial por dominios de negocio.
-- Constructor de cotizaciones.
-- Snapshots y versionado inmutable.
 - Portal del cliente.
 - Mensajería y notas internas.
 - Archivos privados.
@@ -139,6 +141,9 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 23. Los conceptos se archivan en lugar de eliminarse físicamente; los precios vigentes no pueden solaparse para la misma lista y concepto.
 24. Los importes monetarios viajan por API como cadenas de unidades mínimas y se formatean con `BigInt` para evitar pérdida de precisión en la UI.
 25. La UI interna de catálogo usa un espacio de trabajo denso de dos zonas, superficies planas, reglas y responsive apilado, consistente con la identidad OCPOOL y sin métricas decorativas.
+26. Crear o modificar precios exige `quotes.edit_prices`; aplicar un descuento exige `quotes.apply_discount`; enviar una versión con descuento exige además `quotes.approve_discount`.
+27. La API de cotizaciones serializa todas las unidades monetarias como cadenas antes de construir JSON; las vistas internas pueden calcular previews con `BigInt` sin confiar en los totales del navegador.
+28. El constructor trabaja sobre una solicitud existente y una cotización raíz; cada cambio después de una versión enviada crea una nueva versión y nunca muta el histórico.
 
 ## Pruebas realizadas
 
@@ -167,6 +172,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 2 de Fase 4: migración `20260908032000_catalog_quotes`, `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npx prisma migrate status`, `npm run db:seed`, schema dirigido 3/3, integración completa 23/23, typecheck, lint y `git diff --check` correctos.
 - Tarea 3 de Fase 4: `npm run test:integration` 25/25, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint` y `git diff --check` correctos; se verificaron snapshots históricos, permisos, edición de borrador, transición de envío, aceptación bloqueada, concurrencia y limpieza de fixtures.
 - Tarea 4 de Fase 4: commit `861e4d8` (`feat: add protected catalog and price operations`); `npm run test:integration` 28/28, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` 32/32 ejecutadas con 2 omitidas explícitamente y `git diff --check` correctos. Se verificaron 401/403, same-origin, archivado, precios solapados, permisos de ventas/gerencia, UI restringida sin sesión y formato monetario sin floats.
+- Tarea 5 de Fase 4: commit `2909b62` (`feat: add protected quote builder workflow`); `npm run test:integration` 30/30, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` 33/33 ejecutadas con 3 omitidas explícitamente y `git diff --check` correctos. La prueba opt-in `QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1 con login real, selección de expediente, creación de borrador, revisión y envío. Se verificaron serialización BigInt, 401/403, same-origin, IDOR por expediente inexistente, permisos de edición/descuento/aprobación, inmutabilidad post-envío y actualización atómica de la solicitud.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -244,8 +250,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
-- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–4 ejecutadas; Tarea 5 en curso.
+- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–5 ejecutadas; Tarea 6 en curso.
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 5 de Fase 4: construir el constructor interno de cotizaciones, sus operaciones protegidas, versionado visible y pruebas E2E del flujo empleado.
+Ejecutar la Tarea 6 de Fase 4: ejecutar el gate reproducible, revisar deuda y dejar documentadas las decisiones abiertas antes de iniciar portal, mensajería o archivos.

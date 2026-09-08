@@ -1,6 +1,6 @@
 # OCPOOL — Plan Fase 4: Catálogo, precios y cotizaciones versionadas
 
-> Estado: Tareas 1–4 ejecutadas y verificadas. Tarea 5 en ejecución. No se implementará una pantalla de cotización antes de cerrar contratos monetarios, snapshots e invariantes.
+> Estado: Tareas 1–5 ejecutadas y verificadas. Tarea 6 en ejecución. No se abrirá una fase posterior sin cerrar el gate documentado.
 
 ## Objetivo
 
@@ -100,7 +100,7 @@ Los permisos existentes de cotizaciones se conservarán y se separará explícit
 - [x] Tarea 2 — schema relacional de catálogo, listas y cotizaciones.
 - [x] Tarea 3 — servicio de precios y creación de versión reproducible.
 - [x] Tarea 4 — API y UI de catálogo/listas de precios.
-- [ ] Tarea 5 — constructor de cotizaciones y operaciones protegidas.
+- [x] Tarea 5 — constructor de cotizaciones y operaciones protegidas.
 - [ ] Tarea 6 — gate de fase.
 
 ### Tarea 1 — Contratos e invariantes
@@ -179,6 +179,15 @@ Evidencia de cierre:
 - Permisos separados para modificar precio y aprobar descuento.
 - Versionado explícito, historial visible y estados de error/carga/vacío.
 - E2E empleado: solicitud → borrador → revisión → envío/versionado.
+
+Evidencia de cierre:
+
+- Commit `2909b62` (`feat: add protected quote builder workflow`).
+- `src/server/modules/quotes/staff-service.ts` devuelve una proyección segura del expediente, versiones, líneas, historial y listas vigentes; las unidades monetarias se serializan como cadenas.
+- Las rutas de `/api/staff/quotes` exigen empleado, permiso de cotización, same-origin en mutaciones y delegan el cálculo/inmutabilidad al servicio transaccional.
+- El constructor `/staff/quotes` integra selección de expediente, lista y conceptos con resumen vivo en `BigInt`, campos de cantidad/precio/descuento/impuesto, vigencia, estados y trazabilidad.
+- Editar precio, aplicar descuento y aprobar descuento están separados; una versión con descuento no se envía sin aprobación explícita.
+- Verificación: `npm run test:integration` 30/30, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` 33/33 ejecutadas con 3 omitidas explícitamente, `QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` 1/1 y `git diff --check` correctos.
 
 ### Tarea 6 — Gate de fase
 
