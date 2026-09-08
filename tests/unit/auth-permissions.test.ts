@@ -9,7 +9,7 @@ import {
 
 describe('authorization policy', () => {
   it('defines the approved least-privilege role catalog', () => {
-    expect(ALL_PERMISSION_KEYS).toHaveLength(14);
+    expect(ALL_PERMISSION_KEYS).toHaveLength(18);
     expect(permissionKeysForRoles(['customer'])).toEqual(new Set([
       'portal.self.read',
       'portal.self.authenticate',
@@ -20,6 +20,10 @@ describe('authorization policy', () => {
       'identity.session.revoke',
       'identity.users.read',
       'portal.self.read',
+      'requests.read',
+      'requests.create',
+      'requests.assign',
+      'requests.status.update',
       'quotes.read',
       'quotes.create',
       'quotes.send',
