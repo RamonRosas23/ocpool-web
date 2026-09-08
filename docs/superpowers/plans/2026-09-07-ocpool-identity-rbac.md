@@ -357,36 +357,36 @@ API/E2E tests must cover:
 
 Files: package.json, package-lock.json, .env.example, src/server/env.ts, prisma/schema.prisma, tests/unit/env.test.ts, tests/integration/identity-rbac.test.ts, generated Prisma migration.
 
-- [ ] Write failing environment tests for the encryption key and numeric policy ranges.
-- [ ] Install only @node-rs/argon2@2.2.0 and otpauth@9.5.2.
-- [ ] Add the identity enums/models and indexes shown above; preserve all foundation models.
-- [ ] Generate, inspect and apply a named migration; do not hand-write SQL or rename an applied migration.
-- [ ] Add integration assertions for tables, enum values and uniqueness constraints.
-- [ ] Run unit, integration, db:validate, db:generate, git diff --check and the existing landing regression.
-- [ ] Commit feat: add identity and rbac schema foundation.
+- [x] Write failing environment tests for the encryption key and numeric policy ranges.
+- [x] Install only @node-rs/argon2@2.2.0 and otpauth@9.5.2.
+- [x] Add the identity enums/models and indexes shown above; preserve all foundation models.
+- [x] Generate, inspect and apply a named migration; do not hand-write SQL or rename an applied migration.
+- [x] Add integration assertions for tables, enum values and uniqueness constraints.
+- [x] Run unit, integration, db:validate, db:generate, git diff --check and the existing landing regression.
+- [x] Commit feat: add identity and rbac schema foundation (`56c2be9`).
 
 ### Task 2: Implement crypto, permission catalog and idempotent seed
 
 Files: src/server/auth/constants.ts, src/server/auth/crypto.ts, src/server/auth/permissions.ts, prisma/seed.ts, tests/unit/auth-crypto.test.ts, tests/unit/auth-permissions.test.ts, tests/integration/identity-rbac.test.ts.
 
-- [ ] Write red tests for password verification, token fingerprinting, secret tamper rejection and permission denial.
-- [ ] Implement Argon2id password helpers with fixed parameters documented in the source, SHA-256 opaque token fingerprints using constant-time comparisons, and AES-256-GCM MFA secret encryption with random IVs.
-- [ ] Implement permission guards that deny by default and never read authorization from request JSON or cookies.
-- [ ] Seed roles and permissions with upsert/join synchronization without deleting custom future records.
-- [ ] Run focused unit and integration tests plus npm run db:seed twice.
-- [ ] Commit feat: add identity crypto and permission catalog.
+- [x] Write red tests for password verification, token fingerprinting, secret tamper rejection and permission denial.
+- [x] Implement Argon2id password helpers with fixed parameters documented in the source, SHA-256 opaque token fingerprints using constant-time comparisons, and AES-256-GCM MFA secret encryption with random IVs.
+- [x] Implement permission guards that deny by default and never read authorization from request JSON or cookies.
+- [x] Seed roles and permissions with upsert/join synchronization without deleting custom future records.
+- [x] Run focused unit and integration tests plus npm run db:seed twice.
+- [x] Commit feat: add identity crypto and permission catalog (`1170567`).
 
 ### Task 3: Implement sessions, tokens, MFA and rate limiting
 
 Files: src/server/auth/types.ts, src/server/auth/sessions.ts, src/server/auth/tokens.ts, src/server/auth/mfa.ts, src/server/auth/rate-limit.ts, tests/unit/auth-mfa.test.ts, tests/unit/auth-rate-limit.test.ts, tests/integration/identity-rbac.test.ts.
 
-- [ ] Write red tests for session expiry/rotation/revocation, one-use token consumption, TOTP verification and rate-limit boundaries.
-- [ ] Implement DB-backed session lookup with token hash, expiry and revocation checks; refresh lastSeenAt without extending expiry beyond the policy.
-- [ ] Serialize only the opaque session token into a cookie named ocpool_session with HttpOnly, SameSite=Lax, Secure in production, path / and explicit max age.
-- [ ] Implement TOTP enrollment using otpauth, encrypt the secret before persistence, require verification before marking enrollment complete, and enforce MFA for admin sessions.
-- [ ] Implement PostgreSQL-backed rate limiting with bounded identifiers (normalized email/IP), a fixed window, safe generic responses and no user enumeration.
-- [ ] Run focused unit/integration tests and review logs for secret absence.
-- [ ] Commit feat: add sessions tokens mfa and auth rate limiting.
+- [x] Write red tests for session expiry/rotation/revocation, one-use token consumption, TOTP verification and rate-limit boundaries.
+- [x] Implement DB-backed session lookup with token hash, expiry and revocation checks; refresh lastSeenAt without extending expiry beyond the policy.
+- [x] Serialize only the opaque session token into a cookie named ocpool_session with HttpOnly, SameSite=Lax, Secure in production, path / and explicit max age.
+- [x] Implement TOTP enrollment using otpauth, encrypt the secret before persistence, require verification before marking enrollment complete, and enforce MFA for admin sessions.
+- [x] Implement PostgreSQL-backed rate limiting with bounded identifiers (normalized email/IP), a fixed window, safe generic responses and no user enumeration.
+- [x] Run focused unit/integration tests and review logs for secret absence.
+- [x] Commit feat: add sessions tokens mfa and auth rate limiting (`26494dd`).
 
 ### Task 4: Add auth orchestration and safe API adapters
 

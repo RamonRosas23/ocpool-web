@@ -5,10 +5,10 @@
 ## Estado actual
 
 - **Fase:** Fase 2 — Identidad y RBAC.
-- **Estado:** En desarrollo; plan documentado y listo para ejecutar Tarea 1.
+- **Estado:** En desarrollo; Tareas 1–3 terminadas y verificadas. Tarea 4 autorizada automáticamente.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `f933bd2`, `8b31e67`, `84fdeb2`, `f29db17`, `46c9796`.
+- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`.
 
 ## Orden documental obligatorio
 
@@ -48,10 +48,19 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Contrato de errores HTTP públicos sin stack traces, SQL ni secretos.
 - Endpoint `GET /api/health` con `requestId` y estado degradado seguro.
 - Pruebas unitarias, integración PostgreSQL, E2E foundation y regresión de landing.
+- Contrato de entorno para MFA, sesiones, tokens y rate limiting.
+- Modelo relacional de clientes, usuarios, roles, permisos, sesiones, tokens, eventos y buckets de intentos.
+- Migración adicional de protección contra replay de MFA (`20260908002806_mfa_replay_protection`).
+- Argon2id para contraseñas de empleados; huellas SHA-256 para tokens y sesiones; AES-256-GCM para secretos MFA.
+- Catálogo RBAC inicial con roles `customer`, `sales`, `manager` y `admin`, seed idempotente y guardias backend deny-by-default.
+- Sesiones persistidas con expiración, revocación, actor derivado desde PostgreSQL y cookie `ocpool_session` con política segura.
+- Tokens de autenticación de un solo uso y rate limiting de ventana fija con bloqueo de fila PostgreSQL.
+- MFA TOTP con ventana controlada y contador persistido para rechazar replays.
 
 ### En desarrollo
 
-- Ningún módulo: Fase 1 está cerrada y la siguiente implementación requiere el plan de Fase 2.
+- Orquestación de autenticación y adaptadores API seguros: login de empleados, magic link de cliente, recovery, sesión y logout.
+- CSRF/same-origin para mutaciones autenticadas y eventos de autenticación sin secretos.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -61,8 +70,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 ### Pendientes
 
 - Arquitectura de aplicación comercial.
-- PostgreSQL, migraciones y seeds.
-- Identidad, sesiones y RBAC.
+- Endpoints de identidad y flujo completo de autenticación.
 - Clientes, contactos y expedientes.
 - Solicitudes, folios, estados y asignaciones.
 - Catálogo, precios y plantillas.
@@ -97,17 +105,18 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 Gate final ejecutado después de `npm ci`:
 
-- `npm test` — correcto: 12 unitarias, 1 integración, 29 E2E públicos, 1 E2E foundation y build/contenido correctos.
+- `npm test` — correcto antes de iniciar Fase 2: 12 unitarias, 1 integración, 29 E2E públicos, 1 E2E foundation y build/contenido correctos. Debe repetirse después del bloque de identidad.
 - `npm run db:up` — PostgreSQL y Mailpit activos.
 - `npm run db:validate` — schema válido.
 - `npm run db:generate` — cliente Prisma 7.10.0 generado.
 - `npm run db:migrate:deploy` — sin migraciones pendientes.
 - `npm run db:seed` — correcto e idempotente.
-- `npm run test:unit` — 12 pruebas correctas.
-- `npm run test:integration` — 1 prueba correcta contra PostgreSQL.
+- `npm run test:unit` — 23 pruebas correctas después de Tarea 3.
+- `npm run test:integration` — 6 pruebas correctas contra PostgreSQL después de Tarea 3.
+- `npm run lint` — correcto después de Tarea 3.
+- `npm run build` — correcto después de Tarea 3, con tipos y páginas generadas.
 - `npm run test:e2e:foundation` — 1 prueba correcta.
 - `npm run test:content` — correcto.
-- `npm run build` — correcto; lint y tipos de Next.js completados.
 - `npm run test:e2e` — 29 correctas y 1 omitida de forma explícita por ser opt-in.
 - `git diff --check` — correcto.
 
@@ -118,6 +127,7 @@ La suite E2E completa descubrió 30 pruebas: la foundation se omite en el comand
 - Pruebas unitarias de dominio.
 - Pruebas de servicios y transacciones de base de datos.
 - Pruebas de API y autorización.
+- Pruebas de login, magic link, recovery, logout, CSRF y MFA a través de API.
 - Pruebas de IDOR, enumeración, sesiones y rate limiting.
 - Pruebas de archivos privados y URLs temporales.
 - Pruebas de snapshots e inmutabilidad.
@@ -138,6 +148,7 @@ La suite E2E completa descubrió 30 pruebas: la foundation se omite en el comand
 - Destino de despliegue de producción aún no definido.
 - `npm audit` reporta 5 vulnerabilidades transitorias tras incorporar Prisma CLI 7.10.0: 4 altas asociadas a `deepmerge-ts`/`mysql2` y 1 moderada asociada a `@humanfs/node`. La corrección automática propone degradar Prisma a 6.19.3; queda pendiente una resolución compatible o una excepción de riesgo documentada.
 - El health check cubre disponibilidad de PostgreSQL, pero todavía no existe autenticación, autorización ni rate limiting.
+- La infraestructura de identidad ya existe, pero aún no está expuesta por endpoints ni integrada con Mailpit/Outbox.
 
 ## Deuda técnica conocida
 
@@ -154,6 +165,7 @@ La suite E2E completa descubrió 30 pruebas: la foundation se omite en el comand
 - Logger y errores HTTP son dependencias transversales de las futuras APIs.
 - La separación Playwright/Vitest protege la regresión de landing mientras crece el backend.
 - Fase 2 (identidad/RBAC) debe preceder a expedientes, cotizaciones y portal porque todos requieren autorización backend.
+- Las rutas de autenticación dependerán de `sessions.ts`, `tokens.ts`, `mfa.ts`, `rate-limit.ts`, `permissions.ts`, el logger y el envelope de errores.
 
 ## Problemas encontrados y resolución
 
@@ -163,6 +175,7 @@ La suite E2E completa descubrió 30 pruebas: la foundation se omite en el comand
 - El guard de migraciones no cargaba `.env`; se añadió `dotenv/config` y una prueba de contrato.
 - La primera prueba E2E pública tuvo un timeout intermitente en overflow horizontal; la repetición posterior con la configuración corregida terminó en 29/29.
 - El wrapper npm para argumentos Prisma eliminó `--name`; se usó el CLI directo y se conservó el timestamp generado para no renombrar una migración aplicada.
+- Next.js no acepta el enum ambient de `@node-rs/argon2` con `isolatedModules`; se usó el valor estable `2` para Argon2id y se verificó con build y pruebas.
 
 ## Criterio de terminado de Fase 1
 
@@ -175,4 +188,4 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 
 ## Próximo paso autorizado
 
-Ejecutar Tarea 1 del plan de Fase 2: dependencias, contrato de entorno, modelos relacionales y migración de identidad/RBAC.
+Ejecutar Tarea 4 del plan de Fase 2: orquestación de autenticación, CSRF/same-origin y adaptadores API seguros.
