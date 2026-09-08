@@ -1,6 +1,6 @@
 # OCPOOL — Plan Fase 4: Catálogo, precios y cotizaciones versionadas
 
-> Estado: Tareas 1–3 ejecutadas y verificadas. Tarea 4 lista para ejecución. No se implementará una pantalla de cotización antes de cerrar contratos monetarios, snapshots e invariantes.
+> Estado: Tareas 1–4 ejecutadas y verificadas. Tarea 5 en ejecución. No se implementará una pantalla de cotización antes de cerrar contratos monetarios, snapshots e invariantes.
 
 ## Objetivo
 
@@ -99,7 +99,7 @@ Los permisos existentes de cotizaciones se conservarán y se separará explícit
 - [x] Tarea 1 — contratos monetarios, estados, snapshots y permisos adicionales.
 - [x] Tarea 2 — schema relacional de catálogo, listas y cotizaciones.
 - [x] Tarea 3 — servicio de precios y creación de versión reproducible.
-- [ ] Tarea 4 — API y UI de catálogo/listas de precios.
+- [x] Tarea 4 — API y UI de catálogo/listas de precios.
 - [ ] Tarea 5 — constructor de cotizaciones y operaciones protegidas.
 - [ ] Tarea 6 — gate de fase.
 
@@ -163,7 +163,16 @@ Evidencia de cierre:
 - Gestión de listas y precios con confirmación, validación y feedback.
 - No exponer operaciones administrativas a clientes.
 
-### Tarea 5 — Constructor de cotizaciones
+Evidencia de cierre:
+
+- Commit `861e4d8` (`feat: add protected catalog and price operations`).
+- `src/server/modules/catalog/service.ts` centraliza categorías, conceptos, archivado, listas, vigencias y precios con permisos backend, auditoría y Outbox.
+- Las rutas internas de catálogo exigen sesión de empleado; las mutaciones exigen same-origin y permisos específicos. Los clientes no tienen acceso.
+- La UI `/staff/catalog` consume capacidades del backend, oculta acciones no autorizadas y conserva estados completos de carga, error, vacío, restricción y confirmación.
+- Los importes viajan como unidades mínimas en cadena y la UI los formatea sin convertirlos a `number`.
+- Verificación: `npm run test:integration` 28/28, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` 32/32 ejecutadas con 2 omitidas explícitamente y `git diff --check` correctos.
+
+### Tarea 5 — Constructor de cotizaciones (actual)
 
 - Selección de solicitud y cliente autorizado.
 - Líneas, cantidades, precios, descuentos e impuestos con resumen vivo.

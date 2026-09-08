@@ -5,10 +5,10 @@
 ## Estado actual
 
 - **Fase:** Fase 4 — Catálogo, precios y cotizaciones versionadas.
-- **Estado:** Fase 4 está en ejecución. Las Tareas 1–3 están terminadas con evidencia verificable; la Tarea 4 — API y UI de catálogo/listas — es el siguiente incremento autorizado.
+- **Estado:** Fase 4 está en ejecución. Las Tareas 1–4 están terminadas con evidencia verificable; la Tarea 5 — constructor interno de cotizaciones — es el incremento actual.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`.
+- **Commits de la fase:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`.
 
 ## Orden documental obligatorio
 
@@ -85,10 +85,13 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Seed local demo (`DEMO-SERVICES`, `DEMO-CONSULTA`, `DEMO-MXN`) idempotente y explícitamente no comercial.
 - Servicio transaccional de cotizaciones: resolución de precio vigente, snapshots completos, reemplazo de borrador, versionado concurrente, auditoría y Outbox.
 - Envío de versión que actualiza la solicitud a `COTIZACION_DISPONIBLE` sólo dentro de la misma transacción.
+- API interna protegida de capacidades, categorías, conceptos, listas y precios con validación same-origin, RBAC y errores públicos seguros.
+- Servicio transaccional de catálogo con búsqueda, filtros, paginación, archivado no destructivo, vigencias sin solapamiento y auditoría/Outbox.
+- UI interna responsive de catálogo y listas de precios con permisos por capacidad, estados de carga/error/vacío, confirmación de archivado y formato monetario sin floats.
 
 ### En desarrollo
 
-- Fase 4 — Tarea 4: API y UI de catálogo y listas de precios con RBAC.
+- Fase 4 — Tarea 5: constructor interno de cotizaciones y operaciones protegidas.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -97,7 +100,6 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 ### Pendientes
 
 - Arquitectura de aplicación comercial por dominios de negocio.
-- Catálogo, precios y plantillas.
 - Constructor de cotizaciones.
 - Snapshots y versionado inmutable.
 - Portal del cliente.
@@ -133,6 +135,10 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 19. Relacionar una cotización con solicitud y cliente mediante FK compuesto, además de FK directo al cliente.
 20. Resolver precios dentro de transacción con bloqueo de solicitud/cotización; una carrera de creación de versión produce una sola versión ganadora.
 21. La operación de envío de cotización y el cambio de estado de solicitud se auditan y publican como Outbox en la misma transacción.
+22. Las mutaciones del catálogo y precios requieren sesión de empleado, permiso de escritura y same-origin; el frontend sólo refleja capacidades, nunca sustituye la autorización.
+23. Los conceptos se archivan en lugar de eliminarse físicamente; los precios vigentes no pueden solaparse para la misma lista y concepto.
+24. Los importes monetarios viajan por API como cadenas de unidades mínimas y se formatean con `BigInt` para evitar pérdida de precisión en la UI.
+25. La UI interna de catálogo usa un espacio de trabajo denso de dos zonas, superficies planas, reglas y responsive apilado, consistente con la identidad OCPOOL y sin métricas decorativas.
 
 ## Pruebas realizadas
 
@@ -160,6 +166,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 1 de Fase 4: prueba roja inicial de contrato, después `npm run test:unit` 41/41, `npm run test:integration` 20/20, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 - Tarea 2 de Fase 4: migración `20260908032000_catalog_quotes`, `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npx prisma migrate status`, `npm run db:seed`, schema dirigido 3/3, integración completa 23/23, typecheck, lint y `git diff --check` correctos.
 - Tarea 3 de Fase 4: `npm run test:integration` 25/25, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint` y `git diff --check` correctos; se verificaron snapshots históricos, permisos, edición de borrador, transición de envío, aceptación bloqueada, concurrencia y limpieza de fixtures.
+- Tarea 4 de Fase 4: commit `861e4d8` (`feat: add protected catalog and price operations`); `npm run test:integration` 28/28, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` 32/32 ejecutadas con 2 omitidas explícitamente y `git diff --check` correctos. Se verificaron 401/403, same-origin, archivado, precios solapados, permisos de ventas/gerencia, UI restringida sin sesión y formato monetario sin floats.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -207,6 +214,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Los contratos de `src/server/modules/quotes/domain.ts` son dependencia de schema, servicio de precios, snapshots persistidos y constructor.
 - El schema de Fase 4 y la migración son dependencia del servicio de resolución de precios y creación de versiones.
 - El servicio de `src/server/modules/quotes/service.ts` es dependencia de las APIs internas y del constructor operativo.
+- El servicio y las rutas de `src/server/modules/catalog/` son dependencia del selector de conceptos, listas y precios del constructor.
 
 ## Problemas encontrados y resolución
 
@@ -236,8 +244,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
-- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–3 ejecutadas; Tarea 4 lista para iniciar.
+- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–4 ejecutadas; Tarea 5 en curso.
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 4 de Fase 4: construir API interna y UI responsive de catálogo/listas de precios con filtros, paginación, estados y autorización backend.
+Ejecutar la Tarea 5 de Fase 4: construir el constructor interno de cotizaciones, sus operaciones protegidas, versionado visible y pruebas E2E del flujo empleado.
