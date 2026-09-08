@@ -63,7 +63,7 @@ async function resolveAuthRecipient(prisma: DbClient, event: NotificationEventIn
   const token = isUuid(tokenId) ? await prisma.authToken.findUnique({ where: { id: tokenId }, select: { userId: true, type: true, consumedAt: true, expiresAt: true } }) : null;
   if (!token || token.userId !== event.aggregateId || token.type !== tokenType || token.consumedAt || token.expiresAt <= new Date()) return cancellation('INVALID_PAYLOAD');
   const recipient = event.eventType === 'AUTH.CUSTOMER_MAGIC_LINK'
-    ? user?.type === 'CUSTOMER' && user.status === 'ACTIVE' && user.client?.status === 'ACTIVE'
+    ? user?.type === 'CUSTOMER' && ['ACTIVE', 'INVITED'].includes(user.status) && user.client?.status === 'ACTIVE'
       ? { userId: user.id, email: user.email, displayName: user.displayName, audience: 'CUSTOMER' as const }
       : null
     : user?.type === 'EMPLOYEE' && user.status === 'ACTIVE'

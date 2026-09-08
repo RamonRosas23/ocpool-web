@@ -115,6 +115,32 @@ async function createDeliveryToken(client: Prisma.TransactionClient, input: {
   return { tokenId: token.id, expiresAt };
 }
 
+export async function issueCustomerMagicLinkInTransaction(client: Prisma.TransactionClient, input: {
+  userId: string;
+  identifier?: string;
+  context: AuthRequestContext;
+  now: Date;
+  rawToken: string;
+}): Promise<{ tokenId: string; expiresAt: Date }> {
+  const delivery = await createDeliveryToken(client, {
+    userId: input.userId,
+    type: 'MAGIC_LINK',
+    eventType: 'AUTH.CUSTOMER_MAGIC_LINK',
+    context: input.context,
+    now: input.now,
+    rawToken: input.rawToken,
+  });
+  await recordAuthEvent(client, {
+    eventType: 'MAGIC_LINK_REQUEST',
+    outcome: 'SUCCESS',
+    userId: input.userId,
+    identifier: input.identifier,
+    context: input.context,
+    metadata: { tokenId: delivery.tokenId },
+  });
+  return delivery;
+}
+
 async function isAllowed(rateLimit: { scope: string; key: string }, now: Date): Promise<boolean> {
   const env = readServerEnv();
   const decision = await checkAuthRateLimit({
@@ -255,15 +281,13 @@ export async function requestCustomerMagicLink(input: { email: string; context: 
 
   const rawToken = (dependencies.tokenGenerator ?? generateOpaqueToken)();
   await prisma.$transaction(async (transaction) => {
-    const delivery = await createDeliveryToken(transaction, {
+    await issueCustomerMagicLinkInTransaction(transaction, {
       userId: user.id,
-      type: 'MAGIC_LINK',
-      eventType: 'AUTH.CUSTOMER_MAGIC_LINK',
+      identifier: email,
       context: input.context,
       now,
       rawToken,
     });
-    await recordAuthEvent(transaction, { eventType: 'MAGIC_LINK_REQUEST', outcome: 'SUCCESS', userId: user.id, identifier: email, context: input.context, metadata: { tokenId: delivery.tokenId } });
   });
 }
 
@@ -281,9 +305,14 @@ export async function consumeCustomerMagicLink(rawToken: string, context: AuthRe
   const result = await prisma.$transaction(async (transaction) => {
     const token = await transaction.authToken.findUnique({ where: { tokenHash: fingerprintToken(rawToken) }, include: { user: { include: { client: true } } } });
     if (!token || token.type !== 'MAGIC_LINK' || token.consumedAt || token.expiresAt <= now) return null;
-    if (token.user.type !== 'CUSTOMER' || token.user.status !== 'ACTIVE' || token.user.client?.status !== 'ACTIVE') return null;
+    if (token.user.type !== 'CUSTOMER' || !['ACTIVE', 'INVITED'].includes(token.user.status) || token.user.client?.status !== 'ACTIVE') return null;
     const consumed = await transaction.authToken.updateMany({ where: { id: token.id, consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } });
     if (consumed.count !== 1) return null;
+
+    if (token.user.status === 'INVITED') {
+      const activated = await transaction.user.updateMany({ where: { id: token.userId, status: 'INVITED' }, data: { status: 'ACTIVE' } });
+      if (activated.count !== 1) return null;
+    }
 
     const session = await createSessionInTransaction(transaction, { userId: token.userId, ipAddress: context.ipAddress, userAgent: context.userAgent, mfaVerified: true, now, rawToken: sessionRawToken });
     await recordAuthEvent(transaction, { eventType: 'MAGIC_LINK_CONSUMED', outcome: 'SUCCESS', userId: token.userId, context, metadata: { tokenId: token.id } });
