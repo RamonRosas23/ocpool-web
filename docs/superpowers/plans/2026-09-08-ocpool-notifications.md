@@ -31,13 +31,13 @@ Cada evento soportado produce una plantilla versionada determinista y segura, lo
 
 ## Tarea 3 — Dispatcher, worker y reintentos
 
-- [ ] Implementar claim concurrente con `SKIP LOCKED`, lease, transición condicional y bounded batch.
-- [ ] Crear fan-out idempotente desde Outbox a `NotificationDelivery` sin alterar el agregado comercial.
-- [ ] Implementar envío, timeout, backoff exponencial con jitter acotado, máximo de intentos y clasificación temporal/permanente.
-- [ ] Implementar comando one-shot y worker continuo con shutdown limpio, logs redacted y métricas agregadas.
-- [ ] Agregar health/diagnóstico no sensible para edad del evento más antiguo, pendientes, enviados y fallidos.
-- [ ] Probar carrera entre workers, reinicio durante PROCESSING, replay, proveedor caído, rate limit y error permanente.
-- [ ] Commit `feat: add notification dispatcher and worker`.
+- [x] Implementar claim concurrente con `SKIP LOCKED`, lease, transición condicional y bounded batch.
+- [x] Crear fan-out idempotente a nivel de intención desde Outbox a `NotificationDelivery` sin alterar el agregado comercial; la resolución de destinatarios comerciales queda en Tarea 4.
+- [x] Implementar envío, timeout/proveedor, backoff exponencial con jitter acotado, máximo de intentos y clasificación temporal/permanente.
+- [x] Implementar comando one-shot y worker continuo con shutdown limpio, logs redacted y métricas agregadas.
+- [x] Agregar health/diagnóstico no sensible para edad del evento más antiguo, pendientes, enviados y fallidos.
+- [x] Probar carrera entre workers, recuperación de `PROCESSING`, replay, proveedor caído, rate limit y error permanente.
+- [x] Commit `feat: add notification dispatcher and worker`.
 
 ### Criterio de terminado
 

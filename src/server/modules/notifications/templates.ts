@@ -222,7 +222,7 @@ export type RenderedNotificationTemplate = {
 };
 
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/u;
-const ALLOWED_PATHS = ['/portal', '/auth/customer/consume-link', '/auth/recovery'];
+const ALLOWED_PATHS = ['/portal', '/staff', '/auth/customer/consume-link', '/auth/recovery'];
 
 function escapeHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');

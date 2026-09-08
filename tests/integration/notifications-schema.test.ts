@@ -58,6 +58,16 @@ describe('notification delivery relational schema', () => {
           templateVersion: 'v1',
         },
       })).rejects.toThrow();
+      await expect(prisma.notificationDelivery.create({
+        data: {
+          outboxEventId: event.id,
+          recipientAddressCiphertext: ciphertext,
+          recipientAddressHash: notificationRecipientHash(`error-${suffix}@example.test`),
+          templateKey: 'quote.version.raw-error',
+          templateVersion: 'v1',
+          lastErrorCode: 'RAW_PROVIDER_RESPONSE',
+        },
+      })).rejects.toThrow();
 
       await expect(prisma.notificationDelivery.create({
         data: {

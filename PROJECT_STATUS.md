@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 9 — notificaciones y entrega, Tarea 3 siguiente.
-- **Estado:** Fases 1–8 están terminadas con gates verdes. Fase 9 Tareas 1–2 están cerradas con persistencia, seguridad, mappers, templates y SMTP local verificados; Tarea 3 queda en desarrollo como siguiente slice.
+- **Fase:** Fase 9 — notificaciones y entrega, Tarea 4 en desarrollo.
+- **Estado:** Fases 1–8 están terminadas con gates verdes. Fase 9 Tareas 1–3 están cerradas con persistencia, seguridad, templates, SMTP local, dispatcher, leases, reintentos y worker verificados; Tarea 4 integra los eventos transaccionales reales.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -141,11 +141,14 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 9 — Tarea 2: ocho templates v1 HTML/texto con escape, subjects seguros, URLs same-origin allowlisted, límites de contenido y copy sin prometer lectura del correo.
 - Fase 9 — Tarea 2: proveedor `EmailProvider` SMTP reemplazable sobre Nodemailer 10.0.1, `disableFileAccess`/`disableUrlAccess`, configuración SMTP validada y errores de proveedor redacted.
 - Fase 9 — Tarea 2: 13 pruebas unitarias dirigidas, typecheck, lint, auditoría de dependencias 0 y entrega real a Mailpit verificada/limpiada.
+- Fase 9 — Tarea 3: claim concurrente PostgreSQL con `FOR UPDATE SKIP LOCKED`, batch acotado, lease recuperable y contador de intentos incrementado al reclamar.
+- Fase 9 — Tarea 3: transición condicional por `deliveryId` + lease para evitar que un worker viejo sobrescriba el resultado de un worker recuperado; errores persistidos sólo como códigos controlados.
+- Fase 9 — Tarea 3: reintentos con jitter acotado 80–120 %, máximo de intentos, clasificación temporal/permanente, comando one-shot, worker continuo con apagado limpio y diagnóstico operativo no sensible.
+- Fase 9 — Tarea 3: migración `20260908120000_notifications_error_code_constraint` aplicada para cerrar en PostgreSQL la allowlist de códigos de error.
 
 ### En desarrollo
 
-- Fase 9 — Tarea 2: mappers de eventos, plantillas HTML/texto y adaptador SMTP Mailpit, cerrado.
-- Fase 9 — Tarea 3: dispatcher, fan-out, claims concurrentes, leases y reintentos bounded.
+- Fase 9 — Tarea 4: integración de eventos transaccionales de auth, solicitudes, cotizaciones, aceptación, mensajería y archivos.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -156,7 +159,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
 - Revisión legal de términos de PDF/aceptación.
-- Dispatcher, worker, reintentos y operación de notificaciones.
+- Integración de eventos transaccionales con destinatarios reales y fan-out por audiencia.
 - Auditoría comercial y de seguridad.
 - Dashboard y métricas.
 - Hardening, backups, observabilidad y preparación para producción.
@@ -249,6 +252,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 84. El mapper valida el `aggregateType` esperado por cada evento y mantiene una allowlist explícita; un JSON válido con agregado incorrecto queda rechazado.
 85. Los datos enriquecidos por el worker tienen límites de longitud y controles antes de persistirse/renderizarse; los tokens cifrados sólo viajan como material transitorio y nunca como `safePayload`.
 86. El proveedor SMTP usa Nodemailer 10.0.1 sin `raw`, archivos ni URLs del mensaje y con `disableFileAccess`/`disableUrlAccess`; la configuración de Mailpit no se mezcla con el contrato de negocio.
+87. PostgreSQL es el coordinador de claims de notificaciones en esta escala: cada batch usa `FOR UPDATE SKIP LOCKED`, y un `PROCESSING` cuyo lease expiró puede recuperarse sin introducir Redis prematuramente.
+88. El worker incrementa `attempts` al reclamar y sólo completa o falla una entrega si conserva el mismo lease; esto evita que un worker tardío sobrescriba el resultado de otro que recuperó el trabajo.
+89. Los reintentos usan jitter acotado 80–120 %, backoff exponencial con máximo de una hora y máximo de intentos configurable; una entrega permanente termina en `FAILED` operable y no se reintenta indefinidamente.
+90. El worker descifra destinatarios y tokens únicamente en memoria durante el envío; los logs, payloads seguros, estados operativos y códigos de error no contienen correo crudo, tokens ni respuestas completas del proveedor.
+91. La operación local se expone en dos modos: one-shot para jobs controlados y continuo con `SIGINT`/`SIGTERM`; ambos reutilizan el mismo servicio transaccional y no cambian el resultado del agregado comercial.
 
 ## Pruebas realizadas
 
@@ -305,6 +313,8 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 8 — Tarea 5: `quote-documents-api.test.ts` pasó 2/2 con estado `MISSING`/`READY`, cliente bloqueado, acciones condicionadas, evidencia post-aceptación y ausencia de `storageKey`/`sha256`; `npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1 con generación real en MinIO, descarga presigned, Axe, consola limpia, payload mínimo y no overflow desktop/móvil. `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 - Fase 9 — Tarea 1: prueba roja inicial de contratos; `tests/unit/notifications-domain.test.ts` y `tests/unit/env.test.ts` pasaron 8/8; `notifications-schema.test.ts` pasó 1/1 contra PostgreSQL con duplicados, hash inválido, destinatario sin cifrado y estados incompletos rechazados. `npm run db:validate`, `npx prisma migrate status`, `npm run db:seed`, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 - Fase 9 — Tarea 2: pruebas rojas de templates/provider, después `notifications-templates.test.ts`, `email-provider.test.ts` y `env.test.ts` 13/13; se verificaron ocho templates, escape HTML/texto, scope interno, agregado incorrecto, tamaños, URL allowlist, header injection y credentials SMTP. Nodemailer 10.0.1 pasó `npm audit --omit=dev --audit-level=high` con 0; Mailpit aceptó un mensaje real con from/reply-to correctos y el fixture fue eliminado.
+- Fase 9 — Tarea 3: pruebas dirigidas de dispatcher/worker/esquema 3/3 y unitarias 8/8; se verificaron upsert idempotente, carrera de dos workers, recuperación de lease, transición condicional, envío exitoso, retry temporal, fallo terminal por máximo de intentos y códigos de error controlados.
+- Gate técnico de Tarea 3: `npm run test:unit` 77/77, `npm run test:integration` 55/55 serializado, `npm run db:validate`, `npx prisma migrate status` con 15 migraciones al día, `npm run db:seed`, `npm run worker:notifications:once` sin pendientes, `npm run typecheck`, `npm run lint`, `git diff --check` y `npm audit --omit=dev --audit-level=high` con 0 vulnerabilidades.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -316,7 +326,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Pruebas finales de archivos privados: staff, seguridad de fase, URLs temporales, cleanup y proveedor antivirus productivo.
 - Pruebas de snapshots e inmutabilidad.
 - Pruebas de cálculo de cotizaciones.
-- Pruebas de notificaciones y reintentos.
+- Pruebas por evento de notificaciones, resolución de destinatarios y fan-out desde Outbox.
+- Pruebas del worker continuo bajo apagado, recuperación y proveedor no disponible.
 - Pruebas de carga y restauración de backups.
 
 ## Riesgos abiertos
@@ -363,8 +374,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 8 depende de snapshots/versiones de cotización de Fase 4, portal/sesiones de Fase 5, storage privado de Fase 7 y del contrato PDF/aceptación de Tareas 1–3 antes de la UI cliente.
 - Fase 8 Tarea 5 depende de las APIs de documento/aceptación de Tarea 3 y del workspace staff de cotizaciones; no puede inferir evidencia desde el portal cliente.
 - Fase 9 dependerá del Outbox transaccional de identidad, solicitudes, cotizaciones, mensajería y aceptación; el canal de entrega no podrá cambiar el resultado de la transacción comercial.
-- Fase 9 Tarea 2 dependió de los contratos/persistencia de `NotificationDelivery`, `readServerEnv()` y el Outbox transaccional; Tarea 3 dependerá además de sus mappers, templates y provider.
-- Fase 9 Tarea 3 dependerá de `NotificationDelivery.availableAt`, estados, intentos, proveedor y payloads safe; Tareas 4–5 consumirán el dispatcher y sus estados operativos.
+- Fase 9 Tarea 2 dependió de los contratos/persistencia de `NotificationDelivery`, `readServerEnv()` y el Outbox transaccional; Tarea 3 consumió sus mappers, templates y provider.
+- Fase 9 Tarea 3 dejó disponible el dispatcher, el fan-out idempotente, los estados, leases, intentos, proveedor, payloads safe y diagnóstico; Tarea 4 consume ese contrato para resolver destinatarios reales por evento y Tarea 5 expondrá la operación staff.
 
 ## Problemas encontrados y resolución
 
@@ -396,6 +407,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - La primera ejecución dirigida de la integración de notificaciones omitió `RUN_DB_TESTS=1` y falló por el guard de entorno; se repitió con el script oficial y pasó 1/1, sin cambio productivo asociado.
 - Nodemailer 7 introducía vulnerabilidades altas conocidas en la auditoría de dependencias; se actualizó a Nodemailer 10.0.1, se conservaron sólo opciones SMTP controladas y se deshabilitaron accesos a archivos/URLs del mensaje.
 - La primera verificación del proveedor con `tsx -e` usó await de nivel superior en salida CommonJS; se repitió con una IIFE async y la entrega a Mailpit pasó, sin cambio de producto asociado.
+- La revisión de concurrencia de Tarea 3 detectó una carrera en el manejo de fallos: una entrega podía volver a `PENDING` y ser reclamada antes de la segunda escritura. Se corrigió con una única actualización condicional ligada al lease reclamado y se añadió una prueba de dos workers.
+- La primera prueba de máximo de intentos no aislaba correctamente el umbral configurable; se ajustó el fixture para verificar explícitamente la transición terminal `FAILED` y el código persistido `TEMPORARY_PROVIDER`.
 
 ## Criterio de terminado de Fase 1
 
@@ -423,7 +436,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/specs/2026-09-08-ocpool-notifications.md` — especificación aprobada para Fase 9.
 - `docs/superpowers/reviews/2026-09-08-ocpool-notifications-review.md` — autorrevisión de Fase 9, completada antes de código.
-- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tareas 1–2 cerradas, Tarea 3 siguiente.
+- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tareas 1–3 cerradas, Tarea 4 en ejecución.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 
@@ -433,4 +446,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 9, Tarea 3: dispatcher, fan-out, claims concurrentes, leases y reintentos bounded.
+Ejecutar Fase 9, Tarea 4: integrar eventos transaccionales de auth, solicitudes, cotizaciones, aceptación, mensajería y archivos con destinatarios reales y fan-out idempotente.

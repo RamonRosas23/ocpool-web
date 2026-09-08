@@ -40,3 +40,12 @@ export function calculateNotificationRetryDelaySeconds(attempt: number): number 
   if (!Number.isInteger(attempt) || attempt < 1) throw new Error('Invalid notification attempt.');
   return Math.min(3600, 30 * (2 ** Math.min(attempt - 1, 7)));
 }
+
+export function calculateNotificationRetryAt(now: Date, attempt: number, random = Math.random): Date {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new Error('Invalid notification retry time.');
+  if (typeof random !== 'function') throw new Error('Invalid notification jitter source.');
+  const sample = random();
+  if (!Number.isFinite(sample) || sample < 0 || sample > 1) throw new Error('Invalid notification jitter sample.');
+  const delaySeconds = Math.min(3600, Math.round(calculateNotificationRetryDelaySeconds(attempt) * (0.8 + (sample * 0.4))));
+  return new Date(now.getTime() + (delaySeconds * 1000));
+}
