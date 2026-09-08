@@ -201,6 +201,7 @@ model ClientContact {
 model QuoteRequest {
   id                String                  @id @default(uuid()) @db.Uuid
   folio             String                  @unique @db.VarChar(24)
+  idempotencyKeyHash String?               @unique @db.VarChar(64)
   clientId          String                  @db.Uuid
   contactId         String                  @db.Uuid
   currentAssigneeId String?                 @db.Uuid

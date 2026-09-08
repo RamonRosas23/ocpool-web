@@ -82,6 +82,7 @@ describe('identity and RBAC foundation', () => {
     }
 
     const prisma = getPrisma();
+    const sequenceBeforeSeed = await prisma.folioSequence.findUnique({ where: { key: 'quote_request' } });
     await seedIdentityCatalog(prisma);
     await seedIdentityCatalog(prisma);
 
@@ -91,7 +92,10 @@ describe('identity and RBAC foundation', () => {
 
     expect(roles).toHaveLength(Object.keys(ROLE_DEFINITIONS).length);
     expect(permissions).toHaveLength(PERMISSION_CATALOG.length);
-    expect(await prisma.folioSequence.findUnique({ where: { key: 'quote_request' } })).toMatchObject({ key: 'quote_request', nextValue: 1 });
+    expect(await prisma.folioSequence.findUnique({ where: { key: 'quote_request' } })).toMatchObject({
+      key: 'quote_request',
+      nextValue: sequenceBeforeSeed?.nextValue ?? 1,
+    });
 
     for (const [roleKey, definition] of Object.entries(ROLE_DEFINITIONS)) {
       const role = roles.find((candidate) => candidate.key === roleKey);
