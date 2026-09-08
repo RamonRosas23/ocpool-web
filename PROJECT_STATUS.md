@@ -5,8 +5,8 @@
 ## Estado actual
 
 - **Fase:** Fase 6 — Mensajería y notas internas.
-- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tareas 1, 2 y 3 están terminadas con evidencia y Tarea 4 — UI del portal cliente — está en desarrollo.
-- **Última actualización:** 2026-09-07.
+- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tareas 1, 2, 3 y 4 están terminadas con evidencia. Tarea 5 — UI staff y notas internas — es la siguiente en desarrollo.
+- **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
@@ -104,10 +104,12 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Servicio transaccional de mensajería con scope por cliente, lock de solicitud, conversación única, cursor estable, reintentos idempotentes, rate limiting, mensajes compartidos, notas internas y cierre/reapertura.
 - Auditoría y Outbox atómicos de mensajes y estados de conversación, con payloads sin cuerpo sensible.
 - APIs privadas de portal y staff para lectura, mensajes compartidos, notas internas y cierre/reapertura, con Zod estricto, same-origin, no-store, RBAC, rate limit y proyecciones sin datos internos.
+- Hilo de mensajería del portal cliente integrado en el detalle del expediente, con feed cronológico, cursor incremental, composer idempotente, estados de carga/vacío/error/cierre, responsive, foco/teclado, Axe y reduced motion.
+- Comando oficial de integración serializado a un worker DB para evitar timeouts de inicio de transacción por saturación local; se conserva la cobertura completa de 37 pruebas.
 
 ### En desarrollo
 
-- Fase 6 — Tarea 4: UI del portal cliente.
+- Fase 6 — Tarea 5: UI staff y notas internas.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -117,7 +119,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
-- Mensajería y notas internas.
+- UI staff para mensajería compartida y notas internas.
 - Archivos privados.
 - PDF comercial.
 - Aceptación digital.
@@ -166,6 +168,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 36. `ConversationReadState` queda fuera del primer slice de Fase 6; no se implementará unread hasta tener contrato de producto, permisos y pruebas de avance monotónico.
 37. Las mutaciones de conversación bloquean la fila de `QuoteRequest` antes de crear, cerrar, reabrir o escribir mensajes; esto serializa reintentos concurrentes por expediente y mantiene el scope compuesto request+cliente.
 38. La paginación del hilo usa cursor opaco basado en `(createdAt, id)` y orden ascendente estable; la primera entrega prioriza continuidad y consistencia antes de agregar unread.
+39. La UI cliente consume una proyección mínima `CUSTOMER`, deriva la etiqueta de autor desde el tipo de remitente y nunca modela campos internos; la visibilidad sigue siendo una decisión de backend.
+40. Las pruebas de integración PostgreSQL se ejecutan con un worker en el comando oficial para privilegiar reproducibilidad y evitar timeouts de transacción en laptops con recursos compartidos; la concurrencia de negocio continúa cubierta dentro de las pruebas de servicio.
 
 ## Pruebas realizadas
 
@@ -204,7 +208,8 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 5 de Fase 5: commit `af55a09` (`test: harden customer portal isolation`); `npm run test:unit` 42/42, `npm run test:integration` 32/32, `npm run typecheck`, `npm run lint`, E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2 y `git diff --check` correctos. Se verificaron sesiones revocadas/archivadas, aislamiento por cliente, UUID malformado, payloads sin secretos, Axe, estado vacío, error recuperable, consola limpia y responsive móvil.
 - Gate de Fase 5: `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npx prisma migrate status`, `npm test`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y árbol limpio correctos. `npm test` quedó en 42 unitarias, 32 integraciones, contenido, build, 34 E2E públicas con 5 omitidas explícitamente y foundation 1/1.
 - Tarea 2 de Fase 6: prueba dirigida `messaging-service.test.ts` 1/1 y `npm run test:integration` 34/34; `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Se verificaron dos clientes aislados, permisos de empleado, nota interna fuera de proyección cliente, idempotencia secuencial y concurrente, rate-limit injectable, cierre/reapertura y Outbox/auditoría sin cuerpos.
-- Tarea 3 de Fase 6: commit pendiente de registrar en este cierre; prueba API `messaging-api.test.ts` 3/3 y `npm run test:integration` 37/37; `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Se verificaron 401/403/404/409/429, scope IDOR, same-origin, schemas estrictos, `no-store`, RBAC limitado y ausencia de notas/IDs internos en portal.
+- Tarea 3 de Fase 6: commit `8446663` (`feat: expose protected messaging APIs`); prueba API `messaging-api.test.ts` 3/3 y `npm run test:integration` 37/37; `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Se verificaron 401/403/404/409/429, scope IDOR, same-origin, schemas estrictos, `no-store`, RBAC limitado y ausencia de notas/IDs internos en portal.
+- Tarea 4 de Fase 6: implementación y cierre documental de UI cliente; E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2, `npm run test:unit` 45/45, `npm run test:integration` 37/37 serializado, `npm run test:e2e` 34/34 ejecutadas con 5 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content` y `git diff --check` correctos. Se verificaron lectura/envío/refresh, notas internas invisibles, cierre de conversación, error recuperable, responsive, Axe, consola limpia y payload cliente mínimo.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -272,6 +277,8 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La prueba del seed asumía que el contador de folios siempre era `1`; se corrigió para verificar que el seed sea idempotente y preserve secuencias ya consumidas.
 - El typecheck conservó referencias generadas al endpoint legado después de retirarlo; el build de producción regeneró `.next` y confirmó el árbol de rutas final sin `send-email`.
 - La ejecución paralela de integración expuso aserciones frágiles sobre folios y buckets de rate limit; se corrigieron para tolerar concurrencia controlada y limpiar únicamente fixtures identificables.
+- La ejecución paralela completa de integración volvió a provocar timeouts de inicio de transacción y cascadas de cleanup con fixtures aún no creados; la corrida serializada pasó 18/18 archivos y 37/37 pruebas, y el script oficial quedó fijado a `--maxWorkers=1`.
+- La primera regresión E2E completa tuvo dos timeouts de cierre del contexto bajo carga; ambos casos pasaron aislados y la segunda regresión completa terminó 34/34, sin cambios productivos derivados de ese falso negativo.
 - El gate de seguridad encontró vulnerabilidades transitorias de Prisma; se resolvieron con overrides verificables y se repitió la suite completa antes de cerrar Fase 3.
 - `npx tsc --noEmit` encontró tipos incompletos en pruebas existentes; se corrigieron sin relajar `strict`.
 
@@ -289,8 +296,10 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
 - `docs/superpowers/specs/2026-09-07-ocpool-messaging.md` — especificación aprobada para Fase 6.
 - `docs/superpowers/specs/2026-09-07-ocpool-messaging-apis.md` — contrato HTTP privado de la Tarea 3, aprobado y ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tareas 1–3 cerradas y Tarea 4 en desarrollo.
+- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tareas 1–4 cerradas y Tarea 5 en desarrollo.
 - `docs/superpowers/plans/2026-09-07-ocpool-messaging-apis.md` — plan enfocado de APIs, ejecutado.
+- `docs/superpowers/specs/2026-09-07-ocpool-customer-messaging-ui.md` — especificación aprobada y ejecutada para la UI cliente de la Tarea 4.
+- `docs/superpowers/plans/2026-09-07-ocpool-customer-messaging-ui.md` — plan enfocado de UI cliente, ejecutado.
 
 ## Criterio de terminado de Fase 5
 
@@ -298,4 +307,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 4 de Fase 6: UI del portal cliente para mensajes compartidos, estados, responsive, accesibilidad e idempotencia transparente.
+Ejecutar la Tarea 5 de Fase 6: UI staff para mensajes compartidos, notas internas, permisos visuales, cierre/reapertura y productividad del inbox.

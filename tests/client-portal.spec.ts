@@ -1,9 +1,12 @@
 import 'dotenv/config';
 import { expect, test, type Page } from '@playwright/test';
 import { getPrisma } from '@/server/db/client';
+import { fingerprintToken } from '@/server/auth/crypto';
 import { createSession } from '@/server/auth/sessions';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
+import { closeConversation, createInternalNote, sendStaffMessage } from '@/server/modules/messaging/service';
 import { createQuoteVersion, transitionQuoteVersion } from '@/server/modules/quotes/service';
+import { seedIdentityCatalog } from '../prisma/seed';
 import { expectNoSeriousA11yViolations } from './a11y';
 
 test.describe('customer portal opt-in flow', () => {
@@ -46,6 +49,8 @@ test.describe('customer portal opt-in flow', () => {
         detail: { projectType: 'Comercial', location: 'Mazatlán', description: 'Expediente E2E sin cotización.', consentAt: now },
       }, { prisma, now }),
     ]);
+    await seedIdentityCatalog(prisma);
+    const customerRole = await prisma.role.findUniqueOrThrow({ where: { key: 'customer' } });
     requestAId = requestA.quoteRequestId;
     requestBId = requestB.quoteRequestId;
     clientAId = requestA.clientId;
@@ -54,8 +59,8 @@ test.describe('customer portal opt-in flow', () => {
     contactBId = requestB.contactId;
 
     const [customerA, customerB, employee] = await Promise.all([
-      prisma.user.create({ data: { email: `portal-e2e-user-a-${suffix}@example.test`, emailNormalized: `portal-e2e-user-a-${suffix}@example.test`, displayName: 'Portal E2E cliente A', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientAId } }),
-      prisma.user.create({ data: { email: `portal-e2e-user-b-${suffix}@example.test`, emailNormalized: `portal-e2e-user-b-${suffix}@example.test`, displayName: 'Portal E2E cliente B', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientBId } }),
+      prisma.user.create({ data: { email: `portal-e2e-user-a-${suffix}@example.test`, emailNormalized: `portal-e2e-user-a-${suffix}@example.test`, displayName: 'Portal E2E cliente A', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientAId, roles: { create: { roleId: customerRole.id } } } }),
+      prisma.user.create({ data: { email: `portal-e2e-user-b-${suffix}@example.test`, emailNormalized: `portal-e2e-user-b-${suffix}@example.test`, displayName: 'Portal E2E cliente B', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientBId, roles: { create: { roleId: customerRole.id } } } }),
       prisma.user.create({ data: { email: `portal-e2e-employee-${suffix}@example.test`, emailNormalized: `portal-e2e-employee-${suffix}@example.test`, displayName: 'Portal E2E empleado', type: 'EMPLOYEE', status: 'ACTIVE' } }),
     ]);
     customerAUserId = customerA.id;
@@ -83,21 +88,35 @@ test.describe('customer portal opt-in flow', () => {
     await transitionQuoteVersion(employeeActor, quote.versionId, 'EN_REVISION', { prisma, now });
     await transitionQuoteVersion(employeeActor, quote.versionId, 'ENVIADA', { prisma, now });
     await prisma.catalogItem.update({ where: { id: itemId }, data: { name: 'Portal E2E catálogo actualizado' } });
+
+    const messagingActor = {
+      userId: employeeId,
+      type: 'EMPLOYEE' as const,
+      clientId: null,
+      permissionKeys: new Set(['requests.read', 'messaging.read', 'messaging.send', 'messaging.internal_notes.read', 'messaging.internal_notes.write', 'messaging.manage']),
+      mfaVerified: true,
+    };
+    const rateLimit = async () => ({ allowed: true, remaining: 20, retryAfterSeconds: null });
+    await sendStaffMessage(messagingActor, requestAId, { body: 'Hemos revisado el alcance de tu proyecto.', idempotencyKey: `portal-e2e-staff-${suffix}` }, { prisma, now, rateLimit });
+    await createInternalNote(messagingActor, requestAId, { body: 'Nota interna: validar acabado con ingeniería.', idempotencyKey: `portal-e2e-note-${suffix}` }, { prisma, now, rateLimit });
   });
 
   test.afterAll(async () => {
     if (process.env.PORTAL_E2E !== '1') return;
     const requestIds = [requestAId, requestBId];
     const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: { in: requestIds } } }, select: { id: true } })).map(({ id }) => id);
+    const conversationIds = (await prisma.conversation.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true } })).map(({ id }) => id);
+    const messageIds = (await prisma.conversationMessage.findMany({ where: { conversationId: { in: conversationIds } }, select: { id: true } })).map(({ id }) => id);
     await prisma.quote.deleteMany({ where: { quoteRequestId: { in: requestIds } } });
-    const aggregateIds = [...requestIds, ...(quoteAId ? [quoteAId] : [])];
-    const entityIds = [...aggregateIds, ...versionIds];
+    const aggregateIds = [...requestIds, ...(quoteAId ? [quoteAId] : []), ...conversationIds];
+    const entityIds = [...aggregateIds, ...versionIds, ...messageIds];
     await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
-    await prisma.auditLog.deleteMany({ where: { entityId: { in: entityIds } } });
+    await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: entityIds } }, { actorUserId: { in: [customerAUserId, customerBUserId, employeeId] } }] } });
     await prisma.quoteRequest.deleteMany({ where: { id: { in: requestIds } } });
     await prisma.clientContact.deleteMany({ where: { id: { in: [contactAId, contactBId] } } });
     await prisma.session.deleteMany({ where: { userId: { in: [customerAUserId, customerBUserId, employeeId] } } });
     await prisma.user.deleteMany({ where: { id: { in: [customerAUserId, customerBUserId, employeeId] } } });
+    await prisma.authRateLimit.deleteMany({ where: { scope: 'messaging-send', keyHash: fingerprintToken(`${customerAUserId}:${requestAId}`) } });
     await prisma.client.deleteMany({ where: { id: { in: [clientAId, clientBId] } } });
     if (priceListId) {
       await prisma.priceListItem.deleteMany({ where: { priceListId } });
@@ -130,12 +149,26 @@ test.describe('customer portal opt-in flow', () => {
     await expect(page.locator('.client-quote__total strong')).toHaveText('MXN 348.00');
     await expect(page.getByText('Vigente hasta 01 oct 2026')).toBeVisible();
     await expect(page.locator('.client-status')).toHaveText('Cotización disponible');
+    await expect(page.getByRole('heading', { name: 'Conversación del expediente' })).toBeVisible();
+    await expect(page.getByText('Hemos revisado el alcance de tu proyecto.')).toBeVisible();
+    await expect(page.getByText('Nota interna: validar acabado con ingeniería.')).toBeHidden();
+    await expect(page.getByRole('textbox', { name: 'Escribe una actualización' })).toBeVisible();
+    await page.getByRole('textbox', { name: 'Escribe una actualización' }).fill('Tenemos una duda sobre el acabado final.');
+    await page.getByRole('button', { name: 'Enviar mensaje' }).click();
+    await expect(page.getByText('Tenemos una duda sobre el acabado final.')).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Tenemos una duda sobre el acabado final.')).toBeVisible();
+    await closeConversation({ userId: employeeId, type: 'EMPLOYEE', clientId: null, permissionKeys: new Set(['requests.read', 'messaging.manage']), mfaVerified: true }, requestAId, { prisma, now: new Date(now.getTime() + 1_000) });
+    await page.reload();
+    await expect(page.getByText('Esta conversación está cerrada.')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Escribe una actualización' })).toBeHidden();
     await expectNoSeriousA11yViolations(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(consoleErrors).toEqual([]);
     expect(portalPayloads.join('\n')).not.toContain('tokenHash');
     expect(portalPayloads.join('\n')).not.toContain(customerAToken);
     expect(portalPayloads.join('\n')).not.toContain('Portal E2E catálogo actualizado');
+    expect(portalPayloads.join('\n')).not.toContain('Nota interna: validar acabado con ingeniería.');
     expect(await page.locator('button').evaluateAll((buttons) => buttons.map((button) => button.textContent))).not.toContain('Aceptar');
 
     await page.getByRole('button', { name: 'Cerrar sesión' }).click();

@@ -116,12 +116,18 @@ Evidencia de cierre:
 
 **Riesgos:** filtrado sólo frontend, composer duplicado, mala densidad móvil, leaks en estados de error.
 
-- [ ] Escribir E2E roja de hilo privado y notas no visibles.
-- [ ] Añadir sección de conversación al detalle, carga incremental/paginación estable y estado vacío.
-- [ ] Añadir composer de texto con contador, bloqueo mientras envía, error recuperable e idempotencia transparente.
-- [ ] Mostrar conversación cerrada como lectura y explicar por qué no acepta mensajes.
-- [ ] Verificar teclado, foco, hit area, Axe, reduced motion y no overflow 360/390/768/1440.
-- [ ] Hacer commit `feat: add customer messaging thread`.
+- [x] Escribir E2E roja de hilo privado y notas no visibles.
+- [x] Añadir sección de conversación al detalle, carga incremental/paginación estable y estado vacío.
+- [x] Añadir composer de texto con contador, bloqueo mientras envía, error recuperable e idempotencia transparente.
+- [x] Mostrar conversación cerrada como lectura y explicar por qué no acepta mensajes.
+- [x] Verificar teclado, foco, hit area, Axe, reduced motion y no overflow 360/390/768/1440.
+- [x] Hacer commit `feat: add customer messaging thread`.
+
+Evidencia de cierre:
+
+- Spec y plan enfocados en `docs/superpowers/specs/2026-09-07-ocpool-customer-messaging-ui.md` y `docs/superpowers/plans/2026-09-07-ocpool-customer-messaging-ui.md`.
+- E2E opt-in cliente 2/2; regresión pública 34/34 ejecutadas con 5 omitidas explícitamente; unitarias 45/45; integración 37/37; build, typecheck, lint, contrato de contenido y diff check correctos.
+- Las notas internas no aparecen en el HTML ni en el payload cliente; el cierre oculta el composer y conserva el historial.
 
 **Criterios de terminado:** cliente sólo ve mensajes compartidos propios, puede enviar de forma segura y UI cubre todos los estados.
 
