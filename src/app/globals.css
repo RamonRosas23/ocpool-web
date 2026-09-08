@@ -802,6 +802,11 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .staff-detail__section h3, .staff-history h3 { margin: 0 0 5px; color: var(--staff-deep); font-size: 17px; font-weight: 700; }
 .staff-detail__section a, .staff-detail__section > p:not(.staff-section-label) { color: var(--staff-muted); font-size: 12px; }
 .staff-detail__section a:hover { color: var(--staff-water); text-decoration: underline; text-underline-offset: 3px; }
+.staff-contact-access { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; width: 100%; margin-top: 13px; border-top: 1px solid var(--staff-line); padding-top: 13px; }
+.staff-contact-access__status { color: var(--staff-muted); font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.staff-contact-access__status--active { color: #276b49; }
+.staff-contact-access__status--invited { color: #8a632e; }
+.staff-contact-access .staff-button { min-height: 34px; margin-left: auto; padding: 0 11px; font-size: 9px; }
 .staff-qualification { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 14px; margin: 14px 0 0; padding-top: 14px; border-top: 1px solid var(--staff-line); }
 .staff-qualification div { display: grid; min-width: 0; gap: 4px; }
 .staff-qualification dt { color: var(--staff-muted); font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }

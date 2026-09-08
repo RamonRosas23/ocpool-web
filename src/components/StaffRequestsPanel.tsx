@@ -53,7 +53,7 @@ type RequestSummary = {
 };
 
 type RequestDetail = RequestSummary & {
-  contact: RequestSummary['contact'] & { roleTitle: string | null; status: string };
+  contact: RequestSummary['contact'] & { roleTitle: string | null; status: string; user: { id: string; type: string; status: string } | null };
   detail: {
     id: string;
     projectType: string;
@@ -86,6 +86,7 @@ type RequestDetail = RequestSummary & {
 };
 
 type Assignee = { id: string; displayName: string; email: string };
+type StaffRequestCapabilities = StaffMessagingCapabilities & StaffFilesCapabilities & { identityUsersManage: boolean };
 type ListResponse = { items: RequestSummary[]; page: number; pageSize: number; total: number; totalPages: number };
 type ErrorResponse = { error?: { message?: string } };
 
@@ -130,7 +131,7 @@ export default function StaffRequestsPanel() {
   const [assignmentReason, setAssignmentReason] = useState('');
   const [nextStatus, setNextStatus] = useState('');
   const [statusReason, setStatusReason] = useState('');
-  const [messagingCapabilities, setMessagingCapabilities] = useState<StaffMessagingCapabilities & StaffFilesCapabilities>({
+  const [messagingCapabilities, setMessagingCapabilities] = useState<StaffRequestCapabilities>({
     messagingRead: false,
     messagingSend: false,
     messagingInternalNotesRead: false,
@@ -142,8 +143,10 @@ export default function StaffRequestsPanel() {
     filesDelete: false,
     filesInternalRead: false,
     filesManage: false,
+    identityUsersManage: false,
   });
   const [messagingCapabilitiesLoaded, setMessagingCapabilitiesLoaded] = useState(false);
+  const [customerAccessBusy, setCustomerAccessBusy] = useState(false);
 
   const loadList = useCallback(async (currentPage: number, currentStatus: string, query: string) => {
     setLoadingList(true);
@@ -212,7 +215,7 @@ export default function StaffRequestsPanel() {
     const loadCapabilities = async () => {
       try {
         const response = await fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store' });
-        const data = await readResponse<StaffMessagingCapabilities & StaffFilesCapabilities>(response);
+        const data = await readResponse<StaffRequestCapabilities>(response);
         setMessagingCapabilities(data);
       } catch {
         // The conversation remains inaccessible in the UI if capabilities cannot be resolved.
@@ -282,6 +285,28 @@ export default function StaffRequestsPanel() {
     }
   };
 
+  const inviteCustomerAccess = async () => {
+    if (!selected || customerAccessBusy) return;
+    setCustomerAccessBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/staff/quote-requests/${selected.id}/customer-access`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      const result = await readResponse<{ status: 'INVITED' | 'ALREADY_PENDING' | 'ALREADY_ACTIVE' }>(response);
+      setNotice(result.status === 'INVITED' ? 'Invitación de acceso enviada.' : result.status === 'ALREADY_PENDING' ? 'Ya existe una invitación vigente.' : 'Nuevo enlace de acceso enviado al cliente.');
+      await loadDetail(selected.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No fue posible habilitar el portal del cliente.');
+    } finally {
+      setCustomerAccessBusy(false);
+    }
+  };
+
   if (accessDenied) {
     return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
   }
@@ -324,7 +349,7 @@ export default function StaffRequestsPanel() {
             {!loadingDetail && !selected && <div className="staff-empty staff-empty--detail"><span className="staff-empty__mark">OC</span><h2>Selecciona un expediente.</h2><p>El detalle y las acciones operativas aparecerán aquí.</p></div>}
             {!loadingDetail && selected && <>
               <div className="staff-detail__header"><div><p className="staff-kicker">{selected.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{selected.folio}</h2><p className="staff-detail__date">Recibida el {formatDate(selected.createdAt)}</p>{['EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'].includes(selected.status) && <Link className="staff-button staff-button--dark staff-detail__quote-link" href={`/staff/quotes?request=${selected.id}`}>Abrir constructor</Link>}</div><span className={`staff-status-pill staff-status-pill--${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div>
-              <div className="staff-detail__grid"><section className="staff-detail__section"><p className="staff-section-label">Contacto</p><h3>{selected.contact.displayName}</h3><a href={`mailto:${selected.contact.email}`}>{selected.contact.email}</a>{selected.contact.phone && <a href={`tel:${selected.contact.phone}`}>{selected.contact.phone}</a>}</section><section className="staff-detail__section"><p className="staff-section-label">Proyecto</p><h3>{selected.detail?.projectType ?? 'Sin tipo de proyecto'}</h3><p>{selected.detail?.location ?? 'Sin ubicación'}</p>{selected.detail?.dimensions && <p>{selected.detail.dimensions}</p>}<dl className="staff-qualification"><div><dt>Etapa</dt><dd>{qualificationLabel(selected.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</dd></div><div><dt>Inicio</dt><dd>{qualificationLabel(selected.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)}</dd></div><div><dt>Presupuesto</dt><dd>{qualificationLabel(selected.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</dd></div></dl></section></div>
+              <div className="staff-detail__grid"><section className="staff-detail__section"><p className="staff-section-label">Contacto</p><h3>{selected.contact.displayName}</h3><a href={`mailto:${selected.contact.email}`}>{selected.contact.email}</a>{selected.contact.phone && <a href={`tel:${selected.contact.phone}`}>{selected.contact.phone}</a>}<div className="staff-contact-access"><span className={`staff-contact-access__status staff-contact-access__status--${selected.contact.user?.status?.toLowerCase() ?? 'none'}`}>{selected.contact.user?.status === 'ACTIVE' ? 'Portal habilitado' : selected.contact.user?.status === 'INVITED' ? 'Invitación pendiente' : 'Portal sin habilitar'}</span>{messagingCapabilities.identityUsersManage && <button className="staff-button staff-button--dark" type="button" disabled={customerAccessBusy} onClick={() => void inviteCustomerAccess()}>{customerAccessBusy ? 'Enviando…' : selected.contact.user?.status === 'ACTIVE' ? 'Enviar nuevo acceso' : selected.contact.user?.status === 'INVITED' ? 'Reenviar acceso' : 'Habilitar portal'}</button>}</div></section><section className="staff-detail__section"><p className="staff-section-label">Proyecto</p><h3>{selected.detail?.projectType ?? 'Sin tipo de proyecto'}</h3><p>{selected.detail?.location ?? 'Sin ubicación'}</p>{selected.detail?.dimensions && <p>{selected.detail.dimensions}</p>}<dl className="staff-qualification"><div><dt>Etapa</dt><dd>{qualificationLabel(selected.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</dd></div><div><dt>Inicio</dt><dd>{qualificationLabel(selected.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)}</dd></div><div><dt>Presupuesto</dt><dd>{qualificationLabel(selected.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</dd></div></dl></section></div>
               <section className="staff-detail__section staff-detail__section--description"><p className="staff-section-label">Alcance compartido</p><p className="staff-description">{selected.detail?.description ?? 'Sin descripción.'}</p></section>
               <div className="staff-actions-grid"><section className="staff-action"><p className="staff-section-label">Responsable</p><select aria-label="Responsable" value={assignmentId} onChange={(event) => setAssignmentId(event.target.value)}><option value="">Sin responsable</option>{assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.displayName}</option>)}</select><input value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></section><section className="staff-action"><p className="staff-section-label">Siguiente estado</p><select aria-label="Siguiente estado" value={nextStatus} onChange={(event) => setNextStatus(event.target.value)} disabled={nextStatuses.length === 0}><option value="">{nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'}</option>{nextStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select><input value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus} onClick={() => void transition()}>Actualizar estado</button></section></div>
               {messagingCapabilitiesLoaded && <StaffFilesPanel requestId={selected.id} capabilities={messagingCapabilities} />}
