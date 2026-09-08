@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 7 — Archivos privados por expediente (cerrada).
-- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 7 cerró contrato, persistencia, storage privado, servicio, APIs, UI cliente, UI staff, matriz de seguridad, cleanup y documentación de riesgos. El siguiente paso autorizado es abrir la especificación de Fase 8 — PDF comercial y aceptación digital.
+- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 tiene especificación y plan aprobados para PDF comercial inmutable y aceptación digital; Tarea 1 — contratos, permisos y persistencia — es la siguiente.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -123,7 +123,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### En desarrollo
 
-- Fase 8 — PDF comercial y aceptación digital: pendiente de especificación ordenada.
+- Fase 8 — Tarea 1: contratos, permisos y persistencia de PDF comercial y aceptación digital.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -352,6 +352,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
 - `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; fase cerrada.
 - `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–6 cerradas con gate verde.
+- `docs/superpowers/specs/2026-09-08-ocpool-pdf-acceptance.md` — especificación aprobada para Fase 8; no implica firma electrónica avanzada por sí sola.
+- `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tarea 1 es la siguiente.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 
@@ -361,4 +363,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Abrir la especificación y plan ordenados de Fase 8: PDF comercial inmutable, descarga segura y aceptación digital con evidencia.
+Ejecutar Fase 8, Tarea 1: contratos, permisos y persistencia del PDF comercial y la evidencia de aceptación.
