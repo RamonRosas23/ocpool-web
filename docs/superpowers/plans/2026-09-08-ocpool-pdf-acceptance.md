@@ -9,7 +9,7 @@
 - [x] Crear modelos `GeneratedDocument` y `QuoteAcceptance` con FK compuesto, unicidad, hash, tamaño, template version, soft delete/retención y constraints.
 - [x] Crear migración, seed idempotente y auditoría de invariantes.
 - [x] Verificar typecheck, unitarias y persistencia PostgreSQL dirigida.
-- [ ] Commit `feat: add quote document and acceptance contracts`.
+- [x] Commit `feat: add quote document and acceptance contracts` (`c392a1b`).
 
 ### Evidencia de Tarea 1
 
@@ -74,10 +74,19 @@
 
 ## Tarea 5 — Staff y operación
 
-- [ ] Mostrar estado/documento y evidencia de aceptación en inbox/constructor sin datos sensibles.
-- [ ] Añadir regeneración administrativa sólo si el hash/template/bytes faltan; nunca modificar un documento READY.
-- [ ] Verificar permisos, responsive, Axe, consola y payloads mínimos.
-- [ ] Commit `feat: add staff quote document operations`.
+- [x] Mostrar estado/documento y evidencia de aceptación en inbox/constructor sin datos sensibles.
+- [x] Añadir generación/reintento operativo sólo para documento inexistente o fallido; un documento READY permanece inmutable y sólo se descarga.
+- [x] Verificar permisos, responsive, Axe, consola y payloads mínimos.
+- [x] Commit `feat: add staff quote document operations`.
+
+### Evidencia de Tarea 5
+
+- `GET /api/staff/quotes/versions/[versionId]/document` devuelve estado seguro `MISSING`/`PENDING`/`READY`/`FAILED`/`DELETED`, metadata operativa mínima, aceptación asociada y acciones permitidas; nunca serializa `storageKey`, `sha256` ni códigos internos de fallo.
+- `StaffQuoteDocumentPanel` queda integrado en el constructor staff con descarga privada, generación/reintento condicionado por capability y estado, evidencia visible de firmante/términos/fecha y estados accesibles de carga/error/vacío.
+- La ruta de generación conserva idempotencia: `READY` se devuelve sin mutación, `PENDING` no se duplica, `FAILED` puede reintentarse y `DELETED` permanece retirado.
+- `quote-documents-api.test.ts` pasó 2/2 con estados inicial/final, scope de cliente, `no-store`, permisos y ausencia de datos internos.
+- `npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1 con login real, creación/envío, generación PDF en MinIO, descarga presigned, Axe, consola limpia, payload mínimo y no overflow en desktop/móvil.
+- `npm run typecheck`, `npm run lint` y `git diff --check` pasaron después de la integración.
 
 ## Tarea 6 — Gate Fase 8
 

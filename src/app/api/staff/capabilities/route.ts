@@ -19,6 +19,8 @@ export async function GET(request: NextRequest) {
       quotesApplyDiscount: hasPermission(actor, 'quotes.apply_discount'),
       quotesApproveDiscount: hasPermission(actor, 'quotes.approve_discount'),
       quotesSend: hasPermission(actor, 'quotes.send'),
+      quotesPdfRead: hasPermission(actor, 'quotes.pdf.read'),
+      quotesPdfGenerate: hasPermission(actor, 'quotes.pdf.generate'),
       messagingRead: hasPermission(actor, 'messaging.read'),
       messagingSend: hasPermission(actor, 'messaging.send'),
       messagingInternalNotesRead: hasPermission(actor, 'messaging.internal_notes.read'),

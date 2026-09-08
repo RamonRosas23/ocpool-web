@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@/generated/prisma/client';
-import { requirePermission } from '@/server/auth/permissions';
+import { hasPermission, requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
@@ -31,6 +31,30 @@ export type QuotePdfDownloadResult = Readonly<{
   expiresAt: Date;
 }>;
 
+export type QuoteDocumentOperationStatus = Readonly<{
+  quoteId: string;
+  quoteVersionId: string;
+  versionNumber: number;
+  document: Readonly<{
+    id: string | null;
+    status: 'MISSING' | 'PENDING' | 'READY' | 'FAILED' | 'DELETED';
+    templateVersion: string | null;
+    contentType: 'application/pdf' | null;
+    byteSize: number | null;
+    readyAt: Date | null;
+  }>;
+  acceptance: Readonly<{
+    id: string;
+    signerName: string;
+    termsVersion: string;
+    acceptedAt: Date;
+  }> | null;
+  actions: Readonly<{
+    canDownload: boolean;
+    canGenerate: boolean;
+  }>;
+}>;
+
 function requireUuid(value: string): string {
   if (!UUID_PATTERN.test(value)) throw new AppError('NOT_FOUND', 'La cotización no existe.', 404);
   return value;
@@ -40,6 +64,10 @@ function requireStaffAccess(actor: Actor): void {
   if (actor.type !== 'EMPLOYEE') throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
   requirePermission(actor, 'quotes.read');
   requirePermission(actor, 'quotes.pdf.read');
+}
+
+function requireStaffDocumentStatusAccess(actor: Actor): void {
+  requireStaffAccess(actor);
 }
 
 function requireCustomerAccess(actor: Actor): string {
@@ -142,4 +170,74 @@ export async function getQuotePdfDownloadForVersion(actor: Actor, quoteVersionId
   if (!quote) throw new AppError('NOT_FOUND', 'La versión de cotización no existe.', 404);
   const clientId = actor.type === 'CUSTOMER' ? requireCustomerAccess(actor) : (requireStaffAccess(actor), undefined);
   return getDownload(actor, { quoteId: quote.quoteId, quoteVersionId, ...(clientId ? { clientId } : {}) }, dependencies);
+}
+
+function safeByteSize(value: bigint | null): number | null {
+  if (value === null || value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return Number(value);
+}
+
+export async function getQuoteDocumentStatusForVersion(actor: Actor, quoteVersionIdInput: string, dependencies: QuotePdfDownloadDependencies = {}): Promise<QuoteDocumentOperationStatus> {
+  requireStaffDocumentStatusAccess(actor);
+  const quoteVersionId = requireUuid(quoteVersionIdInput);
+  const prisma = dependencies.prisma ?? getPrisma();
+  const version = await prisma.quoteVersion.findUnique({
+    where: { id: quoteVersionId },
+    select: {
+      id: true,
+      quoteId: true,
+      versionNumber: true,
+      generatedDocuments: {
+        where: { documentType: 'QUOTE_PDF' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: {
+          id: true,
+          status: true,
+          templateVersion: true,
+          contentType: true,
+          byteSize: true,
+          readyAt: true,
+          storageObject: { select: { storageKey: true, deletedAt: true, contentType: true, byteSize: true, scanStatus: true } },
+          acceptance: { select: { id: true, signerName: true, termsVersion: true, acceptedAt: true } },
+        },
+      },
+    },
+  });
+  if (!version) throw new AppError('NOT_FOUND', 'La versión de cotización no existe.', 404);
+
+  const stored = version.generatedDocuments[0] ?? null;
+  const contentType = stored?.contentType === PDF_CONTENT_TYPE ? PDF_CONTENT_TYPE : null;
+  const byteSize = safeByteSize(stored?.byteSize ?? null);
+  const isReady = stored?.status === 'READY';
+  const documentStatus: QuoteDocumentOperationStatus['document']['status'] = stored?.status ?? 'MISSING';
+  let storageVerified = false;
+  if (isReady && stored?.storageObject && stored.storageObject.deletedAt === null && stored.storageObject.contentType === PDF_CONTENT_TYPE && stored.storageObject.scanStatus === 'PASSED' && byteSize !== null && stored.storageObject.byteSize === BigInt(byteSize)) {
+    const storage = dependencies.storage ?? getPrivateStorage();
+    const head = await storage.head(stored.storageObject.storageKey);
+    storageVerified = Boolean(head && head.contentLength === byteSize && head.contentType === PDF_CONTENT_TYPE);
+  }
+  const canDownload = Boolean(isReady && contentType && byteSize !== null && stored?.readyAt && storageVerified);
+  const canGenerate = hasPermission(actor, 'quotes.pdf.generate') && (!stored || stored.status === 'FAILED');
+
+  return {
+    quoteId: version.quoteId,
+    quoteVersionId: version.id,
+    versionNumber: version.versionNumber,
+    document: {
+      id: stored?.id ?? null,
+      status: documentStatus,
+      templateVersion: stored?.templateVersion ?? null,
+      contentType,
+      byteSize,
+      readyAt: stored?.readyAt ?? null,
+    },
+    acceptance: stored?.acceptance ? {
+      id: stored.acceptance.id,
+      signerName: stored.acceptance.signerName,
+      termsVersion: stored.acceptance.termsVersion,
+      acceptedAt: stored.acceptance.acceptedAt,
+    } : null,
+    actions: { canDownload, canGenerate },
+  };
 }

@@ -23,8 +23,11 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Rate limit por email/IP confiable, circuit breaker de respaldo sin IP y límites streaming de body.
 - Captación pública persistente mediante `POST /api/quote-requests`, folio comercial, idempotencia, Outbox y formulario con feedback accesible.
 - Inbox interno protegido en `/staff/requests`, con filtros, detalle, historial, asignación y transición de estados.
+- Catálogo, listas de precios y constructor versionado en `/staff/quotes`, con snapshots, permisos comerciales y flujo de revisión/envío.
+- Portal privado `/portal` con cotizaciones históricas, mensajería, archivos privados, descarga de PDF comercial y aceptación explícita con evidencia.
+- Operación staff de documentos PDF con estados, descarga efímera, generación condicionada y evidencia de aceptación.
 
-El inbox operativo, catálogo, cotizaciones, portal y aceptación pertenecen a fases posteriores.
+La Fase 8 está en gate de cierre: quedan regresión integral, hardening, revisión jurídica de términos, notificaciones y preparación de producción antes del lanzamiento.
 
 ## Requisitos
 
@@ -85,6 +88,8 @@ npm run build
 npm run test:e2e
 npm run test:e2e:foundation
 npm run test:e2e:auth
+npx cross-env PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts
+npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts
 ```
 
 La suite E2E pública conserva el contrato visual, responsive, de interacción, consola y accesibilidad de la landing. La prueba foundation requiere PostgreSQL activo y se ejecuta de forma opt-in.
@@ -117,6 +122,9 @@ Endpoints disponibles:
 - `GET /api/staff/quote-requests/assignees`, `POST .../:id/assign` y `POST .../:id/status` — operaciones internas RBAC con auditoría e historial.
 - `GET|POST /api/portal/requests/:id/files` y `POST|GET|DELETE .../:fileId` — archivos privados del cliente con reserva, finalización y descarga efímera.
 - `GET|POST /api/staff/quote-requests/:id/files` y `POST|GET|DELETE .../:fileId` — superficie equivalente para staff con visibilidad interna RBAC.
+- `GET /api/portal/quotes/:id/pdf` y `POST /api/portal/quotes/:id/accept` — PDF privado y aceptación de la versión vigente dentro del alcance del cliente.
+- `GET|POST /api/staff/quotes/versions/:versionId/pdf` — estado READY/descarga efímera y generación staff protegida por RBAC.
+- `GET /api/staff/quotes/versions/:versionId/document` — estado operativo seguro del documento y evidencia de aceptación para staff.
 
 Los tokens se guardan como huellas SHA-256. Los eventos Outbox de correo contienen el token únicamente cifrado para que el worker futuro pueda entregarlo; nunca se incluye el token crudo en payloads, respuestas o logs.
 
@@ -131,7 +139,7 @@ node scripts/require-env.mjs DATABASE_URL
 ## Estructura relevante
 
 - `src/app/` — rutas de Next.js y API.
-- `src/components/` — componentes de la landing pública existente.
+- `src/components/` — componentes de la landing pública, portal cliente y superficies internas.
 - `src/server/` — configuración de entorno, base de datos, errores, logging, identidad y dominios comerciales del servidor.
 - `prisma/` — schema, migraciones y seed.
 - `tests/unit/` — pruebas unitarias.

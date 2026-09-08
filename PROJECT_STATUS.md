@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 8 — PDF comercial y aceptación digital, Tarea 5: operación staff.
-- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 Tareas 1–4 están terminadas y verificadas; el siguiente slice es dar visibilidad operativa staff al documento y a la evidencia de aceptación.
+- **Fase:** Fase 8 — PDF comercial y aceptación digital, Tarea 6: gate de fase.
+- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 Tareas 1–5 están terminadas y verificadas; el siguiente slice es ejecutar el gate completo de regresión, seguridad, documentación y producción local.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -130,10 +130,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 8 — Tarea 3: servicios de aceptación y acceso a PDF protegidos por scope `clientId`, RBAC, lock transaccional, validación de objeto privado, evidencia SHA-256, idempotencia y Outbox/auditoría sin datos sensibles.
 - Fase 8 — Tarea 3: APIs portal/staff de PDF y aceptación con same-origin, Zod estricto, `no-store`, URL presigned efímera y respuestas sin `storageKey`/hash.
 - Fase 8 — Tarea 4: `ClientQuoteActions` integrado en el portal con descarga PDF, aceptación explícita, diálogo accesible, feedback de éxito/error, estado vencido/aceptado y responsive.
+- Fase 8 — Tarea 5: endpoint de estado documental staff y `StaffQuoteDocumentPanel` integrados en el constructor; estados MISSING/PENDING/READY/FAILED/DELETED, descarga privada, generación condicionada, evidencia de aceptación y respuestas sin storage key/hash.
 
 ### En desarrollo
 
-- Fase 8 — Tarea 5: visibilidad operativa staff de documentos PDF y evidencia de aceptación.
+- Fase 8 — Tarea 6: gate integral de PDF/aceptación, regresión global, auditoría, seguridad, build y preparación de producción local.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -143,9 +144,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
-- PDF comercial, aceptación digital, evidencia legal y notificaciones.
-- PDF comercial.
-- Aceptación digital.
+- Gate completo de PDF/aceptación y revisión legal de términos.
 - Notificaciones y Outbox.
 - Auditoría comercial y de seguridad.
 - Dashboard y métricas.
@@ -225,6 +224,9 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 70. El portal muestra el éxito de aceptación antes de refrescar el expediente; el refresh ocurre al pulsar `Continuar`, evitando que un remount borre el feedback de una acción irreversible.
 71. La descarga cliente abre únicamente la URL presigned retornada por backend; el frontend no construye keys ni intenta leer bytes del PDF.
 72. El diálogo de aceptación usa nombre y checkbox explícitos, pero no se presenta como firma electrónica avanzada; el copy mantiene la revisión jurídica pendiente visible en riesgos.
+73. El estado operativo staff se separa de la descarga: puede mostrar `MISSING`/`PENDING`/`FAILED` sin convertir un 409 de disponibilidad en un estado ambiguo; la descarga continúa validando DB + HEAD antes de emitir URL.
+74. La interfaz sólo ofrece generar/reintentar cuando el documento falta o falló; un documento `READY` se conserva como artefacto inmutable y el backend devuelve el existente sin reemplazarlo.
+75. La evidencia de aceptación visible para staff se limita a firmante, versión de términos y fecha; hashes, fingerprints, storage keys y códigos de fallo permanecen en backend/auditoría.
 
 ## Pruebas realizadas
 
@@ -278,6 +280,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 8 — Tarea 2: `quote-pdf-renderer.test.ts` 3/3, `quote-pdf-service.test.ts` 1/1, `npm run typecheck`, fixture generado de 2 páginas, `pdftoppm` sin errores de fuente invalidante, `pdfinfo` metadata estable y `pypdf` con folio/resumen/total presentes y texto interno ausente.
 - Fase 8 — Tarea 3: `quote-acceptance-service.test.ts` 1/1 y `quote-documents-api.test.ts` 2/2 dirigidas; se verificaron aceptación concurrente con un ganador, replay, PDF READY/hash/HEAD, scope cruzado, 401/403/404/409, CSRF, schema estricto, permisos, no-store y no exposición de storage key/hash. `npm run typecheck` y `npm run lint` correctos.
 - Fase 8 — Tarea 4: `npx cross-env PORTAL_E2E=1 playwright test tests/client-portal.spec.ts` pasó 2/2; se verificaron descarga PDF, popup/API presigned, validación negativa del checkbox, diálogo accesible, aceptación, refresh, mensajería persistida, archivos, Axe, consola limpia y responsive móvil. `npm run typecheck` y `npm run lint` correctos.
+- Fase 8 — Tarea 5: `quote-documents-api.test.ts` pasó 2/2 con estado `MISSING`/`READY`, cliente bloqueado, acciones condicionadas, evidencia post-aceptación y ausencia de `storageKey`/`sha256`; `npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1 con generación real en MinIO, descarga presigned, Axe, consola limpia, payload mínimo y no overflow desktop/móvil. `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -289,8 +292,8 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Pruebas finales de archivos privados: staff, seguridad de fase, URLs temporales, cleanup y proveedor antivirus productivo.
 - Pruebas de snapshots e inmutabilidad.
 - Pruebas de cálculo de cotizaciones.
-- Gate serial completo posterior a Tarea 4, incluyendo migración/seed, integración global, build y E2E públicas.
-- E2E staff del ciclo PDF y evidencia de aceptación.
+- Gate serial completo posterior a Tarea 5, incluyendo migración/seed, integración global, build y E2E públicas.
+- E2E staff adicional de aceptación visual; la evidencia backend de aceptación ya está cubierta por API y portal.
 - Pruebas de notificaciones y reintentos.
 - Pruebas de carga y restauración de backups.
 
@@ -360,6 +363,8 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La primera E2E de archivos encontró selectores ambiguos porque el nombre del archivo también aparece en la acción de descarga; se ajustaron los asserts a nombres exactos y Axe detectó un contraste insuficiente en el distintivo `PDF`, corregido antes de cerrar Tarea 4. En Tarea 5, Axe detectó un `<ul role="tabpanel">` inválido; se separó el contenedor ARIA del listado.
 - La primera E2E de aceptación abrió el popup en `about:blank` antes de navegar al PDF; la aserción se trasladó a la respuesta API y se mantuvo el popup sólo como verificación de apertura. El primer flujo de éxito remonteaba el componente antes de mostrar confirmación; el refresh del expediente se movió a `Continuar`. Finalmente, la prueba de mensajería esperaba un mensaje optimista antes de que el fetch terminara; se añadió polling de persistencia DB antes de recargar.
 - Axe del inbox staff detectó contraste bajo y selects sin nombre; se corrigieron variables de color y `aria-label` explícitos, y la E2E staff volvió a pasar 2/2.
+- La primera E2E del constructor con PDF encontró un selector ambiguo por el `role=status` del estado de carga documental; se acotaron los asserts al aviso principal. La misma revisión Axe detectó contraste insuficiente en fechas del historial y un selector sin nombre; se corrigieron color y `aria-label`, y la repetición pasó 1/1 en desktop y móvil.
+- La primera E2E del constructor con PDF encontró un selector ambiguo por el `role=status` del estado de carga documental; se acotaron los asserts al aviso principal. La misma revisión Axe detectó contraste insuficiente en fechas del historial y un selector sin nombre; se corrigieron color y `aria-label`, y la repetición pasó 1/1 en desktop y móvil.
 - El cold build local agotó el timeout original de 120 segundos al iniciar Playwright; se amplió sólo `webServer.timeout` a 600 segundos y el build explícito terminó correctamente.
 - El gate de seguridad encontró vulnerabilidades transitorias de Prisma; se resolvieron con overrides verificables y se repitió la suite completa antes de cerrar Fase 3.
 - `npx tsc --noEmit` encontró tipos incompletos en pruebas existentes; se corrigieron sin relajar `strict`.
@@ -387,7 +392,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; fase cerrada.
 - `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/specs/2026-09-08-ocpool-pdf-acceptance.md` — especificación aprobada para Fase 8; no implica firma electrónica avanzada por sí sola.
-- `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–3 cerradas y Tarea 4 en curso.
+- `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–5 cerradas y Tarea 6 de gate pendiente.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 
@@ -397,4 +402,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 8, Tarea 5: visibilidad operativa staff de documentos PDF y evidencia de aceptación.
+Ejecutar Fase 8, Tarea 6: gate integral de PDF/aceptación, regresión, seguridad, auditoría y preparación local.

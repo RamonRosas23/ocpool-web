@@ -12,6 +12,7 @@ import { getPrivateStorage } from '@/server/modules/private-files/storage';
 import { GET as portalPdfGet } from '@/app/api/portal/quotes/[id]/pdf/route';
 import { POST as portalAcceptPost } from '@/app/api/portal/quotes/[id]/accept/route';
 import { GET as staffPdfGet, POST as staffPdfPost } from '@/app/api/staff/quotes/versions/[versionId]/pdf/route';
+import { GET as staffDocumentGet } from '@/app/api/staff/quotes/versions/[versionId]/document/route';
 
 describe('quote PDF and acceptance API', () => {
   const prisma = getPrisma();
@@ -102,6 +103,15 @@ describe('quote PDF and acceptance API', () => {
   });
 
   it('protects PDF generation and download with role, scope, CSRF and no-store controls', async () => {
+    const initialStatus = await staffDocumentGet(endpoint(`/api/staff/quotes/versions/${versionId}/document`, salesToken), versionContext());
+    expect(initialStatus.status).toBe(200);
+    expect(initialStatus.headers.get('cache-control')).toBe('no-store');
+    const initialStatusBody = await initialStatus.json() as Record<string, unknown>;
+    expect(initialStatusBody).toMatchObject({ quoteId, quoteVersionId: versionId, document: { status: 'MISSING' }, acceptance: null, actions: { canGenerate: true, canDownload: false } });
+    expect(JSON.stringify(initialStatusBody)).not.toContain('storageKey');
+    expect(JSON.stringify(initialStatusBody)).not.toContain('sha256');
+    expect((await staffDocumentGet(endpoint(`/api/staff/quotes/versions/${versionId}/document`, customerAToken), versionContext())).status).toBe(403);
+
     expect((await staffPdfGet(endpoint(`/api/staff/quotes/versions/${versionId}`, customerAToken), versionContext())).status).toBe(403);
     const foreignGeneration = await staffPdfPost(endpoint(`/api/staff/quotes/versions/${versionId}`, salesToken, 'POST', {}, 'https://attacker.example'), versionContext());
     expect(foreignGeneration.status).toBe(403);
@@ -121,6 +131,13 @@ describe('quote PDF and acceptance API', () => {
     expect(staffDownloadBody.downloadUrl).toEqual(expect.any(String));
     expect(JSON.stringify(staffDownloadBody)).not.toContain('storageKey');
     expect(JSON.stringify(staffDownloadBody)).not.toContain('sha256');
+
+    const readyStatus = await staffDocumentGet(endpoint(`/api/staff/quotes/versions/${versionId}/document`, salesToken), versionContext());
+    expect(readyStatus.status).toBe(200);
+    const readyStatusBody = await readyStatus.json() as Record<string, unknown>;
+    expect(readyStatusBody).toMatchObject({ document: { id: generatedBody.id, status: 'READY', contentType: 'application/pdf' }, actions: { canGenerate: false, canDownload: true }, acceptance: null });
+    expect(JSON.stringify(readyStatusBody)).not.toContain('storageKey');
+    expect(JSON.stringify(readyStatusBody)).not.toContain('sha256');
 
     expect((await portalPdfGet(endpoint(`/api/portal/quotes/${quoteId}/pdf`), quoteContext())).status).toBe(401);
     expect((await portalPdfGet(endpoint(`/api/portal/quotes/${quoteId}/pdf`, customerBToken), quoteContext())).status).toBe(404);
@@ -145,6 +162,12 @@ describe('quote PDF and acceptance API', () => {
     await expect(replay.json()).resolves.toMatchObject({ id: acceptedBody.id, status: 'ACEPTADA' });
     const secondKey = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Otro nombre', termsVersion: 'quote-terms-2026-01', idempotencyKey: 'api-accept-second-01' }), quoteContext());
     expect(secondKey.status).toBe(409);
+    const acceptedStatus = await staffDocumentGet(endpoint(`/api/staff/quotes/versions/${versionId}/document`, salesToken), versionContext());
+    expect(acceptedStatus.status).toBe(200);
+    const acceptedStatusBody = await acceptedStatus.json() as Record<string, unknown>;
+    expect(acceptedStatusBody).toMatchObject({ document: { status: 'READY' }, actions: { canGenerate: false, canDownload: true }, acceptance: { id: acceptedBody.id, signerName: 'Ana López Rivera', termsVersion: 'quote-terms-2026-01' } });
+    expect(JSON.stringify(acceptedStatusBody)).not.toContain('storageKey');
+    expect(JSON.stringify(acceptedStatusBody)).not.toContain('sha256');
     expect((await prisma.quoteVersion.findUnique({ where: { id: versionId }, select: { status: true } }))).toMatchObject({ status: 'ACEPTADA' });
     expect((await prisma.quoteRequest.findUnique({ where: { id: requestId }, select: { status: true } }))).toMatchObject({ status: 'ACEPTADA' });
   });
