@@ -55,6 +55,7 @@ describe('customer onboarding API', () => {
     expect((await POST(endpoint(managerToken, {}, 'https://attacker.example'), { params: Promise.resolve({ id: requestId }) })).status).toBe(403);
     expect((await POST(endpoint(salesToken), { params: Promise.resolve({ id: requestId }) })).status).toBe(403);
     expect((await POST(new NextRequest(`${readServerEnv().APP_URL}/api/staff/quote-requests/${requestId}/customer-access`, { method: 'POST', headers: { origin: readServerEnv().APP_URL, 'content-type': 'application/json' }, body: '{}' }), { params: Promise.resolve({ id: requestId }) })).status).toBe(401);
+    expect((await POST(endpoint(managerToken), { params: Promise.resolve({ id: 'not-a-uuid' }) })).status).toBe(400);
   });
 
   it('returns a safe result and rejects unknown body fields', async () => {

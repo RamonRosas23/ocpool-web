@@ -115,6 +115,34 @@ describe('customer onboarding service', () => {
     expect((await prisma.user.findUnique({ where: { id: foreignCustomer.id } }))?.clientId).toBe(foreignClient.id);
   });
 
+  it('reuses an active customer safely and rejects archived contacts or malformed identifiers', async () => {
+    const suffix = `${Date.now()}-states`;
+    const manager = await prisma.user.create({
+      data: { email: `manager-states-${suffix}@example.test`, emailNormalized: `manager-states-${suffix}@example.test`, displayName: 'States manager', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    userIds.push(manager.id);
+    const activeRequest = await createRequest(`${suffix}-active`);
+    const activeEmail = `active-${suffix}@example.test`;
+    const activeCustomer = await prisma.user.create({
+      data: { email: activeEmail, emailNormalized: activeEmail, displayName: 'Active customer', type: 'CUSTOMER', status: 'ACTIVE', clientId: activeRequest.clientId },
+    });
+    userIds.push(activeCustomer.id);
+    await prisma.clientContact.update({ where: { id: activeRequest.contactId }, data: { email: activeCustomer.email, emailNormalized: activeCustomer.emailNormalized } });
+
+    const activeResult = await inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), activeRequest.quoteRequestId, {
+      prisma,
+      now: new Date('2026-09-08T12:30:00.000Z'),
+      tokenGenerator: () => `active-token-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`,
+    });
+    expect(activeResult.status).toBe('ALREADY_ACTIVE');
+    expect((await prisma.clientContact.findUnique({ where: { id: activeRequest.contactId } }))?.userId).toBe(activeCustomer.id);
+
+    const archivedRequest = await createRequest(`${suffix}-archived`);
+    await prisma.clientContact.update({ where: { id: archivedRequest.contactId }, data: { status: 'ARCHIVED' } });
+    await expect(inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), archivedRequest.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+    await expect(inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), 'not-a-uuid', { prisma })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+  });
+
   afterAll(async () => {
     if (process.env.RUN_DB_TESTS !== '1') return;
     await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: userIds } } });
