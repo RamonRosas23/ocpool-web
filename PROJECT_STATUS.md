@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 5 — Portal autenticado del cliente.
-- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación y plan aprobados; las Tareas 1–4 están terminadas y Tarea 5 — seguridad negativa y E2E autenticado — está en desarrollo.
+- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación y plan aprobados; las Tareas 1–5 están terminadas y Tarea 6 — gate de fase — está en desarrollo.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -97,10 +97,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Guard y API privada de cliente para listar expedientes, leer detalle y consultar cotizaciones propias con `no-store`, respuestas seguras y errores no enumerables.
 - Portal privado `/portal` con shell de cliente propio, metadata `noindex`, estados de sesión/carga/vacío/error, dashboard de expedientes, logout, responsive, foco visible y reduced motion.
 - Detalle de expediente y cotización versionada con líneas/totales snapshot, histórico de versiones, descuentos, impuestos y mensaje de vigencia expirada sin acciones fuera de alcance.
+- Hardening del portal: sesiones de clientes archivados invalidadas, pruebas IDOR/UUID/sesión revocada, E2E autenticada opt-in, Axe, auditoría de payloads y limpieza exacta de fixtures.
 
 ### En desarrollo
 
-- Fase 5 — Tarea 5: seguridad negativa y E2E autenticado.
+- Fase 5 — Tarea 6: gate de fase.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -151,6 +152,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 28. El constructor trabaja sobre una solicitud existente y una cotización raíz; cada cambio después de una versión enviada crea una nueva versión y nunca muta el histórico.
 29. El portal cliente aplica el scope `clientId` en backend; el actor, no el request, define el cliente autorizado.
 30. Las versiones `BORRADOR` no se exponen al cliente; el portal sólo presenta versiones enviadas o posteriores y una proyección sin actores internos ni notas operativas.
+31. La resolución de sesión invalida a un cliente cuyo vínculo `Client` está archivado; un usuario cliente sin vínculo se conserva como actor para que cada guard de superficie responda 403 explícito sin convertirlo en una sesión inexistente.
+32. Las fechas comerciales del portal se formatean en UTC porque `validUntil` representa una fecha de vigencia persistida, no la zona horaria local arbitraria del navegador.
 
 ## Pruebas realizadas
 
@@ -183,8 +186,9 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Gate de Fase 4: `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npx prisma migrate status`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y `npm test` correctos. `npm test` quedó en typecheck, 41 unitarias, 30 integraciones, contrato de contenido, build, 33 E2E ejecutadas con 3 omitidas explícitamente y foundation 1/1. La primera ejecución tuvo una condición temporal de artefacto `.next` al encadenar dos servidores en Windows; la reproducción aislada y la repetición completa pasaron sin cambiar código productivo.
 - Tarea 1 de Fase 5: commit `17a50e9` (`feat: add scoped client portal read service`); `npm run typecheck`, unit test dirigido 1/1, integración dirigida 1/1 y `git diff --check` correctos. Se verificaron scope por cliente, rechazo de empleado, cliente cruzado como `NOT_FOUND`, ocultamiento de borradores/actores internos y serialización de importes grandes sin `number`.
 - Tarea 2 de Fase 5: commit `76214bd` (`feat: expose scoped client portal APIs`); `npm run typecheck`, `npm run lint`, integración API dirigida 1/1 y `git diff --check` correctos. Se verificaron 401 sin sesión, 403 empleado, cliente propio, cliente cruzado, cotización cruzada, UUIDs seguros, `cache-control: no-store` y respuestas sin token/hash.
-- Tarea 3 de Fase 5: pendiente de commit en este cierre; `npm run typecheck`, `npm run lint`, E2E dirigida `npx playwright test tests/quality.spec.ts --grep "customer portal"` 1/1 y `git diff --check` correctos. Se verificaron acceso restringido sin sesión, Axe sin violaciones serias, ausencia de overflow a 390 px, metadata privada, estados de carga/vacío/error/logout y shell responsive propio del cliente.
-- Tarea 4 de Fase 5: pendiente de commit en este cierre; integración dirigida `npx cross-env RUN_DB_TESTS=1 vitest run tests/integration/client-portal-service.test.ts` 1/1, `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Se verificó que actualizar catálogo después del envío no altera nombre, precio, impuesto ni total del snapshot mostrado al cliente; la vista comunica vigencia expirada sin habilitar acciones fuera de alcance.
+- Tarea 3 de Fase 5: commit `0d90fc9` (`feat: add customer portal dashboard`); `npm run typecheck`, `npm run lint`, E2E dirigida `npx playwright test tests/quality.spec.ts --grep "customer portal"` 1/1 y `git diff --check` correctos. Se verificaron acceso restringido sin sesión, Axe sin violaciones serias, ausencia de overflow a 390 px, metadata privada, estados de carga/vacío/error/logout y shell responsive propio del cliente.
+- Tarea 4 de Fase 5: commit `c0da91e` (`feat: show customer quote snapshots`); integración dirigida, API dirigida, `npm run typecheck`, `npm run lint`, E2E de protección y `git diff --check` correctos. Se verificó que actualizar catálogo después del envío no altera nombre, precio, impuesto ni total del snapshot mostrado al cliente; la vista comunica vigencia expirada sin habilitar acciones fuera de alcance.
+- Tarea 5 de Fase 5: pendiente de commit en este cierre; `npm run test:unit` 42/42, `npm run test:integration` 32/32, `npm run typecheck`, `npm run lint`, E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2 y `git diff --check` correctos. Se verificaron sesiones revocadas/archivadas, aislamiento por cliente, UUID malformado, payloads sin secretos, Axe, estado vacío, error recuperable, consola limpia y responsive móvil.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -264,9 +268,9 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
 - `docs/superpowers/specs/2026-09-07-ocpool-client-portal.md` — especificación aprobada para Fase 5.
-- `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado; Tareas 1–4 cerradas y Tarea 5 en desarrollo.
+- `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado; Tareas 1–5 cerradas y Tarea 6 en desarrollo.
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 5 de Fase 5: fixtures autenticados, pruebas IDOR/seguridad negativa y E2E completo del portal cliente.
+Ejecutar la Tarea 6 de Fase 5: gate reproducible de migraciones, build, regresión, auditoría de dependencias y cierre documental.

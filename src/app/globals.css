@@ -1080,3 +1080,19 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
   .client-skeleton i, .client-detail-loading i { animation: none; }
   .client-button, .client-request-row { transition: none; }
 }
+
+/* Light client surfaces keep the editorial copper, but meet WCAG AA contrast. */
+.client-content .client-eyebrow, .client-layout .client-eyebrow { color: #765b2a; }
+.client-hero__copy, .client-hero__note span, .client-hero__note small { color: #56615f; }
+.client-hero__note strong { color: #765b2a; }
+.client-section-head > span, .client-request-row small, .client-request-row em { color: #56615f; }
+.client-request-row strong, .client-detail__intro > div > .client-eyebrow { color: #765b2a; }
+.client-detail__intro p:last-child, .client-overview span, .client-overview small { color: #56615f; }
+.client-status { border-color: rgba(118,91,42,.6); color: #6d511e; }
+.client-quote__total span, .client-quote__validity, .client-quote-line small, .client-quote__summary span { color: #56615f; }
+.client-quote__total strong { color: #765b2a; }
+.client-quote--empty p:last-child, .client-version-history li small, .client-history-empty { color: #56615f; }
+.client-version-history li > span { border-color: rgba(118,91,42,.6); color: #765b2a; }
+.client-empty > p, .client-empty--small span { color: #56615f; }
+.client-footer { color: #56615f; }
+.client-footer span { color: #0b2736; }

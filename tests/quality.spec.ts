@@ -1,5 +1,5 @@
-import AxeBuilder from '@axe-core/playwright';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { expectNoSeriousA11yViolations } from './a11y';
 
 const validPayload = {
   displayName: 'Prueba OCPOOL',
@@ -9,12 +9,6 @@ const validPayload = {
   location: 'Culiacán, Sinaloa',
   description: 'Solicitud de prueba automatizada.',
 };
-
-async function expectNoSeriousA11yViolations(page: Page) {
-  const results = await new AxeBuilder({ page }).analyze();
-  const seriousViolations = results.violations.filter((violation) => violation.impact === 'critical' || violation.impact === 'serious');
-  expect(seriousViolations, JSON.stringify(seriousViolations, null, 2)).toEqual([]);
-}
 
 test.describe('OCPOOL quality contract', () => {
   test('keeps anchored section headings clear of the fixed header', async ({ page }) => {

@@ -47,6 +47,7 @@ export async function getSessionContext(rawToken: string, dependencies: SessionD
       include: {
         user: {
           include: {
+            client: { select: { status: true } },
             roles: {
               include: {
                 role: { include: { permissions: { include: { permission: true } } } },
@@ -60,6 +61,7 @@ export async function getSessionContext(rawToken: string, dependencies: SessionD
     if (!session || !compareToken(rawToken, session.tokenHash)) return null;
     if (session.revokedAt || session.expiresAt <= now) return null;
     if (session.user.status !== 'ACTIVE') return null;
+    if (session.user.type === 'CUSTOMER' && session.user.clientId && session.user.client?.status !== 'ACTIVE') return null;
     const requiresMfa = session.user.type === 'EMPLOYEE'
       && (session.user.mfaRequired || session.user.roles.some(({ role }) => role.key === 'admin'));
     if (requiresMfa && !session.mfaVerified) return null;

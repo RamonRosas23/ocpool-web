@@ -83,7 +83,7 @@ type ListResponse = { items: RequestSummary[]; page: number; pageSize: number; t
 function statusLabel(status: string): string { return STATUS_LABELS[status] ?? status; }
 
 function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
+  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(value));
 }
 
 function moneyLabel(value: string | null, currency = 'MXN'): string {

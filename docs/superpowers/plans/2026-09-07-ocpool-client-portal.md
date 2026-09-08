@@ -165,7 +165,10 @@ Evidencia de cierre:
 - Modify: `tests/integration/client-portal-api.test.ts`
 - Modify: `tests/integration/client-portal-service.test.ts`
 - Create: `tests/client-portal.spec.ts`
+- Create: `tests/a11y.ts`
 - Modify: `tests/quality.spec.ts`
+- Modify: `src/server/auth/sessions.ts`
+- Modify: `src/server/http/errors.ts`
 - Modify: `PROJECT_STATUS.md`
 
 **Interfaces:**
@@ -173,13 +176,21 @@ Evidencia de cierre:
 - Consume: sesiones reales de cliente, dos clientes fixture, request/quote/versiones, UI de Tareas 1–4.
 - Produce: evidencia reproducible de aislamiento, flujo feliz y estados de fallo.
 
-- [ ] Crear fixtures desechables de dos clientes con una solicitud y cotización por cliente; registrar IDs para limpieza exacta.
-- [ ] Probar 401 sin sesión, 403 empleado, 404/403 seguro para cliente ajeno, sesión revocada, cliente archivado y UUID malformado.
-- [ ] Probar que el catálogo actualizado no cambia el snapshot mostrado y que un folio ajeno no sirve como acceso.
-- [ ] Añadir E2E opt-in `PORTAL_E2E=1` con login cliente, dashboard, detalle, cotización, refresh y logout; dejarlo omitido en la regresión normal cuando no existan fixtures.
-- [ ] Añadir E2E de navegación móvil, estado vacío, error de API y no overflow; ejecutar Axe sobre dashboard y detalle.
-- [ ] Auditar payloads, logs de error y HTML para confirmar ausencia de tokens, hashes, IDs cruzados y stack traces.
-- [ ] Ejecutar todas las suites dirigidas, limpiar fixtures y hacer commit `test: harden customer portal isolation`.
+- [x] Crear fixtures desechables de dos clientes con solicitudes aisladas y una cotización para el cliente A; registrar IDs para limpieza exacta.
+- [x] Probar 401 sin sesión, 403 empleado, 404/403 seguro para cliente ajeno, sesión revocada, cliente archivado y UUID malformado.
+- [x] Probar que el catálogo actualizado no cambia el snapshot mostrado y que un folio ajeno no sirve como acceso.
+- [x] Añadir E2E opt-in `PORTAL_E2E=1` con sesión cliente, dashboard, detalle, cotización, refresh y logout; dejarlo omitido en la regresión normal cuando no existan fixtures.
+- [x] Añadir E2E de navegación móvil, estado vacío, error de API y no overflow; ejecutar Axe sobre dashboard y detalle.
+- [x] Auditar payloads, logs de error y HTML para confirmar ausencia de tokens, hashes, IDs cruzados y stack traces.
+- [x] Ejecutar todas las suites dirigidas, limpiar fixtures y hacer commit `test: harden customer portal isolation`.
+
+Evidencia de cierre:
+
+- Commit pendiente de cierre documental: el backend invalida sesiones de clientes con cliente archivado, conserva el 403 de autorización para actores sin scope y mantiene el aislamiento por `clientId`.
+- Integración API: 1/1 dirigida y la regresión completa 32/32; se cubrieron 401, 403, 404 no enumerables, UUID malformado, sesión revocada, cliente archivado y respuestas sin secretos.
+- Unitarias: 42/42. E2E opt-in: `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2; se verificaron dashboard con snapshot, logout, estado sin cotización, error recuperable, Axe, consola limpia, móvil y ausencia de overflow.
+- Los payloads privados y el HTML no contienen `tokenHash`, el token opaco de sesión, stack traces ni el nombre actualizado de catálogo; los fixtures no dejaron usuarios, expedientes, categorías ni conceptos `PORTAL-E2E-*`.
+- Se corrigió compatibilidad ESM del import runtime `next/server.js`, contraste WCAG AA de la superficie clara y fechas comerciales en UTC para evitar desplazamientos de vigencia por timezone.
 
 ### Tarea 6 — Gate de Fase 5
 

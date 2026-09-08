@@ -15,6 +15,7 @@ describe('customer portal API', () => {
   let customerAToken = '';
   let customerBToken = '';
   let employeeToken = '';
+  let customerASessionId = '';
   let requestAId = '';
   let requestBId = '';
   let clientAId = '';
@@ -54,11 +55,12 @@ describe('customer portal API', () => {
     customerAToken = `portal-api-a-${suffix}-abcdefghijklmnopqrstuvwxyz`;
     customerBToken = `portal-api-b-${suffix}-abcdefghijklmnopqrstuvwxyz`;
     employeeToken = `portal-api-e-${suffix}-abcdefghijklmnopqrstuvwxyz`;
-    await Promise.all([
+    const [customerASession] = await Promise.all([
       createSession({ userId: customerA.id, ipAddress: null, userAgent: 'integration-test' }, { prisma, tokenGenerator: () => customerAToken }),
       createSession({ userId: customerB.id, ipAddress: null, userAgent: 'integration-test' }, { prisma, tokenGenerator: () => customerBToken }),
       createSession({ userId: employee.id, ipAddress: null, userAgent: 'integration-test' }, { prisma, tokenGenerator: () => employeeToken }),
     ]);
+    customerASessionId = customerASession.sessionId;
     const category = await prisma.catalogCategory.create({ data: { code: `PORTAL-API-${suffix}`, name: 'Portal API' } });
     categoryId = category.id;
     const item = await prisma.catalogItem.create({ data: { code: `PORTAL-API-ITEM-${suffix}`, name: 'Portal API item', unit: 'pieza', categoryId } });
@@ -85,12 +87,18 @@ describe('customer portal API', () => {
     const ownBody = await own.json() as { request: { id: string }; quote: { id: string } };
     expect(ownBody.request.id).toBe(requestAId);
     expect((await getPortalRequestRoute(endpoint(`/api/portal/requests/${requestBId}`, customerAToken), { params: Promise.resolve({ id: requestBId }) })).status).toBe(404);
+    expect((await getPortalRequestRoute(endpoint('/api/portal/requests/not-a-uuid', customerAToken), { params: Promise.resolve({ id: 'not-a-uuid' }) })).status).toBe(404);
     expect((await getPortalQuoteRoute(endpoint(`/api/portal/quotes/${quoteAId}`, customerBToken), { params: Promise.resolve({ id: quoteAId }) })).status).toBe(404);
     const quote = await getPortalQuoteRoute(endpoint(`/api/portal/quotes/${quoteAId}`, customerAToken), { params: Promise.resolve({ id: quoteAId }) });
     expect(quote.status).toBe(200);
     const quoteBody = await quote.json() as { quote: { id: string; versions: Array<{ status: string }> } };
     expect(quoteBody).toMatchObject({ quote: { id: quoteAId, versions: [{ status: 'ENVIADA' }] } });
     expect(JSON.stringify(quoteBody)).not.toContain('tokenHash');
+
+    await prisma.session.update({ where: { id: customerASessionId }, data: { revokedAt: new Date() } });
+    expect((await listPortalRequestsRoute(endpoint('/api/portal/requests', customerAToken))).status).toBe(401);
+    await prisma.client.update({ where: { id: clientBId }, data: { status: 'ARCHIVED' } });
+    expect((await listPortalRequestsRoute(endpoint('/api/portal/requests', customerBToken))).status).toBe(401);
   });
 
   afterAll(async () => {

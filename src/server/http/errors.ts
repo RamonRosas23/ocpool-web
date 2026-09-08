@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server.js';
 import { logger } from '@/server/logging/logger';
 
 export type PublicErrorCode =
