@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 6 — Mensajería y notas internas.
-- **Estado:** Fases 1–5 están terminadas con gates verdes. Fase 6 — mensajería y notas internas — está terminada: Tareas 1–6 tienen evidencia de implementación, seguridad negativa, E2E y gate final. La siguiente fase será Archivos privados.
+- **Fase:** Fase 7 — Archivos privados por expediente.
+- **Estado:** Fases 1–6 están terminadas con gates verdes. Fase 7 tiene especificación y plan aprobados; Tarea 1 — contrato de dominio, permisos y persistencia — está próxima a ejecutarse. No hay bytes de archivos ni cambios de infraestructura implementados todavía.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -109,10 +109,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Hardening de accesibilidad del inbox staff: contraste AA de la paleta operativa, nombres accesibles para selects, Axe sin hallazgos serios en el flujo staff y no overflow móvil.
 - Comando oficial de integración serializado a un worker DB para evitar timeouts de inicio de transacción por saturación local; se conserva la cobertura completa de 38 pruebas.
 - Gate de Fase 6 cerrado: aislamiento cliente/staff, RBAC, idempotencia, cierre/reapertura, payloads/logs sin cuerpos sensibles, E2E opt-in, auditoría de dependencias y árbol limpio verificados.
+- Especificación de Fase 7 para archivos privados por expediente, con storage S3-compatible privado, metadata relacional, estados de análisis, URLs efímeras, auditoría y pruebas negativas.
 
 ### En desarrollo
 
-- Ninguno dentro de Fase 6. La siguiente vertical slice es Fase 7 — Archivos privados.
+- Fase 7 — Tarea 1: contrato de dominio, permisos y persistencia.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -122,7 +123,6 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
-- Especificación y plan de Fase 7 — Archivos privados.
 - Archivos privados.
 - PDF comercial.
 - Aceptación digital.
@@ -179,6 +179,10 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 44. La paleta staff usa variantes de cobre y texto muted con contraste suficiente, y los controles de operación tienen nombres accesibles explícitos; esto prioriza Axe y lectura real sobre conservar valores decorativos de bajo contraste.
 45. El cierre de Fase 6 exige validar capacidades en backend aun cuando la UI las oculte; la matriz final confirma que un rol limitado no puede cerrar ni reabrir conversaciones y que las respuestas no devuelven claves de idempotencia.
 46. El Outbox de mensajería permanece preparado para un worker futuro, pero no se agrega Redis ni un worker productivo antes de que archivos/notificaciones definan sus garantías de entrega y reintento.
+47. Los archivos se separan en `StorageObject` y `FileAttachment`: el primero representa bytes privados y el segundo su relación con expediente, cliente, categoría y visibilidad.
+48. MinIO será el storage S3-compatible local para probar el contrato real de objetos privados; el dominio no dependerá de SDKs ni de rutas físicas y el bucket nunca será público.
+49. El servidor no entregará archivos que no estén en `AVAILABLE`; la validación local de firma/tipo no se presentará como antivirus productivo, y ese proveedor será un gate explícito de salida.
+50. Los adjuntos de mensajes quedan fuera de Fase 7 para no mezclar dos superficies de visibilidad; primero se estabiliza el ciclo de vida del archivo por expediente.
 
 ## Pruebas realizadas
 
@@ -221,6 +225,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 4 de Fase 6: implementación y cierre documental de UI cliente; E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2, `npm run test:unit` 45/45, `npm run test:integration` 37/37 serializado, `npm run test:e2e` 34/34 ejecutadas con 5 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content` y `git diff --check` correctos. Se verificaron lectura/envío/refresh, notas internas invisibles, cierre de conversación, error recuperable, responsive, Axe, consola limpia y payload cliente mínimo.
 - Tarea 5 de Fase 6: commits `09d979f`, `f2b0e4b` y `9eb9a04`; E2E opt-in `STAFF_MESSAGING_E2E=1 npx playwright test tests/client-messaging-staff.spec.ts` 2/2, `messaging-api.test.ts` 4/4, `npm run test:unit` 45/45, `npm run test:integration` 38/38, `npm run test:e2e` 34/34 ejecutadas con 7 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content`, migraciones/seed, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron separación de visibilidades, dos perfiles RBAC, compositores independientes, cierre/reapertura, Axe, consola y no overflow.
 - Tarea 6 de Fase 6: commit `6e1037c` (`test: harden messaging security matrix`) más cierre documental; API `messaging-api.test.ts` 4/4 con negative checks finales, E2E cliente 2/2, staff 2/2, auth 1/1 y constructor 1/1. Gate `npm test` 45 unitarias, 38 integraciones, contenido, build, 34 E2E públicas ejecutadas con 7 omitidas explícitamente y foundation 1/1; `npm run db:validate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron IDOR, sesión/RBAC, same-origin, rate limit, idempotencia concurrente, cierre, UUID inválido, Axe, responsive, consola, cleanup y ausencia de cuerpos sensibles en HTML/payloads/logs/Outbox.
+- Fase 7 — planificación: especificación `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` y plan `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` creados y revisados; aún no cuenta como evidencia de implementación ni como fase terminada.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -248,6 +253,8 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La protección por IP requiere `TRUST_PROXY_HEADERS=true` sólo detrás de un proxy confiable que sobrescriba la IP. Sin IP confiable, el backend usa límites por identificador y un circuit breaker global separado; el proxy de producción debe aportar rate limiting por origen.
 - La infraestructura de identidad ya está expuesta por endpoints y escribe Outbox, pero el worker SMTP que entrega esos eventos pertenece a la siguiente etapa de mensajería.
 - El Outbox de mensajería está listo como contrato transaccional, pero la entrega asíncrona y sus reintentos siguen pendientes de la fase de notificaciones; no se considera una omisión del cierre de Fase 6.
+- El scanner local de Fase 7 validará firma y tipo, pero no sustituirá antivirus; antes de producción deberá existir proveedor, política de cuarentena, pruebas de evasión y operación de reintentos.
+- MinIO local y sus credenciales/bucket aún no están incorporados al Compose; se agregarán junto con Tarea 2, después de cerrar el modelo relacional.
 - Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
@@ -317,6 +324,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-customer-messaging-ui.md` — plan enfocado de UI cliente, ejecutado.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-messaging-ui.md` — especificación aprobada y ejecutada para la UI staff de la Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
+- `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; implementación aún no iniciada.
+- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tarea 1 es la siguiente.
 
 ## Criterio de terminado de Fase 5
 
@@ -324,4 +333,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Iniciar Fase 7 — Archivos privados: especificar primero el contrato de almacenamiento, scope por expediente, escaneo/validación, URLs temporales, retención, auditoría y pruebas negativas antes de implementar.
+Ejecutar Fase 7, Tarea 1: contrato de dominio, permisos y persistencia de archivos privados por expediente, con pruebas rojas antes de escribir la implementación.
