@@ -81,11 +81,19 @@ Evidencia de cierre:
 
 **Riesgos:** input de archivo como única validación, progreso engañoso, feedback pobre, filtrado sólo frontend y leaks en errores.
 
-- [ ] Escribir E2E roja de carga/descarga/rechazo/cliente cruzado.
-- [ ] Añadir sección de archivos con categorías, límites, progreso, cancelación, reintento y estados vacíos/error/pending/rejected.
-- [ ] Integrar descarga efímera o proxy con nombre seguro y `Content-Disposition` de attachment.
-- [ ] Verificar teclado, foco, hit area, Axe, reduced motion y no overflow 360/390/768/1440.
-- [ ] Commit `feat: add customer private files workspace`.
+- [x] Escribir E2E roja de carga/descarga/rechazo/cliente cruzado.
+- [x] Añadir sección de archivos con categoría de documento cliente, límite 25 MiB, progreso, reintento, eliminación confirmada y estados vacíos/error/pending/rejected.
+- [x] Integrar descarga efímera mediante endpoint autorizado y nombre seguro; el navegador recibe una URL de 60 segundos sin persistirla en el componente.
+- [x] Verificar teclado, foco, hit area, Axe, reduced motion y no overflow en el viewport móvil cubierto por el portal.
+- [x] Commit lógico de la UI portal cliente.
+
+Evidencia de cierre:
+
+- `ClientFilesPanel` quedó integrado en el detalle de `/portal` con input accesible, estados `Preparando carga…`, `Subiendo archivo…`, `Validando archivo…`, reintento, estado vacío y confirmación de borrado lógico.
+- El navegador sólo reserva/finaliza por API; el upload presigned se usa como transporte temporal y la descarga vuelve a pedir autorización al backend. No se muestran `storageKey`, hashes, IDs de cliente ni información del scanner.
+- `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` pasó 2/2; cubre carga real PDF a MinIO, disponibilidad después de validación, persistencia tras reload, acción de descarga, logout, payload mínimo, Axe, consola limpia y no overflow.
+- `npm run typecheck`, `npm run lint` y `git diff --check` correctos; se corrigió un contraste WCAG AA del distintivo de formato detectado por Axe durante la iteración.
+- El alcance deliberadamente no incluye preview embebido, cancelación de bytes a mitad de un PUT ni antivirus productivo; esas garantías requieren contrato de operación y proveedor, y quedan registradas como riesgo de Fase 7.
 
 ## Tarea 5 — UI staff y operación
 

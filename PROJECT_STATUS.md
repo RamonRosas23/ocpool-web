@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 7 — Archivos privados por expediente.
-- **Estado:** Fases 1–6 están terminadas con gates verdes. Fase 7 tiene especificación y plan aprobados; Tareas 1–3 — contrato, persistencia, storage privado, servicio y APIs privadas — están terminadas con evidencia. Tarea 4 — UI portal cliente — es la siguiente.
+- **Estado:** Fases 1–6 están terminadas con gates verdes. Fase 7 tiene Tareas 1–4 terminadas con evidencia: contrato, persistencia, storage privado, servicio, APIs privadas y UI del portal cliente. Tarea 5 — UI staff y operación — es la siguiente; la fase no se considera cerrada hasta completar Tarea 6 y su gate final.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -117,10 +117,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Scanner local `basic-signature-v1` para PDF/JPEG/PNG/WebP, estados de reserva/análisis, hash SHA-256 servidor, expiración y cleanup físico de reservas huérfanas.
 - Servicio transaccional de archivos con idempotencia por actor, concurrencia serializada por expediente, aislamiento de visibilidad, descarga sólo `AVAILABLE`, auditoría y Outbox sin bytes/URLs.
 - APIs privadas de archivos para portal/staff con reserva, finalización, listado, descarga y borrado; Zod estricto, same-origin, no-store, scope backend, capabilities y rate limit persistido.
+- Panel `ClientFilesPanel` integrado en el detalle del portal cliente con upload presigned, finalización validada, descarga efímera, borrado confirmado, reintento, estados de carga/error/vacío y responsive.
 
 ### En desarrollo
 
-- Fase 7 — Tarea 4: UI portal cliente.
+- Fase 7 — Tarea 5: UI staff y operación de archivos.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -130,7 +131,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
-- Archivos privados.
+- Operación completa de archivos privados: UI staff, matriz final de seguridad, cleanup y cierre de Fase 7.
 - PDF comercial.
 - Aceptación digital.
 - Notificaciones y Outbox.
@@ -195,6 +196,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 53. El bucket MinIO/S3 es privado y la aplicación valida HEAD, bytes, firma y hash antes de marcar `AVAILABLE`; el scanner básico no se presenta como antivirus.
 54. El listado de archivos valida la existencia y scope del expediente antes de devolver una colección, para no convertir un expediente ajeno en un 200 vacío enumerables.
 55. La API separa reserva/finalización: una URL presigned sirve sólo para transportar bytes durante minutos; la autorización de lectura se vuelve a ejecutar al descargar y no se conserva en el frontend como permiso.
+56. La UI cliente muestra únicamente una proyección operativa del archivo; valida experiencia y formato para feedback inmediato, pero reserva, análisis, scope, descarga y borrado siguen siendo decisiones de backend.
 
 ## Pruebas realizadas
 
@@ -241,6 +243,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 7 — Tarea 1: prueba dirigida de dominio 6/6, schema 1/1, migración aplicada, Prisma validate/generate, seed, typecheck, lint y diff check correctos. No se agregaron dependencias ni servicios externos.
 - Fase 7 — Tarea 2: scanner 3/3, servicio transaccional 3/3, storage MinIO 1/1, unitarias completas 54/54, typecheck/lint, Compose y auditoría de dependencias correctos. Se verificaron replay/concurrencia, rechazo por firma, expiración, cleanup, soft delete, URL efímera y no exposición de keys/bytes.
 - Fase 7 — Tarea 3: `private-files-api.test.ts` 4/4, typecheck y lint dirigidos correctos. Se verificaron 401/403/404, cliente cruzado, same-origin, Zod estricto, upload/complete/download/delete, visibilidad interna, rol limitado, rate limit, no-store y ausencia de storage keys en proyecciones.
+- Fase 7 — Tarea 4: `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` pasó 2/2 con carga real a MinIO, finalización, disponibilidad, persistencia tras recarga y descarga; Axe, consola, no overflow y logout correctos. `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -249,7 +252,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Pruebas unitarias restantes de servicios comerciales y reglas persistidas.
 - Pruebas de IDOR sobre clientes, solicitudes, expedientes y futuras cotizaciones.
 - E2E cliente y empleado de los flujos comerciales.
-- Pruebas de archivos privados y URLs temporales.
+- Pruebas finales de archivos privados: staff, seguridad de fase, URLs temporales, cleanup y proveedor antivirus productivo.
 - Pruebas de snapshots e inmutabilidad.
 - Pruebas de cálculo de cotizaciones.
 - E2E cliente y empleado.
@@ -315,6 +318,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La ejecución paralela completa de integración volvió a provocar timeouts de inicio de transacción y cascadas de cleanup con fixtures aún no creados; la corrida serializada pasó 18/18 archivos y 37/37 pruebas, y el script oficial quedó fijado a `--maxWorkers=1`.
 - La primera regresión E2E completa tuvo dos timeouts de cierre del contexto bajo carga; ambos casos pasaron aislados y la segunda regresión completa terminó 34/34, sin cambios productivos derivados de ese falso negativo.
 - La primera E2E staff encontró que el estado de cierre se devolvía plano mientras el componente esperaba una propiedad `conversation`; se corrigió el mapeo y se añadió una prueba que valida que el composer desaparece al cerrar.
+- La primera E2E de archivos encontró selectores ambiguos porque el nombre del archivo también aparece en la acción de descarga; se ajustaron los asserts a nombres exactos y Axe detectó un contraste insuficiente en el distintivo `PDF`, corregido antes de cerrar Tarea 4.
 - Axe del inbox staff detectó contraste bajo y selects sin nombre; se corrigieron variables de color y `aria-label` explícitos, y la E2E staff volvió a pasar 2/2.
 - El cold build local agotó el timeout original de 120 segundos al iniciar Playwright; se amplió sólo `webServer.timeout` a 600 segundos y el build explícito terminó correctamente.
 - El gate de seguridad encontró vulnerabilidades transitorias de Prisma; se resolvieron con overrides verificables y se repitió la suite completa antes de cerrar Fase 3.
@@ -340,8 +344,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-customer-messaging-ui.md` — plan enfocado de UI cliente, ejecutado.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-messaging-ui.md` — especificación aprobada y ejecutada para la UI staff de la Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
-- `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; implementación aún no iniciada.
-- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–3 cerradas y Tarea 4 es la siguiente.
+- `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; Tareas 1–4 implementadas.
+- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–4 cerradas y Tarea 5 es la siguiente.
 
 ## Criterio de terminado de Fase 5
 
@@ -349,4 +353,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 7, Tarea 4: UI de archivos del portal cliente con carga, progreso, finalización, descarga, errores y responsive.
+Ejecutar Fase 7, Tarea 5: UI staff de archivos con separación de visibilidad, capacidades y operación segura dentro del expediente.

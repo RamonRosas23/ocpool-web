@@ -6,6 +6,7 @@ import { createSession } from '@/server/auth/sessions';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { closeConversation, createInternalNote, sendStaffMessage } from '@/server/modules/messaging/service';
 import { createQuoteVersion, transitionQuoteVersion } from '@/server/modules/quotes/service';
+import { getPrivateStorage } from '@/server/modules/private-files/storage';
 import { seedIdentityCatalog } from '../prisma/seed';
 import { expectNoSeriousA11yViolations } from './a11y';
 
@@ -107,6 +108,11 @@ test.describe('customer portal opt-in flow', () => {
     const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: { in: requestIds } } }, select: { id: true } })).map(({ id }) => id);
     const conversationIds = (await prisma.conversation.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true } })).map(({ id }) => id);
     const messageIds = (await prisma.conversationMessage.findMany({ where: { conversationId: { in: conversationIds } }, select: { id: true } })).map(({ id }) => id);
+    const attachments = await prisma.fileAttachment.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } });
+    const storage = getPrivateStorage();
+    for (const { storageObject } of attachments) await storage.delete(storageObject.storageKey);
+    await prisma.fileAttachment.deleteMany({ where: { id: { in: attachments.map(({ id }) => id) } } });
+    await prisma.storageObject.deleteMany({ where: { id: { in: attachments.map(({ storageObjectId }) => storageObjectId) } } });
     await prisma.quote.deleteMany({ where: { quoteRequestId: { in: requestIds } } });
     const aggregateIds = [...requestIds, ...(quoteAId ? [quoteAId] : []), ...conversationIds];
     const entityIds = [...aggregateIds, ...versionIds, ...messageIds];
@@ -162,6 +168,14 @@ test.describe('customer portal opt-in flow', () => {
     await page.reload();
     await expect(page.getByText('Esta conversación está cerrada.')).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Escribe una actualización' })).toBeHidden();
+    await expect(page.getByRole('heading', { name: 'Archivos del expediente' })).toBeVisible();
+    await expect(page.getByText('Aún no hay archivos.')).toBeVisible();
+    await page.locator('input[type="file"]').setInputFiles({ name: 'planos.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-') });
+    await expect(page.getByText('planos.pdf', { exact: true })).toBeVisible();
+    await expect(page.getByText('Disponible', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('planos.pdf', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Descargar planos.pdf' })).toBeVisible();
     await expectNoSeriousA11yViolations(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(consoleErrors).toEqual([]);
@@ -169,6 +183,7 @@ test.describe('customer portal opt-in flow', () => {
     expect(portalPayloads.join('\n')).not.toContain(customerAToken);
     expect(portalPayloads.join('\n')).not.toContain('Portal E2E catálogo actualizado');
     expect(portalPayloads.join('\n')).not.toContain('Nota interna: validar acabado con ingeniería.');
+    expect(portalPayloads.join('\n')).not.toContain('storageKey');
     expect(await page.locator('button').evaluateAll((buttons) => buttons.map((button) => button.textContent))).not.toContain('Aceptar');
 
     await page.getByRole('button', { name: 'Cerrar sesión' }).click();
