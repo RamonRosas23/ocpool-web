@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 8 — PDF comercial y aceptación digital, Tarea 6: gate de fase.
-- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 Tareas 1–5 están terminadas y verificadas; el siguiente slice es ejecutar el gate completo de regresión, seguridad, documentación y producción local.
+- **Fase:** Fase 9 — notificaciones y entrega, planificación documental.
+- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 está cerrada con gate técnico completo; la siguiente fase comienza con especificación, autorrevisión y plan ordenados antes de modificar código.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -131,10 +131,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 8 — Tarea 3: APIs portal/staff de PDF y aceptación con same-origin, Zod estricto, `no-store`, URL presigned efímera y respuestas sin `storageKey`/hash.
 - Fase 8 — Tarea 4: `ClientQuoteActions` integrado en el portal con descarga PDF, aceptación explícita, diálogo accesible, feedback de éxito/error, estado vencido/aceptado y responsive.
 - Fase 8 — Tarea 5: endpoint de estado documental staff y `StaffQuoteDocumentPanel` integrados en el constructor; estados MISSING/PENDING/READY/FAILED/DELETED, descarga privada, generación condicionada, evidencia de aceptación y respuestas sin storage key/hash.
+- Gate de Fase 8 cerrado: PDF determinista, aceptación transaccional, portal/staff, storage privado, auditoría/Outbox, regresión, accesibilidad, build y auditoría de dependencias verificados.
 
-### En desarrollo
+### En planificación
 
-- Fase 8 — Tarea 6: gate integral de PDF/aceptación, regresión global, auditoría, seguridad, build y preparación de producción local.
+- Fase 9 — notificaciones y entrega: especificación, autorrevisión y plan pendientes de crear en orden.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -282,7 +283,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 8 — Tarea 4: `npx cross-env PORTAL_E2E=1 playwright test tests/client-portal.spec.ts` pasó 2/2; se verificaron descarga PDF, popup/API presigned, validación negativa del checkbox, diálogo accesible, aceptación, refresh, mensajería persistida, archivos, Axe, consola limpia y responsive móvil. `npm run typecheck` y `npm run lint` correctos.
 - Fase 8 — Tarea 5: `quote-documents-api.test.ts` pasó 2/2 con estado `MISSING`/`READY`, cliente bloqueado, acciones condicionadas, evidencia post-aceptación y ausencia de `storageKey`/`sha256`; `npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1 con generación real en MinIO, descarga presigned, Axe, consola limpia, payload mínimo y no overflow desktop/móvil. `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
-La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
+La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
 ## Pruebas pendientes
 
@@ -292,8 +293,6 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Pruebas finales de archivos privados: staff, seguridad de fase, URLs temporales, cleanup y proveedor antivirus productivo.
 - Pruebas de snapshots e inmutabilidad.
 - Pruebas de cálculo de cotizaciones.
-- Gate serial completo posterior a Tarea 5, incluyendo migración/seed, integración global, build y E2E públicas.
-- E2E staff adicional de aceptación visual; la evidencia backend de aceptación ya está cubierta por API y portal.
 - Pruebas de notificaciones y reintentos.
 - Pruebas de carga y restauración de backups.
 
@@ -311,7 +310,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - El scanner local de Fase 7 validará firma y tipo, pero no sustituirá antivirus; antes de producción deberá existir proveedor, política de cuarentena, pruebas de evasión y operación de reintentos.
 - MinIO local está incorporado al Compose con credenciales de desarrollo; producción deberá reemplazarlas mediante secretos y política de bucket privada.
 - El scanner local sólo valida firma/tipo/hash; proveedor antivirus productivo, cuarentena operacional, backups y restauración de objetos siguen pendientes de hardening.
-- La aceptación backend y portal ya están operativos y protegidos, pero el lanzamiento requiere cerrar staff, E2E portal/staff, revisión legal de términos y gate completo de Fase 8.
+- La aceptación backend, portal y staff ya están operativos y protegidos; el lanzamiento todavía requiere revisión legal de términos, política de firma, notificaciones productivas, retención y gate de producción.
 - Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
@@ -340,6 +339,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Fase 6 depende de sesiones/RBAC de Fase 2, scope de solicitudes de Fase 3, Outbox/auditoría transaccional y portal de cliente de Fase 5.
 - Fase 8 depende de snapshots/versiones de cotización de Fase 4, portal/sesiones de Fase 5, storage privado de Fase 7 y del contrato PDF/aceptación de Tareas 1–3 antes de la UI cliente.
 - Fase 8 Tarea 5 depende de las APIs de documento/aceptación de Tarea 3 y del workspace staff de cotizaciones; no puede inferir evidencia desde el portal cliente.
+- Fase 9 dependerá del Outbox transaccional de identidad, solicitudes, cotizaciones, mensajería y aceptación; el canal de entrega no podrá cambiar el resultado de la transacción comercial.
 
 ## Problemas encontrados y resolución
 
@@ -402,4 +402,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 8, Tarea 6: gate integral de PDF/aceptación, regresión, seguridad, auditoría y preparación local.
+Crear la especificación de Fase 9 — notificaciones y entrega; después autorrevisarla y convertirla en plan antes de implementar.

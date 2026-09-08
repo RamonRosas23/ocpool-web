@@ -90,7 +90,16 @@
 
 ## Tarea 6 — Gate Fase 8
 
-- [ ] Ejecutar pruebas unitarias, integración, API, E2E portal/staff, PDF render/visual QA, audit, build y regresión global.
-- [ ] Verificar hash del PDF aceptado, trazabilidad, outbox/auditoría, no filtrado y cleanup exacto.
-- [ ] Actualizar riesgos legales, proveedor de firma, retención y producción.
-- [ ] Commit `docs: close phase eight quote pdf acceptance`.
+- [x] Ejecutar pruebas unitarias, integración, API, E2E portal/staff, PDF render/visual QA, audit, build y regresión global.
+- [x] Verificar hash del PDF aceptado, trazabilidad, outbox/auditoría, no filtrado y cleanup exacto.
+- [x] Actualizar riesgos legales, proveedor de firma, retención y producción.
+- [x] Commit `docs: close phase eight quote pdf acceptance`.
+
+### Evidencia de Tarea 6
+
+- `npm run db:validate`, `npm run db:migrate:deploy` sin migraciones pendientes y `npm run db:seed` idempotente pasaron.
+- `npm test` pasó completo: typecheck, 61/61 unitarias, 52/52 integraciones serializadas, contrato de contenido, build, E2E pública 34/34 con 7 omitidas explícitamente y foundation 1/1.
+- Suites opt-in dedicadas pasaron: auth 1/1, portal cliente 2/2, mensajería staff 2/2 y constructor/PDF staff 1/1; se verificaron login real, PostgreSQL, MinIO, descarga presigned, aceptación, Axe, consola y responsive.
+- `npm audit --omit=dev --audit-level=high` reportó 0 vulnerabilidades; `git diff --check` y árbol de trabajo limpios.
+- La evidencia de aceptación conserva el hash del PDF en PostgreSQL, enlaza versión/documento/cliente, publica Outbox y auditoría transaccionales, y no filtra hash, storage key, fingerprints ni cuerpos sensibles a portal/staff.
+- Riesgos que permanecen abiertos: revisión jurídica de términos y nivel de firma, proveedor de correo/antivirus productivo, retención/privacidad, backups/restauración, proxy confiable y destino de producción.
