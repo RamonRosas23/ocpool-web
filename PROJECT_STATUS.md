@@ -4,11 +4,11 @@
 
 ## Estado actual
 
-- **Fase:** Fase 3 — Clientes, solicitudes y expedientes, planificación iniciada.
-- **Estado:** Fase 2 está terminada con criterios verificables. Tareas 1 y 2 de Fase 3 están terminadas; Tarea 3 construye el servicio transaccional de creación.
+- **Fase:** Fase 3 — Clientes, solicitudes y expedientes.
+- **Estado:** Fase 2 está terminada con criterios verificables. Tareas 1, 2 y 3 de Fase 3 están terminadas; Tarea 4 implementa la API pública y la captación conectada al expediente.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`.
+- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`, `bad4317`, `22c73ba`, `633d1d6`, `9a8af1c`.
 
 ## Orden documental obligatorio
 
@@ -65,10 +65,12 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Contratos puros iniciales de solicitudes: estados, transiciones, folio provisional `OCQ-YYYY-NNNNNN`, normalización y permisos RBAC de solicitudes.
 - Schema relacional de clientes/contactos, solicitudes, detalles, asignaciones, historial, folios e índices; migración `20260908025713_clients_requests` aplicada.
 - Seed idempotente de `FolioSequence.quote_request` y catálogo RBAC ampliado para solicitudes.
+- Servicio transaccional de solicitudes: cliente/contacto, folio bloqueado, detalle, historial inicial, auditoría y Outbox en una transacción.
+- Idempotencia pública mediante huella SHA-256 de clave de reintento limitada; migración `20260908030200_quote_request_idempotency` aplicada.
 
 ### En desarrollo
 
-- Fase 3 — Tarea 3: servicio transaccional de creación y asignación segura de folio.
+- Fase 3 — Tarea 4: API pública y UI de captación conectadas al servicio transaccional.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -121,6 +123,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - `npm test` — correcto en el estado final: typecheck, 29 unitarias, 9 integraciones PostgreSQL, contrato de contenido, build, 29 E2E públicos con 2 omitidas explícitamente y 1 E2E foundation dedicado.
 - Tras Tarea 1 de Fase 3: `npm run test:unit` 34/34, `npm run test:integration` 9/9, `npm run typecheck` y `npm run lint` correctos.
 - Tras Tarea 2 de Fase 3: `npm run test:integration` 10/10, `npm run db:validate`, `npm run db:generate`, migración aplicada/inspeccionada, `npm run db:seed`, `npm run typecheck` y `npm run lint` correctos.
+- Tras Tarea 3 de Fase 3: prueba dirigida del servicio 2/2 y `npm run test:integration` 12/12; incluye concurrencia de folios, replay idempotente, agregado atómico, historial, auditoría y Outbox.
 - `npm run lint` — correcto.
 - `npm run test:e2e:auth` — 1 flujo correcto: fixture desechable, login, sesión, rechazo de logout foreign-origin y logout.
 - `npm run test:content` — correcto.
@@ -187,6 +190,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La revisión posterior detectó y corrigió bloqueo global por `unknown-client`, lectura tardía de bodies chunked, hashing Argon2 antes del rate limit y aplicación excesiva del circuit breaker; cada corrección quedó cubierta por pruebas unitarias o de integración.
 - El E2E de producción local inicialmente no reenviaba cookies `Secure` sobre HTTP; se mantuvo `Secure` y la prueba valida atributos y transporta explícitamente el valor opaco para probar la API.
 - La primera compuerta final encontró contaminación de buckets sintéticos entre ejecuciones; el test de API ahora limpia únicamente sus hashes de fixture y quedó estable en la repetición completa.
+- La prueba del seed asumía que el contador de folios siempre era `1`; se corrigió para verificar que el seed sea idempotente y preserve secuencias ya consumidas.
 - `npx tsc --noEmit` encontró tipos incompletos en pruebas existentes; se corrigieron sin relajar `strict`.
 
 ## Criterio de terminado de Fase 1
@@ -197,8 +201,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico creado; implementación pendiente.
+- `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico en ejecución; Tareas 1–3 terminadas y Tarea 4 en curso.
 
 ## Próximo paso autorizado
 
-Ejecutar Tarea 3 de Fase 3: implementar el servicio transaccional que crea cliente/contacto/solicitud/detalle/historial/Outbox y asigna un folio concurrente.
+Ejecutar Tarea 4 de Fase 3: reemplazar el `mailto` del formulario público por una API persistente con validación, idempotencia, estados de carga/error/éxito y folio visible.

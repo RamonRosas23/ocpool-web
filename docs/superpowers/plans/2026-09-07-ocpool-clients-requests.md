@@ -1,6 +1,6 @@
 # OCPOOL — Plan Fase 3: Clientes, solicitudes y expedientes
 
-> Estado: plan técnico inicial. Se ejecuta en orden; cada tarea requiere pruebas y evidencia antes de pasar a la siguiente.
+> Estado: ejecución activa. Tareas 1–3 terminadas con evidencia; Tarea 4 en desarrollo. Cada tarea requiere pruebas y evidencia antes de pasar a la siguiente.
 
 ## Objetivo
 
@@ -109,7 +109,7 @@ Los Route Handlers sólo adaptarán HTTP; la lógica de dominio vivirá en `src/
 
 - [x] Tarea 1 — contratos de dominio, transiciones, folio provisional, normalización y permisos RBAC. Commit: `bad4317`.
 - [x] Tarea 2 — schema y migración relacional. Commit: `22c73ba`.
-- [ ] Tarea 3 — servicio transaccional de creación.
+- [x] Tarea 3 — servicio transaccional de creación, folio concurrente e idempotencia. Commit: `9a8af1c`.
 - [ ] Tarea 4 — API pública y UI de captación.
 - [ ] Tarea 5 — inbox interno y operaciones protegidas.
 - [ ] Tarea 6 — gate de fase.
@@ -133,6 +133,8 @@ Los Route Handlers sólo adaptarán HTTP; la lógica de dominio vivirá en `src/
 - Upsert controlado de cliente/contacto sin mezclar clientes.
 - Crear solicitud, detalle, historial, auditoría y Outbox atómicamente.
 - Añadir idempotencia de solicitud pública mediante clave de reintento limitada y hasheada, si el contrato del formulario la requiere.
+
+Evidencia de cierre: `tests/integration/quote-requests-service.test.ts` valida creación atómica, folio bajo concurrencia e idempotencia. La verificación de integración completa pasó 12/12 pruebas. La migración `20260908030200_quote_request_idempotency` añade la huella única de reintento sin almacenar la clave original.
 
 ### Tarea 4 — API pública y UI de captación
 
