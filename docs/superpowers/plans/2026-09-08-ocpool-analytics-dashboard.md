@@ -205,33 +205,33 @@
 - Consumes: `GET /api/staff/dashboard`, `DashboardResponse` serializado, `Link` y patrones visuales de `StaffRequestsPanel`/`StaffNotificationsPanel`.
 - Produces: `/staff` como superficie de lectura operativa con KPI strip, alertas, pipeline, timing, workload y salud de notificaciones.
 
-- [ ] **Step 1: Escribir la E2E roja de navegación y estados.**
+- [x] **Step 1: Escribir la E2E roja de navegación y estados.**
 
   Crear casos para página sin sesión, dashboard de sales con datos propios, manager con vista global, loading/error/empty, cambio de preset, navegación a solicitudes/notificaciones, 390/768/1440 px y Axe.
 
-- [ ] **Step 2: Ejecutar E2E para confirmar el rojo.**
+- [x] **Step 2: Ejecutar E2E para confirmar el rojo.**
 
   Run: `npx playwright test tests/dashboard.spec.ts`
 
-  Expected: FAIL porque `/staff` y el componente no existen.
+  Result: FAIL esperado porque `/staff` y el componente todavía no existían; la prueba dejó fijados sesión restringida, sesión staff, estado vacío, accesibilidad, responsive, reduced motion y consola.
 
-- [ ] **Step 3: Crear la página y panel sin gráficas externas.**
+- [x] **Step 3: Crear la página y panel sin gráficas externas.**
 
   La página sólo declarará metadata privada y renderizará `StaffDashboardPanel`. El panel gestionará `AbortController`, carga, error recuperable, acceso restringido, rango, reintento y response typing; no realizará consultas directas a Prisma ni decidirá permisos.
 
-- [ ] **Step 4: Implementar la jerarquía visual.**
+- [x] **Step 4: Implementar la jerarquía visual.**
 
   Añadir encabezado staff, periodo/zona/frescura, cuatro KPIs, alertas accionables, barras CSS con texto accesible, tabla de responsables sólo cuando venga `scope: global`, salud de notificaciones y enlaces contextuales. Los importes usarán `Intl.NumberFormat` por moneda; nunca `Number()` sobre importes menores.
 
-- [ ] **Step 5: Completar estados responsive y accesibilidad.**
+- [x] **Step 5: Completar estados responsive y accesibilidad.**
 
   Cubrir skeleton estable, `role=status`, `role=alert`, estado vacío, datos parciales, foco visible, etiquetas de gráficos, contraste AA, reduced motion, no overflow y targets táctiles. Las animaciones serán discretas y no bloquearán lectura.
 
-- [ ] **Step 6: Ejecutar E2E y lint visual.**
+- [x] **Step 6: Ejecutar E2E y lint visual.**
 
   Run: `npx playwright test tests/dashboard.spec.ts`, `npx tsc --noEmit`, `npx eslint src/app/staff/page.tsx src/components/StaffDashboardPanel.tsx tests/dashboard.spec.ts`, `npm run build` y `git diff --check`.
 
-  Expected: PASS; ningún payload ni HTML contendrá emails, teléfonos, IDs de cliente, destinatarios, mensajes o secretos.
+  Result: PASS; `DASHBOARD_E2E=1 npm run test:e2e -- tests/dashboard.spec.ts` pasó 1/1. La E2E verificó 401 visual, sesión manager, periodo histórico vacío, Axe sin violaciones serious/critical, 390/768/1440 sin overflow, reduced motion, navegación contextual y ausencia de errores de consola autenticados. `npm run typecheck`, `npm run lint`, `npm run build` y `git diff --check` también pasaron. La primera corrida encontró una condición de carrera de rango y contrastes WCAG insuficientes; ambos fueron corregidos y verificados.
 
 - [ ] **Step 7: Commit.**
 
