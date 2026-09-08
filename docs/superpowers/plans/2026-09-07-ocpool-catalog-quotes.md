@@ -1,6 +1,6 @@
 # OCPOOL — Plan Fase 4: Catálogo, precios y cotizaciones versionadas
 
-> Estado: plan técnico inicial aprobado para ejecución ordenada. No se implementará una pantalla de cotización antes de cerrar contratos monetarios, snapshots e invariantes.
+> Estado: Tarea 1 ejecutada y verificada. Tarea 2 lista para ejecución. No se implementará una pantalla de cotización antes de cerrar contratos monetarios, snapshots e invariantes.
 
 ## Objetivo
 
@@ -73,7 +73,7 @@ BORRADOR → EN_REVISION → ENVIADA → EN_NEGOCIACION → ACEPTADA
 Reglas:
 
 - sólo `BORRADOR` puede editar líneas y condiciones;
-- `ENVIADA`, `ACEPTADA`, `RECHAZADA` y `VENCIDA` son snapshots inmutables;
+- cualquier estado distinto de `BORRADOR` es inmutable para edición de líneas y condiciones;
 - una solicitud de cambio genera una nueva versión de la misma cotización;
 - `ACEPTADA` sólo será posible cuando exista el módulo de aceptación y evidencia requerido.
 
@@ -96,7 +96,7 @@ Los permisos existentes de cotizaciones se conservarán y se separará explícit
 
 ## Seguimiento de ejecución
 
-- [ ] Tarea 1 — contratos monetarios, estados, snapshots y permisos adicionales.
+- [x] Tarea 1 — contratos monetarios, estados, snapshots y permisos adicionales.
 - [ ] Tarea 2 — schema relacional de catálogo, listas y cotizaciones.
 - [ ] Tarea 3 — servicio de precios y creación de versión reproducible.
 - [ ] Tarea 4 — API y UI de catálogo/listas de precios.
@@ -109,6 +109,18 @@ Los permisos existentes de cotizaciones se conservarán y se separará explícit
 - Definir estados y transiciones sin habilitar aceptación prematuramente.
 - Definir snapshots y reglas de inmutabilidad.
 - Escribir pruebas rojas para sumas, porcentajes, impuestos, descuentos, cero, límites y negativos.
+
+Evidencia de cierre:
+
+- Commit `4240d15` (`feat: establish quote money and snapshot contracts`).
+- `src/server/modules/quotes/domain.ts` usa `BigInt` para unidad mínima, cantidades fijas en milésimas y porcentajes en basis points.
+- El redondeo es half-up explícito; se rechazan negativos, overflow, monedas inválidas, cantidades con más de tres decimales y monedas mezcladas.
+- `buildQuoteVersionSnapshot` conserva identidad, precio, descuento, impuesto, subtotales y totales, y congela el snapshot en memoria.
+- `canTransitionQuoteVersion` bloquea `ACEPTADA` sin evidencia explícita; sólo `BORRADOR` es editable.
+- Se incorporaron `catalog.read`, `catalog.manage`, `prices.read` y `prices.manage` con asignación least-privilege a ventas/gerencia.
+- Verificación: `npm run test:unit` 41/41, `npm run test:integration` 20/20, `npm run typecheck` y `npm run lint` correctos.
+
+Decisiones mantenidas abiertas para validación comercial: monedas soportadas, IVA y demás impuestos, descuentos acumulados y reglas legales de aceptación.
 
 ### Tarea 2 — Schema relacional
 

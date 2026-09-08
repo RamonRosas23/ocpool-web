@@ -4,11 +4,11 @@
 
 ## Estado actual
 
-- **Fase:** Fase 3 — Clientes, solicitudes y expedientes.
-- **Estado:** Fases 1–3 están terminadas con criterios verificables. Fase 3 cerró sus seis tareas; inicia la planificación ordenada de Fase 4 — catálogo, precios y cotizaciones.
+- **Fase:** Fase 4 — Catálogo, precios y cotizaciones versionadas.
+- **Estado:** Fase 4 está en ejecución. La Tarea 1 está terminada con contratos monetarios, estados, snapshots y permisos probados; la Tarea 2 es el siguiente incremento autorizado.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`, `bad4317`, `22c73ba`, `633d1d6`, `9a8af1c`, `b47dbfe`, `cadc616`, `493d9ff`, `7d19de9`, `2024fc4`.
+- **Commits de la fase:** `cda7a7a`, `4240d15`.
 
 ## Orden documental obligatorio
 
@@ -74,10 +74,15 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Captación pública E2E sobre navegador de producción local; el endpoint legado de `mailto` fue retirado para evitar flujos no persistentes.
 - Servicio operativo de inbox: listado/detalle con proyección segura, responsables activos, asignación con cierre de asignación previa y eventos Outbox de operación.
 - Gate reproducible de Fase 3: migraciones/seed al día, auditoría de producción sin vulnerabilidades conocidas y lockfile con overrides compatibles de dependencias transitorias.
+- Contratos de Fase 4 para dinero, cantidades de punto fijo, porcentajes en basis points, redondeo half-up, límites y monedas explícitas.
+- Cálculo puro de líneas con subtotal, descuento, base gravable, impuesto y total sin floats.
+- Snapshots de líneas y totales congelados en memoria, con identidad comercial y valores monetarios capturados.
+- Estados de cotización versionada con edición exclusiva de borradores y aceptación bloqueada hasta existir evidencia de aceptación.
+- Permisos RBAC separados para lectura/administración de catálogo y lectura/administración de precios.
 
 ### En desarrollo
 
-- Fase 4 — planificación de catálogo, precios, plantillas y cotizaciones versionadas.
+- Fase 4 — Tarea 2: schema relacional de catálogo, listas de precios, cotizaciones y snapshots persistidos.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -87,6 +92,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Catálogo, precios y plantillas.
+- Migración relacional de catálogo, listas, cotizaciones y snapshots.
 - Constructor de cotizaciones.
 - Snapshots y versionado inmutable.
 - Portal del cliente.
@@ -114,6 +120,10 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 11. Mantener WhatsApp y otros canales externos desacoplados del flujo principal.
 12. No afirmar que la aceptación digital sustituye contratos formales sin revisión jurídica.
 13. Mantener las transiciones dependientes de cotización cerradas en el inbox hasta que exista el módulo de cotizaciones.
+14. Representar dinero con `BigInt` en unidad mínima y cantidades con escala fija de milésimas; porcentajes como basis points enteros.
+15. Aplicar redondeo half-up explícito por línea para cantidad, descuento e impuesto; sumar los resultados de línea para los totales.
+16. Permitir sólo códigos de moneda de tres letras normalizados en el dominio; la lista comercial definitiva de monedas queda pendiente de confirmación.
+17. Congelar snapshots de dominio y persistirlos como datos históricos en la siguiente tarea; ninguna versión distinta de `BORRADOR` será editable.
 
 ## Pruebas realizadas
 
@@ -138,12 +148,13 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - `npx tsc --noEmit` / `npm run typecheck` — correctos, incluyendo los tipos de las pruebas Playwright y Vitest.
 - Revisión independiente de seguridad — sin hallazgos Critical/Important bloqueantes después de corregir rate limit sin IP, body chunked, retorno temprano antes de Argon2 y circuit breaker condicionado por IP confiable.
 - `git diff --check` — correcto.
+- Tarea 1 de Fase 4: prueba roja inicial de contrato, después `npm run test:unit` 41/41, `npm run test:integration` 20/20, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
 ## Pruebas pendientes
 
-- Pruebas unitarias de dominios comerciales.
+- Pruebas unitarias restantes de servicios comerciales y reglas persistidas.
 - Pruebas de IDOR sobre clientes, solicitudes, expedientes y futuras cotizaciones.
 - E2E cliente y empleado de los flujos comerciales.
 - Pruebas de archivos privados y URLs temporales.
@@ -182,6 +193,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - La separación Playwright/Vitest protege la regresión de landing mientras crece el backend.
 - Fase 2 (identidad/RBAC) debe preceder a expedientes, cotizaciones y portal porque todos requieren autorización backend.
 - Las rutas de autenticación dependerán de `sessions.ts`, `tokens.ts`, `mfa.ts`, `rate-limit.ts`, `permissions.ts`, el logger y el envelope de errores.
+- Los contratos de `src/server/modules/quotes/domain.ts` son dependencia de schema, servicio de precios, snapshots persistidos y constructor.
 
 ## Problemas encontrados y resolución
 
@@ -211,8 +223,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
-- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, plan técnico inicial creado; ejecución aún no iniciada.
+- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tarea 1 ejecutada; Tarea 2 lista para iniciar.
 
 ## Próximo paso autorizado
 
-Crear y revisar el plan ordenado de Fase 4: catálogo, precios, plantillas, snapshots y cotizaciones versionadas.
+Ejecutar la Tarea 2 de Fase 4: diseñar, migrar y verificar el schema relacional de catálogo, listas, cotizaciones, versiones, líneas snapshot e historial.
