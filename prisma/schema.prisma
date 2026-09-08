@@ -111,6 +111,17 @@ enum FileVisibility {
   INTERNAL
 }
 
+enum GeneratedDocumentType {
+  QUOTE_PDF
+}
+
+enum GeneratedDocumentStatus {
+  PENDING
+  READY
+  FAILED
+  DELETED
+}
+
 enum QuoteVersionStatus {
   BORRADOR
   EN_REVISION
@@ -191,16 +202,16 @@ model OutboxEvent {
 }
 
 model Client {
-  id          String       @id @default(uuid()) @db.Uuid
-  displayName String       @db.VarChar(180)
-  status      ClientStatus @default(ACTIVE)
-  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime     @updatedAt @db.Timestamptz(3)
-  users       User[]
-  contacts    ClientContact[]
-  quoteRequests QuoteRequest[]
-  quotes      Quote[]
-  conversations Conversation[]
+  id              String           @id @default(uuid()) @db.Uuid
+  displayName     String           @db.VarChar(180)
+  status          ClientStatus     @default(ACTIVE)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+  users           User[]
+  contacts        ClientContact[]
+  quoteRequests   QuoteRequest[]
+  quotes          Quote[]
+  conversations   Conversation[]
   fileAttachments FileAttachment[]
 
   @@index([status, createdAt])
@@ -208,35 +219,36 @@ model Client {
 }
 
 model User {
-  id                  String       @id @default(uuid()) @db.Uuid
-  email               String       @db.VarChar(320)
-  emailNormalized     String       @unique @db.VarChar(320)
-  displayName         String       @db.VarChar(180)
-  type                UserType
-  status              UserStatus   @default(INVITED)
-  passwordHash        String?      @db.VarChar(255)
-  mfaRequired         Boolean      @default(false)
-  mfaSecretCiphertext String?      @db.VarChar(512)
-  mfaEnrolledAt       DateTime?    @db.Timestamptz(3)
-  mfaLastAcceptedCounter Int?
-  clientId            String?      @db.Uuid
-  client              Client?      @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  contactProfile      ClientContact?
-  roles               UserRole[]
-  sessions            Session[]
-  authTokens          AuthToken[]
-  authEvents          AuthEvent[]
-  currentQuoteRequests QuoteRequest[] @relation("QuoteRequestCurrentAssignee")
-  requestAssignmentsAssigned RequestAssignment[] @relation("RequestAssignmentAssignee")
-  requestAssignmentsCreated RequestAssignment[] @relation("RequestAssignmentActor")
-  requestStatusChanges RequestStatusHistory[] @relation("RequestStatusHistoryActor")
-  quoteVersionsCreated QuoteVersion[] @relation("QuoteVersionCreator")
-  quoteStatusChanges QuoteStatusHistory[] @relation("QuoteStatusHistoryActor")
-  closedConversations Conversation[] @relation("ConversationCloser")
-  conversationMessages ConversationMessage[] @relation("ConversationMessageSender")
-  uploadedFileAttachments FileAttachment[] @relation("FileAttachmentUploader")
-  createdAt           DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime     @updatedAt @db.Timestamptz(3)
+  id                         String                 @id @default(uuid()) @db.Uuid
+  email                      String                 @db.VarChar(320)
+  emailNormalized            String                 @unique @db.VarChar(320)
+  displayName                String                 @db.VarChar(180)
+  type                       UserType
+  status                     UserStatus             @default(INVITED)
+  passwordHash               String?                @db.VarChar(255)
+  mfaRequired                Boolean                @default(false)
+  mfaSecretCiphertext        String?                @db.VarChar(512)
+  mfaEnrolledAt              DateTime?              @db.Timestamptz(3)
+  mfaLastAcceptedCounter     Int?
+  clientId                   String?                @db.Uuid
+  client                     Client?                @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  contactProfile             ClientContact?
+  roles                      UserRole[]
+  sessions                   Session[]
+  authTokens                 AuthToken[]
+  authEvents                 AuthEvent[]
+  currentQuoteRequests       QuoteRequest[]         @relation("QuoteRequestCurrentAssignee")
+  requestAssignmentsAssigned RequestAssignment[]    @relation("RequestAssignmentAssignee")
+  requestAssignmentsCreated  RequestAssignment[]    @relation("RequestAssignmentActor")
+  requestStatusChanges       RequestStatusHistory[] @relation("RequestStatusHistoryActor")
+  quoteVersionsCreated       QuoteVersion[]         @relation("QuoteVersionCreator")
+  quoteAcceptances           QuoteAcceptance[]      @relation("QuoteAcceptanceActor")
+  quoteStatusChanges         QuoteStatusHistory[]   @relation("QuoteStatusHistoryActor")
+  closedConversations        Conversation[]         @relation("ConversationCloser")
+  conversationMessages       ConversationMessage[]  @relation("ConversationMessageSender")
+  uploadedFileAttachments    FileAttachment[]       @relation("FileAttachmentUploader")
+  createdAt                  DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime               @updatedAt @db.Timestamptz(3)
 
   @@index([clientId, status])
   @@index([type, status])
@@ -244,20 +256,20 @@ model User {
 }
 
 model ClientContact {
-  id              String        @id @default(uuid()) @db.Uuid
-  clientId        String        @db.Uuid
-  userId          String?       @unique @db.Uuid
-  displayName     String        @db.VarChar(180)
-  email           String        @db.VarChar(320)
-  emailNormalized String        @db.VarChar(320)
-  phone           String?       @db.VarChar(40)
-  roleTitle       String?       @db.VarChar(120)
-  isPrimary       Boolean       @default(false)
-  status          ContactStatus @default(ACTIVE)
-  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime      @updatedAt @db.Timestamptz(3)
-  client          Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id              String         @id @default(uuid()) @db.Uuid
+  clientId        String         @db.Uuid
+  userId          String?        @unique @db.Uuid
+  displayName     String         @db.VarChar(180)
+  email           String         @db.VarChar(320)
+  emailNormalized String         @db.VarChar(320)
+  phone           String?        @db.VarChar(40)
+  roleTitle       String?        @db.VarChar(120)
+  isPrimary       Boolean        @default(false)
+  status          ContactStatus  @default(ACTIVE)
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
+  client          Client         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  user            User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   quoteRequests   QuoteRequest[]
 
   @@unique([clientId, emailNormalized])
@@ -266,46 +278,46 @@ model ClientContact {
 }
 
 model QuoteRequest {
-  id                String                  @id @default(uuid()) @db.Uuid
-  folio             String                  @unique @db.VarChar(24)
-  idempotencyKeyHash String?               @unique @db.VarChar(64)
-  clientId          String                  @db.Uuid
-  contactId         String                  @db.Uuid
-  currentAssigneeId String?                 @db.Uuid
-  origin            QuoteRequestOrigin
-  status            QuoteRequestStatus      @default(RECIBIDA)
-  createdAt         DateTime                @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime                @updatedAt @db.Timestamptz(3)
-  client            Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  contact           ClientContact           @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  currentAssignee   User?                   @relation("QuoteRequestCurrentAssignee", fields: [currentAssigneeId], references: [id], onDelete: SetNull)
-  detail            QuoteRequestDetail?
-  quotes            Quote[]
-  assignments       RequestAssignment[]
-  statusHistory     RequestStatusHistory[]
-  conversation      Conversation?
-  fileAttachments   FileAttachment[]
+  id                 String                 @id @default(uuid()) @db.Uuid
+  folio              String                 @unique @db.VarChar(24)
+  idempotencyKeyHash String?                @unique @db.VarChar(64)
+  clientId           String                 @db.Uuid
+  contactId          String                 @db.Uuid
+  currentAssigneeId  String?                @db.Uuid
+  origin             QuoteRequestOrigin
+  status             QuoteRequestStatus     @default(RECIBIDA)
+  createdAt          DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime               @updatedAt @db.Timestamptz(3)
+  client             Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  contact            ClientContact          @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  currentAssignee    User?                  @relation("QuoteRequestCurrentAssignee", fields: [currentAssigneeId], references: [id], onDelete: SetNull)
+  detail             QuoteRequestDetail?
+  quotes             Quote[]
+  assignments        RequestAssignment[]
+  statusHistory      RequestStatusHistory[]
+  conversation       Conversation?
+  fileAttachments    FileAttachment[]
 
+  @@unique([id, clientId])
   @@index([status, createdAt])
   @@index([currentAssigneeId, status, createdAt])
   @@index([clientId, createdAt])
-  @@unique([id, clientId])
   @@map("quote_requests")
 }
 
 model Conversation {
-  id              String             @id @default(uuid()) @db.Uuid
-  quoteRequestId  String             @unique @db.Uuid
-  clientId        String             @db.Uuid
-  status          ConversationStatus @default(OPEN)
-  createdAt       DateTime           @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime           @updatedAt @db.Timestamptz(3)
-  closedAt        DateTime?          @db.Timestamptz(3)
-  closedById      String?            @db.Uuid
-  quoteRequest    QuoteRequest       @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Cascade)
-  client          Client             @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  closedBy        User?              @relation("ConversationCloser", fields: [closedById], references: [id], onDelete: SetNull)
-  messages        ConversationMessage[]
+  id             String                @id @default(uuid()) @db.Uuid
+  quoteRequestId String                @unique @db.Uuid
+  clientId       String                @db.Uuid
+  status         ConversationStatus    @default(OPEN)
+  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
+  closedAt       DateTime?             @db.Timestamptz(3)
+  closedById     String?               @db.Uuid
+  quoteRequest   QuoteRequest          @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Cascade)
+  client         Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  closedBy       User?                 @relation("ConversationCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  messages       ConversationMessage[]
 
   @@unique([quoteRequestId, clientId])
   @@index([clientId, status, updatedAt])
@@ -314,15 +326,15 @@ model Conversation {
 }
 
 model ConversationMessage {
-  id                String            @id @default(uuid()) @db.Uuid
-  conversationId    String            @db.Uuid
-  senderUserId      String?           @db.Uuid
-  visibility        MessageVisibility
-  body              String            @db.Text
-  idempotencyKeyHash String?          @db.VarChar(64)
-  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
-  conversation      Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender            User?             @relation("ConversationMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  id                 String            @id @default(uuid()) @db.Uuid
+  conversationId     String            @db.Uuid
+  senderUserId       String?           @db.Uuid
+  visibility         MessageVisibility
+  body               String            @db.Text
+  idempotencyKeyHash String?           @db.VarChar(64)
+  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
+  conversation       Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender             User?             @relation("ConversationMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
 
   @@unique([conversationId, senderUserId, idempotencyKeyHash])
   @@index([conversationId, createdAt, id])
@@ -331,21 +343,22 @@ model ConversationMessage {
 }
 
 model StorageObject {
-  id            String          @id @default(uuid()) @db.Uuid
-  provider      StorageProvider @default(MINIO)
-  storageKey    String          @unique @db.VarChar(255)
-  contentType   String          @db.VarChar(120)
-  byteSize      BigInt
-  sha256        String?         @db.Char(64)
-  etag          String?         @db.VarChar(128)
-  scanStatus    FileScanStatus  @default(PENDING)
-  scannerName   String?         @db.VarChar(120)
-  scanReason    String?         @db.VarChar(300)
-  scannedAt     DateTime?       @db.Timestamptz(3)
-  verifiedAt    DateTime?       @db.Timestamptz(3)
-  deletedAt     DateTime?       @db.Timestamptz(3)
-  createdAt     DateTime        @default(now()) @db.Timestamptz(3)
-  attachment    FileAttachment?
+  id                String             @id @default(uuid()) @db.Uuid
+  provider          StorageProvider    @default(MINIO)
+  storageKey        String             @unique @db.VarChar(255)
+  contentType       String             @db.VarChar(120)
+  byteSize          BigInt
+  sha256            String?            @db.Char(64)
+  etag              String?            @db.VarChar(128)
+  scanStatus        FileScanStatus     @default(PENDING)
+  scannerName       String?            @db.VarChar(120)
+  scanReason        String?            @db.VarChar(300)
+  scannedAt         DateTime?          @db.Timestamptz(3)
+  verifiedAt        DateTime?          @db.Timestamptz(3)
+  deletedAt         DateTime?          @db.Timestamptz(3)
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  attachment        FileAttachment?
+  generatedDocument GeneratedDocument?
 
   @@index([scanStatus, createdAt])
   @@index([deletedAt, createdAt])
@@ -353,31 +366,84 @@ model StorageObject {
 }
 
 model FileAttachment {
-  id               String                @id @default(uuid()) @db.Uuid
-  quoteRequestId   String                @db.Uuid
-  clientId         String                @db.Uuid
-  storageObjectId  String                @unique @db.Uuid
-  originalFileName String                @db.VarChar(180)
-  category         FileCategory
-  visibility       FileVisibility
-  status           FileAttachmentStatus  @default(PENDING_SCAN)
-  uploadedById     String                @db.Uuid
-  reservationKeyHash String?             @db.Char(64)
-  reservationExpiresAt DateTime?         @db.Timestamptz(3)
-  createdAt        DateTime              @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime              @updatedAt @db.Timestamptz(3)
-  deletedAt        DateTime?             @db.Timestamptz(3)
-  quoteRequest     QuoteRequest          @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Cascade)
-  client           Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  storageObject    StorageObject         @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
-  uploadedBy       User                  @relation("FileAttachmentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+  id                   String               @id @default(uuid()) @db.Uuid
+  quoteRequestId       String               @db.Uuid
+  clientId             String               @db.Uuid
+  storageObjectId      String               @unique @db.Uuid
+  originalFileName     String               @db.VarChar(180)
+  category             FileCategory
+  visibility           FileVisibility
+  status               FileAttachmentStatus @default(PENDING_SCAN)
+  uploadedById         String               @db.Uuid
+  reservationKeyHash   String?              @db.Char(64)
+  reservationExpiresAt DateTime?            @db.Timestamptz(3)
+  createdAt            DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime             @updatedAt @db.Timestamptz(3)
+  deletedAt            DateTime?            @db.Timestamptz(3)
+  quoteRequest         QuoteRequest         @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Cascade)
+  client               Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  storageObject        StorageObject        @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
+  uploadedBy           User                 @relation("FileAttachmentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
 
+  @@unique([uploadedById, reservationKeyHash])
   @@index([quoteRequestId, status, createdAt])
   @@index([clientId, visibility, status, createdAt])
   @@index([uploadedById, createdAt])
-  @@unique([uploadedById, reservationKeyHash])
   @@index([status, reservationExpiresAt])
   @@map("file_attachments")
+}
+
+model GeneratedDocument {
+  id              String                  @id @default(uuid()) @db.Uuid
+  quoteId         String                  @db.Uuid
+  quoteVersionId  String                  @db.Uuid
+  storageObjectId String?                 @unique @db.Uuid
+  documentType    GeneratedDocumentType   @default(QUOTE_PDF)
+  status          GeneratedDocumentStatus @default(PENDING)
+  templateVersion String                  @db.VarChar(64)
+  contentType     String                  @default("application/pdf") @db.VarChar(120)
+  byteSize        BigInt?
+  sha256          String?                 @db.Char(64)
+  failureCode     String?                 @db.VarChar(120)
+  generatedAt     DateTime?               @db.Timestamptz(3)
+  readyAt         DateTime?               @db.Timestamptz(3)
+  createdAt       DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime?               @db.Timestamptz(3)
+  quote           Quote                   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quoteVersion    QuoteVersion            @relation(fields: [quoteVersionId, quoteId], references: [id, quoteId], onDelete: Cascade)
+  storageObject   StorageObject?          @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
+  acceptance      QuoteAcceptance?
+
+  @@unique([quoteVersionId, documentType])
+  @@index([quoteId, status, documentType])
+  @@index([status, updatedAt])
+  @@map("generated_documents")
+}
+
+model QuoteAcceptance {
+  id                   String            @id @default(uuid()) @db.Uuid
+  quoteId              String            @db.Uuid
+  quoteVersionId       String            @db.Uuid
+  generatedDocumentId  String            @unique @db.Uuid
+  acceptedById         String            @db.Uuid
+  documentSha256       String            @db.Char(64)
+  signerName           String            @db.VarChar(180)
+  termsVersion         String            @db.VarChar(64)
+  idempotencyKeyHash   String            @db.Char(64)
+  ipFingerprint        String?           @db.Char(64)
+  userAgentFingerprint String?           @db.Char(64)
+  acceptedAt           DateTime          @default(now()) @db.Timestamptz(3)
+  quote                Quote             @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quoteVersion         QuoteVersion      @relation(fields: [quoteVersionId, quoteId], references: [id, quoteId], onDelete: Cascade)
+  generatedDocument    GeneratedDocument @relation(fields: [generatedDocumentId], references: [id], onDelete: Restrict)
+  acceptedBy           User              @relation("QuoteAcceptanceActor", fields: [acceptedById], references: [id], onDelete: Restrict)
+
+  @@unique([quoteVersionId, quoteId])
+  @@unique([acceptedById, idempotencyKeyHash])
+  @@index([quoteId, acceptedAt])
+  @@index([acceptedById, acceptedAt])
+  @@map("quote_acceptances")
 }
 
 model QuoteRequestDetail {
@@ -398,18 +464,18 @@ model QuoteRequestDetail {
 }
 
 model CatalogCategory {
-  id          String        @id @default(uuid()) @db.Uuid
-  code        String        @unique @db.VarChar(64)
-  name        String        @db.VarChar(180)
-  description String?       @db.VarChar(500)
-  status      CatalogStatus @default(ACTIVE)
-  sortOrder   Int           @default(0)
-  parentId    String?       @db.Uuid
+  id          String            @id @default(uuid()) @db.Uuid
+  code        String            @unique @db.VarChar(64)
+  name        String            @db.VarChar(180)
+  description String?           @db.VarChar(500)
+  status      CatalogStatus     @default(ACTIVE)
+  sortOrder   Int               @default(0)
+  parentId    String?           @db.Uuid
   parent      CatalogCategory?  @relation("CatalogCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children    CatalogCategory[] @relation("CatalogCategoryTree")
   items       CatalogItem[]
-  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
 
   @@index([parentId, status, sortOrder])
   @@index([status, sortOrder, name])
@@ -417,18 +483,18 @@ model CatalogCategory {
 }
 
 model CatalogItem {
-  id          String        @id @default(uuid()) @db.Uuid
-  code        String        @unique @db.VarChar(64)
-  name        String        @db.VarChar(180)
-  description String?       @db.Text
-  unit        String        @db.VarChar(40)
-  status      CatalogStatus @default(ACTIVE)
-  categoryId  String?       @db.Uuid
-  category    CatalogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  id          String              @id @default(uuid()) @db.Uuid
+  code        String              @unique @db.VarChar(64)
+  name        String              @db.VarChar(180)
+  description String?             @db.Text
+  unit        String              @db.VarChar(40)
+  status      CatalogStatus       @default(ACTIVE)
+  categoryId  String?             @db.Uuid
+  category    CatalogCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   prices      PriceListItem[]
   quoteLines  QuoteLineSnapshot[]
-  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
 
   @@index([status, name])
   @@index([categoryId, status, name])
@@ -436,16 +502,16 @@ model CatalogItem {
 }
 
 model PriceList {
-  id          String          @id @default(uuid()) @db.Uuid
-  code        String          @unique @db.VarChar(64)
-  name        String          @db.VarChar(180)
-  currencyCode String         @db.Char(3)
-  status      PriceListStatus @default(ACTIVE)
-  validFrom   DateTime        @default(now()) @db.Timestamptz(3)
-  validUntil  DateTime?       @db.Timestamptz(3)
-  items       PriceListItem[]
-  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+  id           String          @id @default(uuid()) @db.Uuid
+  code         String          @unique @db.VarChar(64)
+  name         String          @db.VarChar(180)
+  currencyCode String          @db.Char(3)
+  status       PriceListStatus @default(ACTIVE)
+  validFrom    DateTime        @default(now()) @db.Timestamptz(3)
+  validUntil   DateTime?       @db.Timestamptz(3)
+  items        PriceListItem[]
+  createdAt    DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime        @updatedAt @db.Timestamptz(3)
 
   @@index([currencyCode, status, validFrom])
   @@map("price_lists")
@@ -469,16 +535,18 @@ model PriceListItem {
 }
 
 model Quote {
-  id              String        @id @default(uuid()) @db.Uuid
-  quoteRequestId  String        @db.Uuid
-  clientId        String        @db.Uuid
-  currentVersionId String?      @unique @db.Uuid
-  quoteRequest    QuoteRequest  @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Restrict)
-  client          Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  currentVersion  QuoteVersion? @relation("QuoteCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
-  versions        QuoteVersion[] @relation("QuoteVersions")
-  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime      @updatedAt @db.Timestamptz(3)
+  id                 String              @id @default(uuid()) @db.Uuid
+  quoteRequestId     String              @db.Uuid
+  clientId           String              @db.Uuid
+  currentVersionId   String?             @unique @db.Uuid
+  quoteRequest       QuoteRequest        @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Restrict)
+  client             Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  currentVersion     QuoteVersion?       @relation("QuoteCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions           QuoteVersion[]      @relation("QuoteVersions")
+  generatedDocuments GeneratedDocument[]
+  quoteAcceptances   QuoteAcceptance[]
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
 
   @@unique([quoteRequestId])
   @@index([clientId, createdAt])
@@ -486,52 +554,55 @@ model Quote {
 }
 
 model QuoteVersion {
-  id              String            @id @default(uuid()) @db.Uuid
-  quoteId         String            @db.Uuid
-  versionNumber   Int               @default(1)
-  status          QuoteVersionStatus @default(BORRADOR)
-  currencyCode    String            @db.Char(3)
-  validUntil      DateTime?         @db.Timestamptz(3)
-  subtotalMinor   BigInt            @default(0)
-  discountTotalMinor BigInt         @default(0)
-  taxableTotalMinor  BigInt         @default(0)
-  taxTotalMinor   BigInt            @default(0)
-  totalMinor      BigInt            @default(0)
-  createdById     String            @db.Uuid
-  quote           Quote             @relation("QuoteVersions", fields: [quoteId], references: [id], onDelete: Cascade)
-  currentForQuote Quote?            @relation("QuoteCurrentVersion")
-  createdBy       User              @relation("QuoteVersionCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  lines           QuoteLineSnapshot[]
-  statusHistory   QuoteStatusHistory[]
-  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime          @updatedAt @db.Timestamptz(3)
+  id                 String               @id @default(uuid()) @db.Uuid
+  quoteId            String               @db.Uuid
+  versionNumber      Int                  @default(1)
+  status             QuoteVersionStatus   @default(BORRADOR)
+  currencyCode       String               @db.Char(3)
+  validUntil         DateTime?            @db.Timestamptz(3)
+  subtotalMinor      BigInt               @default(0)
+  discountTotalMinor BigInt               @default(0)
+  taxableTotalMinor  BigInt               @default(0)
+  taxTotalMinor      BigInt               @default(0)
+  totalMinor         BigInt               @default(0)
+  createdById        String               @db.Uuid
+  quote              Quote                @relation("QuoteVersions", fields: [quoteId], references: [id], onDelete: Cascade)
+  currentForQuote    Quote?               @relation("QuoteCurrentVersion")
+  createdBy          User                 @relation("QuoteVersionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  lines              QuoteLineSnapshot[]
+  statusHistory      QuoteStatusHistory[]
+  generatedDocuments GeneratedDocument[]
+  acceptance         QuoteAcceptance?
+  createdAt          DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime             @updatedAt @db.Timestamptz(3)
 
   @@unique([quoteId, versionNumber])
+  @@unique([id, quoteId])
   @@index([quoteId, status, createdAt])
   @@index([createdById, createdAt])
   @@map("quote_versions")
 }
 
 model QuoteLineSnapshot {
-  id                 String       @id @default(uuid()) @db.Uuid
-  quoteVersionId     String       @db.Uuid
-  catalogItemId      String       @db.Uuid
-  catalogItemCode    String       @db.VarChar(64)
-  name               String       @db.VarChar(180)
-  description        String?      @db.Text
-  unit               String       @db.VarChar(40)
-  quantityMilliunits BigInt
-  currencyCode       String       @db.Char(3)
-  unitPriceMinor     BigInt
-  discountBasisPoints Int         @default(0)
-  discountMinor      BigInt       @default(0)
-  taxableMinor       BigInt       @default(0)
-  taxBasisPoints     Int          @default(0)
-  taxMinor           BigInt       @default(0)
-  subtotalMinor      BigInt       @default(0)
-  totalMinor         BigInt       @default(0)
-  quoteVersion       QuoteVersion @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
-  catalogItem        CatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  id                  String       @id @default(uuid()) @db.Uuid
+  quoteVersionId      String       @db.Uuid
+  catalogItemId       String       @db.Uuid
+  catalogItemCode     String       @db.VarChar(64)
+  name                String       @db.VarChar(180)
+  description         String?      @db.Text
+  unit                String       @db.VarChar(40)
+  quantityMilliunits  BigInt
+  currencyCode        String       @db.Char(3)
+  unitPriceMinor      BigInt
+  discountBasisPoints Int          @default(0)
+  discountMinor       BigInt       @default(0)
+  taxableMinor        BigInt       @default(0)
+  taxBasisPoints      Int          @default(0)
+  taxMinor            BigInt       @default(0)
+  subtotalMinor       BigInt       @default(0)
+  totalMinor          BigInt       @default(0)
+  quoteVersion        QuoteVersion @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
+  catalogItem         CatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
 
   @@index([quoteVersionId])
   @@index([catalogItemId, quoteVersionId])
@@ -539,15 +610,15 @@ model QuoteLineSnapshot {
 }
 
 model QuoteStatusHistory {
-  id             String            @id @default(uuid()) @db.Uuid
-  quoteVersionId String            @db.Uuid
+  id             String              @id @default(uuid()) @db.Uuid
+  quoteVersionId String              @db.Uuid
   fromStatus     QuoteVersionStatus?
   toStatus       QuoteVersionStatus
-  changedById    String?           @db.Uuid
-  reason         String?           @db.VarChar(500)
-  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
-  quoteVersion   QuoteVersion      @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
-  changedBy      User?             @relation("QuoteStatusHistoryActor", fields: [changedById], references: [id], onDelete: SetNull)
+  changedById    String?             @db.Uuid
+  reason         String?             @db.VarChar(500)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  quoteVersion   QuoteVersion        @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
+  changedBy      User?               @relation("QuoteStatusHistoryActor", fields: [changedById], references: [id], onDelete: SetNull)
 
   @@index([quoteVersionId, createdAt])
   @@index([changedById, createdAt])
@@ -572,15 +643,15 @@ model RequestAssignment {
 }
 
 model RequestStatusHistory {
-  id             String            @id @default(uuid()) @db.Uuid
-  quoteRequestId String            @db.Uuid
+  id             String              @id @default(uuid()) @db.Uuid
+  quoteRequestId String              @db.Uuid
   fromStatus     QuoteRequestStatus?
   toStatus       QuoteRequestStatus
-  changedById    String?           @db.Uuid
-  reason         String?           @db.VarChar(500)
-  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
-  quoteRequest   QuoteRequest       @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
-  changedBy      User?             @relation("RequestStatusHistoryActor", fields: [changedById], references: [id], onDelete: SetNull)
+  changedById    String?             @db.Uuid
+  reason         String?             @db.VarChar(500)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  quoteRequest   QuoteRequest        @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  changedBy      User?               @relation("RequestStatusHistoryActor", fields: [changedById], references: [id], onDelete: SetNull)
 
   @@index([quoteRequestId, createdAt])
   @@index([changedById, createdAt])
@@ -644,17 +715,17 @@ model RolePermission {
 }
 
 model Session {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @db.Uuid
-  tokenHash  String    @unique @db.VarChar(64)
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
-  expiresAt  DateTime  @db.Timestamptz(3)
-  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
-  revokedAt  DateTime? @db.Timestamptz(3)
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  tokenHash   String    @unique @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt   DateTime  @db.Timestamptz(3)
+  lastSeenAt  DateTime  @default(now()) @db.Timestamptz(3)
+  revokedAt   DateTime? @db.Timestamptz(3)
   mfaVerified Boolean   @default(false)
-  ipAddress  String?   @db.VarChar(64)
-  userAgent  String?   @db.VarChar(512)
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress   String?   @db.VarChar(64)
+  userAgent   String?   @db.VarChar(512)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt, expiresAt])
   @@index([expiresAt])
@@ -662,16 +733,16 @@ model Session {
 }
 
 model AuthToken {
-  id          String         @id @default(uuid()) @db.Uuid
-  userId      String         @db.Uuid
+  id          String        @id @default(uuid()) @db.Uuid
+  userId      String        @db.Uuid
   type        AuthTokenType
-  tokenHash   String         @unique @db.VarChar(64)
-  expiresAt   DateTime       @db.Timestamptz(3)
-  consumedAt  DateTime?      @db.Timestamptz(3)
-  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
-  requestedIp String?        @db.VarChar(64)
-  userAgent   String?        @db.VarChar(512)
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String        @unique @db.VarChar(64)
+  expiresAt   DateTime      @db.Timestamptz(3)
+  consumedAt  DateTime?     @db.Timestamptz(3)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  requestedIp String?       @db.VarChar(64)
+  userAgent   String?       @db.VarChar(512)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type, expiresAt])
   @@index([type, consumedAt, expiresAt])
@@ -679,16 +750,16 @@ model AuthToken {
 }
 
 model AuthEvent {
-  id             String            @id @default(uuid()) @db.Uuid
-  userId         String?           @db.Uuid
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String?          @db.Uuid
   eventType      AuthEventType
   outcome        AuthEventOutcome
-  identifierHash String?           @db.VarChar(64)
-  ipAddress      String?           @db.VarChar(64)
-  userAgent      String?           @db.VarChar(512)
+  identifierHash String?          @db.VarChar(64)
+  ipAddress      String?          @db.VarChar(64)
+  userAgent      String?          @db.VarChar(512)
   metadata       Json?
-  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
-  user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+  user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([eventType, createdAt])

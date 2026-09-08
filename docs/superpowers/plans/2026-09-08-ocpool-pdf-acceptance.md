@@ -4,11 +4,21 @@
 
 ## Tarea 1 — Contratos, permisos y persistencia
 
-- [ ] Escribir pruebas rojas de elegibilidad, estados, inmutabilidad, consentimiento, expiración, idempotencia y concurrencia.
-- [ ] Agregar permisos mínimos para lectura/generación PDF y aceptación cliente.
-- [ ] Crear modelos `GeneratedDocument` y `QuoteAcceptance` con FK compuesto, unicidad, hash, tamaño, template version, soft delete/retención y constraints.
-- [ ] Crear migración, seed idempotente y auditoría de invariantes.
+- [x] Escribir pruebas rojas de elegibilidad, estados, inmutabilidad, consentimiento, expiración, idempotencia y concurrencia.
+- [x] Agregar permisos mínimos para lectura/generación PDF y aceptación cliente.
+- [x] Crear modelos `GeneratedDocument` y `QuoteAcceptance` con FK compuesto, unicidad, hash, tamaño, template version, soft delete/retención y constraints.
+- [x] Crear migración, seed idempotente y auditoría de invariantes.
+- [x] Verificar typecheck, unitarias y persistencia PostgreSQL dirigida.
 - [ ] Commit `feat: add quote document and acceptance contracts`.
+
+### Evidencia de Tarea 1
+
+- Contrato de dominio en `src/server/modules/quote-documents/domain.ts` con ciclo de vida monotónico, elegibilidad de versión y normalización acotada de consentimiento.
+- Prueba roja inicial por módulo faltante; después 3/3 unitarias del dominio y 57/57 unitarias globales.
+- Prisma validado y cliente regenerado; migración `20260908090000_quote_documents_acceptance` aplicada con enums, FK compuesto, unicidad, hashes, tamaño, MIME PDF, READY completo y evidencia no vacía.
+- Catálogo RBAC ampliado con `quotes.pdf.read`, `quotes.pdf.generate` y `quotes.accept`; customer sólo recibe lectura/aceptación y sales/manager sólo lectura/generación.
+- `tests/integration/quote-documents-schema.test.ts` pasó 1/1: READY incompleto rechazado, documento duplicado rechazado, hash inválido rechazado y aceptación vinculada al documento/versiones correctos.
+- `npm run typecheck` pasó.
 
 ## Tarea 2 — Renderer determinista y storage
 

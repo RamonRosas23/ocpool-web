@@ -33,6 +33,9 @@ export const PERMISSION_CATALOG = [
   { key: 'quotes.apply_discount', description: 'Aplicar descuentos a cotizaciones.' },
   { key: 'quotes.approve_discount', description: 'Aprobar descuentos que requieren autorización.' },
   { key: 'quotes.send', description: 'Enviar cotizaciones al cliente.' },
+  { key: 'quotes.pdf.read', description: 'Descargar documentos PDF de cotizaciones autorizadas.' },
+  { key: 'quotes.pdf.generate', description: 'Generar y regenerar documentos PDF de cotizaciones.' },
+  { key: 'quotes.accept', description: 'Aceptar cotizaciones autorizadas en nombre del cliente.' },
   { key: 'metrics.read', description: 'Consultar métricas operativas.' },
 ] as const;
 
@@ -41,7 +44,7 @@ export const ROLE_DEFINITIONS = {
     name: 'Cliente',
     description: 'Acceso al portal propio del cliente.',
     systemManaged: true,
-    permissions: ['portal.self.read', 'portal.self.authenticate', 'identity.session.read', 'messaging.read', 'messaging.send', 'files.read', 'files.upload', 'files.download', 'files.delete'],
+    permissions: ['portal.self.read', 'portal.self.authenticate', 'identity.session.read', 'messaging.read', 'messaging.send', 'files.read', 'files.upload', 'files.download', 'files.delete', 'quotes.pdf.read', 'quotes.accept'],
   },
   sales: {
     name: 'Ventas',
@@ -70,6 +73,8 @@ export const ROLE_DEFINITIONS = {
       'quotes.read',
       'quotes.create',
       'quotes.send',
+      'quotes.pdf.read',
+      'quotes.pdf.generate',
     ],
   },
   manager: {
@@ -106,6 +111,8 @@ export const ROLE_DEFINITIONS = {
       'quotes.edit_prices',
       'quotes.apply_discount',
       'quotes.approve_discount',
+      'quotes.pdf.read',
+      'quotes.pdf.generate',
       'metrics.read',
     ],
   },
