@@ -220,7 +220,7 @@ model NotificationDelivery {
   channel                    NotificationChannel        @default(EMAIL)
   recipientUserId            String?                    @db.Uuid
   recipientAddressCiphertext String?                    @db.VarChar(600)
-  recipientAddressHash       String                     @db.Char(64)
+  recipientAddressHash       String?                    @db.Char(64)
   templateKey                String                     @db.VarChar(120)
   templateVersion            String                     @db.VarChar(64)
   subjectSnapshot            String?                    @db.VarChar(240)
@@ -232,6 +232,7 @@ model NotificationDelivery {
   processedAt                DateTime?                  @db.Timestamptz(3)
   lastErrorCode              String?                    @db.VarChar(80)
   providerMessageId          String?                    @db.VarChar(240)
+  cancelReason               String?                    @db.VarChar(80)
   createdAt                  DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt                  DateTime                   @updatedAt @db.Timestamptz(3)
   outboxEvent                OutboxEvent                @relation(fields: [outboxEventId], references: [id], onDelete: Restrict)

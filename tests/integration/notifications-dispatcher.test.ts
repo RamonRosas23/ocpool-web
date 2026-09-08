@@ -11,7 +11,7 @@ describe('notification dispatcher persistence operations', () => {
     const prisma = getPrisma();
     const suffix = Date.now().toString();
     const email = `dispatcher-${suffix}@example.test`;
-    const now = new Date('2030-09-08T12:00:00.000Z');
+    const now = new Date('2000-09-08T12:00:00.000Z');
     const outbox = await prisma.outboxEvent.create({ data: { eventType: 'MESSAGE.CREATED', aggregateType: 'CONVERSATION', payload: { folio: `OCQ-2026-${suffix.slice(-6)}` } } });
     const hash = notificationRecipientHash(email);
 
@@ -29,6 +29,7 @@ describe('notification dispatcher persistence operations', () => {
       const second = await upsertNotificationDelivery(prisma, input);
       expect(second.id).toBe(first.id);
       expect(await prisma.notificationDelivery.count({ where: { outboxEventId: outbox.id } })).toBe(1);
+      await prisma.notificationDelivery.update({ where: { id: first.id }, data: { availableAt: now } });
 
       const [claimA, claimB] = await Promise.all([
         claimNotificationDeliveries(prisma, { now, batchSize: 1, leaseSeconds: 60 }),
@@ -42,10 +43,11 @@ describe('notification dispatcher persistence operations', () => {
       const reclaimed = await claimNotificationDeliveries(prisma, { now: new Date(now.getTime() + 61_000), batchSize: 1, leaseSeconds: 60 });
       expect(reclaimed).toHaveLength(1);
       expect(reclaimed[0].attempts).toBe(2);
+      const healthBeforeSent = await getNotificationOperationalHealth(prisma);
       expect(await markNotificationSent(prisma, reclaimed[0].id, reclaimed[0].processingStartedAt, new Date(now.getTime() + 62_000), 'mailpit-message-id')).toBe(true);
       expect(await markNotificationSent(prisma, reclaimed[0].id, reclaimed[0].processingStartedAt, new Date(now.getTime() + 63_000), 'duplicate')).toBe(false);
       expect(await prisma.notificationDelivery.findUnique({ where: { id: reclaimed[0].id }, select: { status: true, providerMessageId: true, recipientAddressCiphertext: true, recipientAddressHash: true } })).toMatchObject({ status: 'SENT', providerMessageId: 'mailpit-message-id', recipientAddressHash: hash });
-      expect(await getNotificationOperationalHealth(prisma)).toMatchObject({ sent: 1 });
+      expect((await getNotificationOperationalHealth(prisma)).sent).toBe(healthBeforeSent.sent + 1);
     } finally {
       await prisma.notificationDelivery.deleteMany({ where: { outboxEventId: outbox.id } });
       await prisma.outboxEvent.delete({ where: { id: outbox.id } });

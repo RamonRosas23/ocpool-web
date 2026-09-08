@@ -16,6 +16,18 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
 ] as const;
 export type NotificationTemplateKey = (typeof NOTIFICATION_TEMPLATE_KEYS)[number];
 
+export const SUPPORTED_NOTIFICATION_EVENT_TYPES = [
+  'AUTH.CUSTOMER_MAGIC_LINK',
+  'AUTH.EMPLOYEE_PASSWORD_RESET',
+  'REQUEST.RECEIVED',
+  'REQUEST.ASSIGNED',
+  'QUOTE.VERSION_STATUS_CHANGED',
+  'QUOTE.ACCEPTED',
+  'MESSAGE.CREATED',
+  'FILE.AVAILABLE',
+] as const;
+export type SupportedNotificationEventType = (typeof SUPPORTED_NOTIFICATION_EVENT_TYPES)[number];
+
 type NotificationAudience = 'CUSTOMER' | 'STAFF';
 
 export type NotificationRecipientContext = {
@@ -34,6 +46,7 @@ export type NotificationEventInput = {
 
 export type NotificationMappingContext = {
   recipient: NotificationRecipientContext;
+  actionPath?: string;
   folio?: string;
   expiresMinutes?: number;
   totalLabel?: string;
@@ -111,12 +124,17 @@ function rejectScope(context: NotificationMappingContext, audience: Notification
 
 function makeIntent(context: NotificationMappingContext, templateKey: NotificationTemplateKey, safePayload: Record<string, string | number>, transient?: NotificationIntent['transient']): NotificationIntent {
   const recipient = recipientFor(context);
+  if (context.actionPath && (!context.actionPath.startsWith('/') || CONTROL_CHARACTERS.test(context.actionPath) || /%0[dDaA]/u.test(context.actionPath))) throw new Error('Invalid notification action path.');
   return {
     kind: 'INTENT',
     templateKey,
     templateVersion: 'v1',
     recipient,
-    safePayload: { ...safePayload, ...(typeof safePayload.recipientName === 'string' ? { recipientName: recipient.displayName } : {}) },
+    safePayload: {
+      ...safePayload,
+      ...(context.actionPath ? { actionPath: context.actionPath } : {}),
+      ...(typeof safePayload.recipientName === 'string' ? { recipientName: recipient.displayName } : {}),
+    },
     ...(transient ? { transient } : {}),
   };
 }

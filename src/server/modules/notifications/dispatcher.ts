@@ -1,5 +1,6 @@
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
+import { fingerprintToken } from '@/server/auth/crypto';
 import { readServerEnv } from '@/server/env';
 import { encryptNotificationRecipient } from '@/server/modules/notifications/recipient-crypto';
 import { normalizeNotificationEmail, notificationRecipientHash } from '@/server/modules/notifications/domain';
@@ -28,7 +29,7 @@ export type ClaimedNotificationDelivery = {
   outboxEventId: string;
   recipientUserId: string | null;
   recipientAddressCiphertext: string | null;
-  recipientAddressHash: string;
+  recipientAddressHash: string | null;
   templateKey: NotificationTemplateKey;
   templateVersion: NotificationTemplateVersion;
   subjectSnapshot: string | null;
@@ -39,6 +40,7 @@ export type ClaimedNotificationDelivery = {
   processingStartedAt: Date;
   processedAt: Date | null;
   lastErrorCode: string | null;
+  cancelReason: string | null;
   providerMessageId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -92,6 +94,37 @@ export async function upsertNotificationDelivery(prisma: DbClient, input: Notifi
       payload: input.safePayload,
     },
     select: { id: true, status: true, attempts: true },
+  });
+}
+
+export type NotificationCancellationReason = 'UNSUPPORTED_EVENT' | 'INVALID_PAYLOAD' | 'INVALID_RECIPIENT' | 'INVALID_RECIPIENT_SCOPE' | 'INTERNAL_VISIBILITY' | 'NO_RECIPIENT';
+
+export async function cancelNotificationDelivery(prisma: DbClient, input: { outboxEventId: string; reason: NotificationCancellationReason; now?: Date }): Promise<{ id: string; status: string }> {
+  const now = input.now ?? new Date();
+  const cancellationHash = fingerprintToken(`notification-cancel:${input.outboxEventId}:${input.reason}`);
+  return prisma.notificationDelivery.upsert({
+    where: {
+      outboxEventId_channel_recipientAddressHash_templateKey_templateVersion: {
+        outboxEventId: input.outboxEventId,
+        channel: 'EMAIL',
+        recipientAddressHash: cancellationHash,
+        templateKey: 'system.cancelled',
+        templateVersion: 'v1',
+      },
+    },
+    update: { status: 'CANCELLED', processedAt: now, cancelReason: input.reason, updatedAt: now },
+    create: {
+      outboxEventId: input.outboxEventId,
+      channel: 'EMAIL',
+      recipientAddressHash: cancellationHash,
+      templateKey: 'system.cancelled',
+      templateVersion: 'v1',
+      status: 'CANCELLED',
+      processedAt: now,
+      cancelReason: input.reason,
+      payload: { reason: input.reason },
+    },
+    select: { id: true, status: true },
   });
 }
 
@@ -155,6 +188,7 @@ export async function claimNotificationDeliveries(prisma: DbClient, options: Cla
         processingStartedAt: delivery.processingStartedAt,
         processedAt: delivery.processedAt,
         lastErrorCode: delivery.lastErrorCode,
+        cancelReason: delivery.cancelReason,
         providerMessageId: delivery.providerMessageId,
         createdAt: delivery.createdAt,
         updatedAt: delivery.updatedAt,

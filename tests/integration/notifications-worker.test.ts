@@ -12,7 +12,7 @@ describe('notification worker delivery processing', () => {
 
     const prisma = getPrisma();
     const suffix = Date.now().toString();
-    const now = new Date('2030-09-08T12:00:00.000Z');
+    const now = new Date('2000-09-08T12:00:00.000Z');
     const sentEvent = await prisma.outboxEvent.create({ data: { eventType: 'MESSAGE.CREATED', aggregateType: 'CONVERSATION', payload: { fixture: `sent-${suffix}` } } });
     const retryEvent = await prisma.outboxEvent.create({ data: { eventType: 'MESSAGE.CREATED', aggregateType: 'CONVERSATION', payload: { fixture: `retry-${suffix}` } } });
     const maxEvent = await prisma.outboxEvent.create({ data: { eventType: 'MESSAGE.CREATED', aggregateType: 'CONVERSATION', payload: { fixture: `max-${suffix}` } } });
@@ -42,7 +42,8 @@ describe('notification worker delivery processing', () => {
         templateVersion: 'v1',
         safePayload: { recipientName: 'Ana', folio: 'OCQ-2026-000003', senderName: 'OCPOOL', preview: 'Mensaje' },
       });
-      await prisma.notificationDelivery.update({ where: { id: maxDelivery.id }, data: { attempts: 2, availableAt: now } });
+      await prisma.notificationDelivery.updateMany({ where: { id: { in: [sentDelivery.id, retryDelivery.id, maxDelivery.id] } }, data: { availableAt: now } });
+      await prisma.notificationDelivery.update({ where: { id: maxDelivery.id }, data: { attempts: 2 } });
       const provider: EmailProvider = {
         async send(message) {
           if (message.to.includes('retry-') || message.to.includes('max-')) throw Object.assign(new Error('provider body is never persisted'), { code: 'SMTP_PROVIDER_ERROR' });

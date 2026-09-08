@@ -45,12 +45,15 @@ Un worker reiniciado retoma sin perder la intención; dos workers no crean dupli
 
 ## Tarea 4 — Integración de eventos comerciales y auth
 
-- [ ] Conectar los eventos existentes sin duplicar Outbox: auth, solicitudes, cotizaciones, aceptación, mensajes y archivos según la allowlist.
-- [ ] Verificar que `QUOTE.VERSION_STATUS_CHANGED` sólo notifique al pasar a `ENVIADA`, y que aceptación respete snapshot/versión.
-- [ ] Mantener auth tokens cifrados y de un solo uso; nunca persistir el token descifrado en delivery.
-- [ ] Añadir pruebas de integración por evento, destinatario, visibilidad, cliente cruzado y ausencia de datos internos.
-- [ ] Verificar envío real a Mailpit y cleanup exacto por fixture.
-- [ ] Commit `feat: connect transactional notification events`.
+- [x] Añadir cancelación trazable para eventos no soportados, sin fabricar un destinatario ni permitir que una intención cancelada entre al worker de correo.
+- [x] Resolver destinatarios desde `User`, `ClientContact`, `QuoteRequest`, `Quote`, `ConversationMessage` y `FileAttachment`; cada resolver aplica estado activo, visibilidad y scope compuesto.
+- [x] Crear claim/fan-out de Outbox separado del claim de entregas; el worker materializa sólo eventos de la allowlist y marca la materialización sin mutar el agregado comercial.
+- [x] Conectar los eventos existentes sin duplicar Outbox: auth, solicitudes, cotizaciones, aceptación, mensajes y archivos según la allowlist.
+- [x] Verificar que `QUOTE.VERSION_STATUS_CHANGED` sólo notifique al pasar a `ENVIADA`, y que aceptación use el total snapshot de la versión aceptada.
+- [x] Mantener auth tokens cifrados y de un solo uso; nunca persistir el token descifrado en delivery ni en el payload seguro.
+- [x] Añadir pruebas de integración por evento, destinatario, visibilidad, cliente cruzado, cancelación, replay y ausencia de datos internos.
+- [x] Verificar envío real a Mailpit y cleanup exacto por fixture.
+- [x] Commit `feat: connect transactional notification events`.
 
 ### Criterio de terminado
 

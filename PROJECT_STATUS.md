@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 9 — notificaciones y entrega, Tarea 4 en desarrollo.
-- **Estado:** Fases 1–8 están terminadas con gates verdes. Fase 9 Tareas 1–3 están cerradas con persistencia, seguridad, templates, SMTP local, dispatcher, leases, reintentos y worker verificados; Tarea 4 integra los eventos transaccionales reales.
+- **Fase:** Fase 9 — notificaciones y entrega, Tarea 5 en desarrollo.
+- **Estado:** Fases 1–8 están terminadas con gates verdes. Fase 9 Tareas 1–4 están cerradas con persistencia, seguridad, templates, SMTP local, dispatcher, leases, reintentos, fan-out, audiencias y entrega real a Mailpit verificados; Tarea 5 construye la operación staff.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -145,10 +145,14 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 9 — Tarea 3: transición condicional por `deliveryId` + lease para evitar que un worker viejo sobrescriba el resultado de un worker recuperado; errores persistidos sólo como códigos controlados.
 - Fase 9 — Tarea 3: reintentos con jitter acotado 80–120 %, máximo de intentos, clasificación temporal/permanente, comando one-shot, worker continuo con apagado limpio y diagnóstico operativo no sensible.
 - Fase 9 — Tarea 3: migración `20260908120000_notifications_error_code_constraint` aplicada para cerrar en PostgreSQL la allowlist de códigos de error.
+- Fase 9 — Tarea 4: resolver de audiencias por relaciones activas y scope compuesto para auth, solicitudes, cotizaciones, aceptación, mensajes compartidos y archivos disponibles.
+- Fase 9 — Tarea 4: fan-out automático desde Outbox con claim separado, idempotencia, snapshots históricos, cancelación explícita de eventos no entregables y worker integrado.
+- Fase 9 — Tarea 4: migración `20260908123000_notification_cancellation` para registrar `CANCELLED` sin fabricar destinatarios; tokens de auth validados contra `AuthToken` y nunca copiados al payload seguro.
+- Fase 9 — Tarea 4: contrato real Mailpit cubierto con SMTP, asunto/from/destinatario verificados y limpieza exacta de mensajes de prueba.
 
 ### En desarrollo
 
-- Fase 9 — Tarea 4: integración de eventos transaccionales de auth, solicitudes, cotizaciones, aceptación, mensajería y archivos.
+- Fase 9 — Tarea 5: operación staff de entregas, diagnóstico seguro, reintentos manuales y superficie responsive.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -159,7 +163,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
 - Revisión legal de términos de PDF/aceptación.
-- Integración de eventos transaccionales con destinatarios reales y fan-out por audiencia.
+- Operación staff de notificaciones y reintentos manuales con RBAC.
 - Auditoría comercial y de seguridad.
 - Dashboard y métricas.
 - Hardening, backups, observabilidad y preparación para producción.
@@ -257,6 +261,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 89. Los reintentos usan jitter acotado 80–120 %, backoff exponencial con máximo de una hora y máximo de intentos configurable; una entrega permanente termina en `FAILED` operable y no se reintenta indefinidamente.
 90. El worker descifra destinatarios y tokens únicamente en memoria durante el envío; los logs, payloads seguros, estados operativos y códigos de error no contienen correo crudo, tokens ni respuestas completas del proveedor.
 91. La operación local se expone en dos modos: one-shot para jobs controlados y continuo con `SIGINT`/`SIGTERM`; ambos reutilizan el mismo servicio transaccional y no cambian el resultado del agregado comercial.
+92. El worker de notificaciones reclama sólo eventos de la allowlist de esta fase; los demás Outbox permanecen disponibles para futuros consumidores de dominio y no se cancelan por inferencia.
+93. `OutboxEvent.SENT` en el consumidor de notificaciones significa que la materialización de intents terminó; la entrega SMTP conserva su propio estado en `NotificationDelivery` y puede seguir `PENDING` o `FAILED`.
+94. La resolución de destinatarios consulta relaciones activas en PostgreSQL y vuelve a validar IDs, folio, visibilidad, versión, aceptación, documento y token; no confía en que el JSON del Outbox sea suficiente para autorización.
+95. Los eventos históricos de cotización se renderizan desde sus identificadores y snapshots persistidos, no desde el estado mutable actual; una cotización aceptada posteriormente no reescribe el aviso de versión enviada.
+96. Un evento sin destinatario válido o con visibilidad interna genera una entrega `CANCELLED` con motivo controlado y sin ciphertext; esa traza no puede entrar al claim de correo.
 
 ## Pruebas realizadas
 
@@ -315,6 +324,9 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 9 — Tarea 2: pruebas rojas de templates/provider, después `notifications-templates.test.ts`, `email-provider.test.ts` y `env.test.ts` 13/13; se verificaron ocho templates, escape HTML/texto, scope interno, agregado incorrecto, tamaños, URL allowlist, header injection y credentials SMTP. Nodemailer 10.0.1 pasó `npm audit --omit=dev --audit-level=high` con 0; Mailpit aceptó un mensaje real con from/reply-to correctos y el fixture fue eliminado.
 - Fase 9 — Tarea 3: pruebas dirigidas de dispatcher/worker/esquema 3/3 y unitarias 8/8; se verificaron upsert idempotente, carrera de dos workers, recuperación de lease, transición condicional, envío exitoso, retry temporal, fallo terminal por máximo de intentos y códigos de error controlados.
 - Gate técnico de Tarea 3: `npm run test:unit` 77/77, `npm run test:integration` 55/55 serializado, `npm run db:validate`, `npx prisma migrate status` con 15 migraciones al día, `npm run db:seed`, `npm run worker:notifications:once` sin pendientes, `npm run typecheck`, `npm run lint`, `git diff --check` y `npm audit --omit=dev --audit-level=high` con 0 vulnerabilidades.
+- Fase 9 — Tarea 4: `notifications-fanout.test.ts` 2/2; se verificaron audiencias de solicitudes, asignaciones, cotización enviada, aceptación con total snapshot, mensajes, archivos, visibilidad interna, cross-scope y cancelación trazable.
+- Fase 9 — Tarea 4: `notifications-mailpit.test.ts` 1/1; el worker integrado materializó auth, envió por SMTP real, verificó asunto/from/destinatario en Mailpit y eliminó el fixture por ID.
+- Gate técnico de Tarea 4: `npm run test:unit` 77/77, `npm run test:integration` 58/58 serializado, `npm run db:validate`, `npx prisma migrate status` con 16 migraciones al día, `npm run db:seed`, `npm run worker:notifications:once`, typecheck, lint, diff check y `npm audit --omit=dev --audit-level=high` con 0 vulnerabilidades. Mailpit quedó vacío después de la verificación.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -339,8 +351,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Requisitos legales de aceptación y evidencia pendientes de revisión jurídica.
 - Destino de despliegue de producción aún no definido.
 - La protección por IP requiere `TRUST_PROXY_HEADERS=true` sólo detrás de un proxy confiable que sobrescriba la IP. Sin IP confiable, el backend usa límites por identificador y un circuit breaker global separado; el proxy de producción debe aportar rate limiting por origen.
-- La infraestructura de identidad ya está expuesta por endpoints y escribe Outbox, pero el worker SMTP que entrega esos eventos pertenece a la siguiente etapa de mensajería.
-- El Outbox de mensajería está listo como contrato transaccional, pero la entrega asíncrona y sus reintentos siguen pendientes de la fase de notificaciones; no se considera una omisión del cierre de Fase 6.
+- La infraestructura de identidad, solicitudes, cotizaciones, aceptación, mensajería y archivos ya escribe Outbox y la Fase 9 Tarea 4 los materializa; siguen pendientes el proveedor productivo y la operación staff.
+- El Outbox de mensajería conserva eventos de cierre/reapertura fuera de la allowlist de correo; no se cancelan porque quedan disponibles para futuros consumidores de dominio.
 - El scanner local de Fase 7 validará firma y tipo, pero no sustituirá antivirus; antes de producción deberá existir proveedor, política de cuarentena, pruebas de evasión y operación de reintentos.
 - MinIO local está incorporado al Compose con credenciales de desarrollo; producción deberá reemplazarlas mediante secretos y política de bucket privada.
 - El scanner local sólo valida firma/tipo/hash; proveedor antivirus productivo, cuarentena operacional, backups y restauración de objetos siguen pendientes de hardening.
@@ -375,7 +387,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 8 Tarea 5 depende de las APIs de documento/aceptación de Tarea 3 y del workspace staff de cotizaciones; no puede inferir evidencia desde el portal cliente.
 - Fase 9 dependerá del Outbox transaccional de identidad, solicitudes, cotizaciones, mensajería y aceptación; el canal de entrega no podrá cambiar el resultado de la transacción comercial.
 - Fase 9 Tarea 2 dependió de los contratos/persistencia de `NotificationDelivery`, `readServerEnv()` y el Outbox transaccional; Tarea 3 consumió sus mappers, templates y provider.
-- Fase 9 Tarea 3 dejó disponible el dispatcher, el fan-out idempotente, los estados, leases, intentos, proveedor, payloads safe y diagnóstico; Tarea 4 consume ese contrato para resolver destinatarios reales por evento y Tarea 5 expondrá la operación staff.
+- Fase 9 Tarea 3 dejó disponible el dispatcher, el fan-out idempotente, los estados, leases, intentos, proveedor, payloads safe y diagnóstico; Tarea 4 consumió ese contrato para resolver destinatarios reales por evento y Tarea 5 expondrá la operación staff.
 
 ## Problemas encontrados y resolución
 
@@ -436,7 +448,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/specs/2026-09-08-ocpool-notifications.md` — especificación aprobada para Fase 9.
 - `docs/superpowers/reviews/2026-09-08-ocpool-notifications-review.md` — autorrevisión de Fase 9, completada antes de código.
-- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tareas 1–3 cerradas, Tarea 4 en ejecución.
+- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tareas 1–4 cerradas, Tarea 5 en ejecución.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 
@@ -446,4 +458,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 9, Tarea 4: integrar eventos transaccionales de auth, solicitudes, cotizaciones, aceptación, mensajería y archivos con destinatarios reales y fan-out idempotente.
+Ejecutar Fase 9, Tarea 5: crear la operación staff de entregas, diagnóstico seguro y reintentos manuales con RBAC.

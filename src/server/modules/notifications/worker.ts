@@ -8,6 +8,7 @@ import {
   markNotificationSent,
   type ClaimedNotificationDelivery,
 } from '@/server/modules/notifications/dispatcher';
+import { processNotificationFanoutBatch } from '@/server/modules/notifications/fanout';
 import { createSmtpEmailProviderFromEnv, type EmailMessage, type EmailProvider } from '@/server/modules/notifications/email-provider';
 import { buildNotificationUrl, renderNotificationTemplate, type NotificationTemplateData } from '@/server/modules/notifications/templates';
 
@@ -91,6 +92,10 @@ export type ProcessNotificationBatchInput = Readonly<{
 }>;
 
 export type ProcessNotificationBatchResult = {
+  fanoutClaimed?: number;
+  fanoutMaterialized?: number;
+  fanoutCancelled?: number;
+  fanoutFailed?: number;
   claimed: number;
   sent: number;
   retried: number;
@@ -100,10 +105,20 @@ export type ProcessNotificationBatchResult = {
 export async function processNotificationBatch(input: ProcessNotificationBatchInput): Promise<ProcessNotificationBatchResult> {
   if (!Number.isInteger(input.maxAttempts) || input.maxAttempts < 1 || input.maxAttempts > 20) throw new Error('Invalid notification max attempts.');
   const now = input.now ?? new Date();
+  const fanout = await processNotificationFanoutBatch({ prisma: input.prisma, now, batchSize: input.batchSize, leaseSeconds: input.leaseSeconds });
   const deliveries = await claimNotificationDeliveries(input.prisma, { now, batchSize: input.batchSize, leaseSeconds: input.leaseSeconds });
   const provider = input.provider ?? createSmtpEmailProviderFromEnv();
   const render = input.render ?? defaultRenderNotification;
-  const result: ProcessNotificationBatchResult = { claimed: deliveries.length, sent: 0, retried: 0, failed: 0 };
+  const result: ProcessNotificationBatchResult = {
+    fanoutClaimed: fanout.claimed,
+    fanoutMaterialized: fanout.materialized,
+    fanoutCancelled: fanout.cancelled,
+    fanoutFailed: fanout.failed,
+    claimed: deliveries.length,
+    sent: 0,
+    retried: 0,
+    failed: 0,
+  };
 
   for (const delivery of deliveries) {
     try {
@@ -151,6 +166,6 @@ export async function runNotificationWorker(input: RunNotificationWorkerInput): 
   while (!input.signal?.aborted) {
     const result = await processBatch(input);
     input.onBatch?.(result);
-    if (result.claimed === 0) await waitForPoll(input.signal, input.pollIntervalMs);
+    if (result.claimed === 0 && result.fanoutClaimed === 0) await waitForPoll(input.signal, input.pollIntervalMs);
   }
 }
