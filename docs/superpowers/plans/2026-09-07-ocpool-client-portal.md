@@ -54,16 +54,23 @@
 - Consume: `Actor`, `getPrisma`, modelos `QuoteRequest`, `Quote`, `QuoteVersion`, `QuoteLineSnapshot`, dominio monetario de cotizaciones.
 - Produce: `listCustomerQuoteRequests(actor, filters, dependencies)` y `getCustomerQuoteRequest(actor, requestId, dependencies)`; ambas sólo aceptan `CUSTOMER` con `clientId` activo.
 
-- [ ] Escribir pruebas rojas para actor empleado, actor cliente sin `clientId`, cliente de otro expediente, UUID inválido y serialización de `BigInt`.
-- [ ] Ejecutar `npx vitest run tests/unit/client-portal-service.test.ts tests/integration/client-portal-service.test.ts` y confirmar que falla por módulo ausente o contrato no implementado.
-- [ ] Implementar `requireCustomerScope(actor)` que exija `actor.type === 'CUSTOMER'`, `actor.clientId` válido y derive el cliente exclusivamente desde el actor.
-- [ ] Implementar el listado paginado con estados públicos, folio, proyecto, última actividad y resumen de la versión actual; usar `where: { clientId: actor.clientId }` en la misma consulta.
-- [ ] Implementar el detalle con request, contact mínimo, detail compartido, quote actual, versiones y líneas snapshot; excluir `createdBy`, asignaciones, notas internas, logs y datos de otros clientes.
-- [ ] Serializar `budgetCents`, totales, cantidades y precios con `.toString()` y devolver `NOT_FOUND` genérico cuando el UUID no pertenece al cliente.
-- [ ] Ejecutar las pruebas dirigidas y `npm run typecheck`; verificar que el test de cliente cruzado no revela existencia.
-- [ ] Registrar la decisión de scope por `clientId`, agregar evidencia a `PROJECT_STATUS.md` y hacer commit `feat: add scoped client portal read service`.
+- [x] Escribir pruebas rojas para actor empleado, actor cliente sin `clientId`, cliente de otro expediente, UUID inválido y serialización de `BigInt`.
+- [x] Ejecutar `npx vitest run tests/unit/client-portal-service.test.ts tests/integration/client-portal-service.test.ts` y confirmar que falla por módulo ausente o contrato no implementado.
+- [x] Implementar `requireCustomerScope(actor)` que exija `actor.type === 'CUSTOMER'`, `actor.clientId` válido y derive el cliente exclusivamente desde el actor.
+- [x] Implementar el listado paginado con estados públicos, folio, proyecto, última actividad y resumen de la versión actual; usar `where: { clientId: actor.clientId }` en la misma consulta.
+- [x] Implementar el detalle con request, contact mínimo, detail compartido, quote actual, versiones y líneas snapshot; excluir `createdBy`, asignaciones, notas internas, logs y datos de otros clientes.
+- [x] Serializar `budgetCents`, totales, cantidades y precios con `.toString()` y devolver `NOT_FOUND` genérico cuando el UUID no pertenece al cliente.
+- [x] Ejecutar las pruebas dirigidas y `npm run typecheck`; verificar que el test de cliente cruzado no revela existencia.
+- [x] Registrar la decisión de scope por `clientId`, agregar evidencia a `PROJECT_STATUS.md` y hacer commit `feat: add scoped client portal read service`.
 
-### Tarea 2 — API privada y contrato de sesión
+Evidencia de cierre:
+
+- Commit `17a50e9` (`feat: add scoped client portal read service`).
+- `listCustomerQuoteRequests` y `getCustomerQuoteRequest` exigen actor `CUSTOMER` con `clientId`, aplican el alcance en backend y devuelven `NOT_FOUND` seguro para expedientes ajenos.
+- Las versiones `BORRADOR` y los actores internos no se proyectan al cliente; las líneas snapshot y totales se serializan sin BigInt crudo.
+- Verificación dirigida: unit test 1/1, integración 1/1, `npm run typecheck` y `git diff --check` correctos.
+
+### Tarea 2 — API privada y contrato de sesión (actual)
 
 **Files:**
 

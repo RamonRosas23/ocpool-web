@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 5 — Portal autenticado del cliente.
-- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación y plan aprobados; Tarea 1 — servicio de lectura scopeado por cliente — está en desarrollo.
+- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación y plan aprobados; Tarea 1 está terminada y Tarea 2 — API privada y contrato de sesión — está en desarrollo.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -93,10 +93,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Constructor `/staff/quotes` responsive con selección de expediente, lista de precios, líneas, cantidades, descuentos, impuestos, resumen vivo, vigencia, historial y acciones de revisión/envío.
 - Política backend que separa editar precios, aplicar descuentos y aprobar descuentos antes del envío; versiones enviadas no son editables.
 - Gate reproducible de Fase 4 cerrado: migraciones/seed al día, dependencias sin vulnerabilidades altas, regresión completa y E2E del constructor opt-in verificados.
+- Servicio de lectura del portal con scope obligatorio por `clientId`, proyecciones seguras, ocultamiento de borradores y serialización BigInt para cliente.
 
 ### En desarrollo
 
-- Fase 5 — especificación aprobada; plan técnico en preparación.
+- Fase 5 — Tarea 2: API privada y contrato de sesión.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -145,6 +146,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 26. Crear o modificar precios exige `quotes.edit_prices`; aplicar un descuento exige `quotes.apply_discount`; enviar una versión con descuento exige además `quotes.approve_discount`.
 27. La API de cotizaciones serializa todas las unidades monetarias como cadenas antes de construir JSON; las vistas internas pueden calcular previews con `BigInt` sin confiar en los totales del navegador.
 28. El constructor trabaja sobre una solicitud existente y una cotización raíz; cada cambio después de una versión enviada crea una nueva versión y nunca muta el histórico.
+29. El portal cliente aplica el scope `clientId` en backend; el actor, no el request, define el cliente autorizado.
+30. Las versiones `BORRADOR` no se exponen al cliente; el portal sólo presenta versiones enviadas o posteriores y una proyección sin actores internos ni notas operativas.
 
 ## Pruebas realizadas
 
@@ -175,6 +178,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 4 de Fase 4: commit `861e4d8` (`feat: add protected catalog and price operations`); `npm run test:integration` 28/28, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` 32/32 ejecutadas con 2 omitidas explícitamente y `git diff --check` correctos. Se verificaron 401/403, same-origin, archivado, precios solapados, permisos de ventas/gerencia, UI restringida sin sesión y formato monetario sin floats.
 - Tarea 5 de Fase 4: commit `2909b62` (`feat: add protected quote builder workflow`); `npm run test:integration` 30/30, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` 33/33 ejecutadas con 3 omitidas explícitamente y `git diff --check` correctos. La prueba opt-in `QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1 con login real, selección de expediente, creación de borrador, revisión y envío. Se verificaron serialización BigInt, 401/403, same-origin, IDOR por expediente inexistente, permisos de edición/descuento/aprobación, inmutabilidad post-envío y actualización atómica de la solicitud.
 - Gate de Fase 4: `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npx prisma migrate status`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y `npm test` correctos. `npm test` quedó en typecheck, 41 unitarias, 30 integraciones, contrato de contenido, build, 33 E2E ejecutadas con 3 omitidas explícitamente y foundation 1/1. La primera ejecución tuvo una condición temporal de artefacto `.next` al encadenar dos servidores en Windows; la reproducción aislada y la repetición completa pasaron sin cambiar código productivo.
+- Tarea 1 de Fase 5: commit `17a50e9` (`feat: add scoped client portal read service`); `npm run typecheck`, unit test dirigido 1/1, integración dirigida 1/1 y `git diff --check` correctos. Se verificaron scope por cliente, rechazo de empleado, cliente cruzado como `NOT_FOUND`, ocultamiento de borradores/actores internos y serialización de importes grandes sin `number`.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -259,4 +263,4 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 
 ## Próximo paso autorizado
 
-Crear y ejecutar el plan de Fase 5: portal autenticado de cliente con alcance por `clientId`, lectura segura de solicitudes/cotizaciones y E2E negativo de IDOR.
+Ejecutar la Tarea 2 de Fase 5: API privada del portal, guard de sesión de cliente, respuestas no enumerables y pruebas de IDOR.
