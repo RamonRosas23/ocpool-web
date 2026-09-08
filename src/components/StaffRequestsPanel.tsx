@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import StaffMessagingPanel, { type StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
 
 const STATUS_LABELS: Record<string, string> = {
   RECIBIDA: 'Recibida',
@@ -116,6 +117,14 @@ export default function StaffRequestsPanel() {
   const [assignmentReason, setAssignmentReason] = useState('');
   const [nextStatus, setNextStatus] = useState('');
   const [statusReason, setStatusReason] = useState('');
+  const [messagingCapabilities, setMessagingCapabilities] = useState<StaffMessagingCapabilities>({
+    messagingRead: false,
+    messagingSend: false,
+    messagingInternalNotesRead: false,
+    messagingInternalNotesWrite: false,
+    messagingManage: false,
+  });
+  const [messagingCapabilitiesLoaded, setMessagingCapabilitiesLoaded] = useState(false);
 
   const loadList = useCallback(async (currentPage: number, currentStatus: string, query: string) => {
     setLoadingList(true);
@@ -178,6 +187,21 @@ export default function StaffRequestsPanel() {
       }
     };
     void loadAssignees();
+  }, []);
+
+  useEffect(() => {
+    const loadCapabilities = async () => {
+      try {
+        const response = await fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store' });
+        const data = await readResponse<StaffMessagingCapabilities>(response);
+        setMessagingCapabilities(data);
+      } catch {
+        // The conversation remains inaccessible in the UI if capabilities cannot be resolved.
+      } finally {
+        setMessagingCapabilitiesLoaded(true);
+      }
+    };
+    void loadCapabilities();
   }, []);
 
   const nextStatuses = useMemo(() => selected ? NEXT_STATUS_OPTIONS[selected.status] ?? [] : [], [selected]);
@@ -283,7 +307,8 @@ export default function StaffRequestsPanel() {
               <div className="staff-detail__header"><div><p className="staff-kicker">{selected.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{selected.folio}</h2><p className="staff-detail__date">Recibida el {formatDate(selected.createdAt)}</p>{['EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'].includes(selected.status) && <Link className="staff-button staff-button--dark staff-detail__quote-link" href={`/staff/quotes?request=${selected.id}`}>Abrir constructor</Link>}</div><span className={`staff-status-pill staff-status-pill--${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div>
               <div className="staff-detail__grid"><section className="staff-detail__section"><p className="staff-section-label">Contacto</p><h3>{selected.contact.displayName}</h3><a href={`mailto:${selected.contact.email}`}>{selected.contact.email}</a>{selected.contact.phone && <a href={`tel:${selected.contact.phone}`}>{selected.contact.phone}</a>}</section><section className="staff-detail__section"><p className="staff-section-label">Proyecto</p><h3>{selected.detail?.projectType ?? 'Sin tipo de proyecto'}</h3><p>{selected.detail?.location ?? 'Sin ubicación'}</p>{selected.detail?.dimensions && <p>{selected.detail.dimensions}</p>}</section></div>
               <section className="staff-detail__section staff-detail__section--description"><p className="staff-section-label">Alcance compartido</p><p className="staff-description">{selected.detail?.description ?? 'Sin descripción.'}</p></section>
-              <div className="staff-actions-grid"><section className="staff-action"><p className="staff-section-label">Responsable</p><select value={assignmentId} onChange={(event) => setAssignmentId(event.target.value)}><option value="">Sin responsable</option>{assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.displayName}</option>)}</select><input value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></section><section className="staff-action"><p className="staff-section-label">Siguiente estado</p><select value={nextStatus} onChange={(event) => setNextStatus(event.target.value)} disabled={nextStatuses.length === 0}><option value="">{nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'}</option>{nextStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select><input value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus} onClick={() => void transition()}>Actualizar estado</button></section></div>
+              <div className="staff-actions-grid"><section className="staff-action"><p className="staff-section-label">Responsable</p><select aria-label="Responsable" value={assignmentId} onChange={(event) => setAssignmentId(event.target.value)}><option value="">Sin responsable</option>{assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.displayName}</option>)}</select><input value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></section><section className="staff-action"><p className="staff-section-label">Siguiente estado</p><select aria-label="Siguiente estado" value={nextStatus} onChange={(event) => setNextStatus(event.target.value)} disabled={nextStatuses.length === 0}><option value="">{nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'}</option>{nextStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select><input value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus} onClick={() => void transition()}>Actualizar estado</button></section></div>
+              {messagingCapabilitiesLoaded && <StaffMessagingPanel requestId={selected.id} capabilities={messagingCapabilities} />}
               <section className="staff-history"><div><p className="staff-section-label">Actividad</p><h3>Historial del expediente</h3></div><ol>{selected.statusHistory.map((entry) => <li key={entry.id}><span className="staff-history__line" aria-hidden="true" /><div><strong>{statusLabel(entry.toStatus)}</strong><p>{entry.reason ?? 'Cambio registrado'} · {entry.changedBy?.displayName ?? 'Sistema'}</p><time dateTime={entry.createdAt}>{formatDate(entry.createdAt)}</time></div></li>)}</ol></section>
             </>}
           </section>

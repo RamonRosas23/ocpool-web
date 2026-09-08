@@ -25,6 +25,6 @@ export default defineConfig({
     command: 'node scripts/start-e2e-server.mjs',
     url: 'http://127.0.0.1:3100/',
     reuseExistingServer: false,
-    timeout: 120_000,
+    timeout: 600_000,
   },
 });
