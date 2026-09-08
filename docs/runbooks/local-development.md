@@ -80,6 +80,17 @@ Invoke-WebRequest http://localhost:18025/api/v1/info
 
 Si el contenedor no está levantado, ejecuta `npm run db:up`. Mailpit es un servicio local de desarrollo; no sustituye la configuración de correo transaccional de producción.
 
+## Worker de notificaciones
+
+El worker se ejecuta como proceso separado y usa PostgreSQL para coordinar claims, leases, reintentos y recuperación de trabajos abandonados:
+
+```powershell
+npm run worker:notifications:once
+npm run worker:notifications
+```
+
+Usa `worker:notifications:once` para una ejecución acotada durante pruebas o diagnóstico. Usa `worker:notifications` para mantenerlo activo; detenlo con `Ctrl+C` y verifica que el proceso termine limpiamente. En local sólo procesa eventos de la allowlist de esta fase y entrega por SMTP a Mailpit. Un estado `SENT` confirma aceptación del proveedor, no apertura ni lectura del mensaje. No agregues Redis ni otro broker sin evidencia de volumen o contención que justifique el cambio.
+
 ## MinIO no está disponible
 
 Comprueba el contenedor y su endpoint de salud:
@@ -112,7 +123,9 @@ Los endpoints de autenticación son:
 - `/api/auth/session` para consulta y logout.
 - `/api/auth/recovery/request` y `/api/auth/recovery/consume` para recovery de empleados.
 
-Los mensajes públicos son genéricos para no enumerar cuentas. Los links y sesiones se almacenan únicamente como huellas; Mailpit recibirá eventos cuando el worker de Outbox se implemente. En esta fase, el Outbox guarda el token de entrega cifrado con `AUTH_DELIVERY_ENCRYPTION_KEY`, nunca en texto plano ni con la clave de MFA.
+Los mensajes públicos son genéricos para no enumerar cuentas. Los links y sesiones se almacenan únicamente como huellas; el worker materializa los eventos permitidos y Mailpit recibe los mensajes SMTP locales. En esta fase, el Outbox guarda el token de entrega cifrado con `AUTH_DELIVERY_ENCRYPTION_KEY`, nunca en texto plano ni con la clave de MFA; el token sólo se descifra en memoria durante el envío y no aparece en logs, payloads seguros ni respuestas.
+
+La operación staff está disponible en `/staff/notifications`. `notifications.read` permite consultar estados, categorías controladas y salud agregada; `notifications.manage` permite reintentar únicamente fallos recuperables. Las mutaciones exigen same-origin y quedan auditadas.
 
 Para validar el flujo de API con un fixture desechable:
 

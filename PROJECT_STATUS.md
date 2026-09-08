@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 9 — notificaciones y entrega, Tarea 5 en desarrollo.
-- **Estado:** Fases 1–8 están terminadas con gates verdes. Fase 9 Tareas 1–4 están cerradas con persistencia, seguridad, templates, SMTP local, dispatcher, leases, reintentos, fan-out, audiencias y entrega real a Mailpit verificados; Tarea 5 construye la operación staff.
+- **Fase:** Fase 9 — notificaciones y entrega, gate local cerrado.
+- **Estado:** Fases 1–9 están implementadas y verificadas en local con gates verdes. La entrega local es reproducible y operable; el producto aún no está listo para lanzamiento porque permanecen controles de producción, legales, de correo y continuidad documentados como riesgos abiertos.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -149,10 +149,13 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 9 — Tarea 4: fan-out automático desde Outbox con claim separado, idempotencia, snapshots históricos, cancelación explícita de eventos no entregables y worker integrado.
 - Fase 9 — Tarea 4: migración `20260908123000_notification_cancellation` para registrar `CANCELLED` sin fabricar destinatarios; tokens de auth validados contra `AuthToken` y nunca copiados al payload seguro.
 - Fase 9 — Tarea 4: contrato real Mailpit cubierto con SMTP, asunto/from/destinatario verificados y limpieza exacta de mensajes de prueba.
+- Fase 9 — Tarea 5: servicio y API staff de diagnóstico con proyección mínima, filtros, salud agregada, RBAC, same-origin y reintento manual condicionado a errores recuperables.
+- Fase 9 — Tarea 5: panel `/staff/notifications` responsive con estados de carga/vacío/error, feedback de reintento, Axe, teclado, reduced motion, consola limpia y no overflow.
+- Fase 9 — Gate Tarea 6: schema válido, 16 migraciones al día, seed idempotente, unitarias 77/77, integración serial 63/63, worker one-shot con 4 entregas SMTP aceptadas y 0 fallos, Mailpit limpiado por IDs exactos, E2E staff 1/1, contenido, typecheck, lint, build, auditoría de dependencias sin vulnerabilidades altas y diff check.
 
 ### En desarrollo
 
-- Fase 9 — Tarea 5: operación staff de entregas, diagnóstico seguro, reintentos manuales y superficie responsive.
+- Ningún módulo bloqueado en el slice local actual. El siguiente trabajo ordenado será el hardening de producción y después dashboards/métricas, sin confundirlos con funcionalidades terminadas.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -163,7 +166,6 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
 - Revisión legal de términos de PDF/aceptación.
-- Operación staff de notificaciones y reintentos manuales con RBAC.
 - Auditoría comercial y de seguridad.
 - Dashboard y métricas.
 - Hardening, backups, observabilidad y preparación para producción.
@@ -266,6 +268,10 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 94. La resolución de destinatarios consulta relaciones activas en PostgreSQL y vuelve a validar IDs, folio, visibilidad, versión, aceptación, documento y token; no confía en que el JSON del Outbox sea suficiente para autorización.
 95. Los eventos históricos de cotización se renderizan desde sus identificadores y snapshots persistidos, no desde el estado mutable actual; una cotización aceptada posteriormente no reescribe el aviso de versión enviada.
 96. Un evento sin destinatario válido o con visibilidad interna genera una entrega `CANCELLED` con motivo controlado y sin ciphertext; esa traza no puede entrar al claim de correo.
+97. La lectura staff de notificaciones usa una proyección mínima seleccionada explícitamente; no consulta ni serializa destinatario, hash/ciphertext, payload, usuario receptor, token, error crudo ni `providerMessageId`.
+98. El reintento manual sólo permite `FAILED` con códigos recuperables (`TEMPORARY_PROVIDER` o `RATE_LIMIT`), reinicia intentos/lease de forma explícita y registra auditoría sin PII; una repetición o carrera que ya dejó `PENDING` es idempotente.
+99. `notifications.read` y `notifications.manage` siguen separados en backend; `same-origin` sólo protege la mutación y la interfaz nunca se considera una frontera de autorización.
+100. La operación staff se presenta como una superficie de diagnóstico, no como visor de contenido; sus breakpoints usan `calc()` para que la evidencia responsive no dependa de una interpretación ambigua de CSS.
 
 ## Pruebas realizadas
 
@@ -327,6 +333,11 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 9 — Tarea 4: `notifications-fanout.test.ts` 2/2; se verificaron audiencias de solicitudes, asignaciones, cotización enviada, aceptación con total snapshot, mensajes, archivos, visibilidad interna, cross-scope y cancelación trazable.
 - Fase 9 — Tarea 4: `notifications-mailpit.test.ts` 1/1; el worker integrado materializó auth, envió por SMTP real, verificó asunto/from/destinatario en Mailpit y eliminó el fixture por ID.
 - Gate técnico de Tarea 4: `npm run test:unit` 77/77, `npm run test:integration` 58/58 serializado, `npm run db:validate`, `npx prisma migrate status` con 16 migraciones al día, `npm run db:seed`, `npm run worker:notifications:once`, typecheck, lint, diff check y `npm audit --omit=dev --audit-level=high` con 0 vulnerabilidades. Mailpit quedó vacío después de la verificación.
+- Fase 9 — Tarea 5: `notifications-staff.test.ts` y `notifications-staff-api.test.ts` 5/5; se verificaron proyección sin secretos, 401/403, RBAC separado, same-origin, retryable/permanent, auditoría e idempotencia.
+- Fase 9 — Tarea 5: `npx cross-env AUTH_E2E=1 REUSE_E2E_SERVER=1 APP_URL=http://127.0.0.1:3100 playwright test tests/staff-notifications.spec.ts` pasó 1/1; se verificaron Axe, teclado, reduced motion, payload sin destinatario/contenido, consola limpia y no overflow en 390/768/1440 px.
+- Fase 9 — Tarea 5: `npm run test:unit` 77/77, `npm run test:integration` 63/63 serializado, `npm run typecheck`, `npm run lint`, `npm run build` y `git diff --check` correctos. El rate limit de login local no se relajó: el E2E de superficie usa sesión de fixture explícita y limpia su sesión/entregas por ID.
+- Fase 9 — Gate Tarea 6: `npm run db:validate`, `npx prisma migrate status` con 16 migraciones al día y `npm run db:seed` correctos. `npm run worker:notifications:once` reclamó 25 eventos Outbox, canceló 25 no soportados, procesó 4 entregas y envió 4 mensajes sin retries/fallos; se verificó su contenido en Mailpit y se eliminaron únicamente esos 4 IDs, quedando el buzón en 0.
+- Fase 9 — Gate Tarea 6: `npm run test:unit` 77/77, `npm run test:integration` 63/63 serializado, `npm run test:content`, `npm run typecheck`, `npx eslint src/app src/components src/lib scripts tests playwright.config.ts`, `npm run build`, `npm audit --omit=dev --audit-level=high` con 0 vulnerabilidades, E2E staff 1/1 y `git diff --check` correctos.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -338,8 +349,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Pruebas finales de archivos privados: staff, seguridad de fase, URLs temporales, cleanup y proveedor antivirus productivo.
 - Pruebas de snapshots e inmutabilidad.
 - Pruebas de cálculo de cotizaciones.
-- Pruebas por evento de notificaciones, resolución de destinatarios y fan-out desde Outbox.
-- Pruebas del worker continuo bajo apagado, recuperación y proveedor no disponible.
+- Prueba de larga duración del worker continuo bajo apagado coordinado; la lógica de shutdown, recuperación y proveedor no disponible sí tiene cobertura dirigida del servicio.
 - Pruebas de carga y restauración de backups.
 
 ## Riesgos abiertos
@@ -351,12 +361,14 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Requisitos legales de aceptación y evidencia pendientes de revisión jurídica.
 - Destino de despliegue de producción aún no definido.
 - La protección por IP requiere `TRUST_PROXY_HEADERS=true` sólo detrás de un proxy confiable que sobrescriba la IP. Sin IP confiable, el backend usa límites por identificador y un circuit breaker global separado; el proxy de producción debe aportar rate limiting por origen.
-- La infraestructura de identidad, solicitudes, cotizaciones, aceptación, mensajería y archivos ya escribe Outbox y la Fase 9 Tarea 4 los materializa; siguen pendientes el proveedor productivo y la operación staff.
+- La infraestructura de identidad, solicitudes, cotizaciones, aceptación, mensajería y archivos ya escribe Outbox y la Fase 9 Tareas 4–5 lo materializan y operan; siguen pendientes el proveedor productivo y el hardening operacional.
 - El Outbox de mensajería conserva eventos de cierre/reapertura fuera de la allowlist de correo; no se cancelan porque quedan disponibles para futuros consumidores de dominio.
 - El scanner local de Fase 7 validará firma y tipo, pero no sustituirá antivirus; antes de producción deberá existir proveedor, política de cuarentena, pruebas de evasión y operación de reintentos.
 - MinIO local está incorporado al Compose con credenciales de desarrollo; producción deberá reemplazarlas mediante secretos y política de bucket privada.
 - El scanner local sólo valida firma/tipo/hash; proveedor antivirus productivo, cuarentena operacional, backups y restauración de objetos siguen pendientes de hardening.
 - La aceptación backend, portal y staff ya están operativos y protegidos; el lanzamiento todavía requiere revisión legal de términos, política de firma, notificaciones productivas, retención y gate de producción.
+- La primera ejecución E2E de Tarea 6 rechazó correctamente el retry por un `APP_URL` heredado distinto del origen del navegador; se reinició el servidor con `APP_URL=http://127.0.0.1:3100` y la repetición pasó 1/1 sin relajar same-origin.
+- El cleanup inicial de Mailpit usó una ruta individual incorrecta; se consultó el Swagger local y se corrigió a `DELETE /api/v1/messages` con la lista exacta de IDs, dejando el buzón en 0 sin borrar mensajes ajenos.
 - Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
@@ -367,6 +379,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Las versiones transitorias de Prisma están fijadas en `package.json` para mantener la auditoría limpia; deben revisarse cuando Prisma publique una actualización estable que incorpore esas versiones de forma nativa.
 - La migración de documentos reutiliza el prefijo privado de objetos existente; si producción separa buckets o proveedores, deberá conservarse la misma política de privacidad y verificarse el contrato de migración.
 - La plantilla comercial usa fuentes PDF estándar por compatibilidad; si diseño requiere una fuente de marca embebida, deberá incorporarse en formato TTF/OTF válido y repetir el gate de visores Poppler, navegador y extracción.
+- El worker y la superficie staff están verificados localmente con Mailpit; producción todavía requiere proveedor, SPF/DKIM/DMARC, alertas, retención de entregas y política de reintentos operada.
 
 ## Dependencias entre módulos
 
@@ -387,7 +400,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 8 Tarea 5 depende de las APIs de documento/aceptación de Tarea 3 y del workspace staff de cotizaciones; no puede inferir evidencia desde el portal cliente.
 - Fase 9 dependerá del Outbox transaccional de identidad, solicitudes, cotizaciones, mensajería y aceptación; el canal de entrega no podrá cambiar el resultado de la transacción comercial.
 - Fase 9 Tarea 2 dependió de los contratos/persistencia de `NotificationDelivery`, `readServerEnv()` y el Outbox transaccional; Tarea 3 consumió sus mappers, templates y provider.
-- Fase 9 Tarea 3 dejó disponible el dispatcher, el fan-out idempotente, los estados, leases, intentos, proveedor, payloads safe y diagnóstico; Tarea 4 consumió ese contrato para resolver destinatarios reales por evento y Tarea 5 expondrá la operación staff.
+- Fase 9 Tarea 3 dejó disponible el dispatcher, el fan-out idempotente, los estados, leases, intentos, proveedor, payloads safe y diagnóstico; Tarea 4 consumió ese contrato para resolver destinatarios reales por evento y Tarea 5 lo expuso de forma segura al staff.
+- Fase 9 Tarea 6 cerró el gate local con Mailpit como proveedor de desarrollo; el origen configurado para E2E debe coincidir exactamente con `APP_URL` para que la protección same-origin se pruebe sin falsos negativos.
 
 ## Problemas encontrados y resolución
 
@@ -408,6 +422,9 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - La ejecución paralela completa de integración volvió a provocar timeouts de inicio de transacción y cascadas de cleanup con fixtures aún no creados; la corrida serializada pasó 18/18 archivos y 37/37 pruebas, y el script oficial quedó fijado a `--maxWorkers=1`.
 - La primera regresión E2E completa tuvo dos timeouts de cierre del contexto bajo carga; ambos casos pasaron aislados y la segunda regresión completa terminó 34/34, sin cambios productivos derivados de ese falso negativo.
 - La primera E2E staff encontró que el estado de cierre se devolvía plano mientras el componente esperaba una propiedad `conversation`; se corrigió el mapeo y se añadió una prueba que valida que el composer desaparece al cerrar.
+- La primera E2E de notificaciones detectó contraste insuficiente en un enlace por especificidad CSS; se reforzó la regla staff y Axe pasó sin violaciones serias.
+- La verificación manual same-origin inicialmente usó un `APP_URL` distinto al origen del navegador; el servidor de prueba se reinició con la URL exacta y la protección permaneció activa.
+- La prueba responsive detectó que `min(100% - Npx, ...)` se interpretaba con anchura incorrecta en Chromium; las variantes staff se cambiaron a `min(calc(100% - Npx), ...)` y el E2E pasó en tres anchos.
 - La primera E2E de archivos encontró selectores ambiguos porque el nombre del archivo también aparece en la acción de descarga; se ajustaron los asserts a nombres exactos y Axe detectó un contraste insuficiente en el distintivo `PDF`, corregido antes de cerrar Tarea 4. En Tarea 5, Axe detectó un `<ul role="tabpanel">` inválido; se separó el contenedor ARIA del listado.
 - La primera E2E de aceptación abrió el popup en `about:blank` antes de navegar al PDF; la aserción se trasladó a la respuesta API y se mantuvo el popup sólo como verificación de apertura. El primer flujo de éxito remonteaba el componente antes de mostrar confirmación; el refresh del expediente se movió a `Continuar`. Finalmente, la prueba de mensajería esperaba un mensaje optimista antes de que el fetch terminara; se añadió polling de persistencia DB antes de recargar.
 - Axe del inbox staff detectó contraste bajo y selects sin nombre; se corrigieron variables de color y `aria-label` explícitos, y la E2E staff volvió a pasar 2/2.
@@ -448,7 +465,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/specs/2026-09-08-ocpool-notifications.md` — especificación aprobada para Fase 9.
 - `docs/superpowers/reviews/2026-09-08-ocpool-notifications-review.md` — autorrevisión de Fase 9, completada antes de código.
-- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tareas 1–4 cerradas, Tarea 5 en ejecución.
+- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tareas 1–6 cerradas para el gate local, con hardening productivo y revisión legal todavía explícitos como riesgos de lanzamiento.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 

@@ -26,8 +26,10 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Catálogo, listas de precios y constructor versionado en `/staff/quotes`, con snapshots, permisos comerciales y flujo de revisión/envío.
 - Portal privado `/portal` con cotizaciones históricas, mensajería, archivos privados, descarga de PDF comercial y aceptación explícita con evidencia.
 - Operación staff de documentos PDF con estados, descarga efímera, generación condicionada y evidencia de aceptación.
+- Notificaciones transaccionales por email con Outbox, plantillas versionadas, leases, reintentos y entrega local verificable en Mailpit.
+- Operación staff de notificaciones en `/staff/notifications`, con diagnóstico seguro y reintentos RBAC sin exponer PII ni payloads.
 
-La Fase 8 está cerrada con gate técnico verde. La Fase 9 de notificaciones y entrega está en planificación documental; siguen pendientes la revisión jurídica, proveedores productivos, retención, backups y preparación de producción antes del lanzamiento.
+Las Fases 1–9 están cerradas con gates técnicos verdes para el alcance local. La entrega de notificaciones es reproducible y operable; la revisión jurídica, los proveedores productivos, la retención, los backups, la observabilidad y la preparación de producción permanecen como controles previos al lanzamiento.
 
 ## Requisitos
 
@@ -76,6 +78,15 @@ Usa migraciones Prisma para cambiar el schema. No uses `prisma db push` como flu
 
 Mailpit captura el correo SMTP de desarrollo y permite inspeccionarlo en su interfaz web. No envía mensajes a destinatarios reales.
 
+El worker de notificaciones se ejecuta separado de Next.js:
+
+```powershell
+npm run worker:notifications:once
+npm run worker:notifications
+```
+
+El primer comando procesa el lote disponible y termina; el segundo mantiene el worker activo hasta recibir una señal de apagado. PostgreSQL coordina claims, leases, reintentos y recuperación de trabajos abandonados. Un estado `SENT` confirma aceptación del mensaje por el proveedor configurado; no confirma apertura ni lectura. El permiso `notifications.read` permite consultar la operación y `notifications.manage` permite reintentar entregas recuperables.
+
 ## Pruebas y calidad
 
 ```powershell
@@ -90,6 +101,7 @@ npm run test:e2e:foundation
 npm run test:e2e:auth
 npx cross-env PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts
 npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts
+npx cross-env AUTH_E2E=1 REUSE_E2E_SERVER=1 APP_URL=http://127.0.0.1:3100 playwright test tests/staff-notifications.spec.ts
 ```
 
 La suite E2E pública conserva el contrato visual, responsive, de interacción, consola y accesibilidad de la landing. La prueba foundation requiere PostgreSQL activo y se ejecuta de forma opt-in.
@@ -128,8 +140,10 @@ Endpoints disponibles:
 - `GET /api/portal/quotes/:id/pdf` y `POST /api/portal/quotes/:id/accept` — PDF privado y aceptación de la versión vigente dentro del alcance del cliente.
 - `GET|POST /api/staff/quotes/versions/:versionId/pdf` — estado READY/descarga efímera y generación staff protegida por RBAC.
 - `GET /api/staff/quotes/versions/:versionId/document` — estado operativo seguro del documento y evidencia de aceptación para staff.
+- `GET /api/staff/notifications` — operación de entregas con proyección segura, filtros y salud agregada para staff autorizado.
+- `POST /api/staff/notifications/:id/retry` — reencola una entrega fallida recuperable con RBAC, same-origin, auditoría e idempotencia.
 
-Los tokens se guardan como huellas SHA-256. Los eventos Outbox de correo contienen el token únicamente cifrado para que el worker futuro pueda entregarlo; nunca se incluye el token crudo en payloads, respuestas o logs.
+Los tokens se guardan como huellas SHA-256. Los eventos Outbox de correo contienen el token únicamente cifrado para que el worker pueda entregarlo; nunca se incluye el token crudo en payloads, respuestas o logs. La interfaz staff sólo expone códigos de error controlados, no destinatarios, ciphertext, payloads ni respuestas crudas del proveedor.
 
 Las cargas de archivos usan una reserva de metadata y una URL presigned de vida corta. El bucket MinIO/S3 es privado; el backend valida tamaño, tipo declarado, firma mágica, hash y estado `AVAILABLE` antes de generar una URL de descarga. Las keys físicas, hashes de idempotencia y credenciales no forman parte de las proyecciones públicas.
 
@@ -153,14 +167,14 @@ node scripts/require-env.mjs DATABASE_URL
 - `docs/runbooks/` — procedimientos operativos locales.
 - `PROJECT_STATUS.md` — fuente única del avance, decisiones, riesgos y evidencia.
 
-## Alcance de Fase 2 completado
+## Estado de implementación
 
-La identidad y RBAC tienen schema, seed, criptografía, sesiones, MFA, rate limiting, servicios, endpoints seguros, pruebas unitarias/integración/E2E y documentación operativa. La captación pública y el inbox interno de solicitudes ya están persistidos y verificados; el siguiente bloque será el catálogo y el constructor de cotizaciones después del gate de Fase 3.
+La identidad, captación, expedientes, cotizaciones, portal, mensajería, archivos privados, PDF/aceptación y notificaciones tienen schema, servicios, endpoints protegidos, UI, pruebas y documentación operativa dentro del alcance local. El siguiente bloque ordenado será el hardening de producción; dashboards/métricas se desarrollarán después, sin presentar el sistema como listo para lanzamiento mientras existan riesgos abiertos.
 
 La auditoría de producción local termina en 0 vulnerabilidades: `deepmerge-ts@8.0.2` y `mysql2@3.24.3` están fijados mediante overrides compatibles con Prisma 7.10.0. Estas versiones deben revisarse cuando Prisma las incorpore de forma nativa.
 
-## Alcance de Fase 1
+## Base técnica inicial
 
-Esta fase establece infraestructura y contratos, no funcionalidades comerciales. Su criterio de terminado incluye instalación reproducible, migración, seed idempotente, health check seguro, pruebas unitarias/integración/E2E y regresión completa de la landing.
+La base técnica incluye instalación reproducible, migraciones, seed idempotente, health check seguro, pruebas por capa y regresión completa de la landing. El detalle de criterios, riesgos y evidencia de cada fase se mantiene en `PROJECT_STATUS.md`.
 
 La especificación de arquitectura y el orden de fases están en [docs/superpowers/specs/2026-09-07-ocpool-commercial-platform-design.md](docs/superpowers/specs/2026-09-07-ocpool-commercial-platform-design.md).

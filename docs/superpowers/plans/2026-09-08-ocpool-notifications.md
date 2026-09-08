@@ -78,12 +78,13 @@ El personal autorizado puede diagnosticar y reintentar una entrega sin ver secre
 
 ## Tarea 6 — Gate Fase 9
 
-- [ ] Ejecutar migración/seed, unitarias, integración serial, Mailpit, E2E, typecheck, lint, build, audit y diff check.
-- [ ] Verificar métricas, logs redacted, retención, cleanup, reinicio del worker y comportamiento con proveedor no disponible.
-- [ ] Revisar riesgos legales, dominio de correo, SPF/DKIM/DMARC, backups y decisión de broker con evidencia.
-- [ ] Actualizar `README.md`, `PROJECT_STATUS.md`, runbook y variables de entorno.
-- [ ] Commit `docs: close phase nine notifications`.
+- [x] Ejecutar migración/seed, unitarias, integración serial, entrega real a Mailpit, E2E, typecheck, lint, build, audit y diff check.
+- [x] Verificar métricas agregadas, logs redacted, cleanup exacto, one-shot, reintentos y proveedor no disponible mediante las pruebas dirigidas y el worker local.
+- [ ] Completar para producción la política de retención, observabilidad/alertas, reinicio prolongado del worker y proveedor productivo; quedan como hardening posterior al gate local.
+- [ ] Completar revisión legal, dominio de correo, SPF/DKIM/DMARC, backups/restauración y decisión de broker con evidencia de la infraestructura destino.
+- [x] Actualizar `README.md`, `PROJECT_STATUS.md`, runbook y variables de entorno.
+- [x] Commit `docs: close phase nine notifications`.
 
 ### Criterio de terminado
 
-La entrega local es reproducible, los eventos son idempotentes y auditables, los fallos son operables, la seguridad de tokens/PII está probada y no existe claim de entrega/lectura que el proveedor no confirme.
+La entrega local es reproducible, los eventos son idempotentes y auditables, los fallos son operables, la seguridad de tokens/PII está probada y no existe claim de entrega/lectura que el proveedor no confirme. El cierre no autoriza lanzamiento: los controles de producción que permanecen sin marcar deben cerrarse antes de publicar.
