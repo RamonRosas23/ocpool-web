@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 1 — Fundamentos técnicos.
-- **Estado:** Fase cerrada con gate técnico completo; lista para planificar Fase 2.
+- **Fase:** Fase 2 — Identidad y RBAC.
+- **Estado:** En desarrollo; plan documentado y listo para ejecutar Tarea 1.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de la fase:** `f933bd2`, `8b31e67`, `84fdeb2`, `f29db17`, `46c9796`.
@@ -171,7 +171,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 ## Planes vigentes
 
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
+- `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado por la dirección arquitectónica vigente, en ejecución.
 
 ## Próximo paso autorizado
 
-Crear y revisar el plan ordenado de Fase 2 — Identidad y RBAC. No iniciar clientes, solicitudes ni cotizaciones hasta resolver el modelo de usuarios, sesiones, roles, permisos, recuperación y auditoría de seguridad.
+Ejecutar Tarea 1 del plan de Fase 2: dependencias, contrato de entorno, modelos relacionales y migración de identidad/RBAC.
