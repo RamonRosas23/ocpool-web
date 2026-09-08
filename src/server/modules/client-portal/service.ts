@@ -318,3 +318,14 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
     } : null,
   };
 }
+
+export async function getCustomerQuote(actor: Actor, quoteId: string, dependencies: ClientPortalServiceDependencies = {}) {
+  const clientId = requireCustomerScope(actor);
+  const prisma = dependencies.prisma ?? getPrisma();
+  const id = requireUuid(quoteId);
+  const quote = await prisma.quote.findFirst({ where: { id, clientId }, select: { quoteRequestId: true } });
+  if (!quote) throw new AppError('NOT_FOUND', 'La cotización no existe.', 404);
+  const workspace = await getCustomerQuoteRequest(actor, quote.quoteRequestId, { prisma });
+  if (!workspace.quote) throw new AppError('NOT_FOUND', 'La cotización no existe.', 404);
+  return { request: workspace.request, quote: workspace.quote };
+}
