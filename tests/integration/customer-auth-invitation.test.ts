@@ -9,6 +9,7 @@ describe('customer auth invitation lifecycle', () => {
 
     const prisma = getPrisma();
     const suffix = Date.now().toString();
+    const testIpAddress = `2001:db8::${suffix}`;
     const now = new Date('2026-09-08T14:00:00.000Z');
     const rawToken = `customer-invite-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`;
     const client = await prisma.client.create({ data: { displayName: `Invitation client ${suffix}` } });
@@ -27,7 +28,7 @@ describe('customer auth invitation lifecycle', () => {
       await prisma.$transaction(async (transaction) => {
         await issueCustomerMagicLinkInTransaction(transaction, {
           userId: user.id,
-          context: { ipAddress: '127.0.0.1', userAgent: 'integration-test' },
+          context: { ipAddress: testIpAddress, userAgent: 'integration-test' },
           now,
           rawToken,
         });
@@ -40,15 +41,16 @@ describe('customer auth invitation lifecycle', () => {
       expect(outbox?.payload).not.toMatchObject({ token: rawToken });
       expect(JSON.stringify(outbox?.payload)).not.toContain(rawToken);
 
-      const consumed = await consumeCustomerMagicLink(rawToken, { ipAddress: '127.0.0.1', userAgent: 'integration-test' }, { prisma, now, sessionTokenGenerator: () => `session-${suffix}-abcdefghijklmnopqrstuvwxyz-123456` });
+      const consumed = await consumeCustomerMagicLink(rawToken, { ipAddress: testIpAddress, userAgent: 'integration-test' }, { prisma, now, sessionTokenGenerator: () => `session-${suffix}-abcdefghijklmnopqrstuvwxyz-123456` });
       expect(consumed.ok).toBe(true);
       expect((await prisma.user.findUnique({ where: { id: user.id } }))?.status).toBe('ACTIVE');
-      expect(await consumeCustomerMagicLink(rawToken, { ipAddress: '127.0.0.1', userAgent: 'integration-test' }, { prisma, now })).toEqual({ ok: false });
+      expect(await consumeCustomerMagicLink(rawToken, { ipAddress: testIpAddress, userAgent: 'integration-test' }, { prisma, now })).toEqual({ ok: false });
     } finally {
       await prisma.session.deleteMany({ where: { userId: user.id } });
       await prisma.authEvent.deleteMany({ where: { userId: user.id } });
       await prisma.authToken.deleteMany({ where: { userId: user.id } });
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: user.id } });
+      await prisma.authRateLimit.deleteMany({ where: { scope: 'customer-magic-link-consume-ip', keyHash: fingerprintToken(testIpAddress) } });
       await prisma.user.delete({ where: { id: user.id } });
       await prisma.client.delete({ where: { id: client.id } });
     }
@@ -59,6 +61,7 @@ describe('customer auth invitation lifecycle', () => {
 
     const prisma = getPrisma();
     const suffix = Date.now().toString();
+    const testIpAddress = `2001:db8::${suffix}`;
     const now = new Date('2026-09-08T15:00:00.000Z');
     const client = await prisma.client.create({ data: { displayName: `Invitation negative client ${suffix}` } });
     const invited = await prisma.user.create({ data: { email: `expired-${suffix}@example.test`, emailNormalized: `expired-${suffix}@example.test`, displayName: 'Expired invitation', type: 'CUSTOMER', status: 'INVITED', clientId: client.id } });
@@ -70,7 +73,7 @@ describe('customer auth invitation lifecycle', () => {
       await prisma.$transaction(async (transaction) => {
         await issueCustomerMagicLinkInTransaction(transaction, {
           userId: invited.id,
-          context: { ipAddress: null, userAgent: 'integration-test' },
+          context: { ipAddress: testIpAddress, userAgent: 'integration-test' },
           now,
           rawToken: expiredRawToken,
         });
@@ -78,14 +81,15 @@ describe('customer auth invitation lifecycle', () => {
         await transaction.authToken.create({ data: { userId: employee.id, type: 'MAGIC_LINK', tokenHash: fingerprintToken(employeeRawToken), expiresAt: new Date(now.getTime() + 60_000) } });
       });
 
-      await expect(consumeCustomerMagicLink(expiredRawToken, { ipAddress: '127.0.0.1', userAgent: 'integration-test' }, { prisma, now })).resolves.toEqual({ ok: false });
-      await expect(consumeCustomerMagicLink(employeeRawToken, { ipAddress: '127.0.0.1', userAgent: 'integration-test' }, { prisma, now })).resolves.toEqual({ ok: false });
+      await expect(consumeCustomerMagicLink(expiredRawToken, { ipAddress: testIpAddress, userAgent: 'integration-test' }, { prisma, now })).resolves.toEqual({ ok: false });
+      await expect(consumeCustomerMagicLink(employeeRawToken, { ipAddress: testIpAddress, userAgent: 'integration-test' }, { prisma, now })).resolves.toEqual({ ok: false });
       expect((await prisma.user.findUnique({ where: { id: invited.id } }))?.status).toBe('INVITED');
     } finally {
       await prisma.session.deleteMany({ where: { userId: { in: [invited.id, employee.id] } } });
       await prisma.authEvent.deleteMany({ where: { userId: { in: [invited.id, employee.id] } } });
       await prisma.authToken.deleteMany({ where: { userId: { in: [invited.id, employee.id] } } });
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [invited.id, employee.id] } } });
+      await prisma.authRateLimit.deleteMany({ where: { scope: 'customer-magic-link-consume-ip', keyHash: fingerprintToken(testIpAddress) } });
       await prisma.user.deleteMany({ where: { id: { in: [invited.id, employee.id] } } });
       await prisma.client.delete({ where: { id: client.id } });
       await prisma.$disconnect();
