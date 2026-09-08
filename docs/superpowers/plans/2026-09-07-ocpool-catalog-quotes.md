@@ -1,6 +1,6 @@
 # OCPOOL — Plan Fase 4: Catálogo, precios y cotizaciones versionadas
 
-> Estado: Tarea 1 ejecutada y verificada. Tarea 2 lista para ejecución. No se implementará una pantalla de cotización antes de cerrar contratos monetarios, snapshots e invariantes.
+> Estado: Tareas 1 y 2 ejecutadas y verificadas. Tarea 3 lista para ejecución. No se implementará una pantalla de cotización antes de cerrar contratos monetarios, snapshots e invariantes.
 
 ## Objetivo
 
@@ -97,7 +97,7 @@ Los permisos existentes de cotizaciones se conservarán y se separará explícit
 ## Seguimiento de ejecución
 
 - [x] Tarea 1 — contratos monetarios, estados, snapshots y permisos adicionales.
-- [ ] Tarea 2 — schema relacional de catálogo, listas y cotizaciones.
+- [x] Tarea 2 — schema relacional de catálogo, listas y cotizaciones.
 - [ ] Tarea 3 — servicio de precios y creación de versión reproducible.
 - [ ] Tarea 4 — API y UI de catálogo/listas de precios.
 - [ ] Tarea 5 — constructor de cotizaciones y operaciones protegidas.
@@ -128,6 +128,17 @@ Decisiones mantenidas abiertas para validación comercial: monedas soportadas, I
 - Crear cotización, versiones, líneas snapshot e historial.
 - Crear migración inspeccionada y seed sólo con catálogo demo no sensible.
 - Verificar que borrar/archivar catálogo no rompa solicitudes ni versiones.
+
+Evidencia de cierre:
+
+- Commits `cea2064` (`feat: add catalog and quote relational schema`) y `78bd3fb` (`test: verify catalog seed and schema integrity`).
+- Migración `prisma/migrations/20260908032000_catalog_quotes/migration.sql` aplicada y confirmada sin pendientes.
+- El modelo incluye categorías, conceptos archivables, listas por moneda, precios con vigencia, cotización raíz vinculada por FK compuesto a solicitud+cliente, versiones, líneas snapshot e historial.
+- PostgreSQL impide precios negativos, importes imposibles, basis points fuera de rango, cantidades no positivas y totales inconsistentes.
+- `btree_gist` + `EXCLUDE USING gist` impide dos vigencias solapadas para el mismo concepto en una lista.
+- `ON DELETE RESTRICT` protege conceptos referenciados; el histórico no depende de recalcular desde el catálogo.
+- `seedCatalogDemo` es idempotente y crea únicamente datos demo local no sensibles.
+- Verificación: schema dirigido 3/3, `npm run test:integration` 23/23, `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npx prisma migrate status`, `npm run db:seed`, `npm run typecheck` y `npm run lint` correctos.
 
 ### Tarea 3 — Servicio transaccional
 

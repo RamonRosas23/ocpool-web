@@ -5,10 +5,10 @@
 ## Estado actual
 
 - **Fase:** Fase 4 — Catálogo, precios y cotizaciones versionadas.
-- **Estado:** Fase 4 está en ejecución. La Tarea 1 está terminada con contratos monetarios, estados, snapshots y permisos probados; la Tarea 2 es el siguiente incremento autorizado.
+- **Estado:** Fase 4 está en ejecución. Las Tareas 1 y 2 están terminadas con evidencia verificable; la Tarea 3 — servicio transaccional de precios y versiones — es el siguiente incremento autorizado.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `cda7a7a`, `4240d15`.
+- **Commits de la fase:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`.
 
 ## Orden documental obligatorio
 
@@ -79,10 +79,14 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Snapshots de líneas y totales congelados en memoria, con identidad comercial y valores monetarios capturados.
 - Estados de cotización versionada con edición exclusiva de borradores y aceptación bloqueada hasta existir evidencia de aceptación.
 - Permisos RBAC separados para lectura/administración de catálogo y lectura/administración de precios.
+- Schema relacional de categorías, conceptos, listas, vigencias de precio, cotización raíz, versiones, líneas snapshot e historial.
+- Migración `20260908032000_catalog_quotes` aplicada con extensión `btree_gist`, exclusión de vigencias solapadas y constraints monetarios.
+- FK compuesto de `Quote` a solicitud+cliente para impedir cruces de expedientes desde la base de datos.
+- Seed local demo (`DEMO-SERVICES`, `DEMO-CONSULTA`, `DEMO-MXN`) idempotente y explícitamente no comercial.
 
 ### En desarrollo
 
-- Fase 4 — Tarea 2: schema relacional de catálogo, listas de precios, cotizaciones y snapshots persistidos.
+- Fase 4 — Tarea 3: servicio transaccional de precios, versiones y snapshots reproducibles.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -92,7 +96,6 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Catálogo, precios y plantillas.
-- Migración relacional de catálogo, listas, cotizaciones y snapshots.
 - Constructor de cotizaciones.
 - Snapshots y versionado inmutable.
 - Portal del cliente.
@@ -124,6 +127,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 15. Aplicar redondeo half-up explícito por línea para cantidad, descuento e impuesto; sumar los resultados de línea para los totales.
 16. Permitir sólo códigos de moneda de tres letras normalizados en el dominio; la lista comercial definitiva de monedas queda pendiente de confirmación.
 17. Congelar snapshots de dominio y persistirlos como datos históricos en la siguiente tarea; ninguna versión distinta de `BORRADOR` será editable.
+18. Evitar solapamientos de precios con constraint PostgreSQL `EXCLUDE USING gist`; el servicio además resolverá la vigencia dentro de transacción.
+19. Relacionar una cotización con solicitud y cliente mediante FK compuesto, además de FK directo al cliente.
 
 ## Pruebas realizadas
 
@@ -149,6 +154,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Revisión independiente de seguridad — sin hallazgos Critical/Important bloqueantes después de corregir rate limit sin IP, body chunked, retorno temprano antes de Argon2 y circuit breaker condicionado por IP confiable.
 - `git diff --check` — correcto.
 - Tarea 1 de Fase 4: prueba roja inicial de contrato, después `npm run test:unit` 41/41, `npm run test:integration` 20/20, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
+- Tarea 2 de Fase 4: migración `20260908032000_catalog_quotes`, `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npx prisma migrate status`, `npm run db:seed`, schema dirigido 3/3, integración completa 23/23, typecheck, lint y `git diff --check` correctos.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -194,6 +200,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Fase 2 (identidad/RBAC) debe preceder a expedientes, cotizaciones y portal porque todos requieren autorización backend.
 - Las rutas de autenticación dependerán de `sessions.ts`, `tokens.ts`, `mfa.ts`, `rate-limit.ts`, `permissions.ts`, el logger y el envelope de errores.
 - Los contratos de `src/server/modules/quotes/domain.ts` son dependencia de schema, servicio de precios, snapshots persistidos y constructor.
+- El schema de Fase 4 y la migración son dependencia del servicio de resolución de precios y creación de versiones.
 
 ## Problemas encontrados y resolución
 
@@ -223,8 +230,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
-- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tarea 1 ejecutada; Tarea 2 lista para iniciar.
+- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–2 ejecutadas; Tarea 3 lista para iniciar.
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 2 de Fase 4: diseñar, migrar y verificar el schema relacional de catálogo, listas, cotizaciones, versiones, líneas snapshot e historial.
+Ejecutar la Tarea 3 de Fase 4: resolver precio vigente dentro de transacción y crear versiones con snapshots reproducibles, auditoría y control de concurrencia.
