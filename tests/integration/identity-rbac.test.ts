@@ -355,7 +355,12 @@ describe('identity and RBAC foundation', () => {
     const routeIp = `10.10.0.${Number(suffix.slice(-3)) % 200 + 1}`;
     const previousTrustProxyHeaders = process.env.TRUST_PROXY_HEADERS;
     process.env.TRUST_PROXY_HEADERS = 'true';
-    await prisma.authRateLimit.deleteMany({ where: { scope: 'auth-global', keyHash: fingerprintToken('service') } });
+    await prisma.authRateLimit.deleteMany({
+      where: {
+        scope: { in: ['auth-global', 'employee-login-email', 'employee-login-ip'] },
+        keyHash: { in: [fingerprintToken('service'), fingerprintToken(email), fingerprintToken(`unknown-${suffix}@example.test`), fingerprintToken(routeIp)] },
+      },
+    });
     const user = await prisma.user.create({
       data: { email, emailNormalized: email, displayName: 'Route Test', type: 'EMPLOYEE', status: 'ACTIVE', passwordHash: await hashPassword(password) },
     });
@@ -399,6 +404,12 @@ describe('identity and RBAC foundation', () => {
     expect((await sessionGetRoute(new NextRequest('http://localhost:3000/api/auth/session', { headers: { cookie: `ocpool_session=${sessionCookie}` } }))).status).toBe(401);
 
     await prisma.user.delete({ where: { id: user.id } });
+    await prisma.authRateLimit.deleteMany({
+      where: {
+        scope: { in: ['auth-global', 'employee-login-email', 'employee-login-ip'] },
+        keyHash: { in: [fingerprintToken('service'), fingerprintToken(email), fingerprintToken(`unknown-${suffix}@example.test`), fingerprintToken(routeIp)] },
+      },
+    });
     if (previousTrustProxyHeaders === undefined) delete process.env.TRUST_PROXY_HEADERS;
     else process.env.TRUST_PROXY_HEADERS = previousTrustProxyHeaders;
   }, 30_000);
