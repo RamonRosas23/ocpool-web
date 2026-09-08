@@ -19,6 +19,11 @@ export async function GET(request: NextRequest) {
       quotesApplyDiscount: hasPermission(actor, 'quotes.apply_discount'),
       quotesApproveDiscount: hasPermission(actor, 'quotes.approve_discount'),
       quotesSend: hasPermission(actor, 'quotes.send'),
+      messagingRead: hasPermission(actor, 'messaging.read'),
+      messagingSend: hasPermission(actor, 'messaging.send'),
+      messagingInternalNotesRead: hasPermission(actor, 'messaging.internal_notes.read'),
+      messagingInternalNotesWrite: hasPermission(actor, 'messaging.internal_notes.write'),
+      messagingManage: hasPermission(actor, 'messaging.manage'),
     }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);

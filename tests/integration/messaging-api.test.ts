@@ -10,6 +10,7 @@ import { GET as portalMessagesGet, POST as portalMessagesPost } from '@/app/api/
 import { GET as staffMessagesGet, POST as staffMessagesPost } from '@/app/api/staff/quote-requests/[id]/messages/route';
 import { POST as staffNotesPost } from '@/app/api/staff/quote-requests/[id]/notes/route';
 import { POST as conversationStatusPost } from '@/app/api/staff/quote-requests/[id]/conversation-status/route';
+import { GET as capabilitiesGet } from '@/app/api/staff/capabilities/route';
 
 describe('private messaging API', () => {
   const prisma = getPrisma();
@@ -85,6 +86,30 @@ describe('private messaging API', () => {
       createSession({ userId: manager.id, ipAddress: null, userAgent: 'integration-test' }, { prisma, tokenGenerator: () => managerToken }),
       createSession({ userId: limitedStaff.id, ipAddress: null, userAgent: 'integration-test' }, { prisma, tokenGenerator: () => limitedStaffToken }),
     ]);
+  });
+
+  it('exposes messaging capabilities without permission details', async () => {
+    const manager = await capabilitiesGet(endpoint('/api/staff/capabilities', managerToken));
+    expect(manager.status).toBe(200);
+    await expect(manager.json()).resolves.toMatchObject({
+      messagingRead: true,
+      messagingSend: true,
+      messagingInternalNotesRead: true,
+      messagingInternalNotesWrite: true,
+      messagingManage: true,
+    });
+
+    const limited = await capabilitiesGet(endpoint('/api/staff/capabilities', limitedStaffToken));
+    expect(limited.status).toBe(200);
+    const limitedBody = await limited.json() as Record<string, unknown>;
+    expect(limitedBody).toMatchObject({
+      messagingRead: true,
+      messagingSend: true,
+      messagingInternalNotesRead: false,
+      messagingInternalNotesWrite: false,
+      messagingManage: false,
+    });
+    expect(Object.keys(limitedBody)).not.toContain('permissions');
   });
 
   it('protects access, scope and safe cache headers', async () => {
