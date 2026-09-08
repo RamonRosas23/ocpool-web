@@ -4,11 +4,12 @@
 
 ## Estado actual
 
-- **Fase:** Fase 11 — dashboard y métricas operativas; gate técnico local cerrado.
-- **Estado:** Fases 1–11 están implementadas y verificadas dentro del alcance local. Fase 11 tiene contratos, scope/RBAC, agregados, API privada, rate limit, serialización segura, UI responsive, runbook y gate completo. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
+- **Fase:** Fase 12 — auditoría operativa y seguridad; planificación documental cerrada, implementación en curso.
+- **Estado:** Fases 1–11 están implementadas y verificadas dentro del alcance local. Fase 12 tiene especificación, autorrevisión y plan ordenado; aún no cuenta como terminada. El objetivo es exponer auditoría transaccional con redacción estricta, RBAC separado para seguridad y una superficie staff sin exportación ni purga. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
+- **Documentos de Fase 12:** especificación y autorrevisión creadas; plan ordenado pendiente de commit documental antes del primer cambio de código.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -164,7 +165,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### En desarrollo
 
-- Ningún módulo del slice local está bloqueado. La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
+- Fase 12 — auditoría operativa y seguridad: contratos de lectura, permisos, repositorio, API, UI y hardening. La especificación y la revisión están aprobadas; todavía no se ha implementado el módulo.
+- La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -175,7 +177,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
-- Siguiente fase: definir el siguiente vertical slice comercial con especificación, revisión, plan y gate propios; no se inicia por código sin esa secuencia documental.
+- Fase 12: ejecutar el plan ordenado y cerrar el gate de auditoría antes de definir el siguiente vertical slice.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
@@ -297,6 +299,13 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 110. La serialización analítica se concentra en un mapper puro que aplica supresión, claves opacas, fechas y valores seguros antes de construir el response HTTP; no devuelve PII, payloads, destinatarios, storage keys ni ciphertext.
 111. La UI del dashboard reutiliza la identidad staff existente con CSS/Intl nativos, sin dependencia de gráficas; los estados de carga, vacío, error, reduced motion, foco y contraste forman parte del módulo terminado.
 112. Las lecturas del dashboard usan el rate limit PostgreSQL existente por `actor.userId`, configurable con `ANALYTICS_RATE_LIMIT_MAX_ATTEMPTS`/`ANALYTICS_RATE_LIMIT_WINDOW_MINUTES`, aplicado después de validar rango y antes de ejecutar agregados.
+113. Fase 12 reutiliza `AuditLog` y `AuthEvent` como fuentes de verdad; no crea una tabla paralela de eventos ni duplica auditoría transaccional.
+114. La lectura operativa y la lectura de seguridad son capabilities distintas: `audit.read` para manager/admin y `audit.security.read` sólo para admin.
+115. El contrato de auditoría usa una allowlist por acción para proyectar detalles; metadata desconocida se descarta y nunca se serializa como JSON genérico.
+116. Los cursores de auditoría son HMAC opacos, contienen filtros normalizados y se rechazan si se reutilizan con otro rango, categoría, outcome, source o límite.
+117. La vista de auditoría no muestra UUIDs, emails, teléfonos, IP, user-agent, hashes, ciphertext, payloads, storage keys ni deep links a entidades.
+118. La auditoría es sólo lectura en Fase 12: no hay exportación, purga, retención automática, SIEM ni alertas en tiempo real sin una decisión posterior de producto, legal y operación.
+119. La consulta transversal resuelve actores con una selección acotada y un batch único; no se permiten consultas por fila ni enriquecimiento por `entityId`.
 
 ## Pruebas realizadas
 
@@ -386,6 +395,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Pruebas de carga del worker y restauración de backups en destino aislado.
 - Fase 11 no tiene pendientes técnicos locales para su alcance; antes de producción debe repetirse la revisión de rendimiento con volumen representativo y confirmar la política de operación.
 - Confirmar antes de producción la zona `APP_TIMEZONE`, definiciones comerciales de periodo y alcance por ejecutivo/sucursal.
+- Fase 12: unitarias de cursor/redacción, integración de RBAC/paginación/rate limit, API privada, E2E staff responsive/Axe y revisión `EXPLAIN` aún pendientes hasta ejecutar el plan.
 
 ## Riesgos abiertos
 
@@ -401,6 +411,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - El dashboard calcula agregados transaccionales directos; falta medir P95 con fixtures representativos y revisar `EXPLAIN` antes de decidir si la escala futura requiere rollups.
 - La zona `America/Chihuahua` es configurable para el entorno local, pero la zona comercial definitiva y su calendario deben aprobarse antes de producción.
 - Las definiciones de alcance por ejecutivo, sucursal o zona no están confirmadas; Fase 11 sólo implementa self/global con permisos explícitos.
+- La auditoría transversal no tiene todavía una política legal de retención/purga; Fase 12 no eliminará eventos ni inventará plazos.
+- El índice transversal por tiempo de `AuditLog`/`AuthEvent` no se añadirá sin `EXPLAIN` con volumen representativo; el costo de una futura migración sigue pendiente.
 - La protección por IP requiere `TRUST_PROXY_HEADERS=true` sólo detrás de un proxy confiable que sobrescriba la IP. Sin IP confiable, el backend usa límites por identificador y un circuit breaker global separado; el proxy de producción debe aportar rate limiting por origen.
 - La infraestructura de identidad, solicitudes, cotizaciones, aceptación, mensajería y archivos ya escribe Outbox y la Fase 9 Tareas 4–5 lo materializan y operan; siguen pendientes el proveedor productivo y el hardening operacional.
 - El Outbox de mensajería conserva eventos de cierre/reapertura fuera de la allowlist de correo; no se cancelan porque quedan disponibles para futuros consumidores de dominio.
@@ -447,6 +459,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - La política de runtime alimenta el gate de producción; `/api/ready` depende de PostgreSQL; los runbooks dependen del Compose local; el gate no puede convertir evidencia local en autorización externa.
 - Fase 11 depende de identidad/RBAC, solicitudes, asignaciones, historial, cotizaciones snapshot, aceptación, notificaciones, `APP_TIMEZONE` y la API de errores; no introduce autorización duplicada.
 - `/staff` depende sólo del endpoint privado de dashboard y de los enlaces existentes de operación; la UI no accede a Prisma ni decide permisos.
+- Fase 12 depende de identidad/sesiones/RBAC, logger/errores HTTP, `AuditLog`/`AuthEvent` existentes, `APP_TIMEZONE`, rate limit PostgreSQL y los eventos transaccionales de solicitudes, cotizaciones, mensajería, archivos, documentos y notificaciones.
+- `/staff/audit` depende del contrato del módulo audit y no debe reutilizar el scope comercial de solicitudes ni inferir autorización desde filtros del navegador.
 
 ## Problemas encontrados y resolución
 
@@ -525,6 +539,9 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-analytics-dashboard.md` — especificación aprobada para Fase 11; métricas operativas, scope, privacidad, rendimiento y UI.
 - `docs/superpowers/plans/2026-09-08-ocpool-analytics-dashboard.md` — plan ordenado de Fase 11; Tareas 1–6 cerradas con gate técnico local.
 - `docs/runbooks/analytics-dashboard.md` — runbook operativo de definiciones, fechas, permisos, diagnóstico seguro y pruebas.
+- `docs/superpowers/specs/2026-09-08-ocpool-audit-observability.md` — especificación aprobada para Fase 12; lectura segura de auditoría operativa y security.
+- `docs/superpowers/reviews/2026-09-08-ocpool-audit-observability-review.md` — autorrevisión de Fase 12; metadata, RBAC, cursor, N+1, retención y AuthEvent revisados antes de implementación.
+- `docs/superpowers/plans/2026-09-08-ocpool-audit-observability.md` — plan ordenado de Fase 12; Tasks 1–6 pendientes de ejecución.
 
 ## Criterio de terminado de Fase 10
 
@@ -534,10 +551,14 @@ La fase se considera terminada para el alcance local porque la política de runt
 
 La fase queda terminada para el alcance local: el dashboard está documentado, serializado de forma segura, revisado contra regresiones y cubierto por el gate completo de pruebas. La revisión de `EXPLAIN` local no justifica índices especulativos con el volumen actual; antes de producción deberá repetirse con volumen representativo. La UI y API no autorizan lanzamiento por sí mismas; el bloqueo productivo de Fase 10 permanece vigente.
 
+## Criterio de terminado de Fase 12
+
+La fase sólo se considerará terminada cuando el contrato de lectura, los permisos separados, la redacción por acción, el cursor HMAC, el repositorio sin N+1, el rate limit, la API privada, la UI responsive/accesible, el runbook y el gate unitario/integración/E2E/build/lint/auditoría estén verificados. La ausencia de exportación y purga será una decisión explícita, no una omisión. Mientras el plan esté en ejecución, Fase 12 permanece en desarrollo.
+
 ## Criterio de terminado de Fase 5
 
 La fase se considera terminada porque el cliente autenticado sólo lee recursos de su `clientId`, las cotizaciones históricas se sirven desde snapshots, las rutas privadas no enumeran recursos ajenos ni exponen secretos, la UI cubre estados de sesión/carga/vacío/error, responsive, teclado, reduced motion y Axe, y el gate de infraestructura, build, pruebas, auditoría y árbol limpio quedó registrado.
 
 ## Próximo paso autorizado
 
-Definir la siguiente fase mediante especificación, autorrevisión y plan ordenado, manteniendo el gate de lanzamiento bloqueado hasta resolver los riesgos externos documentados.
+Ejecutar `docs/superpowers/plans/2026-09-08-ocpool-audit-observability.md` tarea por tarea, registrar evidencia y cerrar Fase 12 sólo con su gate. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.
