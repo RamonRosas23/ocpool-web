@@ -54,6 +54,53 @@ export async function seedIdentityCatalog(client: PrismaClient): Promise<void> {
   }
 }
 
+export async function seedCatalogDemo(client: PrismaClient): Promise<void> {
+  const category = await client.catalogCategory.upsert({
+    where: { code: 'DEMO-SERVICES' },
+    update: { name: 'Servicios demo locales', status: 'ACTIVE', sortOrder: 100 },
+    create: { code: 'DEMO-SERVICES', name: 'Servicios demo locales', status: 'ACTIVE', sortOrder: 100 },
+  });
+  const item = await client.catalogItem.upsert({
+    where: { code: 'DEMO-CONSULTA' },
+    update: {
+      name: 'Consultoría demo local',
+      description: 'Concepto no comercial para validar el entorno local.',
+      unit: 'servicio',
+      status: 'ACTIVE',
+      categoryId: category.id,
+    },
+    create: {
+      code: 'DEMO-CONSULTA',
+      name: 'Consultoría demo local',
+      description: 'Concepto no comercial para validar el entorno local.',
+      unit: 'servicio',
+      status: 'ACTIVE',
+      categoryId: category.id,
+    },
+  });
+  const priceList = await client.priceList.upsert({
+    where: { code: 'DEMO-MXN' },
+    update: { name: 'Lista demo MXN local', currencyCode: 'MXN', status: 'ACTIVE' },
+    create: { code: 'DEMO-MXN', name: 'Lista demo MXN local', currencyCode: 'MXN', status: 'ACTIVE', validFrom: new Date('2026-01-01T00:00:00.000Z') },
+  });
+  await client.priceListItem.upsert({
+    where: {
+      priceListId_catalogItemId_validFrom: {
+        priceListId: priceList.id,
+        catalogItemId: item.id,
+        validFrom: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    },
+    update: { unitPriceMinor: 1000n, validUntil: null },
+    create: {
+      priceListId: priceList.id,
+      catalogItemId: item.id,
+      unitPriceMinor: 1000n,
+      validFrom: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  });
+}
+
 export async function seedDatabase(client: PrismaClient): Promise<void> {
   await client.systemSetting.upsert({
     where: { key: 'system.schema_version' },
@@ -61,6 +108,7 @@ export async function seedDatabase(client: PrismaClient): Promise<void> {
     create: { key: 'system.schema_version', value: { version: 2 } },
   });
   await seedIdentityCatalog(client);
+  await seedCatalogDemo(client);
   await client.folioSequence.upsert({
     where: { key: 'quote_request' },
     update: {},

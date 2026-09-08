@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { getPrisma } from '@/server/db/client';
+import { seedCatalogDemo } from '../../prisma/seed';
 
 describe('catalog and quote relational schema', () => {
   it('exposes the commercial tables and database-level integrity constraints', async () => {
@@ -166,4 +167,31 @@ describe('catalog and quote relational schema', () => {
       await prisma.catalogCategory.delete({ where: { id: category.id } });
     }
   }, 30_000);
+
+  it('seeds the local demo catalog idempotently', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    await seedCatalogDemo(prisma);
+    await seedCatalogDemo(prisma);
+
+    const category = await prisma.catalogCategory.findUnique({ where: { code: 'DEMO-SERVICES' } });
+    const item = await prisma.catalogItem.findUnique({ where: { code: 'DEMO-CONSULTA' } });
+    const priceList = await prisma.priceList.findUnique({ where: { code: 'DEMO-MXN' } });
+
+    expect(category).toMatchObject({ code: 'DEMO-SERVICES', status: 'ACTIVE' });
+    expect(item).toMatchObject({ code: 'DEMO-CONSULTA', categoryId: category?.id });
+    expect(priceList).toMatchObject({ code: 'DEMO-MXN', currencyCode: 'MXN' });
+    expect(await prisma.catalogCategory.count({ where: { code: 'DEMO-SERVICES' } })).toBe(1);
+    expect(await prisma.catalogItem.count({ where: { code: 'DEMO-CONSULTA' } })).toBe(1);
+    expect(await prisma.priceList.count({ where: { code: 'DEMO-MXN' } })).toBe(1);
+    expect(await prisma.priceListItem.count({ where: { priceListId: priceList?.id, catalogItemId: item?.id } })).toBe(1);
+
+    await prisma.priceListItem.deleteMany({ where: { priceListId: priceList?.id } });
+    await prisma.priceList.deleteMany({ where: { id: priceList?.id } });
+    await prisma.catalogItem.deleteMany({ where: { id: item?.id } });
+    await prisma.catalogCategory.deleteMany({ where: { id: category?.id } });
+  });
 });
