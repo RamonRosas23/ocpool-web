@@ -28,8 +28,26 @@ const ALLOWED_TRANSITIONS: Record<QuoteRequestStatus, readonly QuoteRequestStatu
   CONVERTIDA_EN_PROYECTO: [],
 };
 
+const STAFF_OPERATIONAL_TRANSITIONS: Record<QuoteRequestStatus, readonly QuoteRequestStatus[]> = {
+  RECIBIDA: ['EN_REVISION'],
+  EN_REVISION: ['INFORMACION_REQUERIDA', 'EN_ELABORACION', 'RECHAZADA'],
+  INFORMACION_REQUERIDA: ['EN_REVISION', 'EN_ELABORACION', 'RECHAZADA'],
+  EN_ELABORACION: ['INFORMACION_REQUERIDA', 'RECHAZADA'],
+  COTIZACION_DISPONIBLE: [],
+  EN_NEGOCIACION: [],
+  PENDIENTE_DE_APROBACION: [],
+  ACEPTADA: [],
+  RECHAZADA: [],
+  VENCIDA: [],
+  CONVERTIDA_EN_PROYECTO: [],
+};
+
 export function canTransitionQuoteRequest(from: QuoteRequestStatus, to: QuoteRequestStatus): boolean {
   return ALLOWED_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+export function canStaffTransitionQuoteRequest(from: QuoteRequestStatus, to: QuoteRequestStatus): boolean {
+  return STAFF_OPERATIONAL_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
 export function formatQuoteRequestFolio(year: number, sequence: number): string {

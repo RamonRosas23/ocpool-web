@@ -137,6 +137,12 @@ test.describe('OCPOOL quality contract', () => {
     await expect(page.getByRole('button', { name: /Enviar solicitud/ })).toBeDisabled();
   });
 
+  test('protects the internal inbox when no employee session exists', async ({ page }) => {
+    await page.goto('/staff/requests');
+    await expect(page.getByRole('heading', { name: 'Acceso restringido.' })).toBeVisible();
+    await expect(page.getByText('Inicia sesión con una cuenta de empleado autorizada')).toBeVisible();
+  });
+
   test('exposes complete SEO metadata and generated discovery routes', async ({ page, request }) => {
     await page.goto('/');
 

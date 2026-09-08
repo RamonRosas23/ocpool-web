@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   QUOTE_REQUEST_STATUSES,
+  canStaffTransitionQuoteRequest,
   canTransitionQuoteRequest,
   formatQuoteRequestFolio,
   normalizeQuoteRequestEmail,
@@ -30,6 +31,12 @@ describe('quote request domain contracts', () => {
     expect(canTransitionQuoteRequest('RECIBIDA', 'ACEPTADA')).toBe(false);
     expect(canTransitionQuoteRequest('ACEPTADA', 'EN_REVISION')).toBe(false);
     expect(canTransitionQuoteRequest('CONVERTIDA_EN_PROYECTO', 'RECHAZADA')).toBe(false);
+  });
+
+  it('keeps quote-dependent transitions closed until the quote module exists', () => {
+    expect(canStaffTransitionQuoteRequest('EN_ELABORACION', 'RECHAZADA')).toBe(true);
+    expect(canStaffTransitionQuoteRequest('EN_ELABORACION', 'COTIZACION_DISPONIBLE')).toBe(false);
+    expect(canStaffTransitionQuoteRequest('COTIZACION_DISPONIBLE', 'EN_NEGOCIACION')).toBe(false);
   });
 
   it('formats a public folio without exposing the internal identifier', () => {

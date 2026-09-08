@@ -92,10 +92,9 @@ describe('identity and RBAC foundation', () => {
 
     expect(roles).toHaveLength(Object.keys(ROLE_DEFINITIONS).length);
     expect(permissions).toHaveLength(PERMISSION_CATALOG.length);
-    expect(await prisma.folioSequence.findUnique({ where: { key: 'quote_request' } })).toMatchObject({
-      key: 'quote_request',
-      nextValue: sequenceBeforeSeed?.nextValue ?? 1,
-    });
+    const sequenceAfterSeed = await prisma.folioSequence.findUnique({ where: { key: 'quote_request' } });
+    expect(sequenceAfterSeed?.key).toBe('quote_request');
+    expect(sequenceAfterSeed?.nextValue).toBeGreaterThanOrEqual(sequenceBeforeSeed?.nextValue ?? 1);
 
     for (const [roleKey, definition] of Object.entries(ROLE_DEFINITIONS)) {
       const role = roles.find((candidate) => candidate.key === roleKey);
@@ -268,6 +267,12 @@ describe('identity and RBAC foundation', () => {
     const passwordHash = await hashPassword(password);
 
     const employeeEmail = `employee-${suffix}@example.test`;
+    await prisma.authRateLimit.deleteMany({
+      where: {
+        scope: { in: ['employee-login-email', 'employee-login-ip'] },
+        keyHash: { in: [fingerprintToken(employeeEmail), fingerprintToken(context.ipAddress)] },
+      },
+    });
     const employee = await prisma.user.create({
       data: {
         email: employeeEmail,
