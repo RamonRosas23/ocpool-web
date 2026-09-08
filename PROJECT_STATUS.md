@@ -4,11 +4,11 @@
 
 ## Estado actual
 
-- **Fase:** Fase 2 — Identidad y RBAC.
-- **Estado:** En desarrollo; Tareas 1–3 terminadas y verificadas. Tarea 4 autorizada automáticamente.
+- **Fase:** Fase 2 — Identidad y RBAC, cerrada técnicamente.
+- **Estado:** Terminada con criterios verificables; queda como riesgo explícito la auditoría transitoria de dependencias de Prisma. La siguiente fase autorizada es Clientes, solicitudes y expedientes.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`.
+- **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`.
 
 ## Orden documental obligatorio
 
@@ -56,11 +56,16 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Sesiones persistidas con expiración, revocación, actor derivado desde PostgreSQL y cookie `ocpool_session` con política segura.
 - Tokens de autenticación de un solo uso y rate limiting de ventana fija con bloqueo de fila PostgreSQL.
 - MFA TOTP con ventana controlada y contador persistido para rechazar replays.
+- Servicios y rutas API de autenticación: login empleado, magic link, recovery, sesión y logout.
+- Eventos de autenticación y Outbox transaccionales; tokens de entrega cifrados con clave separada de MFA.
+- Protección same-origin, validación JSON con límite de body, errores públicos genéricos y request IDs.
+- Rate limit por email/IP confiable sin bucket global `unknown-client`; circuit breaker global separado sólo para solicitudes sin IP confiable.
+- Parser de cuerpos JSON con límite streaming de 16 KiB y cancelación temprana para requests chunked.
+- Typecheck explícito (`npm run typecheck`) integrado en `npm test`.
 
 ### En desarrollo
 
-- Orquestación de autenticación y adaptadores API seguros: login de empleados, magic link de cliente, recovery, sesión y logout.
-- CSRF/same-origin para mutaciones autenticadas y eventos de autenticación sin secretos.
+- Ninguno dentro de Fase 2. La planificación de Fase 3 comenzará en un MD nuevo y ordenado antes de tocar código comercial.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -69,8 +74,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### Pendientes
 
-- Arquitectura de aplicación comercial.
-- Endpoints de identidad y flujo completo de autenticación.
+- Arquitectura de aplicación comercial por dominios de negocio.
 - Clientes, contactos y expedientes.
 - Solicitudes, folios, estados y asignaciones.
 - Catálogo, precios y plantillas.
@@ -103,32 +107,29 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ## Pruebas realizadas
 
-Gate final ejecutado después de `npm ci`:
+Gate final ejecutado después de instalación limpia de dependencias:
 
-- `npm test` — correcto antes de iniciar Fase 2: 12 unitarias, 1 integración, 29 E2E públicos, 1 E2E foundation y build/contenido correctos. Debe repetirse después del bloque de identidad.
+- `npm ci --no-audit --fund=false --foreground-scripts` — correcto; se recuperó previamente un conflicto Windows `ENOTEMPTY` moviendo sólo directorios generados de `node_modules`, sin tocar código ni datos.
 - `npm run db:up` — PostgreSQL y Mailpit activos.
 - `npm run db:validate` — schema válido.
 - `npm run db:generate` — cliente Prisma 7.10.0 generado.
 - `npm run db:migrate:deploy` — sin migraciones pendientes.
 - `npm run db:seed` — correcto e idempotente.
-- `npm run test:unit` — 23 pruebas correctas después de Tarea 3.
-- `npm run test:integration` — 6 pruebas correctas contra PostgreSQL después de Tarea 3.
-- `npm run lint` — correcto después de Tarea 3.
-- `npm run build` — correcto después de Tarea 3, con tipos y páginas generadas.
-- `npm run test:e2e:foundation` — 1 prueba correcta.
+- `npm test` — correcto en el estado final: typecheck, 29 unitarias, 9 integraciones PostgreSQL, contrato de contenido, build, 29 E2E públicos con 2 omitidas explícitamente y 1 E2E foundation dedicado.
+- `npm run lint` — correcto.
+- `npm run test:e2e:auth` — 1 flujo correcto: fixture desechable, login, sesión, rechazo de logout foreign-origin y logout.
 - `npm run test:content` — correcto.
-- `npm run test:e2e` — 29 correctas y 1 omitida de forma explícita por ser opt-in.
+- `npx tsc --noEmit` / `npm run typecheck` — correctos, incluyendo los tipos de las pruebas Playwright y Vitest.
+- Revisión independiente de seguridad — sin hallazgos Critical/Important bloqueantes después de corregir rate limit sin IP, body chunked, retorno temprano antes de Argon2 y circuit breaker condicionado por IP confiable.
 - `git diff --check` — correcto.
 
-La suite E2E completa descubrió 30 pruebas: la foundation se omite en el comando normal para no exigir Docker; su ejecución dedicada sí fue validada.
+La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
 ## Pruebas pendientes
 
-- Pruebas unitarias de dominio.
-- Pruebas de servicios y transacciones de base de datos.
-- Pruebas de API y autorización.
-- Pruebas de login, magic link, recovery, logout, CSRF y MFA a través de API.
-- Pruebas de IDOR, enumeración, sesiones y rate limiting.
+- Pruebas unitarias de dominios comerciales.
+- Pruebas de IDOR sobre clientes, solicitudes, expedientes y futuras cotizaciones.
+- E2E cliente y empleado de los flujos comerciales.
 - Pruebas de archivos privados y URLs temporales.
 - Pruebas de snapshots e inmutabilidad.
 - Pruebas de cálculo de cotizaciones.
@@ -136,7 +137,7 @@ La suite E2E completa descubrió 30 pruebas: la foundation se omite en el comand
 - Pruebas de PDF y aceptación.
 - Pruebas de notificaciones y reintentos.
 - Pruebas de carga y restauración de backups.
-- Diagnóstico y ejecución independiente de `npm run lint` fuera del gate de Next.js.
+- Resolución de advisories transitorios de Prisma antes del despliegue de producción.
 
 ## Riesgos abiertos
 
@@ -146,16 +147,17 @@ La suite E2E completa descubrió 30 pruebas: la foundation se omite en el comand
 - Política de retención y eliminación de datos personales pendiente de revisión formal.
 - Requisitos legales de aceptación y evidencia pendientes de revisión jurídica.
 - Destino de despliegue de producción aún no definido.
-- `npm audit` reporta 5 vulnerabilidades transitorias tras incorporar Prisma CLI 7.10.0: 4 altas asociadas a `deepmerge-ts`/`mysql2` y 1 moderada asociada a `@humanfs/node`. La corrección automática propone degradar Prisma a 6.19.3; queda pendiente una resolución compatible o una excepción de riesgo documentada.
-- El health check cubre disponibilidad de PostgreSQL, pero todavía no existe autenticación, autorización ni rate limiting.
-- La infraestructura de identidad ya existe, pero aún no está expuesta por endpoints ni integrada con Mailpit/Outbox.
+- `npm audit --omit=dev` reporta exactamente 4 vulnerabilidades altas transitorias en la cadena de Prisma 7.10.0: `deepmerge-ts <8.0.0` y `mysql2 <=3.23.0`. `npm audit fix --force` propone instalar Prisma 6.19.3, un downgrade rompedor; no se aplicó. Debe resolverse o exceptuarse formalmente antes de producción.
+- La protección por IP requiere `TRUST_PROXY_HEADERS=true` sólo detrás de un proxy confiable que sobrescriba la IP. Sin IP confiable, el backend usa límites por identificador y un circuit breaker global separado; el proxy de producción debe aportar rate limiting por origen.
+- La infraestructura de identidad ya está expuesta por endpoints y escribe Outbox, pero el worker SMTP que entrega esos eventos pertenece a la siguiente etapa de mensajería.
+- Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
 
 - Los módulos comerciales todavía no existen: no hay capa de dominio de clientes, solicitudes, cotizaciones ni portal.
 - El endpoint de contacto actual no debe considerarse backend comercial.
-- El lint independiente necesita diagnóstico para quedar reproducible y documentado.
 - El timestamp de la migración foundation es el generado por Prisma en la ejecución local (`20260907231807_foundation`); no se renombró después de aplicarlo para no desalinear el historial de migraciones.
+- Los advisories de `npm audit` pertenecen a la cadena de Prisma y requieren decisión de upgrade/override compatible antes de producción.
 
 ## Dependencias entre módulos
 
@@ -176,6 +178,11 @@ La suite E2E completa descubrió 30 pruebas: la foundation se omite en el comand
 - La primera prueba E2E pública tuvo un timeout intermitente en overflow horizontal; la repetición posterior con la configuración corregida terminó en 29/29.
 - El wrapper npm para argumentos Prisma eliminó `--name`; se usó el CLI directo y se conservó el timestamp generado para no renombrar una migración aplicada.
 - Next.js no acepta el enum ambient de `@node-rs/argon2` con `isolatedModules`; se usó el valor estable `2` para Argon2id y se verificó con build y pruebas.
+- La revisión de seguridad detectó reutilización de la clave MFA, tokens de recovery paralelos y carrera de sesión; se separó `AUTH_DELIVERY_ENCRYPTION_KEY`, se invalidan recovery tokens pendientes y la resolución de sesión usa actualización condicional atómica.
+- La revisión posterior detectó y corrigió bloqueo global por `unknown-client`, lectura tardía de bodies chunked, hashing Argon2 antes del rate limit y aplicación excesiva del circuit breaker; cada corrección quedó cubierta por pruebas unitarias o de integración.
+- El E2E de producción local inicialmente no reenviaba cookies `Secure` sobre HTTP; se mantuvo `Secure` y la prueba valida atributos y transporta explícitamente el valor opaco para probar la API.
+- La primera compuerta final encontró contaminación de buckets sintéticos entre ejecuciones; el test de API ahora limpia únicamente sus hashes de fixture y quedó estable en la repetición completa.
+- `npx tsc --noEmit` encontró tipos incompletos en pruebas existentes; se corrigieron sin relajar `strict`.
 
 ## Criterio de terminado de Fase 1
 
@@ -184,8 +191,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 ## Planes vigentes
 
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado por la dirección arquitectónica vigente, en ejecución.
+- `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 
 ## Próximo paso autorizado
 
-Ejecutar Tarea 4 del plan de Fase 2: orquestación de autenticación, CSRF/same-origin y adaptadores API seguros.
+Crear `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` y comenzar Fase 3 — Clientes, solicitudes y expedientes — sólo después de documentar el modelo de datos, permisos, estados y criterios de terminado.

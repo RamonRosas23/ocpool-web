@@ -78,6 +78,47 @@ Invoke-WebRequest http://localhost:18025/api/v1/info
 
 Si el contenedor no está levantado, ejecuta `npm run db:up`. Mailpit es un servicio local de desarrollo; no sustituye la configuración de correo transaccional de producción.
 
+## Identidad y pruebas locales
+
+Después de migrar el schema, ejecuta el seed idempotente para crear el catálogo inicial:
+
+```powershell
+npm run db:migrate:deploy
+npm run db:seed
+```
+
+El seed crea los roles `customer`, `sales`, `manager` y `admin` junto con el catálogo de permisos. No elimina roles o permisos personalizados futuros; sólo sincroniza los registros system-managed.
+
+La configuración de identidad se valida al iniciar el servidor. `MFA_ENCRYPTION_KEY` y `AUTH_DELIVERY_ENCRYPTION_KEY` deben ser claves base64 canónicas de 32 bytes y mantenerse separadas. Los valores de `.env.example` son exclusivamente locales; no los reutilices en staging o producción. `TRUST_PROXY_HEADERS` sólo debe activarse detrás de un proxy que sobrescriba los headers de IP. Cuando no hay IP confiable, el backend aplica un circuit breaker global independiente para reducir abuso computacional; en producción debe existir además un rate limit por IP en el proxy.
+
+Los endpoints de autenticación son:
+
+- `/api/auth/employee/login` para password y MFA TOTP administrativo.
+- `/api/auth/customer/request-link` y `/api/auth/customer/consume-link` para magic link de cliente.
+- `/api/auth/session` para consulta y logout.
+- `/api/auth/recovery/request` y `/api/auth/recovery/consume` para recovery de empleados.
+
+Los mensajes públicos son genéricos para no enumerar cuentas. Los links y sesiones se almacenan únicamente como huellas; Mailpit recibirá eventos cuando el worker de Outbox se implemente. En esta fase, el Outbox guarda el token de entrega cifrado con `AUTH_DELIVERY_ENCRYPTION_KEY`, nunca en texto plano ni con la clave de MFA.
+
+Para validar el flujo de API con un fixture desechable:
+
+```powershell
+npm run test:e2e:auth
+```
+
+La prueba crea y elimina su usuario temporal. Si una ejecución se interrumpe, busca únicamente usuarios `e2e-*@example.test` y elimínalos mediante una revisión explícita; no borres toda la base de datos.
+
+Para ejecutar la compuerta local completa:
+
+```powershell
+npm test
+npm run lint
+npm run test:e2e:auth
+npm audit --omit=dev
+```
+
+`npm test` incluye `npm run typecheck`, pruebas unitarias, integración PostgreSQL, contrato de contenido, build y regresiones E2E públicas/foundation.
+
 ## Restablecer únicamente los datos locales desechables
 
 Esta operación elimina todos los datos de desarrollo guardados en el volumen Docker `ocpool-postgres-data`. Requiere confirmación explícita del desarrollador responsable porque no es recuperable desde el entorno local:

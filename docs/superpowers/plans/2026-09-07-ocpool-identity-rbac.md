@@ -392,36 +392,43 @@ Files: src/server/auth/types.ts, src/server/auth/sessions.ts, src/server/auth/to
 
 Files: src/server/auth/service.ts, src/server/auth/csrf.ts, auth route handlers under src/app/api/auth/, tests/unit/auth-csrf.test.ts, tests/integration/identity-rbac.test.ts.
 
-- [ ] Write failing API/integration tests for generic login errors, admin MFA, magic-link consumption, recovery revocation, logout and origin rejection.
-- [ ] Implement orchestration transactions that create auth events and outbox events without putting raw tokens in payloads.
-- [ ] Add strict Zod request schemas, generic timing-conscious responses, request ids and existing safe error envelopes.
-- [ ] Apply same-origin checks before mutating cookie-authenticated work and return 403 without touching protected data.
-- [ ] Set/clear cookies only after successful transaction completion; clear them on logout and failed session lookup.
-- [ ] Run unit, integration, build and test:e2e:foundation; add opt-in test:e2e:auth script.
-- [ ] Commit feat: add identity authentication api.
+- [x] Write failing API/integration tests for generic login errors, admin MFA, magic-link consumption, recovery revocation, logout and origin rejection.
+- [x] Implement orchestration transactions that create auth events and outbox events without putting raw tokens in payloads.
+- [x] Add strict Zod request schemas, generic timing-conscious responses, request ids and existing safe error envelopes.
+- [x] Apply same-origin checks before mutating cookie-authenticated work and return 403 without touching protected data.
+- [x] Set/clear cookies only after successful transaction completion; clear them on logout and failed session lookup.
+- [x] Run unit, integration, build and test:e2e:foundation; add opt-in test:e2e:auth script.
+- [x] Commit feat: add identity authentication api (`2a71244`).
 
 ### Task 5: Hardening, documentation and phase gate
 
-Files: tests/auth.spec.ts, README.md, docs/runbooks/local-development.md, PROJECT_STATUS.md, package.json.
+Files: tests/auth.spec.ts, tests/unit/auth-csrf.test.ts, tests/unit/auth-rate-limit.test.ts, tests/integration/identity-rbac.test.ts, README.md, docs/runbooks/local-development.md, PROJECT_STATUS.md, package.json.
 
-- [ ] Add opt-in Playwright API flows with disposable fixtures and negative assertions for enumeration, IDOR-like cookie tampering, foreign origin, expired token and revoked session.
-- [ ] Document local identity fixtures, environment key handling, Mailpit/outbox inspection, session invalidation and safe reset rules; never document a production secret.
-- [ ] Run the phase gate from clean dependencies: npm ci, db:up, db:validate, db:generate, db:migrate:deploy, db:seed, npm test, npm run test:e2e:auth, npm run test:content, git diff --check.
-- [ ] Run npm audit --omit=dev and record exact output; do not use a forced downgrade to conceal unresolved Prisma advisories.
-- [ ] Update PROJECT_STATUS.md only if all identity criteria pass; otherwise record the exact blocker and leave Fase 2 open.
-- [ ] Commit docs: close identity and rbac phase only after the gate passes.
+- [x] Add opt-in Playwright API flows with disposable fixtures and negative assertions for enumeration, IDOR-like cookie tampering, foreign origin, expired token and revoked session.
+- [x] Document local identity fixtures, environment key handling, Mailpit/outbox inspection, session invalidation and safe reset rules; never document a production secret.
+- [x] Run the phase gate from clean dependencies: npm ci, db:up, db:validate, db:generate, db:migrate:deploy, db:seed, npm test, npm run test:e2e:auth, npm run test:content, git diff --check.
+- [x] Run npm audit --omit=dev and record exact output; do not use a forced downgrade to conceal unresolved Prisma advisories.
+- [x] Update PROJECT_STATUS.md with the evidence, residual dependency risk, dependencies and next authorized phase.
+- [x] Commit docs: close identity and rbac phase only after the gate passes.
+
+### Task 5 evidence and residual risk
+
+- Final `npm test` passed with typecheck, 29 unit tests, 9 PostgreSQL integration tests, content contract, production build, 29 public E2E tests plus 2 intentional opt-in skips, and the dedicated foundation E2E.
+- `npm run test:e2e:auth` passed its disposable fixture flow, including login, persisted session, foreign-origin rejection and logout.
+- `npm audit --omit=dev` reports 4 high advisories through Prisma 7.10.0 (`deepmerge-ts <8.0.0` and `mysql2 <=3.23.0`). The suggested `npm audit fix --force` downgrade to Prisma 6.19.3 was rejected as a breaking change; this remains a pre-production dependency risk.
+- The runtime security review has no remaining Critical/Important blockers. Production still requires a trusted IP source at the proxy and a documented proxy-level rate limit.
 
 ## Fase 2 done criteria
 
 Fase 2 is complete only when:
 
-- users, clients, roles, permissions, sessions, tokens, auth events and rate limits are relationally migrated and seeded idempotently;
-- customer magic links and employee passwords are usable through tested APIs;
-- administrator MFA is enforced before session creation;
-- session cookies are secure and the server resolves actors from persisted state;
-- recovery consumes one-use tokens and revokes old sessions transactionally;
-- permissions deny by default and are enforced by backend services;
-- origin/CSRF checks and rate limits have negative tests;
-- raw tokens, passwords and MFA secrets never appear in database rows, logs or responses;
-- unit, integration, API/E2E and existing landing regression tests pass;
-- README, runbook and PROJECT_STATUS.md contain evidence, risks, dependencies and the next authorized phase.
+- [x] users, clients, roles, permissions, sessions, tokens, auth events and rate limits are relationally migrated and seeded idempotently;
+- [x] customer magic links and employee passwords are usable through tested APIs;
+- [x] administrator MFA is enforced before session creation;
+- [x] session cookies are secure and the server resolves actors from persisted state;
+- [x] recovery consumes one-use tokens and revokes old sessions transactionally;
+- [x] permissions deny by default and are enforced by backend services;
+- [x] origin/CSRF checks and rate limits have negative tests;
+- [x] raw tokens, passwords and MFA secrets never appear in database rows, logs or responses;
+- [x] unit, integration, API/E2E and existing landing regression tests pass;
+- [x] README, runbook and PROJECT_STATUS.md contain evidence, risks, dependencies and the next authorized phase.
