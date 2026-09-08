@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 2 — Identidad y RBAC, cerrada técnicamente.
-- **Estado:** Terminada con criterios verificables; queda como riesgo explícito la auditoría transitoria de dependencias de Prisma. La siguiente fase autorizada es Clientes, solicitudes y expedientes.
+- **Fase:** Fase 3 — Clientes, solicitudes y expedientes, planificación iniciada.
+- **Estado:** Fase 2 está terminada con criterios verificables. El plan ordenado de Fase 3 ya existe; todavía no se ha modificado el schema comercial ni se ha iniciado código de dominio.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de la fase:** `9ed8484`, `56c2be9`, `1170567`, `26494dd`, `2a71244`, `c957cda`, `a656780`, `dff1650`.
@@ -65,7 +65,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### En desarrollo
 
-- Ninguno dentro de Fase 2. La planificación de Fase 3 comenzará en un MD nuevo y ordenado antes de tocar código comercial.
+- Fase 3 — Tarea 1: contratos de dominio y pruebas rojas, siguiente unidad de trabajo.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -192,7 +192,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
+- `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico creado; implementación pendiente.
 
 ## Próximo paso autorizado
 
-Crear `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` y comenzar Fase 3 — Clientes, solicitudes y expedientes — sólo después de documentar el modelo de datos, permisos, estados y criterios de terminado.
+Ejecutar Tarea 1 de Fase 3: escribir contratos, transiciones, folios, permisos y pruebas rojas antes de tocar la migración comercial.
