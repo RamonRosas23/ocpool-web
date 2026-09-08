@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 6 — Mensajería y notas internas.
-- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tareas 1, 2, 3, 4 y 5 están terminadas con evidencia. Tarea 6 — seguridad negativa, E2E y gate final de mensajería — es la siguiente en desarrollo.
+- **Estado:** Fases 1–5 están terminadas con gates verdes. Fase 6 — mensajería y notas internas — está terminada: Tareas 1–6 tienen evidencia de implementación, seguridad negativa, E2E y gate final. La siguiente fase será Archivos privados.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -108,10 +108,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Workspace de mensajería staff integrado en `/staff/requests`, con vistas `Compartidos`/`Notas internas`, compositores separados, capacidades derivadas, cierre/reapertura con confirmación y estados de lectura/error/bloqueo.
 - Hardening de accesibilidad del inbox staff: contraste AA de la paleta operativa, nombres accesibles para selects, Axe sin hallazgos serios en el flujo staff y no overflow móvil.
 - Comando oficial de integración serializado a un worker DB para evitar timeouts de inicio de transacción por saturación local; se conserva la cobertura completa de 38 pruebas.
+- Gate de Fase 6 cerrado: aislamiento cliente/staff, RBAC, idempotencia, cierre/reapertura, payloads/logs sin cuerpos sensibles, E2E opt-in, auditoría de dependencias y árbol limpio verificados.
 
 ### En desarrollo
 
-- Fase 6 — Tarea 6: seguridad negativa, E2E y gate final de mensajería.
+- Ninguno dentro de Fase 6. La siguiente vertical slice es Fase 7 — Archivos privados.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -121,7 +122,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
-- Cierre formal de Fase 6: matriz negativa final, E2E completa cliente/staff, auditoría de payloads/logs y gate de fase.
+- Especificación y plan de Fase 7 — Archivos privados.
 - Archivos privados.
 - PDF comercial.
 - Aceptación digital.
@@ -176,6 +177,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 42. El staff usa vistas segmentadas por `visibility` y compositores distintos; una nota interna nunca se envía al endpoint compartido ni se oculta sólo con CSS.
 43. El timeout de `webServer` de Playwright es de 600 segundos porque el build frío local puede superar dos minutos bajo carga; el timeout de cada assertion conserva el límite normal de Playwright.
 44. La paleta staff usa variantes de cobre y texto muted con contraste suficiente, y los controles de operación tienen nombres accesibles explícitos; esto prioriza Axe y lectura real sobre conservar valores decorativos de bajo contraste.
+45. El cierre de Fase 6 exige validar capacidades en backend aun cuando la UI las oculte; la matriz final confirma que un rol limitado no puede cerrar ni reabrir conversaciones y que las respuestas no devuelven claves de idempotencia.
+46. El Outbox de mensajería permanece preparado para un worker futuro, pero no se agrega Redis ni un worker productivo antes de que archivos/notificaciones definan sus garantías de entrega y reintento.
 
 ## Pruebas realizadas
 
@@ -217,6 +220,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 3 de Fase 6: commit `8446663` (`feat: expose protected messaging APIs`); prueba API `messaging-api.test.ts` 3/3 y `npm run test:integration` 37/37; `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Se verificaron 401/403/404/409/429, scope IDOR, same-origin, schemas estrictos, `no-store`, RBAC limitado y ausencia de notas/IDs internos en portal.
 - Tarea 4 de Fase 6: implementación y cierre documental de UI cliente; E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2, `npm run test:unit` 45/45, `npm run test:integration` 37/37 serializado, `npm run test:e2e` 34/34 ejecutadas con 5 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content` y `git diff --check` correctos. Se verificaron lectura/envío/refresh, notas internas invisibles, cierre de conversación, error recuperable, responsive, Axe, consola limpia y payload cliente mínimo.
 - Tarea 5 de Fase 6: commits `09d979f`, `f2b0e4b` y `9eb9a04`; E2E opt-in `STAFF_MESSAGING_E2E=1 npx playwright test tests/client-messaging-staff.spec.ts` 2/2, `messaging-api.test.ts` 4/4, `npm run test:unit` 45/45, `npm run test:integration` 38/38, `npm run test:e2e` 34/34 ejecutadas con 7 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content`, migraciones/seed, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron separación de visibilidades, dos perfiles RBAC, compositores independientes, cierre/reapertura, Axe, consola y no overflow.
+- Tarea 6 de Fase 6: commit `6e1037c` (`test: harden messaging security matrix`) más cierre documental; API `messaging-api.test.ts` 4/4 con negative checks finales, E2E cliente 2/2, staff 2/2, auth 1/1 y constructor 1/1. Gate `npm test` 45 unitarias, 38 integraciones, contenido, build, 34 E2E públicas ejecutadas con 7 omitidas explícitamente y foundation 1/1; `npm run db:validate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron IDOR, sesión/RBAC, same-origin, rate limit, idempotencia concurrente, cierre, UUID inválido, Axe, responsive, consola, cleanup y ausencia de cuerpos sensibles en HTML/payloads/logs/Outbox.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -243,6 +247,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Destino de despliegue de producción aún no definido.
 - La protección por IP requiere `TRUST_PROXY_HEADERS=true` sólo detrás de un proxy confiable que sobrescriba la IP. Sin IP confiable, el backend usa límites por identificador y un circuit breaker global separado; el proxy de producción debe aportar rate limiting por origen.
 - La infraestructura de identidad ya está expuesta por endpoints y escribe Outbox, pero el worker SMTP que entrega esos eventos pertenece a la siguiente etapa de mensajería.
+- El Outbox de mensajería está listo como contrato transaccional, pero la entrega asíncrona y sus reintentos siguen pendientes de la fase de notificaciones; no se considera una omisión del cierre de Fase 6.
 - Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
@@ -306,7 +311,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
 - `docs/superpowers/specs/2026-09-07-ocpool-messaging.md` — especificación aprobada para Fase 6.
 - `docs/superpowers/specs/2026-09-07-ocpool-messaging-apis.md` — contrato HTTP privado de la Tarea 3, aprobado y ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tareas 1–5 cerradas y Tarea 6 en desarrollo.
+- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado y ejecutado para Fase 6; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/plans/2026-09-07-ocpool-messaging-apis.md` — plan enfocado de APIs, ejecutado.
 - `docs/superpowers/specs/2026-09-07-ocpool-customer-messaging-ui.md` — especificación aprobada y ejecutada para la UI cliente de la Tarea 4.
 - `docs/superpowers/plans/2026-09-07-ocpool-customer-messaging-ui.md` — plan enfocado de UI cliente, ejecutado.
@@ -319,4 +324,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 6 de Fase 6: seguridad negativa, E2E cliente/staff, auditoría final de payloads/logs y gate de cierre de mensajería antes de iniciar archivos o notificaciones productivas.
+Iniciar Fase 7 — Archivos privados: especificar primero el contrato de almacenamiento, scope por expediente, escaneo/validación, URLs temporales, retención, auditoría y pruebas negativas antes de implementar.

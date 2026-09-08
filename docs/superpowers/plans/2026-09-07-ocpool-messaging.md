@@ -157,12 +157,21 @@ Evidencia de cierre:
 
 **Objetivo antes de iniciar:** demostrar aislamiento, consistencia y ausencia de filtraciones antes de cerrar fase.
 
-- [ ] Crear fixtures de dos clientes, dos empleados con capacidades distintas, conversación y mensajes/notas.
-- [ ] Ejecutar pruebas IDOR, sesión revocada/archivada, same-origin, rate limit, idempotencia concurrente, cierre y UUID inválido.
-- [ ] Ejecutar E2E opt-in cliente/staff con envío, refresh, nota interna y comprobación de no filtración.
-- [ ] Ejecutar Axe, responsive, consola, HTML/payload/log audit y cleanup exacto.
-- [ ] Ejecutar gate de DB, unit, integration, content, typecheck, lint, build, E2E normal, E2E opt-in, audit y diff check.
-- [ ] Actualizar riesgos/deuda/decisiones y hacer commit `docs: close phase six messaging`.
+- [x] Crear fixtures de dos clientes, dos empleados con capacidades distintas, conversación y mensajes/notas.
+- [x] Ejecutar pruebas IDOR, sesión revocada/archivada, same-origin, rate limit, idempotencia concurrente, cierre y UUID inválido.
+- [x] Ejecutar E2E opt-in cliente/staff con envío, refresh, nota interna y comprobación de no filtración.
+- [x] Ejecutar Axe, responsive, consola, HTML/payload/log audit y cleanup exacto.
+- [x] Ejecutar gate de DB, unit, integration, content, typecheck, lint, build, E2E normal, E2E opt-in, audit y diff check.
+- [x] Actualizar riesgos/deuda/decisiones y hacer commit `docs: close phase six messaging`.
+
+Evidencia de cierre:
+
+- Fixtures aislados de dos clientes, manager y rol staff limitado; la matriz API `messaging-api.test.ts` pasó 4/4 con 401/403/404/409/429, IDOR, UUID inválido, same-origin, `no-store`, rate limit, proyección privada, ocultamiento de `idempotencyKey`, y rechazo de cierre/reapertura sin `messaging.manage`.
+- `messaging-service.test.ts` mantiene cobertura de idempotencia concurrente, aislamiento entre clientes, notas internas, cierre/reapertura, rate limit, Outbox y auditoría sin cuerpos sensibles.
+- `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` pasó 2/2; `STAFF_MESSAGING_E2E=1 npx playwright test tests/client-messaging-staff.spec.ts` pasó 2/2; `AUTH_E2E=1` pasó 1/1; `QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1.
+- Los E2E verificaron Axe, responsive móvil, consola limpia, no overflow, estados de carga/error/cierre, refresh, aislamiento de notas y ausencia de secretos/identificadores internos en HTML y payloads. El cleanup de fixtures fue exacto.
+- Gate completo: `npm test` pasó con 45 unitarias, 38 integraciones, contenido, build, 34 E2E públicas ejecutadas con 7 omitidas explícitamente y foundation 1/1; `npm run db:validate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y `git diff --check` correctos.
+- No se agregaron dependencias; la implementación queda cerrada en commits lógicos, incluyendo `6e1037c` (`test: harden messaging security matrix`) y el commit documental de cierre.
 
 ## Gate de Fase 6
 
