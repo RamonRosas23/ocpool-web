@@ -3,6 +3,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import StaffQuoteDocumentPanel from '@/components/StaffQuoteDocumentPanel';
+import {
+  QUOTE_REQUEST_BUDGET_RANGE_LABELS,
+  QUOTE_REQUEST_PROJECT_STAGE_LABELS,
+  QUOTE_REQUEST_TIMELINE_LABELS,
+} from '@/server/modules/quote-requests/domain';
 
 const STATUS_LABELS: Record<string, string> = {
   EN_ELABORACION: 'En elaboración',
@@ -32,7 +37,7 @@ type QuoteListItem = {
   status: string;
   updatedAt: string;
   client: { id: string; displayName: string };
-  detail: { projectType: string; location: string; currencyCode: string } | null;
+  detail: { projectType: string; location: string; currencyCode: string; projectStage: string | null; dimensions: string | null; timeline: string | null; budgetRange: string | null } | null;
   quote: { id: string; currentVersion: { id: string; versionNumber: number; status: string; currencyCode: string; totalMinor: string; discountTotalMinor: string; validUntil: string | null } | null } | null;
 };
 
@@ -82,7 +87,7 @@ type Workspace = {
     updatedAt: string;
     client: { id: string; displayName: string; status: string };
     contact: { id: string; displayName: string; email: string; phone: string | null; roleTitle: string | null; status: string };
-    detail: { id: string; projectType: string; location: string; budgetCents: string | null; currencyCode: string; dimensions: string | null; description: string; consentAt: string } | null;
+    detail: { id: string; projectType: string; location: string; budgetCents: string | null; currencyCode: string; dimensions: string | null; projectStage: string | null; timeline: string | null; budgetRange: string | null; description: string; consentAt: string } | null;
   };
   quote: { id: string; currentVersionId: string | null; currentVersion: QuoteVersion | null; versions: QuoteVersion[]; history: Array<{ id: string; fromStatus: string | null; toStatus: string; reason: string | null; createdAt: string; changedBy: { id: string; displayName: string } | null }> } | null;
   priceLists: Array<{ id: string; code: string; name: string; currencyCode: string }>;
@@ -95,6 +100,10 @@ type DraftLine = { id: string; catalogItemId: string; quantity: string; unitPric
 type ErrorResponse = { error?: { message?: string } };
 
 function statusLabel(status: string): string { return STATUS_LABELS[status] ?? status; }
+
+function qualificationLabel(value: string | null | undefined, labels: Record<string, string>): string {
+  return value ? labels[value] ?? value : 'No indicado';
+}
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
@@ -328,7 +337,7 @@ export default function StaffQuotesPanel() {
           {!loadingWorkspace && !workspace && <div className="staff-empty staff-empty--detail"><span className="staff-empty__mark">OC</span><h2>Selecciona un expediente.</h2><p>El alcance y las líneas de cotización aparecerán aquí.</p></div>}
           {!loadingWorkspace && workspace && <>
             <div className="quotes-main__top"><div><p className="staff-kicker">{workspace.request.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{workspace.request.folio}</h2><p className="staff-detail__date">{workspace.request.client.displayName} · Actualizado {formatDate(workspace.request.updatedAt)}</p></div><span className={`staff-status-pill staff-status-pill--${workspace.request.status.toLowerCase()}`}>{statusLabel(workspace.request.status)}</span></div>
-            <div className="quotes-brief"><div><p className="staff-section-label">Alcance</p><strong>{workspace.request.detail?.projectType ?? 'Sin tipo de proyecto'}</strong><span>{workspace.request.detail?.location ?? 'Sin ubicación'}</span></div><div><p className="staff-section-label">Contacto</p><strong>{workspace.request.contact.displayName}</strong><span>{workspace.request.contact.email}</span></div><div><p className="staff-section-label">Moneda</p><strong>{selectedCurrency}</strong><span>{workspace.request.detail?.budgetCents ? `Presupuesto ${moneyLabel(workspace.request.detail.budgetCents, workspace.request.detail.currencyCode)}` : 'Sin presupuesto declarado'}</span></div></div>
+            <div className="quotes-brief"><div><p className="staff-section-label">Alcance</p><strong>{workspace.request.detail?.projectType ?? 'Sin tipo de proyecto'}</strong><span>{workspace.request.detail?.location ?? 'Sin ubicación'}{workspace.request.detail?.dimensions ? ` · ${workspace.request.detail.dimensions}` : ''}</span></div><div><p className="staff-section-label">Calificación</p><strong>{qualificationLabel(workspace.request.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</strong><span>{qualificationLabel(workspace.request.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)} · {qualificationLabel(workspace.request.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</span></div><div><p className="staff-section-label">Contacto</p><strong>{workspace.request.contact.displayName}</strong><span>{workspace.request.contact.email}</span></div><div><p className="staff-section-label">Moneda</p><strong>{selectedCurrency}</strong><span>{workspace.request.detail?.budgetCents ? `Presupuesto ${moneyLabel(workspace.request.detail.budgetCents, workspace.request.detail.currencyCode)}` : 'Sin presupuesto declarado'}</span></div></div>
             <section className="quotes-builder"><div className="quotes-builder__head"><div><p className="staff-section-label">Composición</p><h3>{currentVersion ? `Versión ${currentVersion.versionNumber} · ${statusLabel(currentVersion.status)}` : 'Primera versión'}</h3></div><label className="quotes-list-select"><span>Lista de precios</span><select value={selectedPriceListId} onChange={(event) => setSelectedPriceListId(event.target.value)} disabled={!canEdit && !canStartVersion}><option value="">Selecciona una lista</option>{priceLists.map((list) => <option key={list.id} value={list.id}>{list.name} · {list.currencyCode}</option>)}</select></label></div>
               <div className="quotes-lines-head"><span>Concepto</span><span>Cantidad</span><span>Precio</span><span>Descuento</span><span>Impuesto</span><span>Total</span><span className="sr-only">Acción</span></div>
               <div className="quotes-lines">

@@ -4,6 +4,11 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import StaffFilesPanel, { type StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import StaffMessagingPanel, { type StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
+import {
+  QUOTE_REQUEST_BUDGET_RANGE_LABELS,
+  QUOTE_REQUEST_PROJECT_STAGE_LABELS,
+  QUOTE_REQUEST_TIMELINE_LABELS,
+} from '@/server/modules/quote-requests/domain';
 
 const STATUS_LABELS: Record<string, string> = {
   RECIBIDA: 'Recibida',
@@ -44,7 +49,7 @@ type RequestSummary = {
   client: { id: string; displayName: string; status: string };
   contact: { id: string; displayName: string; email: string; phone: string | null };
   currentAssignee: { id: string; displayName: string; email: string } | null;
-  detail: { projectType: string; location: string } | null;
+  detail: { projectType: string; location: string; projectStage: string | null; dimensions: string | null; timeline: string | null; budgetRange: string | null } | null;
 };
 
 type RequestDetail = RequestSummary & {
@@ -56,6 +61,9 @@ type RequestDetail = RequestSummary & {
     budgetCents: string | null;
     currencyCode: string;
     dimensions: string | null;
+    projectStage: string | null;
+    timeline: string | null;
+    budgetRange: string | null;
     description: string;
     consentAt: string;
   } | null;
@@ -87,6 +95,10 @@ function formatDate(value: string): string {
 
 function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status;
+}
+
+function qualificationLabel(value: string | null | undefined, labels: Record<string, string>): string {
+  return value ? labels[value] ?? value : 'No indicado';
 }
 
 async function readResponse<T>(response: Response): Promise<T> {
@@ -312,7 +324,7 @@ export default function StaffRequestsPanel() {
             {!loadingDetail && !selected && <div className="staff-empty staff-empty--detail"><span className="staff-empty__mark">OC</span><h2>Selecciona un expediente.</h2><p>El detalle y las acciones operativas aparecerán aquí.</p></div>}
             {!loadingDetail && selected && <>
               <div className="staff-detail__header"><div><p className="staff-kicker">{selected.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{selected.folio}</h2><p className="staff-detail__date">Recibida el {formatDate(selected.createdAt)}</p>{['EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'].includes(selected.status) && <Link className="staff-button staff-button--dark staff-detail__quote-link" href={`/staff/quotes?request=${selected.id}`}>Abrir constructor</Link>}</div><span className={`staff-status-pill staff-status-pill--${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div>
-              <div className="staff-detail__grid"><section className="staff-detail__section"><p className="staff-section-label">Contacto</p><h3>{selected.contact.displayName}</h3><a href={`mailto:${selected.contact.email}`}>{selected.contact.email}</a>{selected.contact.phone && <a href={`tel:${selected.contact.phone}`}>{selected.contact.phone}</a>}</section><section className="staff-detail__section"><p className="staff-section-label">Proyecto</p><h3>{selected.detail?.projectType ?? 'Sin tipo de proyecto'}</h3><p>{selected.detail?.location ?? 'Sin ubicación'}</p>{selected.detail?.dimensions && <p>{selected.detail.dimensions}</p>}</section></div>
+              <div className="staff-detail__grid"><section className="staff-detail__section"><p className="staff-section-label">Contacto</p><h3>{selected.contact.displayName}</h3><a href={`mailto:${selected.contact.email}`}>{selected.contact.email}</a>{selected.contact.phone && <a href={`tel:${selected.contact.phone}`}>{selected.contact.phone}</a>}</section><section className="staff-detail__section"><p className="staff-section-label">Proyecto</p><h3>{selected.detail?.projectType ?? 'Sin tipo de proyecto'}</h3><p>{selected.detail?.location ?? 'Sin ubicación'}</p>{selected.detail?.dimensions && <p>{selected.detail.dimensions}</p>}<dl className="staff-qualification"><div><dt>Etapa</dt><dd>{qualificationLabel(selected.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</dd></div><div><dt>Inicio</dt><dd>{qualificationLabel(selected.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)}</dd></div><div><dt>Presupuesto</dt><dd>{qualificationLabel(selected.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</dd></div></dl></section></div>
               <section className="staff-detail__section staff-detail__section--description"><p className="staff-section-label">Alcance compartido</p><p className="staff-description">{selected.detail?.description ?? 'Sin descripción.'}</p></section>
               <div className="staff-actions-grid"><section className="staff-action"><p className="staff-section-label">Responsable</p><select aria-label="Responsable" value={assignmentId} onChange={(event) => setAssignmentId(event.target.value)}><option value="">Sin responsable</option>{assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.displayName}</option>)}</select><input value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></section><section className="staff-action"><p className="staff-section-label">Siguiente estado</p><select aria-label="Siguiente estado" value={nextStatus} onChange={(event) => setNextStatus(event.target.value)} disabled={nextStatuses.length === 0}><option value="">{nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'}</option>{nextStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select><input value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus} onClick={() => void transition()}>Actualizar estado</button></section></div>
               {messagingCapabilitiesLoaded && <StaffFilesPanel requestId={selected.id} capabilities={messagingCapabilities} />}

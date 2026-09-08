@@ -45,7 +45,16 @@ describe('staff quote request operations', () => {
       idempotencyKey: `staff-request-${suffix}-1234`,
       origin: 'PUBLIC_FORM',
       contact: { displayName: `Staff client ${suffix}`, email: `staff-client-${suffix}@example.test`, phone: '+52 667 000 8899' },
-      detail: { projectType: 'Hotel', location: 'Nayarit', description: 'Staff operation contract', consentAt: new Date('2026-01-04T12:00:00.000Z') },
+      detail: {
+        projectType: 'Hotel',
+        location: 'Nayarit',
+        projectStage: 'UNDER_CONSTRUCTION',
+        dimensions: '12 x 5 m',
+        timeline: 'THREE_TO_SIX_MONTHS',
+        budgetRange: 'FROM_500K_TO_1M',
+        description: 'Staff operation contract',
+        consentAt: new Date('2026-01-04T12:00:00.000Z'),
+      },
     }, { prisma, now: new Date('2026-01-04T12:00:00.000Z') });
     createdRequestIds.push(result.quoteRequestId);
     createdClientIds.push(result.clientId);
@@ -63,7 +72,18 @@ describe('staff quote request operations', () => {
 
     expect(result).toMatchObject({ page: 1, pageSize: 10, total: 1, totalPages: 1 });
     expect(result.items[0]).toMatchObject({ id: request.quoteRequestId, folio: request.folio, status: 'RECIBIDA', client: { displayName: expect.stringContaining('Staff client read-') } });
-    expect(detail).toMatchObject({ id: request.quoteRequestId, folio: request.folio, detail: { description: 'Staff operation contract' }, statusHistory: [{ toStatus: 'RECIBIDA' }] });
+    expect(detail).toMatchObject({
+      id: request.quoteRequestId,
+      folio: request.folio,
+      detail: {
+        description: 'Staff operation contract',
+        projectStage: 'UNDER_CONSTRUCTION',
+        dimensions: '12 x 5 m',
+        timeline: 'THREE_TO_SIX_MONTHS',
+        budgetRange: 'FROM_500K_TO_1M',
+      },
+      statusHistory: [{ toStatus: 'RECIBIDA' }],
+    });
     expect(JSON.stringify(detail)).not.toContain('idempotencyKeyHash');
   });
 

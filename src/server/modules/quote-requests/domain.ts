@@ -37,6 +37,31 @@ export const QUOTE_REQUEST_BUDGET_RANGES = [
   'UNSURE',
 ] as const;
 
+export const QUOTE_REQUEST_PROJECT_STAGE_LABELS: Record<(typeof QUOTE_REQUEST_PROJECT_STAGES)[number], string> = {
+  IDEA: 'Idea o planeación',
+  SITE_READY: 'Terreno listo',
+  UNDER_CONSTRUCTION: 'En construcción',
+  REMODEL: 'Remodelación',
+  EQUIPMENT_ONLY: 'Sólo equipamiento',
+  UNSURE: 'Por definir',
+};
+
+export const QUOTE_REQUEST_TIMELINE_LABELS: Record<(typeof QUOTE_REQUEST_TIMELINES)[number], string> = {
+  ASAP: 'Lo antes posible',
+  ONE_TO_THREE_MONTHS: 'En 1 a 3 meses',
+  THREE_TO_SIX_MONTHS: 'En 3 a 6 meses',
+  SIX_PLUS_MONTHS: 'Después de 6 meses',
+  UNSURE: 'Por definir',
+};
+
+export const QUOTE_REQUEST_BUDGET_RANGE_LABELS: Record<(typeof QUOTE_REQUEST_BUDGET_RANGES)[number], string> = {
+  UNDER_250K: 'Hasta $250,000 MXN',
+  FROM_250K_TO_500K: '$250,000 a $500,000 MXN',
+  FROM_500K_TO_1M: '$500,000 a $1,000,000 MXN',
+  OVER_1M: 'Más de $1,000,000 MXN',
+  UNSURE: 'Por definir',
+};
+
 export type QuoteRequestStatus = (typeof QUOTE_REQUEST_STATUSES)[number];
 
 const ALLOWED_TRANSITIONS: Record<QuoteRequestStatus, readonly QuoteRequestStatus[]> = {

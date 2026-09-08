@@ -150,7 +150,7 @@ export async function listQuoteWorkspaces(actor: Actor, filters: QuoteWorkspaceL
         status: true,
         updatedAt: true,
         client: { select: { id: true, displayName: true } },
-        detail: { select: { projectType: true, location: true, currencyCode: true } },
+        detail: { select: { projectType: true, location: true, currencyCode: true, projectStage: true, dimensions: true, timeline: true, budgetRange: true } },
         quotes: {
           select: {
             id: true,
@@ -212,7 +212,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       updatedAt: true,
       client: { select: { id: true, displayName: true, status: true } },
       contact: { select: { id: true, displayName: true, email: true, phone: true, roleTitle: true, status: true } },
-      detail: { select: { id: true, projectType: true, location: true, budgetCents: true, currencyCode: true, dimensions: true, description: true, consentAt: true } },
+      detail: { select: { id: true, projectType: true, location: true, budgetCents: true, currencyCode: true, dimensions: true, projectStage: true, timeline: true, budgetRange: true, description: true, consentAt: true } },
       quotes: {
         select: {
           id: true,

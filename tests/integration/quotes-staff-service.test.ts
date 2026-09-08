@@ -24,7 +24,16 @@ describe('staff quote workspace service', () => {
       idempotencyKey: `quote-staff-${suffix}`,
       origin: 'STAFF_CREATED',
       contact: { displayName: `Workspace ${suffix}`, email: `workspace-${suffix}@example.test` },
-      detail: { projectType: 'Residencial', location: 'Mazatlán', description: 'Workspace fixture', consentAt: now },
+      detail: {
+        projectType: 'Residencial',
+        location: 'Mazatlán',
+        projectStage: 'REMODEL',
+        dimensions: '10 x 4 m',
+        timeline: 'ASAP',
+        budgetRange: 'UNDER_250K',
+        description: 'Workspace fixture',
+        consentAt: now,
+      },
     }, { prisma, now });
     const employee = await prisma.user.create({
       data: {
@@ -57,6 +66,12 @@ describe('staff quote workspace service', () => {
 
       const workspace = await getQuoteWorkspace(employeeActor, request.quoteRequestId, { prisma });
       expect(workspace.request.client.id).toBe(request.clientId);
+      expect(workspace.request.detail).toMatchObject({
+        projectStage: 'REMODEL',
+        dimensions: '10 x 4 m',
+        timeline: 'ASAP',
+        budgetRange: 'UNDER_250K',
+      });
       expect(workspace.quote?.currentVersion).toMatchObject({ id: created.versionId, versionNumber: 1, status: 'BORRADOR', totalMinor: '29000' });
       expect(workspace.quote?.currentVersion?.lines[0]).toMatchObject({ catalogItemId: item.id, quantityMilliunits: '2000', unitPriceMinor: '12500', taxMinor: '4000', totalMinor: '29000' });
       expect(workspace.quote?.history).toHaveLength(1);

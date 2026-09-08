@@ -786,6 +786,10 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .staff-detail__section h3, .staff-history h3 { margin: 0 0 5px; color: var(--staff-deep); font-size: 17px; font-weight: 700; }
 .staff-detail__section a, .staff-detail__section > p:not(.staff-section-label) { color: var(--staff-muted); font-size: 12px; }
 .staff-detail__section a:hover { color: var(--staff-water); text-decoration: underline; text-underline-offset: 3px; }
+.staff-qualification { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 14px; margin: 14px 0 0; padding-top: 14px; border-top: 1px solid var(--staff-line); }
+.staff-qualification div { display: grid; min-width: 0; gap: 4px; }
+.staff-qualification dt { color: var(--staff-muted); font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.staff-qualification dd { margin: 0; overflow: hidden; color: var(--staff-deep); font-size: 11px; line-height: 1.35; text-overflow: ellipsis; }
 .staff-detail__section--description { padding: 21px 0 26px; border-top: 1px solid var(--staff-line); border-bottom: 1px solid var(--staff-line); }
 .staff-description { max-width: 720px; margin: 0; color: var(--staff-ink); font-family: var(--font-display); font-size: 22px; line-height: 1.18; }
 .staff-actions-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 28px 0 34px; border-bottom: 1px solid var(--staff-line); }
@@ -1031,7 +1035,7 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .quotes-main { min-width: 0; padding: clamp(25px, 4vw, 52px); }
 .quotes-main__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 26px; border-bottom: 1px solid var(--staff-line); }
 .quotes-main__top h2 { margin: 0; color: var(--staff-deep); font-family: var(--font-display); font-size: clamp(38px, 5vw, 64px); font-weight: 500; letter-spacing: -.06em; line-height: .86; }
-.quotes-brief { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; padding: 24px 0 25px; border-bottom: 1px solid var(--staff-line); }
+.quotes-brief { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px; padding: 24px 0 25px; border-bottom: 1px solid var(--staff-line); }
 .quotes-brief > div { display: grid; align-content: start; gap: 5px; min-width: 0; }
 .quotes-brief strong { overflow: hidden; color: var(--staff-deep); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .quotes-brief span { overflow: hidden; color: var(--staff-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }

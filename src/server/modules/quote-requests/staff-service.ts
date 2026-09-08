@@ -91,6 +91,9 @@ function serializeDetail(detail: {
   budgetCents: bigint | null;
   currencyCode: string;
   dimensions: string | null;
+  projectStage: string | null;
+  timeline: string | null;
+  budgetRange: string | null;
   description: string;
   consentAt: Date;
 } | null) {
@@ -132,7 +135,7 @@ export async function listStaffQuoteRequests(actor: Actor, filters: StaffQuoteRe
         client: { select: { id: true, displayName: true, status: true } },
         contact: { select: { id: true, displayName: true, email: true, phone: true } },
         currentAssignee: { select: { id: true, displayName: true, email: true } },
-        detail: { select: { projectType: true, location: true } },
+        detail: { select: { projectType: true, location: true, projectStage: true, dimensions: true, timeline: true, budgetRange: true } },
       },
     }),
   ]);
