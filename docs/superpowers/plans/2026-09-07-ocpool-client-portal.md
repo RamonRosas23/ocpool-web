@@ -1,0 +1,177 @@
+# Portal autenticado del cliente — Plan de implementación
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Construir el primer portal privado de OCPOOL para que un cliente autenticado consulte sólo sus expedientes y cotizaciones versionadas con una experiencia premium, segura y responsive.
+
+**Architecture:** Mantener Next.js App Router y el monolito modular. El módulo `client-portal` derivará el actor desde la sesión existente, exigirá `clientId` en cada consulta y devolverá proyecciones de lectura seguras; las cotizaciones seguirán leyendo snapshots históricos, nunca el catálogo vigente. La UI será una superficie propia de cliente, no una copia del inbox interno.
+
+**Tech Stack:** Next.js 15 App Router, React 19, TypeScript ES2023, Prisma 7.10.0/PostgreSQL 16, sesiones persistidas con cookie HttpOnly, Zod, Vitest, Playwright y CSS existente de OCPOOL. No se agrega una dependencia nueva en esta fase.
+
+**Spec:** `docs/superpowers/specs/2026-09-07-ocpool-client-portal.md`
+
+## Global Constraints
+
+- Toda autorización crítica se valida en backend y el actor cliente se deriva de la sesión, nunca del body, query string o folio.
+- Un cliente sólo puede leer filas cuyo `clientId` coincida con `actor.clientId`; UUID y folio no son credenciales.
+- Las proyecciones no incluyen tokens, hashes, notas internas, logs, secretos ni IDs de otros clientes.
+- Las cotizaciones históricas se presentan desde `QuoteLineSnapshot` y sus totales persistidos; no se recalculan desde catálogo.
+- Los importes monetarios viajan como cadenas de unidades mínimas y no se convierten a `number` para decisiones.
+- Las páginas privadas llevan `noindex`, no se prerenderizan con datos de cliente y manejan sesión expirada sin stack trace.
+- Cada tarea termina con pruebas, `git diff --check`, documentación de estado y un commit lógico.
+
+---
+
+## Mapa de archivos y responsabilidades
+
+- `src/server/modules/client-portal/service.ts`: proyecciones de lectura con scope por cliente, serialización y errores públicos.
+- `src/app/api/portal/requests/route.ts`: listado autenticado de solicitudes propias.
+- `src/app/api/portal/requests/[id]/route.ts`: detalle autenticado de una solicitud propia.
+- `src/app/api/portal/quotes/[id]/route.ts`: lectura de cotización propia y sus versiones snapshot.
+- `src/app/portal/page.tsx`: metadata privada y entrada visual del portal.
+- `src/components/ClientPortalPanel.tsx`: dashboard cliente, navegación, estados y recuperación de sesión.
+- `src/app/globals.css`: tokens y layout visual del portal, separado del workspace de staff.
+- `tests/unit/client-portal-service.test.ts`: contratos puros de proyecciones y serialización.
+- `tests/integration/client-portal-service.test.ts`: aislamiento por cliente, snapshots, sesión y datos privados.
+- `tests/integration/client-portal-api.test.ts`: autenticación, autorización, IDOR, errores y no enumeración.
+- `tests/client-portal.spec.ts`: E2E opt-in autenticado y estados principales del portal.
+- `tests/quality.spec.ts`: regresión pública y protección del portal sin sesión.
+- `PROJECT_STATUS.md`: fase, decisiones, pruebas, riesgos y próximo paso.
+
+## Tareas ordenadas
+
+### Tarea 1 — Contrato de alcance y servicio de lectura
+
+**Files:**
+
+- Create: `src/server/modules/client-portal/service.ts`
+- Create: `tests/unit/client-portal-service.test.ts`
+- Create: `tests/integration/client-portal-service.test.ts`
+- Modify: `PROJECT_STATUS.md`
+
+**Interfaces:**
+
+- Consume: `Actor`, `getPrisma`, modelos `QuoteRequest`, `Quote`, `QuoteVersion`, `QuoteLineSnapshot`, dominio monetario de cotizaciones.
+- Produce: `listCustomerQuoteRequests(actor, filters, dependencies)` y `getCustomerQuoteRequest(actor, requestId, dependencies)`; ambas sólo aceptan `CUSTOMER` con `clientId` activo.
+
+- [ ] Escribir pruebas rojas para actor empleado, actor cliente sin `clientId`, cliente de otro expediente, UUID inválido y serialización de `BigInt`.
+- [ ] Ejecutar `npx vitest run tests/unit/client-portal-service.test.ts tests/integration/client-portal-service.test.ts` y confirmar que falla por módulo ausente o contrato no implementado.
+- [ ] Implementar `requireCustomerScope(actor)` que exija `actor.type === 'CUSTOMER'`, `actor.clientId` válido y derive el cliente exclusivamente desde el actor.
+- [ ] Implementar el listado paginado con estados públicos, folio, proyecto, última actividad y resumen de la versión actual; usar `where: { clientId: actor.clientId }` en la misma consulta.
+- [ ] Implementar el detalle con request, contact mínimo, detail compartido, quote actual, versiones y líneas snapshot; excluir `createdBy`, asignaciones, notas internas, logs y datos de otros clientes.
+- [ ] Serializar `budgetCents`, totales, cantidades y precios con `.toString()` y devolver `NOT_FOUND` genérico cuando el UUID no pertenece al cliente.
+- [ ] Ejecutar las pruebas dirigidas y `npm run typecheck`; verificar que el test de cliente cruzado no revela existencia.
+- [ ] Registrar la decisión de scope por `clientId`, agregar evidencia a `PROJECT_STATUS.md` y hacer commit `feat: add scoped client portal read service`.
+
+### Tarea 2 — API privada y contrato de sesión
+
+**Files:**
+
+- Create: `src/app/api/portal/requests/route.ts`
+- Create: `src/app/api/portal/requests/[id]/route.ts`
+- Create: `src/app/api/portal/quotes/[id]/route.ts`
+- Create: `tests/integration/client-portal-api.test.ts`
+- Modify: `src/server/auth/permissions.ts` only if a permission contract is necessary; prefer actor type + scope for self-service.
+
+**Interfaces:**
+
+- Consume: `requireCustomerActor` to be added only if the existing `requireStaffActor` cannot express customer scope; service functions from Tarea 1; `toErrorResponse` and `requestId`.
+- Produce: `GET /api/portal/requests`, `GET /api/portal/requests/:id` y `GET /api/portal/quotes/:id`, todos con `cache-control: no-store`.
+
+- [ ] Escribir pruebas rojas para 401 sin cookie, 403 con sesión de empleado, 404 genérico para UUID ajeno, folio ajeno, sesión revocada y respuesta sin secretos.
+- [ ] Ejecutar `npx vitest run tests/integration/client-portal-api.test.ts` y confirmar el fallo esperado antes de crear rutas.
+- [ ] Crear un guard de actor cliente que use `sessionToken` + `getActorFromSession`, rechace empleados y no acepte `clientId` externo.
+- [ ] Crear esquemas de query estrictos para `page`, `pageSize` y búsqueda; rechazar parámetros desconocidos, rangos inválidos y cuerpos innecesarios.
+- [ ] Implementar las tres rutas con `requestId`, `toErrorResponse`, `no-store` y mensajes que no distingan entre recurso ajeno e inexistente.
+- [ ] Probar que el portal no responde datos aunque se conozca un UUID de otro cliente y que ninguna respuesta contenga token, hash, asignación o actor interno.
+- [ ] Ejecutar integración, typecheck, lint y `git diff --check`; documentar el contrato API y hacer commit `feat: expose scoped client portal APIs`.
+
+### Tarea 3 — Shell visual, autenticación y dashboard
+
+**Files:**
+
+- Create: `src/app/portal/page.tsx`
+- Create: `src/components/ClientPortalPanel.tsx`
+- Modify: `src/app/globals.css`
+- Modify: `tests/quality.spec.ts`
+
+**Interfaces:**
+
+- Consume: APIs de portal, cookie de sesión existente, contrato de proyección de Tarea 1 y dirección visual OCPOOL.
+- Produce: dashboard `/portal` con header privado, estado de sesión, lista de solicitudes propias y navegación a detalle.
+
+- [ ] Escribir la prueba E2E negativa para `/portal` sin sesión y pruebas de accesibilidad/responsive del shell antes de completar la UI.
+- [ ] Ejecutar la prueba E2E dirigida y confirmar que el acceso sin sesión muestra el estado restringido sin datos.
+- [ ] Construir un layout de cliente con jerarquía editorial, navegación clara, indicador de sesión y CTA de volver al sitio; no reutilizar `.staff-workspace` como estructura principal.
+- [ ] Implementar estados de carga con skeleton discreto, vacío explicativo, error recuperable, sesión expirada y lista cargada con folio/estado/proyecto/fecha.
+- [ ] Añadir `robots: { index: false, follow: false }` y evitar renderizado de datos privados en metadata o HTML estático.
+- [ ] Verificar teclado, foco visible, hit areas de al menos 44 px, contraste, 360/390/768/1440 px, reduced motion y ausencia de overflow.
+- [ ] Ejecutar `npm run typecheck`, `npm run lint`, E2E de protección y tests de calidad; hacer commit `feat: add customer portal dashboard`.
+
+### Tarea 4 — Detalle de expediente y cotización versionada
+
+**Files:**
+
+- Modify: `src/components/ClientPortalPanel.tsx`
+- Modify: `src/app/globals.css`
+- Create: `tests/integration/client-portal-quotes.test.ts` only if the read contract needs a focused snapshot suite.
+
+**Interfaces:**
+
+- Consume: `GET /api/portal/requests/:id`, `GET /api/portal/quotes/:id`, snapshots/totales de Fase 4.
+- Produce: vista de expediente propio con alcance compartido, estado, resumen de cotización y versiones históricas de sólo lectura.
+
+- [ ] Escribir prueba de regresión para versión enviada con precio de catálogo cambiado después; la vista debe seguir mostrando `QuoteLineSnapshot` histórico.
+- [ ] Implementar selección de expediente sin confiar en el folio para autorización; cargar detalle sólo por endpoint scopeado.
+- [ ] Renderizar versión actual y versiones anteriores con moneda, vigencia, líneas, cantidades, descuentos, impuestos, subtotal y total; formatear strings monetarios sin `Number`.
+- [ ] Mostrar estado vacío cuando aún no hay cotización, historial completo cuando existen varias versiones y mensaje claro cuando la vigencia expiró.
+- [ ] No mostrar botones de aceptar, firmar, descargar PDF, editar, enviar mensajes ni cambiar estado en esta fase.
+- [ ] Verificar responsive móvil con líneas apiladas, desktop con resumen lateral, accesibilidad con Axe y navegación por teclado.
+- [ ] Ejecutar integración/API/E2E dirigida, lint, typecheck y `git diff --check`; hacer commit `feat: show customer quote snapshots`.
+
+### Tarea 5 — Seguridad negativa y E2E autenticado
+
+**Files:**
+
+- Modify: `tests/integration/client-portal-api.test.ts`
+- Modify: `tests/integration/client-portal-service.test.ts`
+- Create: `tests/client-portal.spec.ts`
+- Modify: `tests/quality.spec.ts`
+- Modify: `PROJECT_STATUS.md`
+
+**Interfaces:**
+
+- Consume: sesiones reales de cliente, dos clientes fixture, request/quote/versiones, UI de Tareas 1–4.
+- Produce: evidencia reproducible de aislamiento, flujo feliz y estados de fallo.
+
+- [ ] Crear fixtures desechables de dos clientes con una solicitud y cotización por cliente; registrar IDs para limpieza exacta.
+- [ ] Probar 401 sin sesión, 403 empleado, 404/403 seguro para cliente ajeno, sesión revocada, cliente archivado y UUID malformado.
+- [ ] Probar que el catálogo actualizado no cambia el snapshot mostrado y que un folio ajeno no sirve como acceso.
+- [ ] Añadir E2E opt-in `PORTAL_E2E=1` con login cliente, dashboard, detalle, cotización, refresh y logout; dejarlo omitido en la regresión normal cuando no existan fixtures.
+- [ ] Añadir E2E de navegación móvil, estado vacío, error de API y no overflow; ejecutar Axe sobre dashboard y detalle.
+- [ ] Auditar payloads, logs de error y HTML para confirmar ausencia de tokens, hashes, IDs cruzados y stack traces.
+- [ ] Ejecutar todas las suites dirigidas, limpiar fixtures y hacer commit `test: harden customer portal isolation`.
+
+### Tarea 6 — Gate de Fase 5
+
+**Files:**
+
+- Modify: `PROJECT_STATUS.md`
+- Modify: `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md`
+
+- [ ] Ejecutar `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed` y `npx prisma migrate status`.
+- [ ] Ejecutar `npm run test:unit`, `npm run test:integration`, `npm run test:content`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` y `npm run test:e2e:foundation`.
+- [ ] Ejecutar `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` y registrar el resultado separado.
+- [ ] Ejecutar `npm audit --omit=dev --audit-level=high` y `git diff --check`.
+- [ ] Revisar que no se hayan agregado dependencias innecesarias, que la regresión pública no se rompa y que el árbol quede limpio tras el commit.
+- [ ] Actualizar módulos terminados, pruebas, riesgos, deuda y dependencias; cerrar la fase sólo si los criterios de la especificación tienen evidencia.
+- [ ] Hacer commit `docs: close phase five client portal`.
+
+## Criterios de terminado de Fase 5
+
+- El cliente autenticado ve sólo solicitudes y cotizaciones de su `clientId`.
+- Todas las consultas privadas aplican scope en backend y tienen prueba negativa contra otro cliente.
+- Las versiones históricas se presentan desde snapshots persistidos, sin recalcular desde catálogo.
+- La UI cubre carga, vacío, error, sesión expirada, restringido, desktop, móvil, teclado y reduced motion.
+- Las respuestas no contienen secretos, notas internas, actores internos ni información de otros clientes.
+- El portal queda documentado, probado, construido y auditado antes de iniciar mensajería, archivos, PDF o aceptación.
