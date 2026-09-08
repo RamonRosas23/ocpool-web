@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { DirectionalIcon } from '@/components/DirectionalIcon';
 import { contactDetails } from '@/lib/pool-content';
 
@@ -27,6 +27,7 @@ export default function QuoteForm() {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   const isValid = Boolean(
     formData.nombre.trim() &&
@@ -40,6 +41,7 @@ export default function QuoteForm() {
 
   const updateField = (field: keyof QuoteFormData, value: string) => {
     setFormData((current) => ({ ...current, [field]: value }));
+    idempotencyKeyRef.current = null;
     if (feedback) setFeedback(null);
   };
 
@@ -49,23 +51,35 @@ export default function QuoteForm() {
 
     setIsSubmitting(true);
     setFeedback(null);
+    idempotencyKeyRef.current ??= crypto.randomUUID();
 
     try {
-      const response = await fetch('/api/send-email', {
+      const response = await fetch('/api/quote-requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, acceptTerms }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKeyRef.current,
+        },
+        body: JSON.stringify({
+          displayName: formData.nombre,
+          phone: formData.telefono,
+          email: formData.email,
+          projectType: formData.tipoProyecto,
+          location: formData.ubicacion,
+          description: formData.mensaje,
+          consent: acceptTerms,
+        }),
       });
-      const data = await response.json() as { success?: boolean; mailtoUrl?: string; error?: string };
+      const data = await response.json() as { accepted?: boolean; folio?: string; error?: { message?: string } };
 
-      if (!response.ok || !data.success || !data.mailtoUrl) {
-        throw new Error(data.error || 'No fue posible preparar tu solicitud.');
+      if (!response.ok || !data.accepted || !data.folio) {
+        throw new Error(data.error?.message || 'No fue posible registrar tu solicitud.');
       }
 
-      setFeedback({ type: 'success', message: 'Solicitud preparada. Se abrirá tu correo para enviarla.' });
+      setFeedback({ type: 'success', message: `Recibimos tu solicitud. Tu folio es ${data.folio}. Consérvalo para futuras conversaciones.` });
       setFormData(initialForm);
       setAcceptTerms(false);
-      window.location.href = data.mailtoUrl;
+      idempotencyKeyRef.current = null;
     } catch (error) {
       setFeedback({
         type: 'error',
@@ -89,19 +103,19 @@ export default function QuoteForm() {
           <div className="form-grid">
             <label>
               <span>Nombre</span>
-              <input name="nombre" value={formData.nombre} onChange={(event) => updateField('nombre', event.target.value)} placeholder="Tu nombre" autoComplete="name" required />
+              <input id="quote-name" name="nombre" value={formData.nombre} onChange={(event) => updateField('nombre', event.target.value)} placeholder="Tu nombre" autoComplete="name" minLength={2} maxLength={180} required />
             </label>
             <label>
               <span>Teléfono</span>
-              <input name="telefono" value={formData.telefono} onChange={(event) => updateField('telefono', event.target.value)} placeholder="667 000 0000" autoComplete="tel" required />
+              <input id="quote-phone" name="telefono" value={formData.telefono} onChange={(event) => updateField('telefono', event.target.value)} placeholder="667 000 0000" autoComplete="tel" minLength={7} maxLength={40} required />
             </label>
             <label>
               <span>Correo</span>
-              <input type="email" name="email" value={formData.email} onChange={(event) => updateField('email', event.target.value)} placeholder="tu@correo.com" autoComplete="email" required />
+              <input id="quote-email" type="email" name="email" value={formData.email} onChange={(event) => updateField('email', event.target.value)} placeholder="tu@correo.com" autoComplete="email" maxLength={320} required />
             </label>
             <label>
               <span>Tipo de obra</span>
-              <select name="tipoProyecto" value={formData.tipoProyecto} onChange={(event) => updateField('tipoProyecto', event.target.value)} required>
+              <select id="quote-project-type" name="tipoProyecto" value={formData.tipoProyecto} onChange={(event) => updateField('tipoProyecto', event.target.value)} required>
                 <option value="">Selecciona una opción</option>
                 <option value="Alberca residencial">Alberca residencial</option>
                 <option value="Club de playa u hospitalidad">Club de playa u hospitalidad</option>
@@ -111,24 +125,24 @@ export default function QuoteForm() {
             </label>
             <label className="form-field--wide">
               <span>Ubicación</span>
-              <input name="ubicacion" value={formData.ubicacion} onChange={(event) => updateField('ubicacion', event.target.value)} placeholder="Ciudad, estado o destino" autoComplete="address-level2" required />
+              <input id="quote-location" name="ubicacion" value={formData.ubicacion} onChange={(event) => updateField('ubicacion', event.target.value)} placeholder="Ciudad, estado o destino" autoComplete="address-level2" minLength={2} maxLength={180} required />
             </label>
             <label className="form-field--wide">
               <span>Descripción del proyecto</span>
-              <textarea name="mensaje" value={formData.mensaje} onChange={(event) => updateField('mensaje', event.target.value)} placeholder="Ej. terreno nuevo, remodelación o equipamiento." rows={5} required />
+              <textarea id="quote-description" name="mensaje" value={formData.mensaje} onChange={(event) => updateField('mensaje', event.target.value)} placeholder="Ej. terreno nuevo, remodelación o equipamiento." rows={5} minLength={10} maxLength={10_000} required />
             </label>
           </div>
 
           <label className="consent-row">
-            <input id="acceptTerms" name="acceptTerms" type="checkbox" checked={acceptTerms} onChange={(event) => setAcceptTerms(event.target.checked)} />
+            <input id="quote-consent" name="consent" type="checkbox" checked={acceptTerms} onChange={(event) => { setAcceptTerms(event.target.checked); idempotencyKeyRef.current = null; setFeedback(null); }} />
             <span>Autorizo a OCPOOL a usar estos datos para contactarme sobre esta solicitud.</span>
           </label>
 
-          {feedback && <p className={`form-feedback form-feedback--${feedback.type}`} role="status">{feedback.message}</p>}
+          {feedback && <p className={`form-feedback form-feedback--${feedback.type}`} role={feedback.type === 'error' ? 'alert' : 'status'} aria-live="polite">{feedback.message}</p>}
 
           <div className="form-actions">
             <button className="button button--dark" type="submit" disabled={!isValid || isSubmitting}>
-              {isSubmitting ? 'Preparando…' : 'Enviar solicitud'} <DirectionalIcon />
+              {isSubmitting ? 'Enviando…' : 'Enviar solicitud'} <DirectionalIcon />
             </button>
             <span className="form-note">Atención inicial por correo o WhatsApp.</span>
           </div>

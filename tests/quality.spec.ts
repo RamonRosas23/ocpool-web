@@ -2,12 +2,12 @@ import AxeBuilder from '@axe-core/playwright';
 import { test, expect, type Page } from '@playwright/test';
 
 const validPayload = {
-  nombre: 'Prueba OCPOOL',
-  telefono: '667 000 0000',
+  displayName: 'Prueba OCPOOL',
+  phone: '667 000 0000',
   email: 'qa@example.com',
-  tipoProyecto: 'Alberca residencial',
-  ubicacion: 'Culiacán, Sinaloa',
-  mensaje: 'Solicitud de prueba automatizada.',
+  projectType: 'Alberca residencial',
+  location: 'Culiacán, Sinaloa',
+  description: 'Solicitud de prueba automatizada.',
 };
 
 async function expectNoSeriousA11yViolations(page: Page) {
@@ -99,17 +99,42 @@ test.describe('OCPOOL quality contract', () => {
     await expect(trigger).toBeFocused();
   });
 
-  test('rejects a request without explicit server-side consent', async ({ request }) => {
-    const response = await request.post('/api/send-email', { data: { ...validPayload, acceptTerms: false } });
+  test('rejects a quote request without explicit server-side consent', async ({ request }) => {
+    const response = await request.post('/api/quote-requests', {
+      headers: { 'Idempotency-Key': `quality-consent-${Date.now()}-1234` },
+      data: { ...validPayload, consent: false },
+    });
     expect(response.status()).toBe(400);
   });
 
-  test('prepares an accepted request without sending real data externally', async ({ request }) => {
-    const response = await request.post('/api/send-email', { data: { ...validPayload, acceptTerms: true } });
-    expect(response.status()).toBe(200);
-    const body = await response.json() as { success?: boolean; mailtoUrl?: string };
-    expect(body.success).toBe(true);
-    expect(body.mailtoUrl).toContain('mailto:info@ocpool.com');
+  test('accepts a quote request and returns a non-authenticating folio', async ({ request }) => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const response = await request.post('/api/quote-requests', {
+      headers: { 'Idempotency-Key': `quality-create-${suffix}-1234` },
+      data: { ...validPayload, email: `qa-${suffix}@example.test`, consent: true },
+    });
+    expect(response.status()).toBe(201);
+    const body = await response.json() as { accepted?: boolean; folio?: string };
+    expect(body.accepted).toBe(true);
+    expect(body.folio).toMatch(/^OCQ-\d{4}-\d{6}$/);
+  });
+
+  test('submits the public form and presents the persisted folio accessibly', async ({ page }) => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await page.goto('/#contacto');
+    await page.getByLabel('Nombre').fill('Cliente E2E OCPOOL');
+    await page.getByLabel('Teléfono').fill('667 000 3344');
+    await page.getByLabel('Correo').fill(`form-${suffix}@example.test`);
+    await page.getByLabel('Tipo de obra').selectOption('Alberca residencial');
+    await page.getByLabel('Ubicación').fill('Mazatlán, Sinaloa');
+    await page.getByLabel('Descripción del proyecto').fill('Solicitud E2E para validar el expediente público.');
+    await page.getByLabel(/Autorizo a OCPOOL/).check();
+    await page.getByRole('button', { name: /Enviar solicitud/ }).click();
+
+    const feedback = page.locator('.form-feedback--success');
+    await expect(feedback).toHaveAttribute('role', 'status');
+    await expect(feedback).toContainText(/Tu folio es OCQ-\d{4}-\d{6}/);
+    await expect(page.getByRole('button', { name: /Enviar solicitud/ })).toBeDisabled();
   });
 
   test('exposes complete SEO metadata and generated discovery routes', async ({ page, request }) => {

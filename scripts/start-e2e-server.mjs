@@ -1,10 +1,14 @@
 import { spawn } from 'node:child_process';
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const e2eEnvironment = {
+  ...process.env,
+  APP_URL: process.env.APP_URL ?? 'http://127.0.0.1:3100',
+};
 const spawnOptions = {
   stdio: 'inherit',
   shell: process.platform === 'win32',
-  env: process.env,
+  env: e2eEnvironment,
 };
 
 const run = (args) => new Promise((resolve) => {
