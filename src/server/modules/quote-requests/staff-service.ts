@@ -161,7 +161,7 @@ export async function getStaffQuoteRequest(actor: Actor, quoteRequestId: string,
       createdAt: true,
       updatedAt: true,
       client: { select: { id: true, displayName: true, status: true } },
-      contact: { select: { id: true, displayName: true, email: true, phone: true, roleTitle: true, status: true } },
+      contact: { select: { id: true, displayName: true, email: true, phone: true, roleTitle: true, status: true, user: { select: { id: true, type: true, status: true } } } },
       currentAssignee: { select: { id: true, displayName: true, email: true } },
       detail: true,
       assignments: {

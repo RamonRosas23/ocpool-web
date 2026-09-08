@@ -40,6 +40,7 @@ export const AUDIT_ACTION_DEFINITIONS: Record<string, AuditActionDefinition> = {
   'prices.item.created': { category: 'commercial', label: 'Precio creado', details: [detail('currencyCode', 'Moneda'), detail('unitPriceMinor', 'Importe mínimo')] },
   'prices.item.updated': { category: 'commercial', label: 'Precio actualizado', details: [detail('currencyCode', 'Moneda'), detail('unitPriceMinor', 'Importe mínimo')] },
   'quote_request.created': { category: 'commercial', label: 'Solicitud creada', details: [detail('folio', 'Folio'), detail('origin', 'Origen')] },
+  'customer_access.invited': { category: 'commercial', label: 'Acceso de cliente habilitado', details: [detail('folio', 'Folio'), detail('outcome', 'Resultado')] },
   'quote_request.assigned': { category: 'commercial', label: 'Solicitud asignada', details: [detail('folio', 'Folio')] },
   'quote_request.status_changed': { category: 'commercial', label: 'Estado de solicitud actualizado', details: [detail('folio', 'Folio'), detail('fromStatus', 'Estado anterior'), detail('toStatus', 'Estado nuevo'), detail('source', 'Origen del cambio')] },
   'quote.version.created': { category: 'commercial', label: 'Versión de cotización creada', details: [detail('folio', 'Folio'), detail('versionNumber', 'Versión'), detail('currencyCode', 'Moneda')] },
