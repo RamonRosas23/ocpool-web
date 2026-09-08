@@ -15,8 +15,13 @@ describe('public quote request API', () => {
     email: `api-${suffix}@example.test`,
     projectType: 'Alberca residencial',
     location: 'Culiacán, Sinaloa',
+    projectStage: 'SITE_READY',
+    dimensions: '8 x 4 m',
+    timeline: 'ONE_TO_THREE_MONTHS',
+    budgetRange: 'FROM_250K_TO_500K',
     description: 'Solicitud recibida desde el contrato público.',
     consent: true,
+    website: '',
   });
 
   const request = (body: Record<string, unknown>, headers: Record<string, string> = {}) => new NextRequest(`${readServerEnv().APP_URL}/api/quote-requests`, {
@@ -41,6 +46,12 @@ describe('public quote request API', () => {
 
     const missingConsent = await POST(request({ ...body, consent: false }, { 'idempotency-key': 'api-reject-consent-1234' }));
     expect(missingConsent.status).toBe(400);
+
+    const invalidQualification = await POST(request({ ...body, projectStage: 'INVALID_STAGE' }, { 'idempotency-key': 'api-reject-stage-1234' }));
+    expect(invalidQualification.status).toBe(400);
+
+    const honeypot = await POST(request({ ...body, website: 'https://spam.example' }, { 'idempotency-key': 'api-reject-honeypot-1234' }));
+    expect(honeypot.status).toBe(400);
   });
 
   it('persists a public request and returns only a replay-safe folio', async () => {
@@ -63,7 +74,18 @@ describe('public quote request API', () => {
     await expect(replay.json()).resolves.toEqual(payload);
 
     const stored = await prisma.quoteRequest.findUnique({ where: { folio: payload.folio }, include: { detail: true, contact: true, client: true } });
-    expect(stored).toMatchObject({ status: 'RECIBIDA', origin: 'PUBLIC_FORM', detail: { description: body.description }, contact: { emailNormalized: body.email } });
+    expect(stored).toMatchObject({
+      status: 'RECIBIDA',
+      origin: 'PUBLIC_FORM',
+      detail: {
+        description: body.description,
+        projectStage: body.projectStage,
+        dimensions: body.dimensions,
+        timeline: body.timeline,
+        budgetRange: body.budgetRange,
+      },
+      contact: { emailNormalized: body.email },
+    });
   });
 
   afterAll(async () => {

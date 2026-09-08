@@ -1,5 +1,6 @@
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
+import type { QuoteRequestBudgetRange, QuoteRequestProjectStage, QuoteRequestTimeline } from '@/generated/prisma/enums';
 import { fingerprintToken } from '@/server/auth/crypto';
 import { getPrisma } from '@/server/db/client';
 import {
@@ -23,6 +24,9 @@ export type CreateQuoteRequestInput = {
   detail: {
     projectType: string;
     location: string;
+    projectStage?: QuoteRequestProjectStage | null;
+    timeline?: QuoteRequestTimeline | null;
+    budgetRange?: QuoteRequestBudgetRange | null;
     budgetCents?: number | bigint | null;
     currencyCode?: string;
     dimensions?: string | null;
@@ -168,6 +172,9 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput, depende
             create: {
               projectType,
               location,
+              projectStage: input.detail.projectStage,
+              timeline: input.detail.timeline,
+              budgetRange: input.detail.budgetRange,
               budgetCents,
               currencyCode,
               dimensions,

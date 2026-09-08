@@ -15,7 +15,16 @@ describe('quote request transactional service', () => {
       idempotencyKey: `service-${suffix}-one`,
       origin: 'PUBLIC_FORM' as const,
       contact: { displayName: 'Cliente de servicio', email: `service-${suffix}@example.test`, phone: '+52 667 000 1111' },
-      detail: { projectType: 'Alberca residencial', location: 'Mazatlán, Sinaloa', description: 'Solicitud transaccional', consentAt: now },
+      detail: {
+        projectType: 'Alberca residencial',
+        location: 'Mazatlán, Sinaloa',
+        projectStage: 'SITE_READY' as const,
+        dimensions: '8 x 4 m',
+        timeline: 'ONE_TO_THREE_MONTHS' as const,
+        budgetRange: 'FROM_250K_TO_500K' as const,
+        description: 'Solicitud transaccional',
+        consentAt: now,
+      },
     };
 
     const result = await createQuoteRequest(input, { prisma, now });
@@ -26,6 +35,10 @@ describe('quote request transactional service', () => {
     expect(result.folio).toMatch(/^OCQ-2026-\d{6}$/);
     expect(stored).toMatchObject({ id: result.quoteRequestId, folio: result.folio, status: 'RECIBIDA', origin: 'PUBLIC_FORM' });
     expect(stored?.detail?.description).toBe('Solicitud transaccional');
+    expect(stored?.detail?.projectStage).toBe('SITE_READY');
+    expect(stored?.detail?.dimensions).toBe('8 x 4 m');
+    expect(stored?.detail?.timeline).toBe('ONE_TO_THREE_MONTHS');
+    expect(stored?.detail?.budgetRange).toBe('FROM_250K_TO_500K');
     expect(stored?.statusHistory).toHaveLength(1);
     expect(outbox?.payload).toMatchObject({ folio: result.folio, quoteRequestId: result.quoteRequestId });
     expect(JSON.stringify(outbox?.payload)).not.toContain(input.contact.email);
