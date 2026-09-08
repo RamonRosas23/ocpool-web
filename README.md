@@ -32,8 +32,9 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - API privada de métricas operativas en `/api/staff/dashboard`, con scope por rol, rangos acotados y respuesta sin PII.
 - Auditoría operativa y de seguridad en `/staff/audit`, con `audit.read`/`audit.security.read`, cursor HMAC, rate limit, redacción por allowlist y respuesta `no-store`.
 - Superficies de acceso navegables en `/login`, `/login/recovery`, `/portal/access`, `/auth/recovery` y `/auth/customer/consume-link`, sin credenciales fijas y con limpieza de tokens en URL.
+- Onboarding staff de clientes en el expediente: `identity.users.manage`, cuenta `CUSTOMER` en estado `INVITED`, invitación magic link de un solo uso, activación transaccional a `ACTIVE` y deduplicación de invitaciones vigentes.
 
-Las Fases 1–13 están cerradas con gates técnicos verdes para el alcance local. La entrega de notificaciones, la auditoría operativa/de seguridad y las superficies de acceso son reproducibles y operables; la revisión jurídica, los proveedores productivos, la retención, los backups, la observabilidad productiva y la preparación de producción permanecen como controles previos al lanzamiento.
+Las Fases 1–15 están cerradas con gates técnicos verdes para el alcance local. La entrega de notificaciones, la auditoría operativa/de seguridad, las superficies de acceso y el onboarding de clientes son reproducibles y operables; la revisión jurídica, los proveedores productivos, la retención, los backups, la observabilidad productiva y la preparación de producción permanecen como controles previos al lanzamiento.
 
 ## Requisitos
 
@@ -90,6 +91,7 @@ Los procedimientos operativos están separados de la guía de instalación:
 - [Runbook del dashboard operativo](docs/runbooks/analytics-dashboard.md) — definiciones, scope, zona horaria, supresión, rendimiento y diagnóstico seguro.
 - [Runbook de auditoría y observabilidad](docs/runbooks/audit-observability.md) — acceso, filtros, redacción, rate limit, diagnóstico, `EXPLAIN` y límites de retención.
 - [Runbook de superficies de acceso](docs/runbooks/auth-surfaces.md) — rutas, Mailpit, worker, tokens, MFA, recovery y pruebas locales.
+- [Runbook de superficies de acceso](docs/runbooks/auth-surfaces.md) — rutas, Mailpit, worker, tokens, MFA, recovery, onboarding y pruebas locales.
 - [Especificación de captación premium](docs/superpowers/specs/2026-09-08-ocpool-premium-quote-intake-design.md) y [plan ejecutado](docs/superpowers/plans/2026-09-08-ocpool-premium-quote-intake.md) — contrato, seguridad, pruebas y límites de la captación pública.
 
 El worker de notificaciones se ejecuta separado de Next.js:
@@ -117,12 +119,14 @@ npx playwright test tests/quality.spec.ts --grep "public form|first step"
 npx cross-env PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts
 npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts
 npx cross-env AUTH_E2E=1 REUSE_E2E_SERVER=1 APP_URL=http://127.0.0.1:3100 playwright test tests/staff-notifications.spec.ts
+$env:CUSTOMER_ONBOARDING_E2E='1'; npx playwright test tests/customer-onboarding.spec.ts
 $env:DASHBOARD_E2E='1'; npx playwright test tests/dashboard.spec.ts
 $env:AUTH_SURFACES_E2E='1'; npx playwright test tests/auth-surfaces.spec.ts
 ```
 
 La suite E2E pública conserva el contrato visual, responsive, de interacción, consola y accesibilidad de la landing. La prueba foundation requiere PostgreSQL activo y se ejecuta de forma opt-in.
 La suite de identidad también es opt-in: crea un empleado desechable en PostgreSQL, valida login/sesión/logout/CSRF y elimina el fixture al terminar. Requiere Docker y se ejecuta con `npm run test:e2e:auth`. La suite de superficies de acceso crea empleados, administrador MFA, cliente y tokens desechables; se ejecuta con `AUTH_SURFACES_E2E=1` y nunca depende de credenciales fijas.
+La suite de onboarding de cliente es opt-in: crea una solicitud, un manager y un rol de sólo lectura, valida habilitación, deduplicación, visibilidad por permiso, responsive y Axe, y elimina todos los fixtures al terminar. Ejecuta `CUSTOMER_ONBOARDING_E2E=1` sólo contra una base local desechable.
 
 ## Identidad local
 
@@ -156,6 +160,7 @@ Endpoints disponibles:
 - `POST /api/quote-requests` — crea un expediente público con consentimiento, datos de calificación opcionales, folio y respuesta idempotente mediante el header `Idempotency-Key`; rechaza el honeypot sin revelar la lógica anti-abuso.
 - `GET /api/staff/quote-requests` y `GET /api/staff/quote-requests/:id` — inbox y detalle para empleados autorizados.
 - `GET /api/staff/quote-requests/assignees`, `POST .../:id/assign` y `POST .../:id/status` — operaciones internas RBAC con auditoría e historial.
+- `POST /api/staff/quote-requests/:id/customer-access` — habilita el portal del contacto desde el expediente para `manager`/`admin`; acepta `{}`, exige same-origin y devuelve sólo estado seguro (`INVITED`, `ALREADY_PENDING` o `ALREADY_ACTIVE`).
 - `GET|POST /api/portal/requests/:id/files` y `POST|GET|DELETE .../:fileId` — archivos privados del cliente con reserva, finalización y descarga efímera.
 - `GET|POST /api/staff/quote-requests/:id/files` y `POST|GET|DELETE .../:fileId` — superficie equivalente para staff con visibilidad interna RBAC.
 - `GET /api/portal/quotes/:id/pdf` y `POST /api/portal/quotes/:id/accept` — PDF privado y aceptación de la versión vigente dentro del alcance del cliente.
@@ -202,6 +207,7 @@ Con `.env.example` el resultado esperado es `BLOCKED`; no se deben reutilizar se
 ## Estado de implementación
 
 La identidad, captación, expedientes, cotizaciones, portal, mensajería, archivos privados, PDF/aceptación, notificaciones, dashboard operativo y visor de auditoría tienen schema/servicios/endpoints protegidos, UI responsive, pruebas y documentación operativa dentro del alcance local. La plataforma no se presenta como lista para lanzamiento mientras existan riesgos de producción abiertos.
+El onboarding no crea credenciales ni contraseñas: el personal autorizado habilita una cuenta cliente vinculada al contacto; el enlace único se entrega mediante Outbox/Mailpit y sólo su consumo activa la cuenta. Una cuenta activa puede recibir un nuevo enlace sin cambiar de cliente; una invitación vigente no se duplica.
 
 La auditoría de producción local termina en 0 vulnerabilidades: `deepmerge-ts@8.0.2` y `mysql2@3.24.3` están fijados mediante overrides compatibles con Prisma 7.10.0. Estas versiones deben revisarse cuando Prisma las incorpore de forma nativa.
 

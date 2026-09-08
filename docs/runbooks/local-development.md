@@ -103,6 +103,30 @@ npx playwright test tests/quality.spec.ts --grep "public form|first step"
 
 La prueba E2E confirma validación del primer paso, conservación al regresar, campos de calificación, respuesta con folio y feedback accesible. La entrega de notificaciones, cuando exista un evento permitido para el expediente, se inspecciona mediante el worker y Mailpit; la captura del formulario no depende de que el navegador envíe correo directamente.
 
+## Onboarding de cliente
+
+La habilitación del portal es una operación interna posterior a la captación pública. Desde `/staff/requests`, un usuario `manager` o `admin` con `identity.users.manage` puede pulsar `Habilitar portal` en el expediente. El backend valida sesión, same-origin, permiso, cliente/contacto activos y aislamiento por cliente dentro de una transacción.
+
+El flujo crea o reutiliza un usuario `CUSTOMER` vinculado al `ClientContact`, inicia en `INVITED` y emite un magic link de un solo uso mediante Outbox. El consumo del enlace cambia `INVITED` a `ACTIVE` de forma condicional y crea la sesión del cliente. Una invitación vigente se deduplica; no se crean contraseñas ni credenciales compartidas.
+
+Para validarlo con Mailpit:
+
+```powershell
+npm run db:migrate:deploy
+npm run db:seed
+npx cross-env CUSTOMER_ONBOARDING_E2E=1 npx playwright test tests/customer-onboarding.spec.ts
+```
+
+La suite E2E usa datos desechables y los elimina al terminar. Para diagnóstico manual, abre Mailpit en `http://localhost:18025` después de ejecutar `npm run worker:notifications:once`. No copies el token del correo a logs ni lo guardes en `.env`; el token sólo debe consumirse desde el enlace temporal.
+
+Estados visibles en staff:
+
+- `Portal sin habilitar`: el contacto no tiene usuario cliente vinculado.
+- `Invitación pendiente`: existe una invitación vigente; repetir la acción no duplica el Outbox.
+- `Portal habilitado`: la cuenta está activa; la acción puede enviar un nuevo enlace seguro.
+
+Los conflictos por contacto archivado, cliente archivado, correo de empleado o identidad de otro cliente se muestran como error controlado. No corregirlos editando `clientId` o `userId` directamente en PostgreSQL; revisar el vínculo y resolverlo mediante el procedimiento de identidad.
+
 ## Worker de notificaciones
 
 El worker se ejecuta como proceso separado y usa PostgreSQL para coordinar claims, leases, reintentos y recuperación de trabajos abandonados:
@@ -164,6 +188,7 @@ Para ejecutar la compuerta local completa:
 npm test
 npm run lint
 npm run test:e2e:auth
+npx cross-env CUSTOMER_ONBOARDING_E2E=1 npx playwright test tests/customer-onboarding.spec.ts
 npm audit --omit=dev
 ```
 

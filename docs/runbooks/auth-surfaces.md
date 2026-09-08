@@ -16,7 +16,7 @@ Todas las rutas tienen `noindex`. El login exitoso de empleado lleva a `/staff`;
 
 ## Relación con la captación pública
 
-La landing puede crear un expediente anónimo desde `/#contacto` mediante `POST /api/quote-requests`. Ese flujo sólo crea o reutiliza cliente/contacto y solicitud; no crea una cuenta cliente, no inicia sesión y no convierte el folio `OCQ-YYYY-NNNNNN` en credencial. El enlace de `/portal` en comunicaciones sólo es válido cuando exista un usuario cliente activo vinculado, por lo que el onboarding sigue siendo una dependencia separada.
+La landing puede crear un expediente anónimo desde `/#contacto` mediante `POST /api/quote-requests`. Ese flujo sólo crea o reutiliza cliente/contacto y solicitud; no crea una cuenta cliente, no inicia sesión y no convierte el folio `OCQ-YYYY-NNNNNN` en credencial. Mientras el contacto no tenga una cuenta cliente activa vinculada, las notificaciones comerciales apuntan a `/portal/access` con la acción “Solicitar acceso”; nunca apuntan a un portal inaccesible.
 
 La captación pública usa consentimiento explícito, idempotencia, rate limiting, protección same-origin, validación backend y honeypot. No se deben documentar contraseñas de prueba ni permitir que el formulario público suba archivos; la autenticación y los archivos permanecen en superficies privadas.
 
@@ -37,6 +37,26 @@ Abrir:
 - Mailpit: `http://localhost:18025`
 
 No existen credenciales fijas de prueba. Las E2E crean usuarios desechables, consumen tokens de fixtures y limpian sus IDs al terminar. Para una cuenta real local se debe usar el flujo de recuperación o crear un registro controlado por el procedimiento interno; nunca se deben documentar contraseñas en Git.
+
+## Habilitar el portal desde un expediente
+
+El acceso del cliente se habilita desde `/staff/requests`, dentro del expediente, mediante `Habilitar portal`. La acción exige una sesión de empleado y el permiso backend `identity.users.manage`; el rol `manager` lo recibe por catálogo y `admin` lo hereda, mientras `sales` y los clientes no pueden ejecutarla. La UI oculta la acción cuando la capability no está presente, pero la autorización real siempre se valida en servidor.
+
+El procedimiento es:
+
+1. Abrir `/staff/requests` con una cuenta `manager` o `admin`.
+2. Seleccionar el expediente y revisar que el contacto y cliente estén activos.
+3. Pulsar `Habilitar portal`.
+4. Confirmar en la bandeja que el estado cambie a `Invitación pendiente` y ejecutar el worker local:
+
+```powershell
+npm run worker:notifications:once
+```
+
+5. Abrir Mailpit, localizar el enlace de acceso y seguirlo una sola vez.
+6. Confirmar que el cliente llegue a `/portal` y que el expediente corresponda a su cliente.
+
+Una invitación vigente responde `ALREADY_PENDING` y no crea otro token. Un cliente activo puede recibir un nuevo enlace (`ALREADY_ACTIVE`) sin ser reasignado. Los tokens se guardan como huella y sólo viajan cifrados en el Outbox; no aparecen en la respuesta staff, auditoría, logs ni HTML persistido. Si el contacto está archivado, el cliente está archivado o el correo pertenece a un empleado u otro cliente, la operación se rechaza con un conflicto controlado y no altera vínculos existentes.
 
 ## Flujo de empleado
 
@@ -80,6 +100,9 @@ El token se quita de la URL antes de mostrar la pantalla de formulario. El endpo
 - **MFA no funciona:** verificar reloj del dispositivo autenticador y que la cuenta tenga secreto MFA configurado; no desactivar MFA para diagnosticar.
 - **No llega el correo:** comprobar Outbox, worker, Mailpit y `SMTP_*`; no copiar tokens desde logs ni insertar URLs manuales en producción.
 - **Enlace no disponible:** tratarlo como expirado, consumido o manipulado; solicitar uno nuevo.
+- **Invitación pendiente:** no crear cuentas manualmente ni repetir inserts; revisar el estado del contacto y procesar Outbox/worker. La reemisión controlada invalida tokens anteriores sólo cuando ya no existe una invitación vigente.
+- **Contacto sin acción de portal:** comprobar que la sesión staff tenga `identity.users.manage` y que el usuario sea `manager`/`admin`; la ausencia en UI es intencional para otros roles.
+- **Conflicto al habilitar:** confirmar que el contacto esté activo y que su correo no esté asociado a otro cliente o empleado. No reasignar `clientId` manualmente.
 - **Origen rechazado:** `APP_URL` debe coincidir con el origen del navegador y las mutaciones deben permanecer same-origin.
 
 No ejecutar consultas destructivas ni borrar cuentas compartidas para “limpiar” una prueba. Los fixtures E2E tienen sufijo único y cleanup exacto.
@@ -88,8 +111,10 @@ No ejecutar consultas destructivas ni borrar cuentas compartidas para “limpiar
 
 ```powershell
 npx cross-env AUTH_SURFACES_E2E=1 npm run test:e2e -- tests/auth-surfaces.spec.ts
+npx cross-env CUSTOMER_ONBOARDING_E2E=1 npx playwright test tests/customer-onboarding.spec.ts
 ```
 
 La prueba cubre acceso restringido, login de empleado, MFA administrativo, solicitudes neutrales, consumo de magic link, recovery, links inválidos/replay, Axe, foco, reduced motion y los viewports 390/768/1440.
+La prueba de onboarding cubre acción manager, deduplicación de invitación, ocultamiento para rol de sólo lectura, estado persistido, Axe y overflow en 390/768/1440. Es opt-in y requiere base local desechable.
 
 El runner E2E construye en `.next-e2e` para no compartir artefactos con un `next dev` activo en `.next`. No se debe ejecutar un build de producción escribiendo el mismo directorio mientras otro proceso de Next está recompilando.

@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 14 — captación premium de solicitudes de cotización; terminada para el alcance local.
-- **Estado:** Fases 1–14 están implementadas y verificadas dentro del alcance local. Fase 14 amplía el contrato relacional, la API, las proyecciones staff y el formulario público de dos pasos con validación, calificación, honeypot, responsive, accesibilidad y folio persistido. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
+- **Fase:** Fase 15 — onboarding y vinculación de usuarios cliente; terminada para el alcance local.
+- **Estado:** Fases 1–15 están implementadas y verificadas dentro del alcance local. Fase 15 habilita el portal desde el expediente con RBAC, cuenta `INVITED`, magic link único, activación transaccional, deduplicación, aislamiento por cliente, fallback seguro de notificaciones, UI staff responsive y E2E opt-in. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
@@ -14,6 +14,7 @@
 - **Documentos de Fase 13:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
 - **Últimos commits de Fase 13:** `5c66c6b` (`docs: close auth surfaces phase`), `3ebf8f6` (`feat: add browser auth surfaces`).
 - **Últimos commits de Fase 14:** `405c3c8` (`feat: improve public quote intake flow`), `ae01fdb` (`feat: show quote intake qualification in staff`), `2d3ada5` (`feat: extend public quote request intake`), `9ce47ed` (`feat: add premium quote intake contracts`), `b187cde` (`docs: define premium quote intake phase`).
+- **Últimos commits de Fase 15:** `8183321` (`test: cover customer onboarding boundary states`), `9a5fb21` (`feat: expose customer portal onboarding in staff`), `67199a9` (`fix: route customer notifications safely before onboarding`), `4f92b2d` (`feat: add transactional customer portal onboarding`), `1c6b78a` (`test: harden customer invitation lifecycle`), `cb7787e` (`feat: activate invited customers through magic link`), `d25bb1a` (`feat: grant customer access management to managers`), `1fe4619` (`docs: define customer onboarding phase`).
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -44,6 +45,9 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Endpoint público `POST /api/quote-requests` con protección same-origin, límite de body, rate limiting por email/IP confiable y respuesta sin IDs internos.
 - Inbox interno `/staff/requests` con lista paginada, filtros, detalle, historial, estados vacíos/carga/error y diseño responsive.
 - Endpoints internos protegidos por sesión de empleado, RBAC, same-origin en mutaciones, bloqueo transaccional, asignación histórica y transiciones de estado auditadas.
+- Onboarding interno de cliente desde `/staff/requests`, con `identity.users.manage`, vinculación única `ClientContact.userId`, cuenta `CUSTOMER` `INVITED`/`ACTIVE`, Outbox cifrado, auditoría segura y rechazo de colisiones de empleado/cliente.
+- Endpoint `POST /api/staff/quote-requests/:id/customer-access` con `{}` estricto, same-origin, sesión staff, lock de solicitud y respuesta sin IDs de usuario ni tokens.
+- UI staff de onboarding con estados `Portal sin habilitar`, `Invitación pendiente` y `Portal habilitado`, acción condicionada por capability, feedback de reenvío y protección responsive/Axe.
 
 ### Fundamentos terminados en esta fase
 
@@ -65,6 +69,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Catálogo RBAC inicial con roles `customer`, `sales`, `manager` y `admin`, seed idempotente y guardias backend deny-by-default.
 - Sesiones persistidas con expiración, revocación, actor derivado desde PostgreSQL y cookie `ocpool_session` con política segura.
 - Tokens de autenticación de un solo uso y rate limiting de ventana fija con bloqueo de fila PostgreSQL.
+- Onboarding de clientes reutilizando `User`, `ClientContact`, `AuthToken`, Outbox y sesiones existentes: invitación `INVITED`, activación condicional a `ACTIVE`, deduplicación y no persistencia de tokens crudos.
 - MFA TOTP con ventana controlada y contador persistido para rechazar replays.
 - Servicios y rutas API de autenticación: login empleado, magic link, recovery, sesión y logout.
 - Eventos de autenticación y Outbox transaccionales; tokens de entrega cifrados con clave separada de MFA.
@@ -172,14 +177,15 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 ### En desarrollo
 
 - Fase 13 — superficies de acceso y recuperación: terminada para el alcance local. Login, MFA, magic link, recovery, URL limpia, estados restringidos, responsive, accesibilidad, documentación y gate técnico están comprobados; permanecen sólo decisiones externas de lanzamiento.
-- Fase 14 — captación premium: terminada para el alcance local. El formulario público de dos pasos, contrato de datos, migración, API, inbox/constructor staff, validaciones, anti-spam básico, E2E, documentación y gate técnico están comprobados; onboarding de cliente y controles externos de producción permanecen fuera de esta fase.
+- Fase 14 — captación premium: terminada para el alcance local. El formulario público de dos pasos, contrato de datos, migración, API, inbox/constructor staff, validaciones, anti-spam básico, E2E, documentación y gate técnico están comprobados; los adjuntos anónimos permanecen fuera de alcance.
+- Fase 15 — onboarding y vinculación de usuarios cliente: terminada para el alcance local. RBAC, servicio transaccional, API estricta, magic link `INVITED → ACTIVE`, colisiones, fallback de notificaciones, proyección staff, UI, E2E opt-in y documentación están comprobados.
 - La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
 
 - Contacto directo por correo/WhatsApp: canal informativo, todavía fuera del expediente persistido.
-- Alta y vinculación de usuarios: la captación pública crea cliente/contacto y expediente, pero todavía no crea ni invita automáticamente al usuario cliente del portal; el onboarding administrativo es requisito para cerrar el flujo comercial completo.
-- El correo de recepción puede generarse para el contacto, pero su acción `/portal` requiere que exista un usuario cliente activo y vinculado; debe validarse junto con el módulo de onboarding antes de considerar cerrado el recorrido post-solicitud.
+- Alta automática desde la captación pública: la web sigue sin crear cuentas sin intervención del personal; el onboarding administrativo es deliberado y requiere `identity.users.manage`.
+- Acceso productivo del cliente: el recorrido local está completo, pero correo real, dominios, soporte, privacidad, recuperación y operación externa permanecen sujetos al gate de lanzamiento.
 - Captación premium: el formulario público ya incorpora dimensiones/alcance, etapa, plazo, presupuesto opcional, validación por campo, honeypot y rate limit. Permanecen adjuntos anónimos fuera de alcance y el enlace legal de privacidad pendiente de revisión jurídica.
 
 ### Pendientes
@@ -187,7 +193,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
-- Siguiente paso: Fase 15 — onboarding y vinculación de usuarios cliente, para que el expediente captado pueda habilitar el portal con un usuario activo sin convertir el folio en credencial.
+- Siguiente paso: Fase 16 — cierre de preparación comercial y controles externos de lanzamiento, sin publicar todavía.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
@@ -320,6 +326,14 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 121. Fase 13 reutiliza los contratos backend de autenticación existentes y añade superficies navegables fijas (`/login`, `/portal/access`, `/auth/...`); no crea credenciales demo ni una autorización paralela en el cliente.
 122. Los tokens de magic link y recovery se leen una sola vez desde la URL, se limpian con `history.replaceState` y se mantienen sólo en memoria hasta el POST de consumo; no se guardan en almacenamiento persistente del navegador.
 123. El runner E2E usa `NEXT_DIST_DIR=.next-e2e` para aislar sus builds del `.next` de un `next dev` activo; la separación evita chunks corruptos sin apagar el entorno local del usuario.
+124. El onboarding reutiliza `User`, `ClientContact`, `AuthToken`, Outbox y `Session`; no crea una tabla de invitaciones ni una credencial paralela mientras el modelo existente conserva las garantías necesarias.
+125. La acción de habilitar portal se controla con el permiso existente `identity.users.manage`: `manager` y `admin` pueden ejecutarla; `sales` y `customer` no reciben el permiso por defecto.
+126. El vínculo cliente-contacto-usuario se resuelve por `emailNormalized` dentro de una transacción con lock de `QuoteRequest`; nunca se reasigna un usuario empleado ni un usuario de otro cliente.
+127. Un usuario invitado permanece `INVITED` hasta consumir un magic link vigente; la transición a `ACTIVE`, consumo único y creación de sesión ocurren dentro de la misma transacción.
+128. Las invitaciones vigentes se deduplican; una cuenta activa puede recibir un enlace nuevo cuando no existe uno pendiente, y la respuesta staff sólo expone estado operativo y correo del contacto.
+129. Las comunicaciones para contactos sin cuenta apuntan a `/portal/access` y usan “Solicitar acceso”; las plantillas y el resolver aplican el fallback para que ningún consumidor genere un enlace muerto a `/portal`.
+130. La proyección staff expone únicamente `contact.user.id/status/type`; no expone tokens, hashes, ciphertext, secretos ni datos de autenticación en HTML o API.
+131. Los paneles con tabs deben renderizar siempre el `tabpanel` referenciado por `aria-controls`, incluso cuando la colección esté vacía; esta regla evita estados accesibles inválidos durante la carga/empty state.
 
 ## Pruebas realizadas
 
@@ -532,6 +546,13 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Axe detectó contraste insuficiente en índices decorativos y en `Muestra protegida`; se conservaron los tonos de la identidad y se ajustaron a valores que cumplen AA.
 - Una corrida dirigida mezcló integraciones sin `RUN_DB_TESTS=1` y falló por el guard de entorno, no por producto; la evidencia válida de integración se mantiene en el comando serial oficial con PostgreSQL activo.
 - La revisión final detectó que la especificación de Fase 11 exigía limitar lecturas y la primera implementación aún no lo aplicaba; se corrigió con rate limit configurable por empleado, prueba 429, limpieza exacta y nueva integración 71/71.
+- Fase 15 — documentación de diseño: especificación, autorrevisión y plan creados en ese orden antes de código; la fase reutiliza el permiso existente `identity.users.manage` y no agrega tabla de invitaciones.
+- Fase 15 — Tarea 1: prueba roja de RBAC/capability, después `tests/unit/auth-permissions.test.ts` 2/2, typecheck y commit `d25bb1a`.
+- Fase 15 — Tarea 2: `customer-auth-invitation.test.ts` 2/2; se verificaron helper transaccional, Outbox sin token crudo, activación `INVITED → ACTIVE`, replay, expiración y rechazo de token ligado a empleado. Commits `cb7787e` y `1c6b78a`.
+- Fase 15 — Tarea 3: `customer-onboarding-service.test.ts` 4/4 y `customer-onboarding-api.test.ts` 2/2; se verificaron creación/reutilización, pending deduplication, cuenta activa, cliente/contacto archivado, UUID inválido, correo de otro cliente/empleado, same-origin, sesión, RBAC, schema `{}` y respuesta sin secretos. Commit `4f92b2d` y hardening `8183321`.
+- Fase 15 — Tarea 4: `notifications-templates.test.ts` 8/8 y `notifications-fanout.test.ts` 2/2; contactos sin cuenta usan `/portal/access` + “Solicitar acceso”, mientras usuarios vinculados conservan portal y los eventos internos siguen cancelados. Commit `67199a9`.
+- Fase 15 — Tarea 5: E2E opt-in `CUSTOMER_ONBOARDING_E2E=1 npx playwright test tests/customer-onboarding.spec.ts` 2/2; manager, deduplicación, rol limitado, Axe y responsive 390/768/1440 correctos. La misma ejecución detectó `aria-controls` sin `tabpanel` en archivos vacíos; se corrigió y la repetición pasó. Commit `9a5fb21`.
+- Fase 15 — Gate final: `npm run db:validate` correcto, `npm run db:migrate:deploy` sin pendientes sobre 17 migraciones, `npm run db:seed` idempotente, `npm run typecheck`, `npm run lint`, `npm run test:unit` 31 archivos/114 pruebas, `npm run test:integration` 42 archivos/87 pruebas serializadas, `npm run test:content`, `npm run build`, `npm run test:e2e` 35 passed/18 skipped opt-in, `npm audit --omit=dev --audit-level=high` con 0 vulnerabilidades y `git diff --check` correctos. La E2E opt-in de onboarding quedó verificada aparte en 2/2.
 
 ## Criterio de terminado de Fase 1
 
@@ -578,6 +599,9 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-premium-quote-intake-design.md` — especificación de Fase 14 para captación progresiva y calificación comercial.
 - `docs/superpowers/reviews/2026-09-08-ocpool-premium-quote-intake-review.md` — autorrevisión de Fase 14 sobre datos históricos, anti-spam, privacidad y onboarding.
 - `docs/superpowers/plans/2026-09-08-ocpool-premium-quote-intake.md` — plan TDD de Fase 14; Tasks 1–5 cerradas con evidencia de gate.
+- `docs/superpowers/specs/2026-09-08-ocpool-customer-onboarding-design.md` — especificación aprobada de Fase 15 para vinculación, invitaciones, activación y aislamiento.
+- `docs/superpowers/reviews/2026-09-08-ocpool-customer-onboarding-review.md` — autorrevisión de Fase 15 sobre RBAC, colisiones, tokens, Outbox, enumeración y UX.
+- `docs/superpowers/plans/2026-09-08-ocpool-customer-onboarding.md` — plan TDD de Fase 15; Tasks 1–5 cerradas y Task 6 en cierre documental/gate.
 - `docs/runbooks/local-development.md` — formulario público, folio, honeypot, worker/Mailpit y dependencia de onboarding.
 
 ## Criterio de terminado de Fase 10
@@ -600,10 +624,14 @@ La fase queda terminada para el alcance local: las cinco rutas de acceso funcion
 
 La fase queda terminada para el alcance local: el intake público persiste sus datos controlados en columnas relacionales, mantiene folio/idempotencia/consentimiento y protecciones HTTP, proyecta la calificación en staff, ofrece una UI de dos pasos con errores accesibles y responsive, pasa pruebas dirigidas y regresión completa, y cuenta con README, runbooks, autorrevisión, plan y evidencia de gate. No incluye onboarding automático de cliente, adjuntos anónimos ni autorización de lanzamiento.
 
+## Criterio de terminado de Fase 15
+
+La fase queda terminada para el alcance local cuando el personal autorizado puede habilitar el portal desde un expediente sin crear credenciales manuales, el usuario se vincula a un único cliente, `INVITED` sólo se activa al consumir un magic link vigente, los tokens se deduplican/invalidan con seguridad, las notificaciones previas al onboarding apuntan a `/portal/access`, la UI staff refleja capabilities y estados con responsive/Axe, el flujo tiene pruebas unitarias/integración/E2E y README/runbooks/plan/status contienen evidencia reproducible. No autoriza lanzamiento: correo productivo, proveedores, legal, backups, observabilidad y destino operativo siguen bloqueados.
+
 ## Criterio de terminado de Fase 5
 
 La fase se considera terminada porque el cliente autenticado sólo lee recursos de su `clientId`, las cotizaciones históricas se sirven desde snapshots, las rutas privadas no enumeran recursos ajenos ni exponen secretos, la UI cubre estados de sesión/carga/vacío/error, responsive, teclado, reduced motion y Axe, y el gate de infraestructura, build, pruebas, auditoría y árbol limpio quedó registrado.
 
 ## Próximo paso autorizado
 
-Preservar Fase 14 como baseline y preparar Fase 15 — onboarding y vinculación de usuarios cliente — con especificación, autorrevisión y plan en orden documental. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.
+Preservar Fase 15 como baseline y preparar Fase 16 — cierre de preparación comercial y controles externos de lanzamiento — con especificación, autorrevisión y plan en orden documental. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.
