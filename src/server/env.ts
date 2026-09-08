@@ -61,6 +61,9 @@ const serverEnvSchema = z.object({
   AUTH_GLOBAL_RATE_LIMIT_WINDOW_MINUTES: integerEnv(1, 1, 10),
   ANALYTICS_RATE_LIMIT_MAX_ATTEMPTS: integerEnv(120, 10, 10_000),
   ANALYTICS_RATE_LIMIT_WINDOW_MINUTES: integerEnv(1, 1, 60),
+  AUDIT_CURSOR_SECRET: encryptionKey,
+  AUDIT_RATE_LIMIT_MAX_ATTEMPTS: integerEnv(120, 10, 10_000),
+  AUDIT_RATE_LIMIT_WINDOW_MINUTES: integerEnv(1, 1, 60),
 }).superRefine((value, context) => {
   if ((value.SMTP_USER === undefined) !== (value.SMTP_PASSWORD === undefined)) {
     context.addIssue({ code: 'custom', path: ['SMTP_USER'], message: 'SMTP_USER and SMTP_PASSWORD must be provided together' });
