@@ -21,6 +21,7 @@
 - Suprimir métricas temporales y filas de responsable con menos de 5 observaciones identificables.
 - No añadir dependencias, Redis, BI, rollups o materialized views sin evidencia y decisión posterior.
 - Todas las lecturas serán parametrizadas, acotadas, `no-store` y sin mutaciones comerciales.
+- Las lecturas estarán limitadas por actor con el mecanismo PostgreSQL existente; el límite será configurable y no reemplazará el rate limit del proxy.
 - Cada tarea termina con prueba dirigida, typecheck/lint cuando corresponda, `git diff --check` y commit lógico.
 
 ---
@@ -268,7 +269,7 @@
 
   Run: `npm run db:validate`, `npx prisma migrate status`, `npm run db:seed`, `npm run test:integration`, `npm run typecheck`, `npm run lint`, `npm audit --omit=dev --audit-level=high` y `git diff --check`.
 
-  Result: `npm run db:validate`, `npx prisma migrate status`, `npm run db:seed`, `npm run test:unit` (99/99), `npm run test:integration` (37 archivos/70 pruebas), `npm run test:content`, typecheck, lint, `npm run build`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y diff check pasaron. Se ejecutaron cuatro `EXPLAIN (ANALYZE, BUFFERS)` sobre el volumen local (44 solicitudes/80 entregas); los scans secuenciales tardaron 0.043–0.173 ms por el tamaño actual, por lo que no se agregó un índice especulativo. La revisión de volumen representativo queda en el gate antes de introducir rollups.
+  Result: `npm run db:validate`, `npx prisma migrate status`, `npm run db:seed`, `npm run test:unit` (99/99), `npm run test:integration` (37 archivos/71 pruebas), `npm run test:content`, typecheck, lint, `npm run build`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y diff check pasaron. El servicio aplica rate limit por empleado antes de ejecutar agregados y la integración verifica `429`. Se ejecutaron cuatro `EXPLAIN (ANALYZE, BUFFERS)` sobre el volumen local (44 solicitudes/80 entregas); los scans secuenciales tardaron 0.043–0.173 ms por el tamaño actual, por lo que no se agregó un índice especulativo. La revisión de volumen representativo queda en el gate antes de introducir rollups.
 
 - [x] **Step 4: Actualizar seguimiento.**
 
@@ -293,19 +294,23 @@
 - Consumes: todos los módulos, pruebas y runbooks de Tasks 1–5.
 - Produces: evidencia final y árbol limpio; no produce funcionalidades nuevas.
 
-- [ ] **Step 1: Ejecutar el gate técnico completo.**
+- [x] **Step 1: Ejecutar el gate técnico completo.**
 
   Run: `npm run db:validate`, `npx prisma migrate status`, `npm run db:seed`, `npm run test:unit`, `npm run test:integration`, `npm run test:content`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e`, `npm run test:e2e:foundation`, `npm audit --omit=dev --audit-level=high` y `git diff --check`.
 
-  Expected: PASS; los tests opt-in deben ejecutarse o quedar documentados con su razón exacta y evidencia dedicada.
+  Result: PASS. `db:validate`, migraciones al día, seed, 99 unitarias, 37 archivos/71 integraciones, contenido, typecheck, lint, build, auditoría de dependencias (0 altas), E2E base 34/34 ejecutadas con 10 omitidas opt-in, foundation 2/2 y dashboard opt-in 1/1. `git diff --check` pasó antes del cierre.
 
-- [ ] **Step 2: Revisar regresiones de seguridad.**
+- [x] **Step 2: Revisar regresiones de seguridad.**
 
   Confirmar 401/403/IDOR, scope sales/global, rango máximo, supresión, no-store, no PII, no secretos, no SQL, no N+1 observable y respuesta segura ante error de base de datos.
 
-- [ ] **Step 3: Actualizar plan y estado.**
+  Result: PASS. La API verifica 401/403/400 y query estricta; integración verifica scope self/global, customer/empleado sin permiso, supresión, moneda snapshot, no-store, requestId y ausencia de PII/SQL/secretos. El servicio verifica rate limit 429 antes del repositorio; revisión del repositorio confirma lecturas acotadas y batch de responsables sin consultas por fila.
+
+- [x] **Step 3: Actualizar plan y estado.**
 
   Marcar sólo pasos con evidencia; registrar pruebas ejecutadas/faltantes, problemas/resoluciones, riesgos abiertos y criterios de terminado. El árbol no se marca limpio hasta confirmar `git status --short` vacío.
+
+  Result: plan, `PROJECT_STATUS.md`, README y runbook actualizados en orden. El gate externo de producción de Fase 10 permanece `BLOCKED` explícito; no se presenta Fase 11 como autorización de lanzamiento.
 
 - [ ] **Step 4: Commit de cierre.**
 
@@ -316,10 +321,10 @@
 
 ### Gate final
 
-- [ ] El dashboard staff funciona en `/staff` con estados completos y metadata `noindex`.
-- [ ] Sales sólo ve su alcance; manager/admin ven scope global; customer no accede.
-- [ ] Todas las métricas tienen definición, fuente, zona, periodo y muestra.
-- [ ] No existe PII, secreto, SQL, IDOR o mutación desde dashboard.
-- [ ] Consultas parametrizadas, acotadas, sin N+1 y con evidencia de rendimiento.
-- [ ] Unitarias, integración, E2E, typecheck, lint, build, auditoría y diff check pasan.
-- [ ] README, runbook, PROJECT_STATUS y plan están actualizados; el árbol está limpio.
+- [x] El dashboard staff funciona en `/staff` con estados completos y metadata `noindex`.
+- [x] Sales sólo ve su alcance; manager/admin ven scope global; customer no accede.
+- [x] Todas las métricas tienen definición, fuente, zona, periodo y muestra.
+- [x] No existe PII, secreto, SQL, IDOR o mutación desde dashboard.
+- [x] Consultas parametrizadas, acotadas, sin N+1 y con evidencia de rendimiento.
+- [x] Unitarias, integración, E2E, typecheck, lint, build, auditoría y diff check pasan.
+- [x] README, runbook, PROJECT_STATUS y plan están actualizados; el árbol se confirmará limpio en el commit de cierre.

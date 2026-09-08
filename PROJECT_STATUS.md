@@ -4,11 +4,11 @@
 
 ## Estado actual
 
-- **Fase:** Fase 11 — dashboard y métricas operativas; Tareas 1–4 cerradas y Tarea 5 en desarrollo.
-- **Estado:** Fases 1–10 están implementadas y verificadas dentro del alcance local. Fase 11 ya tiene contratos, scope/RBAC, agregados, API privada, UI responsive y E2E opt-in; falta cerrar documentación operativa, rendimiento, auditoría y gate completo. El gate de Fase 10 reporta 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
+- **Fase:** Fase 11 — dashboard y métricas operativas; gate técnico local cerrado.
+- **Estado:** Fases 1–11 están implementadas y verificadas dentro del alcance local. Fase 11 tiene contratos, scope/RBAC, agregados, API privada, rate limit, serialización segura, UI responsive, runbook y gate completo. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Último commit de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`).
+- **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -160,11 +160,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 11 — Tareas 1–2: contratos de zona/fechas/cálculo, permiso `metrics.read.global`, repositorio parametrizado, agregados por scope y supresión de muestras; integración previa a la UI en 37 archivos/70 pruebas.
 - Fase 11 — Tarea 3: API privada `GET /api/staff/dashboard`, query estricta, `no-store`, errores con `requestId`, 401/403/400 y respuesta sin PII; integración dirigida 2/2 y build/typecheck/lint correctos.
 - Fase 11 — Tarea 4: dashboard `/staff` responsive con KPIs, alertas, pipeline, antigüedad, tiempos protegidos, carga y salud de notificaciones; E2E opt-in 1/1, Axe sin hallazgos serios, 390/768/1440 sin overflow, reduced motion y consola autenticada limpia. Commit `6fe361e`.
+- Fase 11 — Tarea 5 y gate: mapper de serialización, runbook, documentación, rate limit por empleado configurable y revisión `EXPLAIN`; 99 unitarias, 37 archivos/71 integraciones, E2E base 34/34 ejecutadas con 10 omitidas opt-in, foundation 2/2, dashboard 1/1, build, contenido, auditoría y diff check correctos.
 
 ### En desarrollo
 
-- Tarea 5 de Fase 11: prueba de serialización segura, runbook de métricas, actualización de README/PROJECT_STATUS, revisión de rendimiento y auditoría de dependencias.
-- La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
+- Ningún módulo del slice local está bloqueado. La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -176,7 +176,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Detalle completo del expediente y cotización versionada dentro del portal.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
-- Gate completo de Fase 11: `db:validate`, migraciones/seed, unitarias, integración, contenido, typecheck, lint, build, E2E base, E2E dashboard opt-in y auditoría.
+- Siguiente fase: definir el siguiente vertical slice comercial con especificación, revisión, plan y gate propios; no se inicia por código sin esa secuencia documental.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
@@ -297,6 +297,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 109. Los importes del dashboard conservan moneda separada y `BigInt` como string; las tasas se serializan como basis points y nunca se convierten monedas.
 110. La serialización analítica se concentra en un mapper puro que aplica supresión, claves opacas, fechas y valores seguros antes de construir el response HTTP; no devuelve PII, payloads, destinatarios, storage keys ni ciphertext.
 111. La UI del dashboard reutiliza la identidad staff existente con CSS/Intl nativos, sin dependencia de gráficas; los estados de carga, vacío, error, reduced motion, foco y contraste forman parte del módulo terminado.
+112. Las lecturas del dashboard usan el rate limit PostgreSQL existente por `actor.userId`, configurable con `ANALYTICS_RATE_LIMIT_MAX_ATTEMPTS`/`ANALYTICS_RATE_LIMIT_WINDOW_MINUTES`, aplicado después de validar rango y antes de ejecutar agregados.
 
 ## Pruebas realizadas
 
@@ -370,6 +371,8 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 11 — Tarea 4: `DASHBOARD_E2E=1 npm run test:e2e -- tests/dashboard.spec.ts` pasó 1/1. Se verificaron sesión restringida, sesión manager, rango histórico vacío, Axe sin violaciones serious/critical, no overflow a 390/768/1440, reduced motion, metadata privada, enlaces contextuales y consola autenticada limpia.
 - Fase 11 — Tarea 4: `npm run typecheck`, `npm run lint`, `npm run build` y `git diff --check` correctos. La primera E2E detectó una condición de carrera al hidratar fechas; se protegió la edición del usuario. Axe detectó contrastes bajos en índices/estado protegido; se corrigieron con tonos AA y se repitió la E2E.
 - Fase 11 — Tarea 5: prueba roja de serialización confirmó la ausencia del mapper; después `analytics-serialization.test.ts` pasó 1/1 verificando BigInt como string, monedas separadas, supresión, claves opacas y ausencia de identificadores/payloads/ciphertext/storage keys en JSON.
+- Fase 11 — Tarea 5/gate: se añadió y probó rate limit de lecturas por empleado (`RATE_LIMITED` 429) con limpieza exacta de buckets; `npm run test:integration` terminó en 37 archivos/71 pruebas.
+- Fase 11 — Gate final: `npm run test:e2e` pasó 34/34 con 10 opt-in omitidas de forma explícita; `npm run test:e2e:foundation` pasó 2/2; la E2E `DASHBOARD_E2E=1` pasó 1/1 después del hardening. Build, typecheck, lint, contenido, auditoría (0 vulnerabilidades altas), migraciones, seed y diff check pasaron.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -382,7 +385,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Casos límite adicionales de snapshots, inmutabilidad y cálculo de cotizaciones.
 - Prueba de larga duración del worker continuo bajo apagado coordinado; la lógica de shutdown, recuperación y proveedor no disponible sí tiene cobertura dirigida del servicio.
 - Pruebas de carga del worker y restauración de backups en destino aislado.
-- Gate de Fase 11 pendiente: migraciones/seed, suite unitaria/integración completa, contenido, E2E base, E2E dashboard opt-in, auditoría, revisión de `EXPLAIN` y objetivo P95 con fixtures representativos.
+- Fase 11 no tiene pendientes técnicos locales para su alcance; antes de producción debe repetirse la revisión de rendimiento con volumen representativo y confirmar la política de operación.
 - Confirmar antes de producción la zona `APP_TIMEZONE`, definiciones comerciales de periodo y alcance por ejecutivo/sucursal.
 
 ## Riesgos abiertos
@@ -487,6 +490,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - La hidratación inicial del rango podía sobrescribir una edición rápida del usuario mientras llegaba una respuesta; se añadió una marca de edición y el mapper de carga sólo inicializa campos una vez.
 - Axe detectó contraste insuficiente en índices decorativos y en `Muestra protegida`; se conservaron los tonos de la identidad y se ajustaron a valores que cumplen AA.
 - Una corrida dirigida mezcló integraciones sin `RUN_DB_TESTS=1` y falló por el guard de entorno, no por producto; la evidencia válida de integración se mantiene en el comando serial oficial con PostgreSQL activo.
+- La revisión final detectó que la especificación de Fase 11 exigía limitar lecturas y la primera implementación aún no lo aplicaba; se corrigió con rate limit configurable por empleado, prueba 429, limpieza exacta y nueva integración 71/71.
 
 ## Criterio de terminado de Fase 1
 
@@ -520,7 +524,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-production-hardening.md` — especificación aprobada para Fase 10; separa controles técnicos locales de decisiones externas.
 - `docs/superpowers/plans/2026-09-08-ocpool-production-hardening.md` — plan ordenado de Fase 10; Tareas 1–4 ejecutadas con gate local `BLOCKED` de forma intencional.
 - `docs/superpowers/specs/2026-09-08-ocpool-analytics-dashboard.md` — especificación aprobada para Fase 11; métricas operativas, scope, privacidad, rendimiento y UI.
-- `docs/superpowers/plans/2026-09-08-ocpool-analytics-dashboard.md` — plan ordenado de Fase 11; Tareas 1–4 cerradas y Tarea 5 en ejecución.
+- `docs/superpowers/plans/2026-09-08-ocpool-analytics-dashboard.md` — plan ordenado de Fase 11; Tareas 1–6 cerradas con gate técnico local.
 - `docs/runbooks/analytics-dashboard.md` — runbook operativo de definiciones, fechas, permisos, diagnóstico seguro y pruebas.
 
 ## Criterio de terminado de Fase 10
@@ -529,7 +533,7 @@ La fase se considera terminada para el alcance local porque la política de runt
 
 ## Criterio de terminado de Fase 11
 
-La fase se considerará terminada cuando el dashboard esté documentado, serializado de forma segura, medido con fixtures representativos, revisado contra regresiones y cubierto por el gate completo de pruebas. La UI y API actuales no autorizan lanzamiento por sí mismas; el bloqueo productivo de Fase 10 permanece vigente.
+La fase queda terminada para el alcance local: el dashboard está documentado, serializado de forma segura, revisado contra regresiones y cubierto por el gate completo de pruebas. La revisión de `EXPLAIN` local no justifica índices especulativos con el volumen actual; antes de producción deberá repetirse con volumen representativo. La UI y API no autorizan lanzamiento por sí mismas; el bloqueo productivo de Fase 10 permanece vigente.
 
 ## Criterio de terminado de Fase 5
 
@@ -537,4 +541,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Cerrar Tarea 5 de Fase 11 con pruebas de serialización, rendimiento y auditoría; después ejecutar el gate completo de Fase 11 y sólo entonces avanzar a la siguiente fase, manteniendo el gate de lanzamiento bloqueado hasta resolver los riesgos externos documentados.
+Definir la siguiente fase mediante especificación, autorrevisión y plan ordenado, manteniendo el gate de lanzamiento bloqueado hasta resolver los riesgos externos documentados.
