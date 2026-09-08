@@ -14,6 +14,8 @@ describe('readServerEnv', () => {
       AUTH_TOKEN_TTL_MINUTES: '15',
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: '5',
       AUTH_RATE_LIMIT_WINDOW_MINUTES: '15',
+      AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: '300',
+      AUTH_GLOBAL_RATE_LIMIT_WINDOW_MINUTES: '1',
     })).toMatchObject({
       APP_URL: 'http://localhost:3000',
       LOG_LEVEL: 'info',
@@ -24,6 +26,8 @@ describe('readServerEnv', () => {
       AUTH_TOKEN_TTL_MINUTES: 15,
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: 5,
       AUTH_RATE_LIMIT_WINDOW_MINUTES: 15,
+      AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 300,
+      AUTH_GLOBAL_RATE_LIMIT_WINDOW_MINUTES: 1,
     });
   });
 
@@ -47,6 +51,7 @@ describe('readServerEnv', () => {
       AUTH_TOKEN_TTL_MINUTES: '60',
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: '2',
       AUTH_RATE_LIMIT_WINDOW_MINUTES: '120',
+      AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: '10',
     })).toThrow();
   });
 });

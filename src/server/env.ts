@@ -25,10 +25,12 @@ const serverEnvSchema = z.object({
   AUTH_TOKEN_TTL_MINUTES: integerEnv(15, 5, 30),
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: integerEnv(5, 3, 20),
   AUTH_RATE_LIMIT_WINDOW_MINUTES: integerEnv(15, 1, 60),
+  AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: integerEnv(300, 20, 10_000),
+  AUTH_GLOBAL_RATE_LIMIT_WINDOW_MINUTES: integerEnv(1, 1, 10),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
-export function readServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
+export function readServerEnv(source: Partial<NodeJS.ProcessEnv> = process.env): ServerEnv {
   return serverEnvSchema.parse(source);
 }

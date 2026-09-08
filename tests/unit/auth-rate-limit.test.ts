@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkAuthRateLimit, type RateLimitBucket, type RateLimitRepository } from '@/server/auth/rate-limit';
+import { checkAuthRateLimit, checkAuthRateLimitIfKeyAvailable, type RateLimitBucket, type RateLimitRepository } from '@/server/auth/rate-limit';
 
 function createRepository(): RateLimitRepository {
   const buckets = new Map<string, RateLimitBucket>();
@@ -33,5 +33,19 @@ describe('authentication rate limits', () => {
     await expect(checkAuthRateLimit({ ...options, now: base })).resolves.toMatchObject({ allowed: true, remaining: 0 });
     await expect(checkAuthRateLimit({ ...options, now: new Date(base.getTime() + 14 * 60_000) })).resolves.toMatchObject({ allowed: false });
     await expect(checkAuthRateLimit({ ...options, now: new Date(base.getTime() + 15 * 60_000) })).resolves.toMatchObject({ allowed: true, remaining: 0 });
+  });
+
+  it('does not create a shared bucket when a trusted client key is unavailable', async () => {
+    const repository = createRepository();
+    const decision = await checkAuthRateLimitIfKeyAvailable({
+      scope: 'employee-login-ip',
+      key: null,
+      maxAttempts: 1,
+      windowMinutes: 15,
+      repository,
+    });
+
+    expect(decision).toEqual({ allowed: true, remaining: 1, retryAfterSeconds: null });
+    expect(await repository.get('employee-login-ip', 'unknown-client')).toBeNull();
   });
 });

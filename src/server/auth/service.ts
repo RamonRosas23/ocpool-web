@@ -1,5 +1,5 @@
 import { encryptSecret, fingerprintToken, generateOpaqueToken, hashPassword, verifyPassword } from '@/server/auth/crypto';
-import { checkAuthRateLimit } from '@/server/auth/rate-limit';
+import { checkAuthRateLimit, checkAuthRateLimitIfKeyAvailable } from '@/server/auth/rate-limit';
 import { getSessionContext } from '@/server/auth/sessions';
 import { createMfaEnrollment, unprotectMfaSecret, verifyTotpCode } from '@/server/auth/mfa';
 import { getPrisma } from '@/server/db/client';
@@ -127,6 +127,31 @@ async function isAllowed(rateLimit: { scope: string; key: string }, now: Date): 
   return decision.allowed;
 }
 
+async function isAllowedByGlobalCircuitBreaker(ipAddress: string | null, now: Date): Promise<boolean> {
+  if (ipAddress) return true;
+  const env = readServerEnv();
+  const decision = await checkAuthRateLimit({
+    scope: 'auth-global',
+    key: 'service',
+    maxAttempts: env.AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMinutes: env.AUTH_GLOBAL_RATE_LIMIT_WINDOW_MINUTES,
+    now,
+  });
+  return decision.allowed;
+}
+
+async function isAllowedByIp(scope: string, ipAddress: string | null, now: Date): Promise<boolean> {
+  const env = readServerEnv();
+  const decision = await checkAuthRateLimitIfKeyAvailable({
+    scope,
+    key: ipAddress,
+    maxAttempts: env.AUTH_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMinutes: env.AUTH_RATE_LIMIT_WINDOW_MINUTES,
+    now,
+  });
+  return decision.allowed;
+}
+
 export async function loginEmployee(input: {
   email: string;
   password: string;
@@ -138,9 +163,11 @@ export async function loginEmployee(input: {
 > {
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
+  if (!(await isAllowedByGlobalCircuitBreaker(input.context.ipAddress, now))) return { ok: false };
   const email = normalizeEmail(input.email);
   const allowedByEmail = await isAllowed({ scope: 'employee-login-email', key: email }, now);
-  const allowedByIp = await isAllowed({ scope: 'employee-login-ip', key: input.context.ipAddress ?? 'unknown-client' }, now);
+  const allowedByIp = await isAllowedByIp('employee-login-ip', input.context.ipAddress, now);
+  if (!allowedByEmail || !allowedByIp) return { ok: false };
 
   const user = await prisma.user.findUnique({
     where: { emailNormalized: email },
@@ -169,7 +196,7 @@ export async function loginEmployee(input: {
     }
   }
 
-  if (!eligible || !user || !allowedByEmail || !allowedByIp) {
+  if (!eligible || !user) {
     await recordAuthEvent(prisma, {
       eventType: 'LOGIN_FAILURE',
       outcome: 'DENIED',
@@ -214,9 +241,10 @@ export async function loginEmployee(input: {
 export async function requestCustomerMagicLink(input: { email: string; context: AuthRequestContext }, dependencies: AuthServiceDependencies = {}): Promise<void> {
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
+  if (!(await isAllowedByGlobalCircuitBreaker(input.context.ipAddress, now))) return;
   const email = normalizeEmail(input.email);
   const allowedByEmail = await isAllowed({ scope: 'customer-magic-link-email', key: email }, now);
-  const allowedByIp = await isAllowed({ scope: 'customer-magic-link-ip', key: input.context.ipAddress ?? 'unknown-client' }, now);
+  const allowedByIp = await isAllowedByIp('customer-magic-link-ip', input.context.ipAddress, now);
   if (!allowedByEmail || !allowedByIp) return;
 
   const user = await prisma.user.findUnique({ where: { emailNormalized: email }, include: { client: true } });
@@ -246,7 +274,8 @@ export async function consumeCustomerMagicLink(rawToken: string, context: AuthRe
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
   if (!rawToken || rawToken.length < 40) return { ok: false };
-  if (!(await isAllowed({ scope: 'customer-magic-link-consume-ip', key: context.ipAddress ?? 'unknown-client' }, now))) return { ok: false };
+  if (!(await isAllowedByGlobalCircuitBreaker(context.ipAddress, now))) return { ok: false };
+  if (!(await isAllowedByIp('customer-magic-link-consume-ip', context.ipAddress, now))) return { ok: false };
 
   const sessionRawToken = (dependencies.sessionTokenGenerator ?? generateOpaqueToken)();
   const result = await prisma.$transaction(async (transaction) => {
@@ -268,9 +297,10 @@ export async function consumeCustomerMagicLink(rawToken: string, context: AuthRe
 export async function requestPasswordRecovery(input: { email: string; context: AuthRequestContext }, dependencies: AuthServiceDependencies = {}): Promise<void> {
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
+  if (!(await isAllowedByGlobalCircuitBreaker(input.context.ipAddress, now))) return;
   const email = normalizeEmail(input.email);
   const allowedByEmail = await isAllowed({ scope: 'password-recovery-email', key: email }, now);
-  const allowedByIp = await isAllowed({ scope: 'password-recovery-ip', key: input.context.ipAddress ?? 'unknown-client' }, now);
+  const allowedByIp = await isAllowedByIp('password-recovery-ip', input.context.ipAddress, now);
   if (!allowedByEmail || !allowedByIp) return;
 
   const user = await prisma.user.findUnique({ where: { emailNormalized: email } });
@@ -290,7 +320,8 @@ export async function consumePasswordRecovery(input: { rawToken: string; newPass
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
   if (!input.rawToken || input.rawToken.length < 40) return false;
-  if (!(await isAllowed({ scope: 'password-recovery-consume-ip', key: input.context.ipAddress ?? 'unknown-client' }, now))) return false;
+  if (!(await isAllowedByGlobalCircuitBreaker(input.context.ipAddress, now))) return false;
+  if (!(await isAllowedByIp('password-recovery-consume-ip', input.context.ipAddress, now))) return false;
   const candidate = await prisma.authToken.findUnique({ where: { tokenHash: fingerprintToken(input.rawToken) }, include: { user: true } });
   if (!candidate || candidate.type !== 'PASSWORD_RESET' || candidate.consumedAt || candidate.expiresAt <= now || candidate.user.type !== 'EMPLOYEE' || candidate.user.status !== 'ACTIVE') return false;
   const passwordHash = await hashPassword(input.newPassword);

@@ -31,6 +31,35 @@ describe('same-origin protection', () => {
   it('requires JSON bodies and does not trust forwarding headers by default', async () => {
     await expect(parseBody(new Request('http://localhost:3000', { method: 'POST', body: '{}', headers: { 'content-type': 'text/plain' } }), emailBodySchema)).rejects.toThrow();
     await expect(parseBody(new Request('http://localhost:3000', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json', 'content-length': '20000' } }), emailBodySchema)).rejects.toThrow();
-    expect(requestContext(new Request('http://localhost:3000', { headers: { 'x-forwarded-for': '203.0.113.10' } }) as Request & { cookies: never }).ipAddress).toBeNull();
+    expect(requestContext(new Request('http://localhost:3000', { headers: { 'x-forwarded-for': '203.0.113.10' } })).ipAddress).toBeNull();
+  });
+
+  it('stops reading a chunked body as soon as it exceeds the byte limit', async () => {
+    const encoder = new TextEncoder();
+    const firstChunk = encoder.encode('{"email":"client@example.com","padding":"');
+    const oversizedChunk = encoder.encode(`${'x'.repeat(17_000)}"}`);
+    let pullCount = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pullCount += 1;
+        if (pullCount === 1) {
+          controller.enqueue(firstChunk);
+          return;
+        }
+        if (pullCount === 2) {
+          controller.enqueue(oversizedChunk);
+          return;
+        }
+        throw new Error('body was read past the limit');
+      },
+    });
+
+    await expect(parseBody(new Request('http://localhost:3000', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' }), emailBodySchema)).rejects.toThrow();
+    expect(pullCount).toBe(2);
   });
 });

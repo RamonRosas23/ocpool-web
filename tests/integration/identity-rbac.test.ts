@@ -220,6 +220,32 @@ describe('identity and RBAC foundation', () => {
     await prisma.authRateLimit.delete({ where: { scope_keyHash: { scope: options.scope, keyHash } } });
   }, 15_000);
 
+  it('does not share a global IP bucket when the request has no trusted address', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-01-03T00:00:00.000Z');
+    const password = 'NoIpRateLimitPassword123!';
+    const firstEmail = `no-ip-first-${suffix}@example.test`;
+    const secondEmail = `no-ip-second-${suffix}@example.test`;
+    const [firstUser, secondUser] = await Promise.all([
+      prisma.user.create({ data: { email: firstEmail, emailNormalized: firstEmail, displayName: 'No IP First', type: 'EMPLOYEE', status: 'ACTIVE', passwordHash: await hashPassword(password) } }),
+      prisma.user.create({ data: { email: secondEmail, emailNormalized: secondEmail, displayName: 'No IP Second', type: 'EMPLOYEE', status: 'ACTIVE', passwordHash: await hashPassword(password) } }),
+    ]);
+
+    const context = { ipAddress: null, userAgent: 'integration-no-ip-test' };
+    for (let attempt = 0; attempt < readServerEnv().AUTH_RATE_LIMIT_MAX_ATTEMPTS; attempt += 1) {
+      expect((await loginEmployee({ email: firstEmail, password: 'WrongPassword123!', context }, { prisma, now: new Date(now.getTime() + attempt * 1_000) })).ok).toBe(false);
+    }
+    expect((await loginEmployee({ email: secondEmail, password, context }, { prisma, now: new Date(now.getTime() + 10_000), sessionTokenGenerator: () => `no-ip-session-${suffix}-abcdefghijklmnopqrstuvwxyz` })).ok).toBe(true);
+
+    await prisma.authRateLimit.deleteMany({ where: { scope: { in: ['employee-login-email', 'employee-login-ip'] }, keyHash: { in: [fingerprintToken(firstEmail), fingerprintToken(secondEmail), fingerprintToken('unknown-client')] } } });
+    await prisma.user.deleteMany({ where: { id: { in: [firstUser.id, secondUser.id] } } });
+  }, 30_000);
+
   it('runs employee login, admin MFA, customer magic link and transactional recovery', async () => {
     if (process.env.RUN_DB_TESTS !== '1') {
       throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
@@ -329,6 +355,7 @@ describe('identity and RBAC foundation', () => {
     const routeIp = `10.10.0.${Number(suffix.slice(-3)) % 200 + 1}`;
     const previousTrustProxyHeaders = process.env.TRUST_PROXY_HEADERS;
     process.env.TRUST_PROXY_HEADERS = 'true';
+    await prisma.authRateLimit.deleteMany({ where: { scope: 'auth-global', keyHash: fingerprintToken('service') } });
     const user = await prisma.user.create({
       data: { email, emailNormalized: email, displayName: 'Route Test', type: 'EMPLOYEE', status: 'ACTIVE', passwordHash: await hashPassword(password) },
     });
@@ -352,6 +379,7 @@ describe('identity and RBAC foundation', () => {
 
     const loginResponse = await employeeLoginRoute(request({ email, password }));
     expect(loginResponse.status).toBe(200);
+    expect(await prisma.authRateLimit.findUnique({ where: { scope_keyHash: { scope: 'auth-global', keyHash: fingerprintToken('service') } } })).toBeNull();
     const sessionCookie = loginResponse.cookies.get('ocpool_session')?.value;
     expect(sessionCookie).toBeTruthy();
     expect(loginResponse.headers.get('set-cookie')).toContain('HttpOnly');

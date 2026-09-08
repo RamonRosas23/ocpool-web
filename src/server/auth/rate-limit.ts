@@ -20,6 +20,17 @@ export type RateLimitDecision = {
   retryAfterSeconds: number | null;
 };
 
+type RateLimitInput = {
+  scope: string;
+  key: string;
+  maxAttempts: number;
+  windowMinutes: number;
+  now?: Date;
+  repository?: RateLimitRepository;
+};
+
+type OptionalRateLimitInput = Omit<RateLimitInput, 'key'> & { key: string | null };
+
 function secondsUntil(date: Date, now: Date): number {
   return Math.max(1, Math.ceil((date.getTime() - now.getTime()) / 1000));
 }
@@ -111,4 +122,11 @@ export async function checkAuthRateLimit(input: {
     await input.repository.save(input.scope, keyHash, result.bucket);
   }
   return result.decision;
+}
+
+export async function checkAuthRateLimitIfKeyAvailable(input: OptionalRateLimitInput): Promise<RateLimitDecision> {
+  if (!Number.isInteger(input.maxAttempts) || input.maxAttempts < 1) throw new Error('Invalid rate-limit maximum.');
+  if (!Number.isInteger(input.windowMinutes) || input.windowMinutes < 1) throw new Error('Invalid rate-limit window.');
+  if (!input.key) return { allowed: true, remaining: input.maxAttempts, retryAfterSeconds: null };
+  return checkAuthRateLimit({ ...input, key: input.key });
 }
