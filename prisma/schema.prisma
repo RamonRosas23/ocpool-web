@@ -82,6 +82,35 @@ enum MessageVisibility {
   INTERNAL
 }
 
+enum StorageProvider {
+  MINIO
+}
+
+enum FileScanStatus {
+  PENDING
+  PASSED
+  REJECTED
+}
+
+enum FileAttachmentStatus {
+  PENDING_SCAN
+  AVAILABLE
+  REJECTED
+  DELETED
+}
+
+enum FileCategory {
+  REFERENCE_IMAGE
+  TECHNICAL_DOCUMENT
+  CLIENT_DOCUMENT
+  INTERNAL_DOCUMENT
+}
+
+enum FileVisibility {
+  CUSTOMER
+  INTERNAL
+}
+
 enum QuoteVersionStatus {
   BORRADOR
   EN_REVISION
@@ -172,6 +201,7 @@ model Client {
   quoteRequests QuoteRequest[]
   quotes      Quote[]
   conversations Conversation[]
+  fileAttachments FileAttachment[]
 
   @@index([status, createdAt])
   @@map("clients")
@@ -204,6 +234,7 @@ model User {
   quoteStatusChanges QuoteStatusHistory[] @relation("QuoteStatusHistoryActor")
   closedConversations Conversation[] @relation("ConversationCloser")
   conversationMessages ConversationMessage[] @relation("ConversationMessageSender")
+  uploadedFileAttachments FileAttachment[] @relation("FileAttachmentUploader")
   createdAt           DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime     @updatedAt @db.Timestamptz(3)
 
@@ -253,6 +284,7 @@ model QuoteRequest {
   assignments       RequestAssignment[]
   statusHistory     RequestStatusHistory[]
   conversation      Conversation?
+  fileAttachments   FileAttachment[]
 
   @@index([status, createdAt])
   @@index([currentAssigneeId, status, createdAt])
@@ -296,6 +328,52 @@ model ConversationMessage {
   @@index([conversationId, createdAt, id])
   @@index([conversationId, visibility, createdAt, id])
   @@map("conversation_messages")
+}
+
+model StorageObject {
+  id            String          @id @default(uuid()) @db.Uuid
+  provider      StorageProvider @default(MINIO)
+  storageKey    String          @unique @db.VarChar(255)
+  contentType   String          @db.VarChar(120)
+  byteSize      BigInt
+  sha256        String          @db.Char(64)
+  etag          String?         @db.VarChar(128)
+  scanStatus    FileScanStatus  @default(PENDING)
+  scannerName   String?         @db.VarChar(120)
+  scanReason    String?         @db.VarChar(300)
+  scannedAt     DateTime?       @db.Timestamptz(3)
+  verifiedAt    DateTime?       @db.Timestamptz(3)
+  deletedAt     DateTime?       @db.Timestamptz(3)
+  createdAt     DateTime        @default(now()) @db.Timestamptz(3)
+  attachment    FileAttachment?
+
+  @@index([scanStatus, createdAt])
+  @@index([deletedAt, createdAt])
+  @@map("storage_objects")
+}
+
+model FileAttachment {
+  id               String                @id @default(uuid()) @db.Uuid
+  quoteRequestId   String                @db.Uuid
+  clientId         String                @db.Uuid
+  storageObjectId  String                @unique @db.Uuid
+  originalFileName String                @db.VarChar(180)
+  category         FileCategory
+  visibility       FileVisibility
+  status           FileAttachmentStatus  @default(PENDING_SCAN)
+  uploadedById     String                @db.Uuid
+  createdAt        DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime              @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime?             @db.Timestamptz(3)
+  quoteRequest     QuoteRequest          @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Cascade)
+  client           Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  storageObject    StorageObject         @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
+  uploadedBy       User                  @relation("FileAttachmentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([quoteRequestId, status, createdAt])
+  @@index([clientId, visibility, status, createdAt])
+  @@index([uploadedById, createdAt])
+  @@map("file_attachments")
 }
 
 model QuoteRequestDetail {

@@ -14,13 +14,21 @@
 
 **Riesgos:** FK que permita cruzar clientes, estados que entreguen objetos incompletos, duplicados de reserva, metadata sensible o migración difícil de limpiar.
 
-- [ ] Escribir pruebas rojas para categorías, nombres, tamaño, MIME declarado, estados y visibilidad.
-- [ ] Agregar permisos de archivos a RBAC y asignarlos de forma mínima a customer/sales/manager/admin.
-- [ ] Crear enums/modelos `StorageObject` y `FileAttachment` con FK compuesto request+client, unicidad, índices y soft delete.
-- [ ] Definir constraints de tamaño, hash, key, nombre y estados; documentar límite 25 MiB y cuota por expediente.
-- [ ] Crear migración, generar Prisma, seed idempotente y validar cleanup exacto.
-- [ ] Ejecutar unitarias dirigidas, schema dirigido, typecheck, lint y diff check.
-- [ ] Commit `feat: add private file persistence contracts`.
+- [x] Escribir pruebas rojas para categorías, nombres, tamaño, MIME declarado, estados y visibilidad.
+- [x] Agregar permisos de archivos a RBAC y asignarlos de forma mínima a customer/sales/manager/admin.
+- [x] Crear enums/modelos `StorageObject` y `FileAttachment` con FK compuesto request+client, unicidad, índices y soft delete.
+- [x] Definir constraints de tamaño, hash, key, nombre y estados; documentar límite 25 MiB y cuota por expediente.
+- [x] Crear migración, generar Prisma, seed idempotente y validar cleanup exacto.
+- [x] Ejecutar unitarias dirigidas, schema dirigido, typecheck, lint y diff check.
+- [x] Commit `feat: add private file persistence contracts`.
+
+Evidencia de cierre:
+
+- `tests/unit/private-files-domain.test.ts` pasó 6/6; cubre categorías, visibilidad, estados, nombre seguro, tipos permitidos, límite 25 MiB, documento interno y key opaca.
+- RBAC pasó de 27 a 33 capacidades; customer sólo recibe lectura/carga/descarga/borrado propio, sales agrega lectura interna y manager agrega administración; admin conserva el catálogo completo.
+- Migración `20260908083258_private_files` aplicada; Prisma validado/generado; `StorageObject` y `FileAttachment` usan FK compuesto request+client, soft delete, índices y constraints SQL de tamaño, hash, key y visibilidad.
+- `tests/integration/private-files-schema.test.ts` pasó 1/1 con scope cruzado, invariantes de DB y cleanup exacto; `npm run typecheck`, `npm run lint`, `git diff --check` correctos.
+- `npm run db:seed` permanece idempotente; no se agregó storage externo ni dependencia durante Tarea 1.
 
 ## Tarea 2 — Storage privado y servicio transaccional
 

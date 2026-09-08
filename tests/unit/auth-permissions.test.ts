@@ -9,13 +9,17 @@ import {
 
 describe('authorization policy', () => {
   it('defines the approved least-privilege role catalog', () => {
-    expect(ALL_PERMISSION_KEYS).toHaveLength(27);
+    expect(ALL_PERMISSION_KEYS).toHaveLength(33);
     expect(permissionKeysForRoles(['customer'])).toEqual(new Set([
       'portal.self.read',
       'portal.self.authenticate',
       'identity.session.read',
       'messaging.read',
       'messaging.send',
+      'files.read',
+      'files.upload',
+      'files.download',
+      'files.delete',
     ]));
     expect(permissionKeysForRoles(['sales'])).toEqual(new Set([
       'identity.session.read',
@@ -35,6 +39,11 @@ describe('authorization policy', () => {
       'messaging.send',
       'messaging.internal_notes.read',
       'messaging.internal_notes.write',
+      'files.read',
+      'files.upload',
+      'files.download',
+      'files.delete',
+      'files.internal.read',
     ]));
     expect(permissionKeysForRoles(['manager'])).toEqual(expect.any(Set));
     expect(permissionKeysForRoles(['manager'])).toContain('catalog.manage');

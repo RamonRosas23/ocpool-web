@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 7 — Archivos privados por expediente.
-- **Estado:** Fases 1–6 están terminadas con gates verdes. Fase 7 tiene especificación y plan aprobados; Tarea 1 — contrato de dominio, permisos y persistencia — está próxima a ejecutarse. No hay bytes de archivos ni cambios de infraestructura implementados todavía.
+- **Estado:** Fases 1–6 están terminadas con gates verdes. Fase 7 tiene especificación y plan aprobados; Tarea 1 — contrato de dominio, permisos y persistencia — está terminada con evidencia. Tarea 2 — storage privado y servicio transaccional — es la siguiente. No hay bytes de archivos ni cambios de infraestructura implementados todavía.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -110,10 +110,13 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Comando oficial de integración serializado a un worker DB para evitar timeouts de inicio de transacción por saturación local; se conserva la cobertura completa de 38 pruebas.
 - Gate de Fase 6 cerrado: aislamiento cliente/staff, RBAC, idempotencia, cierre/reapertura, payloads/logs sin cuerpos sensibles, E2E opt-in, auditoría de dependencias y árbol limpio verificados.
 - Especificación de Fase 7 para archivos privados por expediente, con storage S3-compatible privado, metadata relacional, estados de análisis, URLs efímeras, auditoría y pruebas negativas.
+- Contrato de dominio de archivos: categorías, visibilidades, estados, nombres seguros, tipos permitidos, límite de 25 MiB y keys opacas.
+- RBAC de archivos con seis capacidades explícitas y asignación mínima por rol; no se modificó la autorización de expedientes existente.
+- Schema relacional `StorageObject`/`FileAttachment` y migración `20260908083258_private_files` con FK compuesto, soft delete, índices y constraints de tamaño/hash/key/visibilidad.
 
 ### En desarrollo
 
-- Fase 7 — Tarea 1: contrato de dominio, permisos y persistencia.
+- Fase 7 — Tarea 2: storage privado y servicio transaccional.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -183,6 +186,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 48. MinIO será el storage S3-compatible local para probar el contrato real de objetos privados; el dominio no dependerá de SDKs ni de rutas físicas y el bucket nunca será público.
 49. El servidor no entregará archivos que no estén en `AVAILABLE`; la validación local de firma/tipo no se presentará como antivirus productivo, y ese proveedor será un gate explícito de salida.
 50. Los adjuntos de mensajes quedan fuera de Fase 7 para no mezclar dos superficies de visibilidad; primero se estabiliza el ciclo de vida del archivo por expediente.
+51. La primera persistencia separa `scanStatus` del storage y `status` del adjunto: un objeto puede estar validado físicamente mientras el vínculo comercial conserva su ciclo de vida y borrado lógico.
 
 ## Pruebas realizadas
 
@@ -226,6 +230,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 5 de Fase 6: commits `09d979f`, `f2b0e4b` y `9eb9a04`; E2E opt-in `STAFF_MESSAGING_E2E=1 npx playwright test tests/client-messaging-staff.spec.ts` 2/2, `messaging-api.test.ts` 4/4, `npm run test:unit` 45/45, `npm run test:integration` 38/38, `npm run test:e2e` 34/34 ejecutadas con 7 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content`, migraciones/seed, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron separación de visibilidades, dos perfiles RBAC, compositores independientes, cierre/reapertura, Axe, consola y no overflow.
 - Tarea 6 de Fase 6: commit `6e1037c` (`test: harden messaging security matrix`) más cierre documental; API `messaging-api.test.ts` 4/4 con negative checks finales, E2E cliente 2/2, staff 2/2, auth 1/1 y constructor 1/1. Gate `npm test` 45 unitarias, 38 integraciones, contenido, build, 34 E2E públicas ejecutadas con 7 omitidas explícitamente y foundation 1/1; `npm run db:validate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron IDOR, sesión/RBAC, same-origin, rate limit, idempotencia concurrente, cierre, UUID inválido, Axe, responsive, consola, cleanup y ausencia de cuerpos sensibles en HTML/payloads/logs/Outbox.
 - Fase 7 — planificación: especificación `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` y plan `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` creados y revisados; aún no cuenta como evidencia de implementación ni como fase terminada.
+- Fase 7 — Tarea 1: prueba dirigida de dominio 6/6, schema 1/1, migración aplicada, Prisma validate/generate, seed, typecheck, lint y diff check correctos. No se agregaron dependencias ni servicios externos.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -325,7 +330,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-messaging-ui.md` — especificación aprobada y ejecutada para la UI staff de la Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
 - `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; implementación aún no iniciada.
-- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tarea 1 es la siguiente.
+- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tarea 1 cerrada y Tarea 2 es la siguiente.
 
 ## Criterio de terminado de Fase 5
 
@@ -333,4 +338,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 7, Tarea 1: contrato de dominio, permisos y persistencia de archivos privados por expediente, con pruebas rojas antes de escribir la implementación.
+Ejecutar Fase 7, Tarea 2: storage privado S3-compatible local y servicio transaccional de reserva, verificación, análisis, descarga y cleanup.
