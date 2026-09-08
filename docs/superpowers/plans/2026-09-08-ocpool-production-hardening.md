@@ -26,8 +26,7 @@
 
 **Files:**
 - Create: `src/server/security/production-policy.ts`
-- Create: `scripts/validate-production-env.mjs`
-- Modify: `src/server/env.ts`
+- Create: `scripts/validate-production-env.ts`
 - Modify: `package.json`
 - Modify: `.env.example`
 - Test: `tests/unit/production-policy.test.ts`
@@ -36,14 +35,14 @@
 - Consumes: `ServerEnv`, `NODE_ENV` y valores de configuración del proceso.
 - Produces: `assertProductionPolicy(env: NodeJS.ProcessEnv): ProductionPolicyResult`, con estados `PASS`/`BLOCKED` y códigos públicos de diagnóstico; el script devolverá exit code `0` sólo si no existe bloqueo.
 
-- [ ] Escribir primero las pruebas de producción insegura: `APP_URL` HTTP, claves de ejemplo, SMTP local, storage MinIO, proxy incoherente y configuración válida.
-- [ ] Ejecutar `npx vitest run tests/unit/production-policy.test.ts` y confirmar fallos por contrato ausente.
-- [ ] Implementar `production-policy.ts` con reglas deterministas, comparación contra valores conocidos de desarrollo y mensajes sin valores originales.
-- [ ] Implementar el script Node que cargue `.env`, ejecute la política y emita JSON compacto con `status`, `blockingCodes` y `warnings` sin secretos.
-- [ ] Agregar `npm run validate:production` sin reemplazar `npm run build` ni el flujo local.
-- [ ] Actualizar `.env.example` con comentarios que separen valores locales de requisitos de producción.
-- [ ] Ejecutar las pruebas dirigidas, `npm run typecheck`, `npm run lint` y `git diff --check`.
-- [ ] Commit: `feat: add production runtime policy`.
+- [x] Escribir primero las pruebas de producción insegura: `APP_URL` HTTP, claves de ejemplo, SMTP local, storage MinIO, proxy no explícito y configuración válida.
+- [x] Ejecutar `npx vitest run tests/unit/production-policy.test.ts` y confirmar fallos por contrato ausente.
+- [x] Implementar `production-policy.ts` con reglas deterministas, comparación contra valores conocidos de desarrollo y mensajes sin valores originales.
+- [x] Implementar el script TypeScript que cargue `.env`, ejecute la política y emita JSON compacto con `status`, `blockingCodes` y `warnings` sin secretos.
+- [x] Agregar `npm run validate:production` sin reemplazar `npm run build` ni el flujo local.
+- [x] Actualizar `.env.example` con comentarios que separen valores locales de requisitos de producción.
+- [x] Ejecutar las pruebas dirigidas, `npm run typecheck`, lint dirigido y `git diff --check`.
+- [x] Commit: `feat: add production runtime policy`.
 
 ### Criterio de terminado
 
