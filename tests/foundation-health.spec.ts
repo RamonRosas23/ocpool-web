@@ -16,3 +16,15 @@ test('reports a healthy database without exposing diagnostics', async ({ request
   expect(body.requestId).toEqual(expect.any(String));
   expect(serialized).not.toMatch(/stack|DATABASE_URL|SELECT|password/i);
 });
+
+test('reports readiness separately with no-store caching', async ({ request }) => {
+  const response = await request.get('/api/ready');
+  const body = await response.json();
+
+  expect(response.status()).toBe(200);
+  expect(response.headers()['cache-control']).toBe('no-store');
+  expect(body.status).toBe('ok');
+  expect(body.services.database).toBe('ok');
+  expect(body.requestId).toEqual(expect.any(String));
+  expect(JSON.stringify(body)).not.toMatch(/stack|DATABASE_URL|SELECT|password/i);
+});

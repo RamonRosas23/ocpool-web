@@ -64,14 +64,14 @@ La política detecta configuraciones de desarrollo con códigos estables, acepta
 - Consumes: `readServerEnv()`, `checkDatabase()` y el entorno de ejecución.
 - Produces: `getSecurityHeaders({ production, https })` y `GET /api/ready` con respuesta pública `{ status, requestId, services }`.
 
-- [ ] Escribir pruebas unitarias para headers en local y producción HTTPS; HSTS sólo puede aparecer en el segundo caso y ningún header debe contener secretos.
-- [ ] Escribir pruebas de readiness para base disponible, base no disponible, `503`, `requestId` y `cache-control: no-store`.
-- [ ] Ejecutar las pruebas dirigidas y confirmar fallos rojos.
-- [ ] Implementar el helper de headers con `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` restrictiva y protección de framing compatible con las superficies actuales.
-- [ ] Integrar headers mediante `next.config.ts` sin aplicar cache global a APIs privadas.
-- [ ] Implementar `/api/ready` sin cambiar el contrato existente de `/api/health`.
-- [ ] Ejecutar integración PostgreSQL serial, E2E foundation, typecheck, lint y `git diff --check`.
-- [ ] Commit: `feat: add secure headers and readiness`.
+- [x] Escribir pruebas unitarias para headers en local y producción HTTPS; HSTS sólo puede aparecer en el segundo caso y ningún header debe contener secretos.
+- [x] Escribir pruebas de readiness para base disponible, base no disponible, `503`, `requestId` y `cache-control: no-store`.
+- [x] Ejecutar las pruebas dirigidas y confirmar fallos rojos.
+- [x] Implementar el helper de headers con `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` restrictiva y protección de framing compatible con las superficies actuales.
+- [x] Integrar headers mediante `next.config.ts` sin aplicar cache global a APIs privadas.
+- [x] Implementar `/api/ready` sin cambiar el contrato existente de `/api/health`.
+- [x] Ejecutar integración PostgreSQL serial (64/64), E2E foundation (2/2), typecheck, lint dirigido, build y `git diff --check`.
+- [x] Commit: `feat: add secure headers and readiness`.
 
 ### Criterio de terminado
 
