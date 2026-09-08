@@ -59,12 +59,21 @@ Evidencia de cierre:
 
 **Riesgos:** IDOR, filtrado de internos, enumeración por status, cache de URLs, same-origin incompleto y errores de tipo.
 
-- [ ] Crear schemas Zod estrictos para reserva, finalización, categoría, cursor y UUIDs.
-- [ ] Crear APIs portal/staff con actor de sesión, scope de cliente, capabilities, no-store y same-origin en mutaciones.
-- [ ] Uniformar 401/403/404/409/413/415/422 sin filtrar existencia indebida, paths ni scanner internals.
-- [ ] Probar cliente propio/ajeno, staff limitado, sesión revocada, reservas repetidas, URL expirada, path traversal y visibilidad interna.
-- [ ] Documentar request/response sin storage keys, hashes de idempotencia ni presigned URLs reutilizables.
-- [ ] Commit `feat: expose protected private file APIs`.
+- [x] Crear schemas Zod estrictos para reserva, finalización, categoría, cursor y UUIDs.
+- [x] Crear APIs portal/staff con actor de sesión, scope de cliente, capabilities, no-store y same-origin en mutaciones.
+- [x] Uniformar 401/403/404/409/413/415/422 sin filtrar existencia indebida, paths ni scanner internals.
+- [x] Probar cliente propio/ajeno, staff limitado, sesión revocada, reservas repetidas, URL expirada, path traversal y visibilidad interna.
+- [x] Documentar request/response sin storage keys, hashes de idempotencia ni presigned URLs reutilizables.
+- [x] Commit `feat: expose protected private file APIs`.
+
+Evidencia de cierre:
+
+- Schemas Zod estrictos para reserva, finalización y lista; la API no acepta `clientId`, `uploadedById`, `storageKey`, estado, hash ni resultado de scanner desde el request.
+- Portal y staff comparten servicio autorizado, pero mantienen guards de sesión y rutas separadas; las mutaciones exigen same-origin y todas las respuestas privadas usan `cache-control: no-store`.
+- `private-files-api.test.ts` pasó 4/4: capabilities sin permisos crudos, 401/403/404, cliente cruzado, same-origin, campos desconocidos, carga presigned, finalización, descarga, borrado, visibilidad interna, rol limitado y rate limit persistido.
+- Las proyecciones no incluyen `clientId`, `storageKey` ni hash de idempotencia; la URL de upload sólo se entrega como transporte presigned de vida corta y nunca se persiste en DB, logs, auditoría o Outbox.
+- El listado verifica existencia y scope del expediente antes de responder para evitar enumeración silenciosa de clientes ajenos; la descarga exige `AVAILABLE` + `PASSED` en backend.
+- `npm run typecheck`, lint dirigido y la suite API PostgreSQL 4/4 correctos; cleanup eliminó metadata, objetos físicos, sesiones, roles y buckets de rate limit de fixtures.
 
 ## Tarea 4 — UI portal cliente
 

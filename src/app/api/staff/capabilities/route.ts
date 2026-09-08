@@ -24,6 +24,12 @@ export async function GET(request: NextRequest) {
       messagingInternalNotesRead: hasPermission(actor, 'messaging.internal_notes.read'),
       messagingInternalNotesWrite: hasPermission(actor, 'messaging.internal_notes.write'),
       messagingManage: hasPermission(actor, 'messaging.manage'),
+      filesRead: hasPermission(actor, 'files.read'),
+      filesUpload: hasPermission(actor, 'files.upload'),
+      filesDownload: hasPermission(actor, 'files.download'),
+      filesDelete: hasPermission(actor, 'files.delete'),
+      filesInternalRead: hasPermission(actor, 'files.internal.read'),
+      filesManage: hasPermission(actor, 'files.manage'),
     }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);

@@ -1,6 +1,7 @@
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { fingerprintToken } from '@/server/auth/crypto';
+import { checkAuthRateLimit } from '@/server/auth/rate-limit';
 import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
@@ -21,11 +22,15 @@ const RESERVATION_TTL_MINUTES = 15;
 const UPLOAD_URL_TTL_SECONDS = 15 * 60;
 const DOWNLOAD_URL_TTL_SECONDS = 60;
 const MAX_LIST_LIMIT = 100;
+const UPLOAD_RATE_LIMIT_SCOPE = 'private-file-reserve';
+const UPLOAD_RATE_LIMIT_MAX_ATTEMPTS = 10;
+const UPLOAD_RATE_LIMIT_WINDOW_MINUTES = 10;
 
 export type PrivateFilesServiceDependencies = Readonly<{
   prisma?: PrismaClient;
   storage?: PrivateStorage;
   now?: Date;
+  rateLimit?: (input: { key: string; now: Date }) => Promise<{ allowed: boolean }>;
 }>;
 
 export type ReservePrivateFileInput = Readonly<{
@@ -150,6 +155,9 @@ export async function reservePrivateFile(actor: Actor, input: ReservePrivateFile
   const storage = dependencies.storage ?? getPrivateStorage();
   const now = dependencies.now ?? new Date();
   const reservationExpiresAt = new Date(now.getTime() + RESERVATION_TTL_MINUTES * 60_000);
+  const rateLimit = dependencies.rateLimit ?? (async ({ key, now: rateLimitNow }) => checkAuthRateLimit({ scope: UPLOAD_RATE_LIMIT_SCOPE, key, maxAttempts: UPLOAD_RATE_LIMIT_MAX_ATTEMPTS, windowMinutes: UPLOAD_RATE_LIMIT_WINDOW_MINUTES, now: rateLimitNow }));
+  const rateLimitDecision = await rateLimit({ key: `${actor.userId}:${input.quoteRequestId}`, now });
+  if (!rateLimitDecision.allowed) throw new AppError('RATE_LIMITED', 'Has alcanzado el límite temporal de cargas.', 429);
 
   await storage.ensureBucket();
   const attachment = await prisma.$transaction(async (transaction) => {
@@ -269,6 +277,8 @@ export async function listPrivateFiles(actor: Actor, quoteRequestId: string, fil
   const clientId = requireActorScope(actor, 'files.read', quoteRequestId);
   const prisma = dependencies.prisma ?? getPrisma();
   const limit = normalizeLimit(filters.limit);
+  const request = await prisma.quoteRequest.findFirst({ where: { id: quoteRequestId, ...(clientId ? { clientId } : {}) }, select: { id: true } });
+  if (!request) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
   const includeInternal = actor.type === 'EMPLOYEE' && actor.permissionKeys.has('files.internal.read');
   const files = await prisma.fileAttachment.findMany({
     where: { quoteRequestId, ...(clientId ? { clientId } : {}), status: { not: 'DELETED' }, ...(includeInternal ? {} : { visibility: 'CUSTOMER' }), },

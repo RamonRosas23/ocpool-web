@@ -115,8 +115,12 @@ Endpoints disponibles:
 - `POST /api/quote-requests` — crea un expediente público con consentimiento, folio y respuesta idempotente mediante el header `Idempotency-Key`.
 - `GET /api/staff/quote-requests` y `GET /api/staff/quote-requests/:id` — inbox y detalle para empleados autorizados.
 - `GET /api/staff/quote-requests/assignees`, `POST .../:id/assign` y `POST .../:id/status` — operaciones internas RBAC con auditoría e historial.
+- `GET|POST /api/portal/requests/:id/files` y `POST|GET|DELETE .../:fileId` — archivos privados del cliente con reserva, finalización y descarga efímera.
+- `GET|POST /api/staff/quote-requests/:id/files` y `POST|GET|DELETE .../:fileId` — superficie equivalente para staff con visibilidad interna RBAC.
 
 Los tokens se guardan como huellas SHA-256. Los eventos Outbox de correo contienen el token únicamente cifrado para que el worker futuro pueda entregarlo; nunca se incluye el token crudo en payloads, respuestas o logs.
+
+Las cargas de archivos usan una reserva de metadata y una URL presigned de vida corta. El bucket MinIO/S3 es privado; el backend valida tamaño, tipo declarado, firma mágica, hash y estado `AVAILABLE` antes de generar una URL de descarga. Las keys físicas, hashes de idempotencia y credenciales no forman parte de las proyecciones públicas.
 
 Para validar una variable necesaria antes de un comando:
 
