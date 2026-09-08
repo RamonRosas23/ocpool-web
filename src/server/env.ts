@@ -14,11 +14,21 @@ const encryptionKey = z.string().refine((value) => {
 
 const headerValue = (maximum: number) => z.string().min(1).max(maximum).refine((value) => !/[\u0000-\u001F\u007F]/u.test(value), 'SMTP header values cannot contain control characters');
 
+const timezoneValue = z.string().min(1).max(64).refine((value) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}, 'APP_TIMEZONE must be a valid IANA timezone');
+
 const serverEnvSchema = z.object({
   DATABASE_URL: z.string().url().refine((value) => value.startsWith('postgresql://') || value.startsWith('postgres://'), {
     message: 'DATABASE_URL must be a PostgreSQL connection string',
   }),
   APP_URL: z.string().url().default('http://localhost:3000'),
+  APP_TIMEZONE: timezoneValue.default('America/Chihuahua'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   SMTP_HOST: z.string().min(1).max(253).default('localhost'),
   SMTP_PORT: integerEnv(11025, 1, 65_535),

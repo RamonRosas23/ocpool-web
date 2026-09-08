@@ -38,7 +38,7 @@
 - Consumes: `Actor` de `src/server/auth/types.ts`, `readServerEnv()` y timestamps UTC.
 - Produces: `DashboardQuery`, `DashboardScope`, `MetricSummary`, `WorkloadRow`, `normalizeDashboardQuery()`, `calculateAcceptanceRateBps()`, `calculatePercentileSeconds()` y `agingBucketForSeconds()` para servicio, repositorio y UI.
 
-- [ ] **Step 1: Escribir pruebas rojas para rango y zona.**
+- [x] **Step 1: Escribir pruebas rojas para rango y zona.**
 
   Añadir casos que exijan:
 
@@ -54,13 +54,13 @@
 
   Cubrir también fecha ausente (últimos 30 días completos), timestamp inválido, rango inclusivo/exclusivo y zona inválida.
 
-- [ ] **Step 2: Ejecutar las pruebas para confirmar el rojo.**
+- [x] **Step 2: Ejecutar las pruebas para confirmar el rojo.**
 
   Run: `npx vitest run tests/unit/analytics-domain.test.ts tests/unit/env.test.ts`
 
   Expected: FAIL porque el módulo y el campo de zona todavía no existen.
 
-- [ ] **Step 3: Implementar los contratos mínimos.**
+- [x] **Step 3: Implementar los contratos mínimos.**
 
   Definir `APP_TIMEZONE` validado por `Intl.DateTimeFormat`, con default `America/Chihuahua`, y exportar:
 
@@ -76,17 +76,17 @@
 
   El parser debe usar `[from, to)`, rechazar rangos mayores a 93 días, ordenar y redondear percentiles determinísticamente, devolver `null` sin denominador o muestra y no aceptar `NaN`/fechas futuras fuera de la política.
 
-- [ ] **Step 4: Añadir pruebas de cálculos y entorno.**
+- [x] **Step 4: Añadir pruebas de cálculos y entorno.**
 
   Verificar tasa `0/0 -> null`, tasa acotada a `0..10000`, percentiles con valores ordenados/desordenados, muestra insuficiente, buckets en sus límites y `readServerEnv({ ...base, APP_TIMEZONE: 'Invalid/Zone' })` rechazado.
 
-- [ ] **Step 5: Ejecutar verificación dirigida.**
+- [x] **Step 5: Ejecutar verificación dirigida.**
 
   Run: `npx vitest run tests/unit/analytics-domain.test.ts tests/unit/env.test.ts`, `npx tsc --noEmit`, `npx eslint src/server/modules/analytics/domain.ts tests/unit/analytics-domain.test.ts tests/unit/env.test.ts` y `git diff --check`
 
   Expected: PASS.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
   ```powershell
   git add src/server/modules/analytics/domain.ts src/server/env.ts .env.example tests/unit/analytics-domain.test.ts tests/unit/env.test.ts

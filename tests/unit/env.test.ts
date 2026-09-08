@@ -6,6 +6,7 @@ describe('readServerEnv', () => {
     expect(readServerEnv({
       DATABASE_URL: 'postgresql://ocpool:secret@localhost:55432/ocpool_dev?schema=public',
       APP_URL: 'http://localhost:3000',
+      APP_TIMEZONE: 'America/Chihuahua',
       LOG_LEVEL: 'info',
       SMTP_HOST: 'localhost',
       SMTP_PORT: '11025',
@@ -28,6 +29,7 @@ describe('readServerEnv', () => {
       AUTH_GLOBAL_RATE_LIMIT_WINDOW_MINUTES: '1',
     })).toMatchObject({
       APP_URL: 'http://localhost:3000',
+      APP_TIMEZONE: 'America/Chihuahua',
       LOG_LEVEL: 'info',
       SMTP_HOST: 'localhost',
       SMTP_PORT: 11025,
@@ -86,5 +88,17 @@ describe('readServerEnv', () => {
       AUTH_RATE_LIMIT_WINDOW_MINUTES: '120',
       AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: '10',
     })).toThrow();
+  });
+
+  it('accepts the configured business timezone and rejects unknown zones', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://ocpool:secret@localhost:55432/ocpool_dev?schema=public',
+      MFA_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+      AUTH_DELIVERY_ENCRYPTION_KEY: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+      NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+    };
+
+    expect(readServerEnv({ ...base, APP_TIMEZONE: 'America/Chihuahua' }).APP_TIMEZONE).toBe('America/Chihuahua');
+    expect(() => readServerEnv({ ...base, APP_TIMEZONE: 'Invalid/Zone' })).toThrow();
   });
 });
