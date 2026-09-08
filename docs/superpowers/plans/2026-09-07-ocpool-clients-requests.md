@@ -1,6 +1,6 @@
 # OCPOOL — Plan Fase 3: Clientes, solicitudes y expedientes
 
-> Estado: ejecución activa. Tareas 1–4 terminadas con evidencia; Tarea 5 en desarrollo. Cada tarea requiere pruebas y evidencia antes de pasar a la siguiente.
+> Estado: ejecución activa. Tareas 1–5 terminadas con evidencia; Tarea 6 en desarrollo. Cada tarea requiere pruebas y evidencia antes de pasar a la siguiente.
 
 ## Objetivo
 
@@ -111,7 +111,7 @@ Los Route Handlers sólo adaptarán HTTP; la lógica de dominio vivirá en `src/
 - [x] Tarea 2 — schema y migración relacional. Commit: `22c73ba`.
 - [x] Tarea 3 — servicio transaccional de creación, folio concurrente e idempotencia. Commit: `9a8af1c`.
 - [x] Tarea 4 — API pública y UI de captación. Commit: `cadc616`.
-- [ ] Tarea 5 — inbox interno y operaciones protegidas.
+- [x] Tarea 5 — inbox interno y operaciones protegidas. Commit: `493d9ff`.
 - [ ] Tarea 6 — gate de fase.
 
 ### Tarea 1 — Contratos de dominio y pruebas rojas
@@ -143,6 +143,10 @@ Evidencia de cierre: `tests/integration/quote-requests-service.test.ts` valida c
 - Validar responsive, accesibilidad, consentimiento y no exposición de datos.
 
 Evidencia de cierre: `POST /api/quote-requests` valida el contrato con Zod, same-origin, body limitado, consentimiento explícito, rate limiting por email/IP confiable e idempotencia por `Idempotency-Key`. El formulario ya no prepara `mailto`: crea el expediente, conserva la clave durante reintentos, muestra estados de carga/error/éxito y presenta el folio. La prueba de integración de API y el flujo Playwright del formulario pasaron; el endpoint legado fue retirado.
+
+### Tarea 5 — Inbox interno y operaciones protegidas
+
+Evidencia de cierre: se implementaron `GET /api/staff/quote-requests`, detalle, assignees, asignación y transición, junto con `/staff/requests`. El backend exige sesión de empleado y permisos explícitos, usa `FOR UPDATE` para mutaciones concurrentes, mantiene historial/auditoría/Outbox y serializa presupuestos sin exponer huellas de idempotencia. El inbox tiene filtros, paginación, estados vacíos/carga/error, responsive y protección visible para acceso no autenticado. Pasaron 6 pruebas específicas de servicio/API, 20 integraciones totales, build y E2E dirigido/completo.
 
 ### Tarea 5 — Inbox interno y operaciones protegidas
 
