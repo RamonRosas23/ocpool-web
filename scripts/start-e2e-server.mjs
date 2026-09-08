@@ -4,6 +4,7 @@ const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const e2eEnvironment = {
   ...process.env,
   APP_URL: process.env.APP_URL ?? 'http://127.0.0.1:3100',
+  NEXT_DIST_DIR: process.env.NEXT_DIST_DIR ?? '.next-e2e',
 };
 const spawnOptions = {
   stdio: 'inherit',

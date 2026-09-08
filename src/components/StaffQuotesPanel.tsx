@@ -304,7 +304,7 @@ export default function StaffQuotesPanel() {
     finally { setSaving(false); }
   };
 
-  if (restricted) return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado con permiso comercial para usar el constructor.</p><Link className="staff-button staff-button--dark" href="/staff/requests">Volver a solicitudes</Link></section></main>;
+  if (restricted) return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado con permiso comercial para usar el constructor.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/staff/requests">Volver a solicitudes</Link></div></section></main>;
 
   return <main className="staff-shell">
     <header className="staff-header"><Link className="staff-brand" href="/" aria-label="OCPOOL, volver al sitio público"><span>OCPOOL</span><small>Operaciones comerciales</small></Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Constructor de cotizaciones</div></header>

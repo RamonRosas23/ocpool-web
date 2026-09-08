@@ -73,7 +73,7 @@ test.describe('auth browser surfaces', () => {
     await page.getByLabel('Correo').fill(`unknown-${suffix}@example.test`);
     await page.getByLabel('Contraseña').fill('WrongAuthSurface123!');
     await page.getByRole('button', { name: 'Entrar' }).click();
-    await expect(page.getByRole('alert')).toContainText('No fue posible iniciar sesión.');
+    await expect(page.locator('.auth-feedback--error')).toContainText('No fue posible iniciar sesión.');
     await expect(page.locator('body')).not.toContainText(/no existe|no registrado|inactivo/i);
     await expectNoSeriousA11yViolations(page);
 
@@ -131,4 +131,3 @@ test.describe('auth browser surfaces', () => {
     await expect(page.getByRole('heading', { name: 'Enlace no disponible' })).toBeVisible();
   });
 });
-

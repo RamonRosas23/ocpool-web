@@ -175,7 +175,7 @@ export default function StaffDashboardPanel() {
 
   const displayRange = useMemo(() => data ? `${formatDate(data.meta.from, data.meta.timezone)} — ${formatDate(data.meta.to, data.meta.timezone)}` : 'Preparando periodo', [data]);
 
-  if (accessDenied) return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado autorizada para consultar las métricas operativas.</p><Link className="staff-button staff-button--dark" href="/">Volver al sitio</Link></section></main>;
+  if (accessDenied) return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado autorizada para consultar las métricas operativas.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
 
   if (error && !data) return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">!</span><p className="staff-kicker">Dashboard operativo</p><h1>No fue posible cargarlo.</h1><p role="alert">{error}</p><button className="staff-button staff-button--dark" type="button" onClick={() => { setError(null); setReloadToken((current) => current + 1); }}>Reintentar</button></section></main>;
 

@@ -271,7 +271,7 @@ export default function StaffRequestsPanel() {
   };
 
   if (accessDenied) {
-    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</p><Link className="staff-button staff-button--dark" href="/">Volver al sitio</Link></section></main>;
+    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
   }
 
   return (

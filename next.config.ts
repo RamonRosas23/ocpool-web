@@ -9,6 +9,7 @@ const globalSecurityHeaders = getSecurityHeaders({
 
 const nextConfig: NextConfig = {
   /* config options here */
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
   reactStrictMode: true,
   outputFileTracingRoot: process.cwd(),
   async headers() {

@@ -160,7 +160,7 @@ export default function StaffNotificationsPanel() {
   };
 
   if (accessDenied) {
-    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</p><Link className="staff-button staff-button--dark" href="/">Volver al sitio</Link></section></main>;
+    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
   }
 
   const health = data?.health;

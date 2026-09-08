@@ -172,7 +172,7 @@ export default function ClientPortalPanel() {
     setRequests([]);
   };
 
-  if (restricted) return <main className="client-portal client-portal--restricted"><section className="client-restricted"><span className="client-mark">OC</span><p className="client-eyebrow">Portal privado</p><h1>Acceso privado.</h1><p>Necesitas un enlace de acceso válido para consultar tus expedientes.</p><Link className="client-button client-button--dark" href="/">Volver al sitio</Link></section></main>;
+  if (restricted) return <main className="client-portal client-portal--restricted"><section className="client-restricted"><span className="client-mark">OC</span><p className="client-eyebrow">Portal privado</p><h1>Acceso privado.</h1><p>Necesitas un enlace de acceso válido para consultar tus expedientes.</p><div className="client-restricted__actions"><Link className="client-button client-button--dark" href="/portal/access">Solicitar acceso</Link><Link className="client-restricted__link" href="/">Volver al sitio</Link></div></section></main>;
 
   const validity = workspace?.quote?.currentVersion ? quoteValidityLabel(workspace.quote.currentVersion.validUntil) : null;
 
