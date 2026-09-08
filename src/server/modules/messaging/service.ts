@@ -46,7 +46,7 @@ type LockedRequest = {
 };
 
 type SerializedSender = {
-  id: string;
+  id?: string;
   displayName: string;
   type: 'CUSTOMER' | 'EMPLOYEE';
 } | null;
@@ -60,6 +60,26 @@ type SerializedMessage = {
   sender: SerializedSender;
 };
 
+function serializeConversation(conversation: {
+  id: string;
+  quoteRequestId: string;
+  clientId: string;
+  status: 'OPEN' | 'CLOSED';
+  createdAt: Date;
+  updatedAt: Date;
+  closedAt: Date | null;
+}, exposeClientId: boolean) {
+  return {
+    id: conversation.id,
+    quoteRequestId: conversation.quoteRequestId,
+    ...(exposeClientId ? { clientId: conversation.clientId } : {}),
+    status: conversation.status,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    closedAt: conversation.closedAt,
+  };
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const DEFAULT_MESSAGE_LIMIT = 30;
 const MAX_MESSAGE_LIMIT = 100;
@@ -67,8 +87,8 @@ const RATE_LIMIT_SCOPE = 'messaging-send';
 const RATE_LIMIT_MAX_ATTEMPTS = 20;
 const RATE_LIMIT_WINDOW_MINUTES = 10;
 
-function requireUuid(value: string, message = 'La solicitud no es válida.'): string {
-  if (!UUID_PATTERN.test(value)) throw new AppError('VALIDATION_ERROR', message, 400);
+function requireUuid(value: string, message = 'La solicitud no es válida.', invalidCode: 'VALIDATION_ERROR' | 'NOT_FOUND' = 'VALIDATION_ERROR'): string {
+  if (!UUID_PATTERN.test(value)) throw new AppError(invalidCode, invalidCode === 'NOT_FOUND' ? 'La conversación no existe.' : message, invalidCode === 'NOT_FOUND' ? 404 : 400);
   return value;
 }
 
@@ -199,7 +219,7 @@ async function writeMessage(
     },
     include: { sender: { select: { id: true, displayName: true, type: true } } },
   });
-  if (existing) return { ...serializeMessage(existing), conversation };
+  if (existing) return { ...serializeMessage(existing, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE') };
 
   const message = await transaction.conversationMessage.create({
     data: {
@@ -238,7 +258,7 @@ async function writeMessage(
       },
     },
   });
-  return { ...serializeMessage(message), conversation };
+  return { ...serializeMessage(message, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE') };
 }
 
 function serializeMessage(message: {
@@ -248,14 +268,16 @@ function serializeMessage(message: {
   body: string;
   createdAt: Date;
   sender: { id: string; displayName: string; type: 'CUSTOMER' | 'EMPLOYEE' } | null;
-}): SerializedMessage {
+}, exposeSenderId: boolean): SerializedMessage {
   return {
     id: message.id,
     conversationId: message.conversationId,
     visibility: message.visibility,
     body: message.body,
     createdAt: message.createdAt,
-    sender: message.sender,
+    sender: message.sender
+      ? { ...(exposeSenderId ? { id: message.sender.id } : {}), displayName: message.sender.displayName, type: message.sender.type }
+      : null,
   };
 }
 
@@ -270,9 +292,10 @@ async function sendMessage(
   visibility: MessageVisibility,
   dependencies: MessagingServiceDependencies,
   scopeClientId?: string,
+  invalidIdCode: 'VALIDATION_ERROR' | 'NOT_FOUND' = 'VALIDATION_ERROR',
 ) {
   const prisma = dependencies.prisma ?? getPrisma();
-  const requestId = requireUuid(quoteRequestId);
+  const requestId = requireUuid(quoteRequestId, undefined, invalidIdCode);
   const now = dependencies.now ?? new Date();
   await enforceSendRateLimit(actor, requestId, now, dependencies.rateLimit);
   return prisma.$transaction(async (transaction) => {
@@ -289,7 +312,7 @@ export async function sendCustomerMessage(
   dependencies: MessagingServiceDependencies = {},
 ) {
   const clientId = requireCustomerPermission(actor, 'messaging.send');
-  return sendMessage(actor, quoteRequestId, input, 'CUSTOMER', dependencies, clientId);
+  return sendMessage(actor, quoteRequestId, input, 'CUSTOMER', dependencies, clientId, 'NOT_FOUND');
 }
 
 export async function sendStaffMessage(
@@ -320,13 +343,13 @@ export async function listConversationMessages(
   filters: ConversationMessageListFilters = {},
   dependencies: MessagingServiceDependencies = {},
 ) {
-  const requestId = requireUuid(quoteRequestId);
   const prisma = dependencies.prisma ?? getPrisma();
   const scopeClientId = actor.type === 'CUSTOMER' ? requireCustomerPermission(actor, 'messaging.read') : undefined;
   if (actor.type === 'EMPLOYEE') {
     requireStaffPermission(actor, 'requests.read');
     requirePermission(actor, 'messaging.read');
   }
+  const requestId = requireUuid(quoteRequestId, undefined, actor.type === 'CUSTOMER' ? 'NOT_FOUND' : 'VALIDATION_ERROR');
   const limit = normalizeLimit(filters.limit);
   const cursor = decodeCursor(filters.cursor);
   const request = await lockQuoteRequestForRead(prisma, requestId, scopeClientId);
@@ -352,17 +375,9 @@ export async function listConversationMessages(
     include: { sender: { select: { id: true, displayName: true, type: true } } },
   });
   const hasNext = messages.length > limit;
-  const items = (hasNext ? messages.slice(0, limit) : messages).map(serializeMessage);
+  const items = (hasNext ? messages.slice(0, limit) : messages).map((message) => serializeMessage(message, actor.type === 'EMPLOYEE'));
   return {
-    conversation: {
-      id: conversation.id,
-      quoteRequestId: conversation.quoteRequestId,
-      clientId: conversation.clientId,
-      status: conversation.status,
-      createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-      closedAt: conversation.closedAt,
-    },
+    conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE'),
     items,
     nextCursor: hasNext ? encodeCursor(messages[limit - 1]) : null,
   };

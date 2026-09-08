@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 6 — Mensajería y notas internas.
-- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tareas 1 y 2 están terminadas con evidencia y Tarea 3 — APIs privadas de portal y staff — está en desarrollo.
+- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tareas 1, 2 y 3 están terminadas con evidencia y Tarea 4 — UI del portal cliente — está en desarrollo.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -103,10 +103,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Migraciones `20260908062317_messaging` y `20260908062400_messaging_constraints` aplicadas; seed idempotente con 27 permisos catalogados.
 - Servicio transaccional de mensajería con scope por cliente, lock de solicitud, conversación única, cursor estable, reintentos idempotentes, rate limiting, mensajes compartidos, notas internas y cierre/reapertura.
 - Auditoría y Outbox atómicos de mensajes y estados de conversación, con payloads sin cuerpo sensible.
+- APIs privadas de portal y staff para lectura, mensajes compartidos, notas internas y cierre/reapertura, con Zod estricto, same-origin, no-store, RBAC, rate limit y proyecciones sin datos internos.
 
 ### En desarrollo
 
-- Fase 6 — Tarea 3: APIs privadas de portal y staff.
+- Fase 6 — Tarea 4: UI del portal cliente.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -203,6 +204,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 5 de Fase 5: commit `af55a09` (`test: harden customer portal isolation`); `npm run test:unit` 42/42, `npm run test:integration` 32/32, `npm run typecheck`, `npm run lint`, E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2 y `git diff --check` correctos. Se verificaron sesiones revocadas/archivadas, aislamiento por cliente, UUID malformado, payloads sin secretos, Axe, estado vacío, error recuperable, consola limpia y responsive móvil.
 - Gate de Fase 5: `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npx prisma migrate status`, `npm test`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y árbol limpio correctos. `npm test` quedó en 42 unitarias, 32 integraciones, contenido, build, 34 E2E públicas con 5 omitidas explícitamente y foundation 1/1.
 - Tarea 2 de Fase 6: prueba dirigida `messaging-service.test.ts` 1/1 y `npm run test:integration` 34/34; `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Se verificaron dos clientes aislados, permisos de empleado, nota interna fuera de proyección cliente, idempotencia secuencial y concurrente, rate-limit injectable, cierre/reapertura y Outbox/auditoría sin cuerpos.
+- Tarea 3 de Fase 6: commit pendiente de registrar en este cierre; prueba API `messaging-api.test.ts` 3/3 y `npm run test:integration` 37/37; `npm run typecheck`, `npm run lint` y `git diff --check` correctos. Se verificaron 401/403/404/409/429, scope IDOR, same-origin, schemas estrictos, `no-store`, RBAC limitado y ausencia de notas/IDs internos en portal.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -286,7 +288,9 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado y ejecutado; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
 - `docs/superpowers/specs/2026-09-07-ocpool-messaging.md` — especificación aprobada para Fase 6.
-- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tareas 1 y 2 cerradas y Tarea 3 en desarrollo.
+- `docs/superpowers/specs/2026-09-07-ocpool-messaging-apis.md` — contrato HTTP privado de la Tarea 3, aprobado y ejecutado.
+- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tareas 1–3 cerradas y Tarea 4 en desarrollo.
+- `docs/superpowers/plans/2026-09-07-ocpool-messaging-apis.md` — plan enfocado de APIs, ejecutado.
 
 ## Criterio de terminado de Fase 5
 
@@ -294,4 +298,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 3 de Fase 6: APIs privadas de portal y staff con contratos HTTP estrictos, guards, same-origin, no-store y pruebas de privacidad.
+Ejecutar la Tarea 4 de Fase 6: UI del portal cliente para mensajes compartidos, estados, responsive, accesibilidad e idempotencia transparente.

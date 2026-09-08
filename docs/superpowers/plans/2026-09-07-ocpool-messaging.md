@@ -96,11 +96,17 @@ Evidencia de cierre:
 
 **Riesgos:** diferencias de autorización entre servicio y rutas, enumeración por status/count, mutaciones cross-origin, cache de contenido privado.
 
-- [ ] Crear esquemas Zod estrictos para cursor/paginación, body plano, idempotency key y estado.
-- [ ] Crear rutas portal y staff con `requestId`, guards existentes, same-origin en mutaciones y `no-store`.
-- [ ] Verificar respuestas 401/403/404 uniformes, rate limit, UUID/folio ajeno y headers sensibles.
-- [ ] Probar que respuestas cliente no incluyen notas, `senderUserId` interno, token/hash, cuerpo de nota, payload Outbox ni stack.
-- [ ] Documentar ejemplos públicos de request/response sin secretos y hacer commit `feat: expose protected messaging APIs`.
+- [x] Crear esquemas Zod estrictos para cursor/paginación, body plano, idempotency key y estado.
+- [x] Crear rutas portal y staff con `requestId`, guards existentes, same-origin en mutaciones y `no-store`.
+- [x] Verificar respuestas 401/403/404 uniformes, rate limit, UUID/folio ajeno y headers sensibles.
+- [x] Probar que respuestas cliente no incluyen notas, `senderUserId` interno, token/hash, cuerpo de nota, payload Outbox ni stack.
+- [x] Documentar ejemplos públicos de request/response sin secretos y hacer commit `feat: expose protected messaging APIs`.
+
+Evidencia de cierre:
+
+- `messaging-api.test.ts` 3/3 valida sesión, RBAC completo/limitado, scope entre clientes, UUID inválido, schemas estrictos, same-origin, `no-store`, notas internas y rate limit real por bucket PostgreSQL.
+- Las respuestas privadas usan `no-store`; la proyección cliente oculta `clientId`, `senderUserId`, hash de idempotencia y cuerpos `INTERNAL`.
+- `npm run test:integration` 37/37, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
 **Criterios de terminado:** API íntegra para cliente/staff con contrato validado y regresión de rutas existentes verde.
 
