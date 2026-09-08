@@ -1,0 +1,190 @@
+'use client';
+
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+
+type Category = { id: string; code: string; name: string; status: string };
+type CatalogItem = { id: string; code: string; name: string; description: string | null; unit: string; status: string; category: { id: string; code: string; name: string } | null; createdAt: string; updatedAt: string };
+type PriceList = { id: string; code: string; name: string; currencyCode: string; status: string; validFrom: string; validUntil: string | null; _count: { items: number } };
+type PriceListDetail = PriceList & { items: Array<{ id: string; catalogItemId: string; unitPriceMinor: string; validFrom: string; validUntil: string | null; catalogItem: { code: string; name: string; unit: string; status: string } }> };
+type ListResponse = { items: CatalogItem[]; page: number; pageSize: number; total: number; totalPages: number };
+type Capabilities = { catalogRead: boolean; catalogManage: boolean; pricesRead: boolean; pricesManage: boolean };
+type ErrorResponse = { error?: { message?: string } };
+
+async function readResponse<T>(response: Response): Promise<T> {
+  const data = await response.json().catch(() => ({})) as T & ErrorResponse;
+  if (!response.ok) throw new Error(data.error?.message ?? 'No fue posible completar la operación.');
+  return data as T;
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
+}
+
+function moneyLabel(minor: string, currency: string): string {
+  const normalized = minor.padStart(3, '0');
+  const whole = normalized.slice(0, -2);
+  const fraction = normalized.slice(-2);
+  return `${currency} ${new Intl.NumberFormat('es-MX').format(BigInt(whole))}.${fraction}`;
+}
+
+export default function StaffCatalogPanel() {
+  const [items, setItems] = useState<CatalogItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [priceLists, setPriceLists] = useState<PriceList[]>([]);
+  const [priceListDetail, setPriceListDetail] = useState<PriceListDetail | null>(null);
+  const [capabilities, setCapabilities] = useState<Capabilities>({ catalogRead: false, catalogManage: false, pricesRead: false, pricesManage: false });
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [selectedPriceListId, setSelectedPriceListId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [showItemForm, setShowItemForm] = useState(false);
+  const [showPriceListForm, setShowPriceListForm] = useState(false);
+  const [itemForm, setItemForm] = useState({ code: '', name: '', unit: 'pieza', description: '', categoryId: '' });
+  const [priceListForm, setPriceListForm] = useState({ code: '', name: '', currencyCode: 'MXN' });
+  const [priceForm, setPriceForm] = useState({ catalogItemId: '', unitPriceMinor: '', validFrom: '', validUntil: '' });
+
+  const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId]);
+
+  const loadCatalog = useCallback(async (currentPage: number, query: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ page: String(currentPage), pageSize: '25', status: 'ACTIVE' });
+      if (query) params.set('query', query);
+      const [itemsResponse, categoriesResponse, listsResponse, capabilitiesResponse] = await Promise.all([
+        fetch(`/api/staff/catalog/items?${params.toString()}`, { credentials: 'include', cache: 'no-store' }),
+        fetch('/api/staff/catalog/categories?status=ACTIVE', { credentials: 'include', cache: 'no-store' }),
+        fetch('/api/staff/catalog/price-lists?status=ACTIVE', { credentials: 'include', cache: 'no-store' }),
+        fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store' }),
+      ]);
+      const [itemsData, categoriesData, listsData, capabilitiesData] = await Promise.all([
+        readResponse<ListResponse>(itemsResponse),
+        readResponse<Category[]>(categoriesResponse),
+        readResponse<PriceList[]>(listsResponse),
+        readResponse<Capabilities>(capabilitiesResponse),
+      ]);
+      setItems(itemsData.items);
+      setCategories(categoriesData);
+      setPriceLists(listsData);
+      setCapabilities(capabilitiesData);
+      setTotal(itemsData.total);
+      setTotalPages(Math.max(itemsData.totalPages, 1));
+      setAccessDenied(false);
+      setSelectedItemId((current) => current && itemsData.items.some((item) => item.id === current) ? current : itemsData.items[0]?.id ?? null);
+      setSelectedPriceListId((current) => current && listsData.some((list) => list.id === current) ? current : listsData[0]?.id ?? null);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'No fue posible cargar el catálogo.';
+      setAccessDenied(message.includes('autenticada') || message.includes('permisos'));
+      setError(message);
+      setItems([]);
+      setPriceLists([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadPriceList = useCallback(async (priceListId: string) => {
+    setLoadingDetail(true);
+    try {
+      const response = await fetch(`/api/staff/catalog/price-lists/${priceListId}`, { credentials: 'include', cache: 'no-store' });
+      setPriceListDetail(await readResponse<PriceListDetail>(response));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No fue posible cargar la lista de precios.');
+      setPriceListDetail(null);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadCatalog(page, appliedSearch); }, [appliedSearch, loadCatalog, page]);
+  useEffect(() => { if (selectedPriceListId) void loadPriceList(selectedPriceListId); else setPriceListDetail(null); }, [loadPriceList, selectedPriceListId]);
+  useEffect(() => { if (!priceForm.catalogItemId && selectedItemId) setPriceForm((current) => ({ ...current, catalogItemId: selectedItemId })); }, [priceForm.catalogItemId, selectedItemId]);
+
+  const refresh = async () => {
+    await loadCatalog(page, appliedSearch);
+    if (selectedPriceListId) await loadPriceList(selectedPriceListId);
+  };
+
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setPage(1); setAppliedSearch(search.trim()); };
+
+  const createItem = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSaving(true); setError(null); setNotice(null);
+    try {
+      const response = await fetch('/api/staff/catalog/items', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...itemForm, description: itemForm.description || undefined, categoryId: itemForm.categoryId || undefined }) });
+      const created = await readResponse<CatalogItem>(response);
+      setNotice(`Concepto ${created.code} creado.`); setItemForm({ code: '', name: '', unit: 'pieza', description: '', categoryId: '' }); setShowItemForm(false); await refresh(); setSelectedItemId(created.id);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible crear el concepto.'); }
+    finally { setSaving(false); }
+  };
+
+  const archiveItem = async () => {
+    if (!selectedItem) return; setSaving(true); setError(null); setNotice(null);
+    try {
+      await readResponse(await fetch(`/api/staff/catalog/items/${selectedItem.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'ARCHIVED' }) }));
+      setNotice('Concepto archivado.'); setSelectedItemId(null); await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible archivar el concepto.'); }
+    finally { setSaving(false); }
+  };
+
+  const createPriceList = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSaving(true); setError(null); setNotice(null);
+    try {
+      const response = await fetch('/api/staff/catalog/price-lists', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...priceListForm, validFrom: new Date().toISOString() }) });
+      const created = await readResponse<PriceList>(response);
+      setNotice(`Lista ${created.code} creada.`); setPriceListForm({ code: '', name: '', currencyCode: 'MXN' }); setShowPriceListForm(false); await refresh(); setSelectedPriceListId(created.id);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible crear la lista.'); }
+    finally { setSaving(false); }
+  };
+
+  const savePrice = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedPriceListId) return;
+    setSaving(true); setError(null); setNotice(null);
+    try {
+      await readResponse(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}/items`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ catalogItemId: priceForm.catalogItemId, unitPriceMinor: priceForm.unitPriceMinor, validFrom: new Date(`${priceForm.validFrom}T00:00:00.000Z`).toISOString(), validUntil: priceForm.validUntil ? new Date(`${priceForm.validUntil}T00:00:00.000Z`).toISOString() : null }) }));
+      setNotice('Precio guardado.'); setPriceForm((current) => ({ ...current, unitPriceMinor: '', validUntil: '' })); await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible guardar el precio.'); }
+    finally { setSaving(false); }
+  };
+
+  if (accessDenied) return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar el catálogo.</p><Link className="staff-button staff-button--dark" href="/">Volver al sitio</Link></section></main>;
+
+  return <main className="staff-shell">
+    <header className="staff-header"><Link className="staff-brand" href="/" aria-label="OCPOOL, volver al sitio público"><span>OCPOOL</span><small>Operaciones comerciales</small></Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Catálogo y precios</div></header>
+    <div className="staff-content catalog-content">
+      <div className="staff-intro"><div><p className="staff-kicker">Fuente comercial</p><h1>Catálogo</h1><p className="staff-intro__copy">Mantén conceptos y precios claros para que cada cotización nazca de una fuente controlada.</p></div><div className="staff-intro__metric"><strong>{total}</strong><span>conceptos activos</span></div></div>
+      {notice && <p className="staff-notice" role="status">{notice}</p>}{error && <p className="staff-error" role="alert">{error}</p>}
+      <section className="catalog-workspace" aria-label="Gestión de catálogo y precios">
+        <aside className="catalog-rail">
+          <form className="staff-filters" onSubmit={submitSearch}><label><span>Buscar concepto</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Clave o nombre" maxLength={100} /></label><button className="staff-button staff-button--filter" type="submit">Buscar</button></form>
+          <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `${items.length} de ${total}`}</span><span>Página {page} / {totalPages}</span></div>
+          <div className="catalog-item-list" aria-live="polite">{loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}{!loading && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark">—</span><h2>Catálogo vacío.</h2><p>Prueba otra búsqueda o agrega el primer concepto.</p></div>}{!loading && items.map((item) => <button className={`catalog-item-row${selectedItemId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedItemId(item.id)}><span className="catalog-item-row__code">{item.code}</span><strong>{item.name}</strong><small>{item.category?.name ?? 'Sin categoría'} · {item.unit}</small></button>)}</div>
+          <div className="staff-pagination"><button type="button" className="staff-pagination__button" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Anterior</button><button type="button" className="staff-pagination__button" disabled={page >= totalPages || loading} onClick={() => setPage((current) => current + 1)}>Siguiente</button></div>
+        </aside>
+        <section className="catalog-main">
+          <div className="catalog-main__top"><div><p className="staff-section-label">Concepto seleccionado</p>{selectedItem ? <><h2>{selectedItem.name}</h2><p className="catalog-main__meta">{selectedItem.code} · {selectedItem.unit} · actualizado {formatDate(selectedItem.updatedAt)}</p></> : <h2>Selecciona un concepto</h2>}</div>{selectedItem && capabilities.catalogManage && <button className="staff-button" type="button" disabled={saving} onClick={() => void archiveItem()}>Archivar</button>}</div>
+          {!selectedItem && <div className="staff-empty staff-empty--detail"><span className="staff-empty__mark">OC</span><h2>La fuente antes de la propuesta.</h2><p>Selecciona un concepto para revisar sus precios o crea uno nuevo.</p></div>}
+          {selectedItem && <div className="catalog-detail"><p>{selectedItem.description ?? 'Este concepto todavía no tiene descripción.'}</p><dl><div><dt>Categoría</dt><dd>{selectedItem.category?.name ?? 'Sin categoría'}</dd></div><div><dt>Estado</dt><dd>{selectedItem.status === 'ACTIVE' ? 'Activo' : 'Archivado'}</dd></div></dl></div>}
+          <section className="catalog-price-panel"><div className="catalog-price-panel__head"><div><p className="staff-section-label">Listas de precio</p><h3>{priceLists.length ? 'Precios vigentes' : 'Todavía no hay listas'}</h3></div>{capabilities.pricesManage && <button className="staff-button staff-button--copper" type="button" onClick={() => setShowPriceListForm((current) => !current)}>{showPriceListForm ? 'Cerrar' : 'Nueva lista'}</button>}</div>
+            {showPriceListForm && capabilities.pricesManage && <form className="catalog-form" onSubmit={createPriceList}><label><span>Clave</span><input required value={priceListForm.code} onChange={(event) => setPriceListForm({ ...priceListForm, code: event.target.value })} placeholder="LISTA-MXN" maxLength={64} /></label><label><span>Nombre</span><input required value={priceListForm.name} onChange={(event) => setPriceListForm({ ...priceListForm, name: event.target.value })} placeholder="Lista residencial" maxLength={180} /></label><label><span>Moneda</span><input required value={priceListForm.currencyCode} onChange={(event) => setPriceListForm({ ...priceListForm, currencyCode: event.target.value.toUpperCase() })} maxLength={3} /></label><button className="staff-button staff-button--dark" type="submit" disabled={saving}>Crear lista</button></form>}
+            <div className="catalog-list-picker">{priceLists.map((list) => <button className={`catalog-list-row${selectedPriceListId === list.id ? ' is-selected' : ''}`} type="button" key={list.id} onClick={() => setSelectedPriceListId(list.id)}><span><strong>{list.name}</strong><small>{list.code} · {list.currencyCode} · {list._count.items} conceptos</small></span><b>{formatDate(list.validFrom)}</b></button>)}</div>
+            {loadingDetail && <div className="catalog-detail-loading"><span /><span /></div>}
+            {!loadingDetail && priceListDetail && <><div className="catalog-price-summary"><span>{priceListDetail.name}</span><strong>{priceListDetail.items.length} precios</strong></div><div className="catalog-price-table" role="table" aria-label="Precios de la lista seleccionada"><div className="catalog-price-table__head" role="row"><span>Concepto</span><span>Importe</span><span>Vigencia</span></div>{priceListDetail.items.map((price) => <div className="catalog-price-table__row" role="row" key={price.id}><span><strong>{price.catalogItem.name}</strong><small>{price.catalogItem.code} · {price.catalogItem.unit}</small></span><b>{moneyLabel(price.unitPriceMinor, priceListDetail.currencyCode)}</b><small>{formatDate(price.validFrom)}{price.validUntil ? ` — ${formatDate(price.validUntil)}` : ' — abierta'}</small></div>)}</div></>}
+            {capabilities.pricesManage && selectedPriceListId && <form className="catalog-form catalog-form--price" onSubmit={savePrice}><p className="staff-section-label">Actualizar precio</p><label><span>Concepto</span><select required value={priceForm.catalogItemId} onChange={(event) => setPriceForm({ ...priceForm, catalogItemId: event.target.value })}><option value="">Selecciona un concepto</option>{items.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label><label><span>Importe en centavos</span><input required inputMode="numeric" pattern="[0-9]+" value={priceForm.unitPriceMinor} onChange={(event) => setPriceForm({ ...priceForm, unitPriceMinor: event.target.value })} placeholder="125000" /></label><div className="catalog-form__pair"><label><span>Desde</span><input required type="date" value={priceForm.validFrom} onChange={(event) => setPriceForm({ ...priceForm, validFrom: event.target.value })} /></label><label><span>Hasta opcional</span><input type="date" value={priceForm.validUntil} onChange={(event) => setPriceForm({ ...priceForm, validUntil: event.target.value })} /></label></div><button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar precio</button></form>}
+          </section>
+          {capabilities.catalogManage && <section className="catalog-add"><button className="staff-button staff-button--outline" type="button" onClick={() => setShowItemForm((current) => !current)}>{showItemForm ? 'Cerrar alta' : 'Agregar concepto'}</button>{showItemForm && <form className="catalog-form" onSubmit={createItem}><label><span>Clave</span><input required value={itemForm.code} onChange={(event) => setItemForm({ ...itemForm, code: event.target.value })} placeholder="EQUIPO-001" maxLength={64} /></label><label><span>Nombre</span><input required value={itemForm.name} onChange={(event) => setItemForm({ ...itemForm, name: event.target.value })} placeholder="Bomba de filtrado" maxLength={180} /></label><label><span>Unidad</span><input required value={itemForm.unit} onChange={(event) => setItemForm({ ...itemForm, unit: event.target.value })} placeholder="pieza" maxLength={40} /></label><label><span>Categoría</span><select value={itemForm.categoryId} onChange={(event) => setItemForm({ ...itemForm, categoryId: event.target.value })}><option value="">Sin categoría</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label><span>Descripción</span><textarea rows={3} value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} maxLength={2000} /></label><button className="staff-button staff-button--copper" type="submit" disabled={saving}>Guardar concepto</button></form>}</section>}
+        </section>
+      </section>
+    </div>
+  </main>;
+}

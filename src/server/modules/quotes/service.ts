@@ -16,8 +16,6 @@ import {
 } from '@/server/modules/quotes/domain';
 import { canTransitionQuoteRequest, type QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
 
-type DbClient = PrismaClient | Prisma.TransactionClient;
-
 export type QuotePricingLineInput = Readonly<{
   catalogItemId: string;
   quantity: string;
