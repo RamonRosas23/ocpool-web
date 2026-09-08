@@ -25,8 +25,20 @@ if (Test-Path -LiteralPath $checksumPath -PathType Leaf) {
   }
 }
 
-$databaseSql = "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$targetDatabase' AND pid <> pg_backend_pid(); DROP DATABASE IF EXISTS $targetDatabase; CREATE DATABASE $targetDatabase;"
-& docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U ocpool -d postgres -c $databaseSql 2>$null
+$terminateConnectionsSql = "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$targetDatabase' AND pid <> pg_backend_pid();"
+& docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U ocpool -d postgres -c $terminateConnectionsSql 2>$null
+if ($LASTEXITCODE -ne 0) {
+  throw 'No se pudo preparar el destino local desechable.'
+}
+
+$dropDatabaseSql = "DROP DATABASE IF EXISTS $targetDatabase;"
+& docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U ocpool -d postgres -c $dropDatabaseSql 2>$null
+if ($LASTEXITCODE -ne 0) {
+  throw 'No se pudo preparar el destino local desechable.'
+}
+
+$createDatabaseSql = "CREATE DATABASE $targetDatabase;"
+& docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U ocpool -d postgres -c $createDatabaseSql 2>$null
 if ($LASTEXITCODE -ne 0) {
   throw 'No se pudo preparar el destino local desechable.'
 }

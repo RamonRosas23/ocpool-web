@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 16 — consolidación de preparación para lanzamiento; terminada para el alcance local.
-- **Estado:** Fases 1–16 están implementadas y verificadas dentro del alcance local. Fase 16 corrigió la contaminación de rate limit en la integración de invitaciones, consolidó el checklist operativo y reconcilió el gate local en `11 PASS`, `0 WARN`, `8 BLOCKED`. El producto aún no está listo para lanzamiento porque runtime productivo y controles externos permanecen bloqueados.
+- **Fase:** Fase 17 — verificación de continuidad local; terminada para el alcance local.
+- **Estado:** Fases 1–17 están implementadas y verificadas dentro del alcance local. Fase 17 ejecutó un backup PostgreSQL con checksum y una restauración aislada real en `ocpool_restore_verify`, corrigió la preparación DDL del script y verificó cleanup sin tocar `ocpool_dev`. El producto aún no está listo para lanzamiento porque runtime productivo y controles externos permanecen bloqueados.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
@@ -181,6 +181,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 14 — captación premium: terminada para el alcance local. El formulario público de dos pasos, contrato de datos, migración, API, inbox/constructor staff, validaciones, anti-spam básico, E2E, documentación y gate técnico están comprobados; los adjuntos anónimos permanecen fuera de alcance.
 - Fase 15 — onboarding y vinculación de usuarios cliente: terminada para el alcance local. RBAC, servicio transaccional, API estricta, magic link `INVITED → ACTIVE`, colisiones, fallback de notificaciones, proyección staff, UI, E2E opt-in y documentación están comprobados.
 - Fase 16 — consolidación de preparación para lanzamiento: terminada para el alcance local. Se corrigió la contaminación de rate limit de fixtures, la integración completa pasó 42 archivos/87 pruebas, el checklist consolidado tiene contrato documental y el gate completo quedó documentado en 11 `PASS`, 0 `WARN`, 8 `BLOCKED`.
+- Fase 17 — continuidad local: terminada para el alcance local. El backup con checksum pasó, el restore real creó 35 tablas en `ocpool_restore_verify`, el target fue eliminado de forma exacta, `ocpool_dev` permaneció intacta y los artefactos quedaron excluidos de Git.
 
 ### Bloqueos de lanzamiento
 
@@ -204,7 +205,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Antivirus productivo, cuarentena y política de objetos.
 - Retención legal, privacidad, aceptación y operación de auditoría.
 - Destino de despliegue, proxy/WAF, supervisor del worker, alertas y rollback.
-- Prueba explícita de restauración local aislada antes de cerrar continuidad operativa.
+- Backup/restore local aislado: verificado en Fase 17; la continuidad productiva externa permanece pendiente.
 - Preflight firmado usando `docs/runbooks/launch-readiness-checklist.md` y el JSON de `readiness:production:full`.
 
 ## Decisiones arquitectónicas vigentes
@@ -343,6 +344,8 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 132. Los tests que ejercitan rate limit persistido deben aislar la clave por caso y limpiar únicamente su hash exacto; no se modifica el límite productivo ni se vacía la tabla global para hacer pasar la suite.
 133. El checklist consolidado de lanzamiento separa evidencia local de decisiones externas y mantiene `BLOCKED` mientras falten proveedor, secreto, aprobación legal, RPO/RTO, observabilidad o rollback.
 134. `readiness:production:quick` conserva `WARN` porque omite comandos; `readiness:production:full` ejecuta los controles costosos y ambos comandos mantienen exit code distinto de cero cuando existe cualquier `BLOCKED`.
+135. Los dumps y checksums de continuidad local viven bajo `.artifacts/` y esa ruta queda ignorada para impedir que datos respaldados entren al repositorio.
+136. El restore verificable prepara `ocpool_restore_verify` con comandos PostgreSQL separados para terminar conexiones, hacer `DROP DATABASE` y hacer `CREATE DATABASE`; PostgreSQL no permite el `DROP` dentro de una transacción.
 
 ## Pruebas realizadas
 
@@ -444,7 +447,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Confirmar antes de producción la zona `APP_TIMEZONE`, definiciones comerciales de periodo y alcance por ejecutivo/sucursal.
 - Fase 12 no tiene pendientes técnicos locales dentro de su alcance; la siguiente revisión deberá tratar retención, exportación, SIEM, alertas y operación productiva como decisiones nuevas, no como deuda oculta de esta fase.
 - Fase 13 Tarea 1: la primera corrida falló en el primer selector esperado porque `/staff/requests` aún no enlazaba `/login`; tras implementar la vertical slice, la repetición pasó 5/5. El contrato documental del runbook quedó añadido a unitarias.
-- Fase 16 no tiene pendientes técnicos locales dentro de su alcance; permanecen pendientes la ejecución operativa de restore local aislado y, para producción, todos los controles externos del checklist consolidado.
+- Fase 17 no tiene pendientes técnicos locales dentro de su alcance; para producción permanecen pendientes todos los controles externos del checklist consolidado.
 
 ## Riesgos abiertos
 
@@ -456,7 +459,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Destino de despliegue de producción aún no definido.
 - El gate de Fase 10 permanece `BLOCKED` por SMTP productivo, DNS/TLS/SPF/DKIM/DMARC, antivirus, backup externo, retención legal, destino de despliegue y runtime no productivo.
 - Fase 16 confirmó el gate completo en `11 PASS`, `0 WARN`, `8 BLOCKED`; el resultado es correcto pero no equivale a autorización de lanzamiento.
-- El backup/restore local está implementado y protegido por destino fijo, pero la restauración verificable todavía requiere una ejecución operativa explícita; no se ejecuta automáticamente para no destruir datos locales.
+- El backup/restore local fue verificado en Fase 17 sobre `ocpool_restore_verify`; la recuperación externa, RPO/RTO, cifrado, retención y monitoreo siguen pendientes.
 - El gate técnico no sustituye aprobación legal, elección de proveedores, gestión de secretos, RPO/RTO, monitoreo, rollback ni aceptación del responsable del servicio.
 - El dashboard calcula agregados transaccionales directos; falta medir P95 con fixtures representativos y revisar `EXPLAIN` antes de decidir si la escala futura requiere rollups.
 - La zona `America/Chihuahua` es configurable para el entorno local, pero la zona comercial definitiva y su calendario deben aprobarse antes de producción.
@@ -569,6 +572,9 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 16 — Tarea 2: `runbook-contract.test.ts` pasó 7/7; se añadió `docs/runbooks/launch-readiness-checklist.md` y quedó enlazado desde README y `production-readiness.md`.
 - Fase 16 — Gate técnico: `npm run db:validate`, migraciones 17 al día, seed idempotente, typecheck, lint, unitarias 31/115, integración 42/87, contenido, build, auditoría con 0 vulnerabilidades y foundation E2E 2/2 correctos; E2E base 35 passed/18 skipped opt-in.
 - Fase 16 — Readiness: quick `BLOCKED` con `0 PASS / 2 WARN / 7 BLOCKED`; full `BLOCKED` con `11 PASS / 0 WARN / 8 BLOCKED`. Permanecen bloqueados runtime productivo y los siete controles externos; no se autoriza publicación.
+- Fase 17 — documentación y aislamiento: especificación, autorrevisión y plan creados en ese orden; `.artifacts/` ignorado; el contrato de continuidad pasó de `7/8` rojo a `8/8` después de separar las llamadas DDL del restore.
+- Fase 17 — operación: backup local con checksum `PASS`; restore corregido `PASS` en `ocpool_restore_verify` con `35` tablas públicas; cleanup exacto `DROP DATABASE IF EXISTS ocpool_restore_verify` correcto y consulta posterior dejó únicamente `ocpool_dev`.
+- Fase 17 — regresión: `npm run typecheck`, `npm run lint` correctos y `npm run test:unit` `31 archivos / 116 pruebas` aprobadas; `git check-ignore` y `git diff --check` correctos.
 
 ## Criterio de terminado de Fase 1
 
@@ -622,6 +628,9 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/reviews/2026-09-08-ocpool-launch-readiness-consolidation-review.md` — autorrevisión de Fase 16 sobre aislamiento, conteos y límites de publicación.
 - `docs/superpowers/plans/2026-09-08-ocpool-launch-readiness-consolidation.md` — plan TDD de Fase 16; tareas ejecutadas con evidencia final.
 - `docs/runbooks/launch-readiness-checklist.md` — checklist único de preflight local y bloqueos externos.
+- `docs/superpowers/specs/2026-09-08-ocpool-local-continuity-verification.md` — especificación de Fase 17 para backup/restore local aislado.
+- `docs/superpowers/reviews/2026-09-08-ocpool-local-continuity-verification-review.md` — autorrevisión de Fase 17; identificó la restricción DDL de PostgreSQL antes del cierre.
+- `docs/superpowers/plans/2026-09-08-ocpool-local-continuity-verification.md` — plan ordenado de Fase 17 con evidencia del backup, restore, cleanup y regresión.
 - `docs/runbooks/local-development.md` — formulario público, folio, honeypot, worker/Mailpit y dependencia de onboarding.
 
 ## Criterio de terminado de Fase 10
@@ -652,10 +661,14 @@ La fase queda terminada para el alcance local cuando el personal autorizado pued
 
 La fase queda terminada para el alcance local cuando los fixtures de rate limit son aislados y repetibles, la integración completa pasa sin contaminación de estado, el checklist consolidado separa evidencia local de bloqueos externos, el contrato documental pasa, el gate técnico completo y la regresión E2E están verificados, y el plan/status/README/runbooks contienen los conteos exactos. No autoriza lanzamiento: runtime productivo, SMTP, dominio, antivirus, backups externos, RPO/RTO, retención/legal, destino, supervisor, observabilidad y rollback siguen bloqueados.
 
+## Criterio de terminado de Fase 17
+
+La fase queda terminada para el alcance local cuando `.artifacts/` está excluido de Git, el backup con checksum pasa, el restore real crea y verifica `ocpool_restore_verify`, PostgreSQL prepara el target mediante DDL separado, el cleanup elimina sólo la base desechable, `ocpool_dev` permanece disponible, los contratos/typecheck/lint/unitarias pasan y el plan/status registran evidencia segura. No equivale a disaster recovery productivo: backup externo, RPO/RTO, cifrado, retención, objetos y monitoreo siguen bloqueados.
+
 ## Criterio de terminado de Fase 5
 
 La fase se considera terminada porque el cliente autenticado sólo lee recursos de su `clientId`, las cotizaciones históricas se sirven desde snapshots, las rutas privadas no enumeran recursos ajenos ni exponen secretos, la UI cubre estados de sesión/carga/vacío/error, responsive, teclado, reduced motion y Axe, y el gate de infraestructura, build, pruebas, auditoría y árbol limpio quedó registrado.
 
 ## Próximo paso autorizado
 
-Preservar Fase 16 como baseline local y cerrar los controles externos de lanzamiento mediante decisiones aprobadas, evidencia verificable y el checklist consolidado. No publicar hasta que `readiness:production:full` no tenga bloqueos técnicos ni externos y exista autorización formal independiente del repositorio.
+Preservar Fase 17 como baseline local y cerrar los controles externos de lanzamiento mediante decisiones aprobadas, evidencia verificable y el checklist consolidado. No publicar hasta que `readiness:production:full` no tenga bloqueos técnicos ni externos y exista autorización formal independiente del repositorio.

@@ -17,6 +17,7 @@
 /playwright-report
 /output/
 /tmp/pdfs/
+/.artifacts/
 
 # next.js
 /.next/

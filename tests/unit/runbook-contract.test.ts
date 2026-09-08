@@ -42,6 +42,17 @@ describe('continuity runbook contract', () => {
     expect(script).toContain('ON_ERROR_STOP');
   });
 
+  it('prepares the disposable database with separate PostgreSQL DDL commands', () => {
+    const script = read('scripts/db-restore-verify.ps1');
+    expect(script).toContain('$terminateConnectionsSql');
+    expect(script).toContain('$dropDatabaseSql');
+    expect(script).toContain('$createDatabaseSql');
+    expect(script).toMatch(/-c\s+\$terminateConnectionsSql/);
+    expect(script).toMatch(/-c\s+\$dropDatabaseSql/);
+    expect(script).toMatch(/-c\s+\$createDatabaseSql/);
+    expect(script).not.toContain('$databaseSql =');
+  });
+
   it('documents pass, blocked and warning states without inventing retention periods', () => {
     const runbook = read('docs/runbooks/production-readiness.md');
     expect(runbook).toContain('PASS');
