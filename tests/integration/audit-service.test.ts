@@ -47,19 +47,19 @@ describe('staff audit read service', () => {
 
     const operational = await prisma.auditLog.createManyAndReturn({
       data: [
-        { actorUserId: manager.id, action: 'quote_request.created', entityType: 'quote_request', entityId: '00000000-0000-4000-8000-000000000001', outcome: 'SUCCESS', metadata: { folio: 'OC-9001', origin: 'PUBLIC_FORM', email: `private-${suffix}@example.test` }, createdAt: new Date('2026-09-07T12:00:00.000Z') },
-        { actorUserId: admin.id, action: 'quote.version.status_changed', entityType: 'quote_version', entityId: '00000000-0000-4000-8000-000000000002', outcome: 'SUCCESS', metadata: { folio: 'OC-9001', fromStatus: 'EN_REVISION', toStatus: 'ENVIADA', sha256: 'a'.repeat(64) }, createdAt: new Date('2026-09-07T12:00:00.000Z') },
-        { actorUserId: null, action: 'file.rejected', entityType: 'file_attachment', entityId: '00000000-0000-4000-8000-000000000003', outcome: 'FAILURE', metadata: { folio: 'OC-9001', category: 'PLANO', reason: 'signature_mismatch', storageKey: 'private/object.key' }, createdAt: new Date('2026-09-06T12:00:00.000Z') },
-        { actorUserId: sales.id, action: 'notification.retry', entityType: 'notification_delivery', entityId: '00000000-0000-4000-8000-000000000004', outcome: 'SUCCESS', metadata: { previousStatus: 'FAILED', previousErrorCode: 'TEMPORARY_PROVIDER', templateKey: 'quote.sent', eventType: 'QUOTE.SENT' }, createdAt: new Date('2026-09-05T12:00:00.000Z') },
-        { actorUserId: manager.id, action: 'audit.unknown_future_action', entityType: 'unknown', entityId: '00000000-0000-4000-8000-000000000005', outcome: 'SUCCESS', metadata: { email: `unknown-${suffix}@example.test` }, createdAt: new Date('2026-09-04T12:00:00.000Z') },
+        { actorUserId: manager.id, action: 'quote.pdf.generation_failed', entityType: 'generated_document', entityId: '00000000-0000-4000-8000-000000000001', outcome: 'FAILURE', metadata: { failureCode: 'PDF_RENDER', email: `private-${suffix}@example.test` }, createdAt: new Date('2026-01-31T12:00:00.000Z') },
+        { actorUserId: admin.id, action: 'quote.pdf.generation_failed', entityType: 'generated_document', entityId: '00000000-0000-4000-8000-000000000002', outcome: 'FAILURE', metadata: { failureCode: 'PDF_HASH', sha256: 'a'.repeat(64) }, createdAt: new Date('2026-01-31T11:00:00.000Z') },
+        { actorUserId: null, action: 'notification.retry', entityType: 'notification_delivery', entityId: '00000000-0000-4000-8000-000000000003', outcome: 'FAILURE', metadata: { previousStatus: 'FAILED', previousErrorCode: 'TEMPORARY_PROVIDER', templateKey: 'quote.sent', eventType: 'QUOTE.SENT' }, createdAt: new Date('2026-01-30T12:00:00.000Z') },
+        { actorUserId: sales.id, action: 'notification.retry', entityType: 'notification_delivery', entityId: '00000000-0000-4000-8000-000000000004', outcome: 'SUCCESS', metadata: { previousStatus: 'FAILED', previousErrorCode: 'TEMPORARY_PROVIDER', templateKey: 'quote.sent', eventType: 'QUOTE.SENT' }, createdAt: new Date('2026-01-29T12:00:00.000Z') },
+        { actorUserId: manager.id, action: 'audit.unknown_future_action', entityType: 'unknown', entityId: '00000000-0000-4000-8000-000000000005', outcome: 'SUCCESS', metadata: { email: `unknown-${suffix}@example.test` }, createdAt: new Date('2026-01-28T12:00:00.000Z') },
       ],
     });
     auditIds.push(...operational.map((row) => row.id));
 
     const security = await prisma.authEvent.createManyAndReturn({
       data: [
-        { userId: admin.id, eventType: 'LOGIN_SUCCESS', outcome: 'SUCCESS', identifierHash: 'b'.repeat(64), ipAddress: '192.0.2.10', userAgent: 'private-browser', metadata: { email: `security-${suffix}@example.test`, tokenId: 'private-token' }, createdAt: new Date('2026-09-07T10:00:00.000Z') },
-        { userId: customer.id, eventType: 'LOGIN_FAILURE', outcome: 'DENIED', identifierHash: 'c'.repeat(64), ipAddress: '192.0.2.11', userAgent: 'private-browser-2', metadata: { password: 'private-password' }, createdAt: new Date('2026-09-06T10:00:00.000Z') },
+        { userId: admin.id, eventType: 'LOGIN_SUCCESS', outcome: 'SUCCESS', identifierHash: 'b'.repeat(64), ipAddress: '192.0.2.10', userAgent: 'private-browser', metadata: { email: `security-${suffix}@example.test`, tokenId: 'private-token' }, createdAt: new Date('2026-01-31T10:00:00.000Z') },
+        { userId: customer.id, eventType: 'LOGIN_FAILURE', outcome: 'DENIED', identifierHash: 'c'.repeat(64), ipAddress: '192.0.2.11', userAgent: 'private-browser-2', metadata: { password: 'private-password' }, createdAt: new Date('2026-01-30T10:00:00.000Z') },
       ],
     });
     authEventIds.push(...security.map((row) => row.id));
@@ -69,33 +69,34 @@ describe('staff audit read service', () => {
   const dependencies = { prisma, now, timezone: 'UTC', cursorSecret };
 
   it('returns a paginated redacted operational page with stable cursor semantics', async () => {
-    const first = await getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-09-01', to: '2026-09-08', category: 'commercial', limit: 1 }, dependencies);
+    const first = await getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-01-01', to: '2026-02-01', category: 'documents', outcome: 'FAILURE', limit: 1 }, dependencies);
     expect(first.items).toHaveLength(1);
     expect(first.meta).toMatchObject({ scope: 'operational', timezone: 'UTC', freshness: 'fresh' });
-    expect(first.items[0]).toMatchObject({ category: 'commercial', action: 'Solicitud creada', actorLabel: 'Audit Manager', entityLabel: 'Solicitud comercial' });
+    expect(first.items[0]).toMatchObject({ category: 'documents', action: 'Generación de PDF fallida', actorLabel: 'Audit Manager', entityLabel: 'Documento comercial' });
     expect(first.items[0].actorKey).toMatch(/^[a-f0-9]{16}$/u);
     expect(first.nextCursor).toBeTruthy();
 
-    const second = await getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-09-01', to: '2026-09-08', category: 'commercial', limit: 1, cursor: first.nextCursor! }, dependencies);
+    const second = await getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-01-01', to: '2026-02-01', category: 'documents', outcome: 'FAILURE', limit: 1, cursor: first.nextCursor! }, dependencies);
     expect(second.items).toHaveLength(1);
     expect(second.items[0].eventKey).not.toBe(first.items[0].eventKey);
     expect(JSON.stringify({ first, second })).not.toMatch(/@example|192\.0\.2|private-browser|storage\.key|[a-f0-9]{64}/iu);
   });
 
   it('maps system actors and applies outcome/category filters in the backend', async () => {
-    const result = await getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-09-01', to: '2026-09-08', category: 'documents', outcome: 'FAILURE', limit: 10 }, dependencies);
+    const result = await getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-01-01', to: '2026-02-01', category: 'notifications', outcome: 'FAILURE', limit: 10 }, dependencies);
     expect(result.items).toHaveLength(1);
-    expect(result.items[0]).toMatchObject({ action: 'Archivo rechazado', actorLabel: 'Sistema', actorKey: null, outcome: 'FAILURE' });
+    expect(result.items[0]).toMatchObject({ action: 'Notificación reintentada', actorLabel: 'Sistema', actorKey: null, outcome: 'FAILURE' });
     expect(result.items[0].details).toEqual([
-      { label: 'Folio', value: 'OC-9001' },
-      { label: 'Categoría', value: 'PLANO' },
-      { label: 'Motivo', value: 'signature_mismatch' },
+      { label: 'Estado anterior', value: 'FAILED' },
+      { label: 'Código anterior', value: 'TEMPORARY_PROVIDER' },
+      { label: 'Plantilla', value: 'quote.sent' },
+      { label: 'Evento', value: 'QUOTE.SENT' },
     ]);
   });
 
   it('keeps security events admin-only and redacts network and identity signals', async () => {
     await expect(getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-09-01', to: '2026-09-08', category: 'security' }, dependencies)).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
-    const result = await getStaffAudit(actor(admin.id, ['audit.read', 'audit.security.read']), { from: '2026-09-01', to: '2026-09-08', category: 'security' }, dependencies);
+    const result = await getStaffAudit(actor(admin.id, ['audit.read', 'audit.security.read']), { from: '2026-01-01', to: '2026-02-01', category: 'security' }, dependencies);
     const json = JSON.stringify(result);
     expect(result.meta.scope).toBe('security');
     expect(result.items.map((item) => item.action)).toEqual(['Inicio de sesión exitoso', 'Intento de inicio de sesión fallido']);
@@ -113,8 +114,8 @@ describe('staff audit read service', () => {
   });
 
   it('rejects a cursor reused with a different filter instead of broadening the query', async () => {
-    const first = await getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-09-01', to: '2026-09-08', category: 'commercial', limit: 1 }, dependencies);
-    await expect(getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-09-01', to: '2026-08-08', category: 'commercial', limit: 1, cursor: first.nextCursor! }, dependencies)).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    const first = await getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-01-01', to: '2026-02-01', category: 'documents', outcome: 'FAILURE', limit: 1 }, dependencies);
+    await expect(getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-01-01', to: '2026-01-31', category: 'documents', outcome: 'FAILURE', limit: 1, cursor: first.nextCursor! }, dependencies)).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
   });
 
   afterAll(async () => {

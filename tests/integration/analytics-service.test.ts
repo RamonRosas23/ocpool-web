@@ -40,6 +40,7 @@ describe('analytics dashboard service', () => {
       prisma.user.create({ data: { email: `analytics-manager-${suffix}@example.test`, emailNormalized: `analytics-manager-${suffix}@example.test`, displayName: 'Analytics Manager', type: 'EMPLOYEE', status: 'ACTIVE', roles: { create: { roleId: managerRole.id } } } }),
     ]);
     userIds.push(sales.id, manager.id);
+    const fixtureFolioSuffix = suffix.replace(/[^a-z0-9]/giu, '').slice(-9);
 
     const clients = await Promise.all([
       prisma.client.create({ data: { displayName: `Analytics Client A ${suffix}`, status: 'ACTIVE' } }),
@@ -65,7 +66,7 @@ describe('analytics dashboard service', () => {
     for (const [index, item] of requestData.entries()) {
       const request = await prisma.quoteRequest.create({
         data: {
-          folio: `OCQ-2026-${String(index + 1).padStart(5, '0')}${suffix.slice(-1)}`,
+          folio: `OCQ-2026-${String(index + 1).padStart(5, '0')}${fixtureFolioSuffix}`,
           clientId: item.clientId,
           contactId: item.contactId,
           currentAssigneeId: item.currentAssigneeId,

@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@/generated/prisma/client';
-import { hasPermission, requirePermission } from '@/server/auth/permissions';
+import { requirePermission } from '@/server/auth/permissions';
 import { checkAuthRateLimit } from '@/server/auth/rate-limit';
 import type { Actor } from '@/server/auth/types';
 import { readServerEnv } from '@/server/env';
