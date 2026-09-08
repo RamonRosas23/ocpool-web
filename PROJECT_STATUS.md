@@ -9,7 +9,7 @@
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
-- **Documentos de Fase 12:** especificación y autorrevisión creadas; plan ordenado pendiente de commit documental antes del primer cambio de código.
+- **Documentos de Fase 12:** especificación, autorrevisión y plan ordenado versionados en `f789772`; comienza la implementación TDD.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
