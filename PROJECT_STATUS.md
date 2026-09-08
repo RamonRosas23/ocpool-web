@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 5 — Portal autenticado del cliente.
-- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación y plan aprobados; las Tareas 1–2 están terminadas y Tarea 3 — shell visual, autenticación y dashboard — está en desarrollo.
+- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación y plan aprobados; las Tareas 1–3 están terminadas y Tarea 4 — detalle de expediente y cotización versionada — está en desarrollo.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -95,10 +95,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Gate reproducible de Fase 4 cerrado: migraciones/seed al día, dependencias sin vulnerabilidades altas, regresión completa y E2E del constructor opt-in verificados.
 - Servicio de lectura del portal con scope obligatorio por `clientId`, proyecciones seguras, ocultamiento de borradores y serialización BigInt para cliente.
 - Guard y API privada de cliente para listar expedientes, leer detalle y consultar cotizaciones propias con `no-store`, respuestas seguras y errores no enumerables.
+- Portal privado `/portal` con shell de cliente propio, metadata `noindex`, estados de sesión/carga/vacío/error, dashboard de expedientes, logout, responsive, foco visible y reduced motion.
 
 ### En desarrollo
 
-- Fase 5 — Tarea 3: shell visual, autenticación y dashboard.
+- Fase 5 — Tarea 4: detalle de expediente y cotización versionada.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -107,7 +108,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 ### Pendientes
 
 - Arquitectura de aplicación comercial por dominios de negocio.
-- Portal del cliente.
+- Detalle completo del expediente y cotización versionada dentro del portal.
 - Mensajería y notas internas.
 - Archivos privados.
 - PDF comercial.
@@ -181,6 +182,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Gate de Fase 4: `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npx prisma migrate status`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y `npm test` correctos. `npm test` quedó en typecheck, 41 unitarias, 30 integraciones, contrato de contenido, build, 33 E2E ejecutadas con 3 omitidas explícitamente y foundation 1/1. La primera ejecución tuvo una condición temporal de artefacto `.next` al encadenar dos servidores en Windows; la reproducción aislada y la repetición completa pasaron sin cambiar código productivo.
 - Tarea 1 de Fase 5: commit `17a50e9` (`feat: add scoped client portal read service`); `npm run typecheck`, unit test dirigido 1/1, integración dirigida 1/1 y `git diff --check` correctos. Se verificaron scope por cliente, rechazo de empleado, cliente cruzado como `NOT_FOUND`, ocultamiento de borradores/actores internos y serialización de importes grandes sin `number`.
 - Tarea 2 de Fase 5: commit `76214bd` (`feat: expose scoped client portal APIs`); `npm run typecheck`, `npm run lint`, integración API dirigida 1/1 y `git diff --check` correctos. Se verificaron 401 sin sesión, 403 empleado, cliente propio, cliente cruzado, cotización cruzada, UUIDs seguros, `cache-control: no-store` y respuestas sin token/hash.
+- Tarea 3 de Fase 5: pendiente de commit en este cierre; `npm run typecheck`, `npm run lint`, E2E dirigida `npx playwright test tests/quality.spec.ts --grep "customer portal"` 1/1 y `git diff --check` correctos. Se verificaron acceso restringido sin sesión, Axe sin violaciones serias, ausencia de overflow a 390 px, metadata privada, estados de carga/vacío/error/logout y shell responsive propio del cliente.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -211,7 +213,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 
 ## Deuda técnica conocida
 
-- Todavía no existen catálogo, cotizaciones versionadas, portal de cliente, archivos ni aceptación digital.
+- El portal ya tiene shell y dashboard; todavía faltan detalle versionado completo, mensajería, archivos y aceptación digital.
 - El endpoint de contacto actual no debe considerarse backend comercial.
 - El timestamp de la migración foundation es el generado por Prisma en la ejecución local (`20260907231807_foundation`); no se renombró después de aplicarlo para no desalinear el historial de migraciones.
 - Las versiones transitorias de Prisma están fijadas en `package.json` para mantener la auditoría limpia; deben revisarse cuando Prisma publique una actualización estable que incorpore esas versiones de forma nativa.
@@ -260,9 +262,9 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
 - `docs/superpowers/specs/2026-09-07-ocpool-client-portal.md` — especificación aprobada para Fase 5.
-- `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado; Tarea 1 en desarrollo.
+- `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado; Tareas 1–3 cerradas y Tarea 4 en desarrollo.
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 3 de Fase 5: shell visual del portal, dashboard cliente, metadata no indexable y estados responsive/accesibles.
+Ejecutar la Tarea 4 de Fase 5: detalle de expediente, cotización versionada, snapshots históricos y estados de vigencia.

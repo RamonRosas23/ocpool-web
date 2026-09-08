@@ -155,6 +155,16 @@ test.describe('OCPOOL quality contract', () => {
     await expect(page.getByText('Inicia sesión con una cuenta de empleado con permiso comercial para usar el constructor.')).toBeVisible();
   });
 
+  test('protects the customer portal when no customer session exists', async ({ page }) => {
+    await page.goto('/portal');
+    await expect(page.getByRole('heading', { name: 'Acceso privado.' })).toBeVisible();
+    await expect(page.getByText('Necesitas un enlace de acceso válido para consultar tus expedientes.')).toBeVisible();
+    await expectNoSeriousA11yViolations(page);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
   test('exposes complete SEO metadata and generated discovery routes', async ({ page, request }) => {
     await page.goto('/');
 

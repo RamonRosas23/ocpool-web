@@ -70,7 +70,7 @@ Evidencia de cierre:
 - Las versiones `BORRADOR` y los actores internos no se proyectan al cliente; las líneas snapshot y totales se serializan sin BigInt crudo.
 - Verificación dirigida: unit test 1/1, integración 1/1, `npm run typecheck` y `git diff --check` correctos.
 
-### Tarea 2 — API privada y contrato de sesión (actual)
+### Tarea 2 — API privada y contrato de sesión
 
 **Files:**
 
@@ -100,7 +100,7 @@ Evidencia de cierre:
 - Las rutas de `/api/portal/requests` y `/api/portal/quotes` son sólo lectura, `no-store`, validan query estricta y usan el envelope público de errores.
 - Verificación dirigida: integración API 1/1, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
-### Tarea 3 — Shell visual, autenticación y dashboard (actual)
+### Tarea 3 — Shell visual, autenticación y dashboard
 
 **Files:**
 
@@ -114,13 +114,20 @@ Evidencia de cierre:
 - Consume: APIs de portal, cookie de sesión existente, contrato de proyección de Tarea 1 y dirección visual OCPOOL.
 - Produce: dashboard `/portal` con header privado, estado de sesión, lista de solicitudes propias y navegación a detalle.
 
-- [ ] Escribir la prueba E2E negativa para `/portal` sin sesión y pruebas de accesibilidad/responsive del shell antes de completar la UI.
-- [ ] Ejecutar la prueba E2E dirigida y confirmar que el acceso sin sesión muestra el estado restringido sin datos.
-- [ ] Construir un layout de cliente con jerarquía editorial, navegación clara, indicador de sesión y CTA de volver al sitio; no reutilizar `.staff-workspace` como estructura principal.
-- [ ] Implementar estados de carga con skeleton discreto, vacío explicativo, error recuperable, sesión expirada y lista cargada con folio/estado/proyecto/fecha.
-- [ ] Añadir `robots: { index: false, follow: false }` y evitar renderizado de datos privados en metadata o HTML estático.
-- [ ] Verificar teclado, foco visible, hit areas de al menos 44 px, contraste, 360/390/768/1440 px, reduced motion y ausencia de overflow.
-- [ ] Ejecutar `npm run typecheck`, `npm run lint`, E2E de protección y tests de calidad; hacer commit `feat: add customer portal dashboard`.
+- [x] Escribir la prueba E2E negativa para `/portal` sin sesión y pruebas de accesibilidad/responsive del shell antes de completar la UI.
+- [x] Ejecutar la prueba E2E dirigida y confirmar que el acceso sin sesión muestra el estado restringido sin datos.
+- [x] Construir un layout de cliente con jerarquía editorial, navegación clara, indicador de sesión y CTA de volver al sitio; no reutilizar `.staff-workspace` como estructura principal.
+- [x] Implementar estados de carga con skeleton discreto, vacío explicativo, error recuperable, sesión expirada y lista cargada con folio/estado/proyecto/fecha.
+- [x] Añadir `robots: { index: false, follow: false }` y evitar renderizado de datos privados en metadata o HTML estático.
+- [x] Verificar teclado, foco visible, hit areas de al menos 44 px, contraste, 360/390/768/1440 px, reduced motion y ausencia de overflow.
+- [x] Ejecutar `npm run typecheck`, `npm run lint`, E2E de protección y tests de calidad; hacer commit `feat: add customer portal dashboard`.
+
+Evidencia de cierre:
+
+- El dashboard `/portal` consume exclusivamente las APIs privadas, no contiene datos de cliente en metadata ni renderizado estático y ofrece acceso restringido, carga, vacío, error recuperable, sesión privada, logout y navegación de expedientes.
+- La superficie visual usa una estructura propia de cliente, responsive en 360/390/768/1440 px, foco visible, hit areas táctiles, reduced motion y no reutiliza `.staff-workspace` como layout principal.
+- La prueba de calidad `protects the customer portal when no customer session exists` pasó 1/1, incluyendo Axe sin violaciones serias y ausencia de overflow horizontal a 390 px.
+- `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
 ### Tarea 4 — Detalle de expediente y cotización versionada
 
