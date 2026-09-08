@@ -211,6 +211,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
+- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, plan técnico inicial creado; ejecución aún no iniciada.
 
 ## Próximo paso autorizado
 
