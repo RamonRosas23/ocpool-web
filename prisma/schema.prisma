@@ -21,6 +21,50 @@ enum OutboxStatus {
   FAILED
 }
 
+enum UserType {
+  CUSTOMER
+  EMPLOYEE
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum ClientStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AuthTokenType {
+  MAGIC_LINK
+  PASSWORD_RESET
+  MFA_RECOVERY
+}
+
+enum AuthEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGOUT
+  MAGIC_LINK_REQUEST
+  MAGIC_LINK_CONSUMED
+  PASSWORD_RESET_REQUEST
+  PASSWORD_RESET_CONSUMED
+  MFA_ENROLLED
+  MFA_CHALLENGE
+  MFA_FAILURE
+  SESSION_CREATED
+  SESSION_REVOKED
+}
+
+enum AuthEventOutcome {
+  SUCCESS
+  DENIED
+  FAILURE
+}
+
 model SystemSetting {
   key       String   @id @db.VarChar(120)
   value     Json
@@ -61,4 +105,155 @@ model OutboxEvent {
   @@index([status, availableAt])
   @@index([aggregateType, aggregateId])
   @@map("outbox_events")
+}
+
+model Client {
+  id          String       @id @default(uuid()) @db.Uuid
+  displayName String       @db.VarChar(180)
+  status      ClientStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @db.Timestamptz(3)
+  users       User[]
+
+  @@index([status, createdAt])
+  @@map("clients")
+}
+
+model User {
+  id                  String       @id @default(uuid()) @db.Uuid
+  email               String       @db.VarChar(320)
+  emailNormalized     String       @unique @db.VarChar(320)
+  displayName         String       @db.VarChar(180)
+  type                UserType
+  status              UserStatus   @default(INVITED)
+  passwordHash        String?      @db.VarChar(255)
+  mfaRequired         Boolean      @default(false)
+  mfaSecretCiphertext String?      @db.VarChar(512)
+  mfaEnrolledAt       DateTime?    @db.Timestamptz(3)
+  clientId            String?      @db.Uuid
+  client              Client?      @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  roles               UserRole[]
+  sessions            Session[]
+  authTokens          AuthToken[]
+  authEvents          AuthEvent[]
+  createdAt           DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime     @updatedAt @db.Timestamptz(3)
+
+  @@index([clientId, status])
+  @@index([type, status])
+  @@map("users")
+}
+
+model Role {
+  id            String           @id @default(uuid()) @db.Uuid
+  key           String           @unique @db.VarChar(80)
+  name          String           @db.VarChar(120)
+  description   String           @db.VarChar(300)
+  systemManaged Boolean          @default(true)
+  userRoles     UserRole[]
+  permissions   RolePermission[]
+  createdAt     DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique @db.VarChar(120)
+  description String           @db.VarChar(300)
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId    String   @db.Uuid
+  roleId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([userId, roleId])
+  @@index([roleId, userId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId, roleId])
+  @@map("role_permissions")
+}
+
+model Session {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  tokenHash  String    @unique @db.VarChar(64)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  ipAddress  String?   @db.VarChar(64)
+  userAgent  String?   @db.VarChar(512)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model AuthToken {
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String         @db.Uuid
+  type        AuthTokenType
+  tokenHash   String         @unique @db.VarChar(64)
+  expiresAt   DateTime       @db.Timestamptz(3)
+  consumedAt  DateTime?      @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  requestedIp String?        @db.VarChar(64)
+  userAgent   String?        @db.VarChar(512)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, expiresAt])
+  @@index([type, consumedAt, expiresAt])
+  @@map("auth_tokens")
+}
+
+model AuthEvent {
+  id             String            @id @default(uuid()) @db.Uuid
+  userId         String?           @db.Uuid
+  eventType      AuthEventType
+  outcome        AuthEventOutcome
+  identifierHash String?           @db.VarChar(64)
+  ipAddress      String?           @db.VarChar(64)
+  userAgent      String?           @db.VarChar(512)
+  metadata       Json?
+  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
+  user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([identifierHash, createdAt])
+  @@map("auth_events")
+}
+
+model AuthRateLimit {
+  id            String    @id @default(uuid()) @db.Uuid
+  scope         String    @db.VarChar(80)
+  keyHash       String    @db.VarChar(64)
+  windowStarted DateTime  @db.Timestamptz(3)
+  attempts      Int       @default(0)
+  blockedUntil  DateTime? @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@unique([scope, keyHash])
+  @@index([blockedUntil])
+  @@map("auth_rate_limits")
 }

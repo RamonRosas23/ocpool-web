@@ -28,10 +28,12 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.2.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "motion": "^13.1.1",
     "next": "^15.5.24",
+    "otpauth": "^9.5.2",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
     "react": "19.1.0",
