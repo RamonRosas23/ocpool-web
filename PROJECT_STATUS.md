@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 5 — Portal autenticado del cliente.
-- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación aprobada y plan en preparación; todavía no se ha modificado código de portal.
+- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación y plan aprobados; Tarea 1 — servicio de lectura scopeado por cliente — está en desarrollo.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -254,6 +254,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
 - `docs/superpowers/specs/2026-09-07-ocpool-client-portal.md` — especificación aprobada para Fase 5.
+- `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado; Tarea 1 en desarrollo.
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
 
 ## Próximo paso autorizado
