@@ -138,6 +138,8 @@ describe('private messaging API', () => {
 
     const staffMessage = await staffMessagesPost(endpoint(`/api/staff/quote-requests/${requestAId}/messages`, managerToken, 'POST', { body: 'Respuesta del equipo', idempotencyKey: 'api-staff-01' }), context(requestAId));
     expect(staffMessage.status).toBe(201);
+    const staffMessageBody = await staffMessage.json() as Record<string, unknown>;
+    expect(JSON.stringify(staffMessageBody)).not.toContain('idempotencyKey');
     const note = await staffNotesPost(endpoint(`/api/staff/quote-requests/${requestAId}/notes`, managerToken, 'POST', { body: 'Nota operativa privada', idempotencyKey: 'api-note-01' }), context(requestAId));
     expect(note.status).toBe(201);
 
@@ -174,10 +176,15 @@ describe('private messaging API', () => {
     const foreignCustomer = await portalMessagesPost(endpoint(`/api/portal/requests/${requestAId}/messages`, customerBToken, 'POST', { body: 'Cruce', idempotencyKey: 'api-cross-01' }), context(requestAId));
     expect(foreignCustomer.status).toBe(404);
 
+    const limitedClose = await conversationStatusPost(endpoint(`/api/staff/quote-requests/${requestAId}/conversation-status`, limitedStaffToken, 'POST', { status: 'CLOSED' }), context(requestAId));
+    expect(limitedClose.status).toBe(403);
+
     const close = await conversationStatusPost(endpoint(`/api/staff/quote-requests/${requestAId}/conversation-status`, managerToken, 'POST', { status: 'CLOSED' }), context(requestAId));
     expect(close.status).toBe(200);
     const closedSend = await portalMessagesPost(endpoint(`/api/portal/requests/${requestAId}/messages`, customerAToken, 'POST', { body: 'Bloqueado', idempotencyKey: 'api-closed-01' }), context(requestAId));
     expect(closedSend.status).toBe(409);
+    const limitedReopen = await conversationStatusPost(endpoint(`/api/staff/quote-requests/${requestAId}/conversation-status`, limitedStaffToken, 'POST', { status: 'OPEN' }), context(requestAId));
+    expect(limitedReopen.status).toBe(403);
     const reopen = await conversationStatusPost(endpoint(`/api/staff/quote-requests/${requestAId}/conversation-status`, managerToken, 'POST', { status: 'OPEN' }), context(requestAId));
     expect(reopen.status).toBe(200);
 
