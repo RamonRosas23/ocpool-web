@@ -54,4 +54,17 @@ describe('continuity runbook contract', () => {
     expect(runbook).toMatch(/no hay exportaci[oó]n, purga/i);
     expect(runbook).not.toMatch(/DELETE\s+FROM|TRUNCATE\s+TABLE|DROP\s+TABLE/i);
   });
+
+  it('documents browser auth routes without fixed credentials or open redirects', () => {
+    const runbook = read('docs/runbooks/auth-surfaces.md');
+    expect(runbook).toContain('/login');
+    expect(runbook).toContain('/login/recovery');
+    expect(runbook).toContain('/portal/access');
+    expect(runbook).toContain('/auth/customer/consume-link');
+    expect(runbook).toContain('/auth/recovery');
+    expect(runbook).toMatch(/no existen credenciales fijas/i);
+    expect(runbook).toMatch(/no se acepta `returnTo`/i);
+    expect(runbook).toMatch(/history\.replaceState/);
+    expect(runbook).not.toMatch(/AuthSurface(Employee|Admin)123|password\s*[:=]\s*['\"]/i);
+  });
 });

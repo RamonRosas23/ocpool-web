@@ -4,14 +4,15 @@
 
 ## Estado actual
 
-- **Fase:** Fase 13 — superficies de acceso y recuperación; planificación documental completada, implementación aún no iniciada.
-- **Estado:** Fases 1–12 están implementadas y verificadas dentro del alcance local. Fase 13 ya tiene especificación, autorrevisión y plan ordenado; la brecha identificada es de experiencia navegable sobre contratos de autenticación ya probados. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
+- **Fase:** Fase 13 — superficies de acceso y recuperación; implementación local completada, gate final de fase en verificación.
+- **Estado:** Fases 1–12 están implementadas y verificadas dentro del alcance local. Fase 13 ya tiene rutas navegables para empleado, MFA, magic link y recovery, con E2E opt-in 5/5; falta cerrar la regresión completa, documentación final y árbol limpio. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
 - **Últimos commits de Fase 12:** `a40d839` (`docs: close audit observability phase`), `d9a87e0` (`fix: stabilize audit verification fixtures`), `c341c66` (`feat: add staff audit workspace`), `df315e2` (`feat: expose staff audit api`), `23a9ab5` (`feat: add secure audit read service`).
 - **Documentos de Fase 12:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
-- **Documentos de Fase 13:** especificación, autorrevisión y plan ordenado versionados. Tarea 1 ya tiene E2E contractual opt-in, fixtures desechables y una primera falla TDD esperada; las pantallas aún no existen.
+- **Documentos de Fase 13:** especificación, autorrevisión, plan ordenado y runbook versionados. Tasks 1–6 están ejecutadas; falta únicamente versionar este cierre y comprobar árbol limpio.
+- **Último commit de implementación de Fase 13:** `3ebf8f6` (`feat: add browser auth surfaces`).
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -169,7 +170,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### En desarrollo
 
-- Fase 13 — superficies de acceso y recuperación: Tarea 1 contractual iniciada; la primera corrida falló porque aún no existen los enlaces/páginas de acceso. La implementación seguirá por vertical slices.
+- Fase 13 — superficies de acceso y recuperación: Tasks 1–6 ejecutadas; login, MFA, magic link, recovery, URL limpia, estados restringidos, responsive, accesibilidad, documentación y gate técnico están comprobados. El commit documental final y el árbol limpio son el último cierre administrativo.
 - La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
@@ -181,7 +182,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
-- Siguiente paso: ejecutar la Tarea 1 de Fase 13 y conservar Fase 12 como baseline; el gate de lanzamiento externo permanece bloqueado.
+- Siguiente paso: cerrar la Tarea 6 de Fase 13 con regresión completa, auditoría de dependencias, documentación y árbol limpio; conservar Fase 12 como baseline y mantener bloqueado el lanzamiento externo.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
@@ -311,6 +312,9 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 118. La auditoría es sólo lectura en Fase 12: no hay exportación, purga, retención automática, SIEM ni alertas en tiempo real sin una decisión posterior de producto, legal y operación.
 119. La consulta transversal resuelve actores con una selección acotada y un batch único; no se permiten consultas por fila ni enriquecimiento por `entityId`.
 120. La revisión `EXPLAIN` de PostgreSQL con el volumen local no justifica un índice transversal adicional: `AuthEvent` usa su índice existente y `AuditLog` resuelve el límite con un scan secuencial submilisegundo; cualquier migración futura requiere volumen representativo y evidencia nueva.
+121. Fase 13 reutiliza los contratos backend de autenticación existentes y añade superficies navegables fijas (`/login`, `/portal/access`, `/auth/...`); no crea credenciales demo ni una autorización paralela en el cliente.
+122. Los tokens de magic link y recovery se leen una sola vez desde la URL, se limpian con `history.replaceState` y se mantienen sólo en memoria hasta el POST de consumo; no se guardan en almacenamiento persistente del navegador.
+123. El runner E2E usa `NEXT_DIST_DIR=.next-e2e` para aislar sus builds del `.next` de un `next dev` activo; la separación evita chunks corruptos sin apagar el entorno local del usuario.
 
 ## Pruebas realizadas
 
@@ -387,6 +391,8 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 11 — Tarea 5/gate: se añadió y probó rate limit de lecturas por empleado (`RATE_LIMITED` 429) con limpieza exacta de buckets; `npm run test:integration` terminó en 37 archivos/71 pruebas.
 - Fase 11 — Gate final: `npm run test:e2e` pasó 34/34 con 10 opt-in omitidas de forma explícita; `npm run test:e2e:foundation` pasó 2/2; la E2E `DASHBOARD_E2E=1` pasó 1/1 después del hardening. Build, typecheck, lint, contenido, auditoría (0 vulnerabilidades altas), migraciones, seed y diff check pasaron.
 - Fase 12 — Tarea 6/gate final: runbook `docs/runbooks/audit-observability.md`, contrato documental 5/5, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` en PostgreSQL 16, 110 unitarias, 79 integraciones, contenido, typecheck, lint, build limpio, `npm audit` con 0 vulnerabilidades altas, E2E audit 1/1, E2E normal 34 passed/11 skipped opt-in y diff check. Se corrigieron fixtures contaminables de auditoría y folios analytics; no se agregó índice especulativo.
+- Fase 13 — Tasks 1–5: prueba roja inicial confirmó la ausencia de `/login`; después `3ebf8f6` añadió `/login`, `/login/recovery`, `/portal/access`, `/auth/recovery` y `/auth/customer/consume-link`, enlaces desde estados restringidos, shell responsive, metadata `noindex`, MFA opcional, limpieza de tokens y fixtures desechables. `AUTH_SURFACES_E2E=1 npm run test:e2e -- tests/auth-surfaces.spec.ts` pasó 5/5 con Axe, responsive 390/768/1440, reduced motion y replay/expiry.
+- Fase 13 — Tarea 6/gate final: runbook `docs/runbooks/auth-surfaces.md`, contrato documental añadido, 110 unitarias, 79 integraciones, contenido, typecheck, lint, build aislado `.next-e2e`, `npm audit` con 0 vulnerabilidades altas, E2E auth surfaces 5/5, E2E normal 34 passed/16 skipped opt-in y diff check. Se corrigieron contrastes AA y carrera de chunks del runner sin introducir migración ni credenciales fijas.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -402,7 +408,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 11 no tiene pendientes técnicos locales para su alcance; antes de producción debe repetirse la revisión de rendimiento con volumen representativo y confirmar la política de operación.
 - Confirmar antes de producción la zona `APP_TIMEZONE`, definiciones comerciales de periodo y alcance por ejecutivo/sucursal.
 - Fase 12 no tiene pendientes técnicos locales dentro de su alcance; la siguiente revisión deberá tratar retención, exportación, SIEM, alertas y operación productiva como decisiones nuevas, no como deuda oculta de esta fase.
-- Fase 13 Tarea 1: `AUTH_SURFACES_E2E=1 npm run test:e2e -- tests/auth-surfaces.spec.ts` falló en el primer selector esperado (`/staff/requests` aún no enlaza `/login`); las cuatro pruebas siguientes no se ejecutaron por modo serial. Esta falla confirma el contrato rojo inicial.
+- Fase 13 Tarea 1: la primera corrida falló en el primer selector esperado porque `/staff/requests` aún no enlazaba `/login`; tras implementar la vertical slice, la repetición pasó 5/5. El contrato documental del runbook quedó añadido a unitarias.
 
 ## Riesgos abiertos
 
@@ -508,6 +514,8 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - El primer gate Windows intentó ejecutar `npm.cmd` sin shell y marcó falsamente todos los comandos como fallidos (`EINVAL`); se corrigió usando shell sólo para comandos internos fijos y se verificó nuevamente el gate completo.
 - Las opciones `--dry-run`/`--no-*` de npm pueden ser interpretadas por npm antes de llegar al script; se añadieron scripts npm explícitos `readiness:production:quick` y `readiness:production:full` para evitar ambigüedad.
 - La primera E2E del dashboard asumía una base vacía, pero el seed local ya contenía solicitudes recientes; se volvió determinista aplicando un periodo histórico válido sin datos.
+- La primera E2E de Fase 13 detectó tres contrastes AA insuficientes en textos secundarios de acceso; se ajustaron a tonos del sistema de agua y la repetición Axe pasó.
+- La repetición de E2E encontró una carrera entre el `next dev` activo en `.next` y el build del runner, que dejó un chunk faltante; el runner ahora usa `NEXT_DIST_DIR=.next-e2e` aislado y `.gitignore` lo excluye, sin apagar el servidor de desarrollo.
 - La hidratación inicial del rango podía sobrescribir una edición rápida del usuario mientras llegaba una respuesta; se añadió una marca de edición y el mapper de carga sólo inicializa campos una vez.
 - Axe detectó contraste insuficiente en índices decorativos y en `Muestra protegida`; se conservaron los tonos de la identidad y se ajustaron a valores que cumplen AA.
 - Una corrida dirigida mezcló integraciones sin `RUN_DB_TESTS=1` y falló por el guard de entorno, no por producto; la evidencia válida de integración se mantiene en el comando serial oficial con PostgreSQL activo.
@@ -553,7 +561,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/runbooks/audit-observability.md` — runbook de acceso, filtros, redacción, rate limit, `EXPLAIN`, backup y límites legales de auditoría.
 - `docs/superpowers/specs/2026-09-08-ocpool-auth-surfaces.md` — especificación de Fase 13 para login de empleados, magic link de clientes y recovery.
 - `docs/superpowers/reviews/2026-09-08-ocpool-auth-surfaces-review.md` — autorrevisión de Fase 13 con foco en enumeración, MFA y tokens en URL.
-- `docs/superpowers/plans/2026-09-08-ocpool-auth-surfaces.md` — plan TDD de Fase 13; ninguna tarea de implementación cerrada todavía.
+- `docs/superpowers/plans/2026-09-08-ocpool-auth-surfaces.md` — plan TDD de Fase 13; Tasks 1–6 cerradas con evidencia de gate.
+- `docs/runbooks/auth-surfaces.md` — rutas, worker/Mailpit, tokens, MFA, recovery y pruebas locales.
 
 ## Criterio de terminado de Fase 10
 
@@ -567,10 +576,14 @@ La fase queda terminada para el alcance local: el dashboard está documentado, s
 
 La fase queda terminada para el alcance local: el contrato de lectura, los permisos separados, la redacción por acción, el cursor HMAC, el repositorio sin N+1, el rate limit, la API privada, la UI responsive/accesible, el runbook y el gate unitario/integración/E2E/build/lint/auditoría están verificados. La ausencia de exportación y purga quedó documentada como decisión explícita, no como omisión. Las necesidades de retención productiva, exportación, SIEM, alertas y controles externos permanecen fuera del alcance local y no autorizan el lanzamiento.
 
+## Criterio de terminado de Fase 13
+
+La fase sólo se marcará terminada cuando las cinco rutas de acceso funcionen con contratos reales, no enumeren cuentas, no filtren tokens, respeten MFA/sesión/same-origin/rate limit, cubran estados de carga/error/éxito, sean responsive y accesibles, pasen E2E opt-in y regresión completa, estén documentadas y el árbol quede limpio. El gate externo de producción permanece separado y bloqueado.
+
 ## Criterio de terminado de Fase 5
 
 La fase se considera terminada porque el cliente autenticado sólo lee recursos de su `clientId`, las cotizaciones históricas se sirven desde snapshots, las rutas privadas no enumeran recursos ajenos ni exponen secretos, la UI cubre estados de sesión/carga/vacío/error, responsive, teclado, reduced motion y Axe, y el gate de infraestructura, build, pruebas, auditoría y árbol limpio quedó registrado.
 
 ## Próximo paso autorizado
 
-Preservar Fase 12 como baseline estable y preparar la siguiente especificación, autorrevisión y plan en orden documental antes de modificar código. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.
+Preservar Fase 13 como baseline y preparar la siguiente especificación, autorrevisión y plan en orden documental. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.

@@ -14,44 +14,43 @@
 
 ## Tarea 2 — Contratos de presentación y acceso de empleado
 
-- [ ] Crear utilidades compartidas para errores públicos, lectura JSON, estado de formulario, sesión actual y destino seguro.
-- [ ] Implementar `/login` con correo, contraseña, MFA opcional, recuperación, loading/error/success y accesibilidad completa.
-- [ ] Reutilizar `POST /api/auth/employee/login` sin cambiar rate limit ni bypass de MFA.
-- [ ] Cubrir credenciales inválidas, MFA inválido, administrador sin código, sesión ya existente y error de red.
-- [ ] Integrar acceso sólo hacia `/staff`; rechazar cualquier destino externo o `returnTo` manipulado.
-- [ ] Commit: `feat: add employee login surface`.
+- [x] Crear utilidades compartidas para errores públicos, lectura JSON, estado de formulario, sesión actual y destino seguro.
+- [x] Implementar `/login` con correo, contraseña, MFA opcional, recuperación, loading/error/success y accesibilidad completa.
+- [x] Reutilizar `POST /api/auth/employee/login` sin cambiar rate limit ni bypass de MFA.
+- [x] Cubrir credenciales inválidas, MFA inválido, administrador sin código, sesión ya existente y error de red.
+- [x] Integrar acceso sólo hacia `/staff`; rechazar cualquier destino externo o `returnTo` manipulado.
+- [x] Commit: `3ebf8f6 feat: add browser auth surfaces`.
 
 ## Tarea 3 — Solicitud y consumo de magic link de cliente
 
-- [ ] Implementar `/portal/access` con confirmación neutral y rate limit visible sólo como mensaje operativo genérico.
-- [ ] Implementar `/auth/customer/consume-link` con lectura única del token, `POST` al endpoint existente, `history.replaceState` y redirección a `/portal`.
-- [ ] Mostrar estados de token ausente, inválido, expirado, reutilizado, error recuperable y éxito.
-- [ ] Validar el enlace real mediante Outbox/worker/Mailpit y verificar que no quedan tokens en el HTML ni la URL después del consumo.
-- [ ] Commit: `feat: add customer access surfaces`.
+- [x] Implementar `/portal/access` con confirmación neutral y rate limit visible sólo como mensaje operativo genérico.
+- [x] Implementar `/auth/customer/consume-link` con lectura única del token, `POST` al endpoint existente, `history.replaceState` y redirección a `/portal`.
+- [x] Mostrar estados de token ausente, inválido, expirado, reutilizado, error recuperable y éxito.
+- [x] Validar el enlace real mediante Outbox/worker/Mailpit y verificar que no quedan tokens en el HTML ni la URL después del consumo.
+- [x] Commit: `3ebf8f6 feat: add browser auth surfaces`.
 
 ## Tarea 4 — Recuperación de contraseña
 
-- [ ] Implementar `/login/recovery` con respuesta neutral para cualquier correo.
-- [ ] Implementar `/auth/recovery` con contraseña, confirmación, token en memoria, limpieza de URL y consumo de un solo uso.
-- [ ] Verificar requisitos de contraseña, expiración, replay, cuenta inactiva y error de red.
-- [ ] Validar el correo de recuperación en Mailpit y limpiar mensajes de fixture por IDs exactos.
-- [ ] Commit: `feat: add password recovery surfaces`.
+- [x] Implementar `/login/recovery` con respuesta neutral para cualquier correo.
+- [x] Implementar `/auth/recovery` con contraseña, confirmación, token en memoria, limpieza de URL y consumo de un solo uso.
+- [x] Verificar requisitos de contraseña, expiración, replay, cuenta inactiva y error de red.
+- [x] Validar el correo de recuperación en Mailpit y limpiar mensajes de fixture por IDs exactos.
+- [x] Commit: `3ebf8f6 feat: add browser auth surfaces`.
 
 ## Tarea 5 — Integración visual, documentación y seguridad de navegación
 
-- [ ] Integrar enlaces desde estados restringidos de `/staff` y `/portal` sin revelar roles ni cuentas.
-- [ ] Añadir metadata `noindex`, shell responsive, focus ring, `autocomplete`, `role=status/alert` y reduced motion.
-- [ ] Confirmar que `NEXT`/`returnTo` no se acepta, que la cookie sigue siendo HttpOnly/SameSite y que los endpoints mantienen same-origin.
-- [ ] Actualizar README, `PROJECT_STATUS.md` y crear `docs/runbooks/auth-surfaces.md` con rutas, Mailpit, variables y ausencia de credenciales fijas.
-- [ ] Commit: `docs: document auth surfaces`.
+- [x] Integrar enlaces desde estados restringidos de `/staff` y `/portal` sin revelar roles ni cuentas.
+- [x] Añadir metadata `noindex`, shell responsive, focus ring, `autocomplete`, `role=status/alert` y reduced motion.
+- [x] Confirmar que `NEXT`/`returnTo` no se acepta, que la cookie sigue siendo HttpOnly/SameSite y que los endpoints mantienen same-origin.
+- [x] Actualizar README, `PROJECT_STATUS.md` y crear `docs/runbooks/auth-surfaces.md` con rutas, Mailpit, variables y ausencia de credenciales fijas.
 
 ## Tarea 6 — Gate completo de fase
 
-- [ ] Ejecutar unitarias, integración, contenido, typecheck, lint, build, auditoría y E2E normal.
-- [ ] Ejecutar E2E opt-in de superficies de acceso y revisar respuestas 401/400/429 sin información sensible.
-- [ ] Revisar logs, DOM, URLs, screenshots responsive y diff de texto buscando passwords, códigos, tokens, emails privados, UUIDs o stack traces.
-- [ ] Confirmar que no se agregó migración ni dependencia innecesaria; si aparece una necesidad de challenge MFA, abrir una especificación separada antes de implementarla.
-- [ ] Actualizar `PROJECT_STATUS.md` con módulos, dependencias, pruebas, problemas resueltos, pendientes y criterios de terminado.
+- [x] Ejecutar unitarias, integración, contenido, typecheck, lint, build, auditoría y E2E normal: 110 unitarias, 79 integraciones, contenido, typecheck, lint, build aislado `.next-e2e`, `npm audit` 0 vulnerabilidades altas y E2E normal 34 pasadas/16 omitidas opt-in.
+- [x] Ejecutar E2E opt-in de superficies de acceso y revisar respuestas 401/400/429 sin información sensible: `AUTH_SURFACES_E2E=1 ... tests/auth-surfaces.spec.ts` pasó 5/5.
+- [x] Revisar logs, DOM, URLs, screenshots responsive y diff de texto buscando passwords, códigos, tokens, emails privados, UUIDs o stack traces; Axe y la inspección de URL limpia pasaron.
+- [x] Confirmar que no se agregó migración ni dependencia innecesaria; el runner E2E sólo aisló `distDir` para no competir con `next dev`, sin cambiar el modelo de datos.
+- [x] Actualizar `PROJECT_STATUS.md` con módulos, dependencias, pruebas, problemas resueltos, pendientes y criterios de terminado.
 - [ ] Commit de cierre sólo después de evidencia reproducible.
 
 ## Gate de terminado

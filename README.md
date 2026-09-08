@@ -30,6 +30,7 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Operación staff de notificaciones en `/staff/notifications`, con diagnóstico seguro y reintentos RBAC sin exponer PII ni payloads.
 - API privada de métricas operativas en `/api/staff/dashboard`, con scope por rol, rangos acotados y respuesta sin PII.
 - Auditoría operativa y de seguridad en `/staff/audit`, con `audit.read`/`audit.security.read`, cursor HMAC, rate limit, redacción por allowlist y respuesta `no-store`.
+- Superficies de acceso navegables en `/login`, `/login/recovery`, `/portal/access`, `/auth/recovery` y `/auth/customer/consume-link`, sin credenciales fijas y con limpieza de tokens en URL.
 
 Las Fases 1–12 están cerradas con gates técnicos verdes para el alcance local. La entrega de notificaciones y la auditoría operativa/de seguridad son reproducibles y operables; la revisión jurídica, los proveedores productivos, la retención, los backups, la observabilidad productiva y la preparación de producción permanecen como controles previos al lanzamiento.
 
@@ -87,6 +88,7 @@ Los procedimientos operativos están separados de la guía de instalación:
 - [Runbook de preparación para producción](docs/runbooks/production-readiness.md) — evidencia `PASS`, bloqueos `BLOCKED` y advertencias `WARN` sin convertir decisiones externas en supuestos.
 - [Runbook del dashboard operativo](docs/runbooks/analytics-dashboard.md) — definiciones, scope, zona horaria, supresión, rendimiento y diagnóstico seguro.
 - [Runbook de auditoría y observabilidad](docs/runbooks/audit-observability.md) — acceso, filtros, redacción, rate limit, diagnóstico, `EXPLAIN` y límites de retención.
+- [Runbook de superficies de acceso](docs/runbooks/auth-surfaces.md) — rutas, Mailpit, worker, tokens, MFA, recovery y pruebas locales.
 
 El worker de notificaciones se ejecuta separado de Next.js:
 
@@ -113,10 +115,11 @@ npx cross-env PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts
 npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts
 npx cross-env AUTH_E2E=1 REUSE_E2E_SERVER=1 APP_URL=http://127.0.0.1:3100 playwright test tests/staff-notifications.spec.ts
 $env:DASHBOARD_E2E='1'; npx playwright test tests/dashboard.spec.ts
+$env:AUTH_SURFACES_E2E='1'; npx playwright test tests/auth-surfaces.spec.ts
 ```
 
 La suite E2E pública conserva el contrato visual, responsive, de interacción, consola y accesibilidad de la landing. La prueba foundation requiere PostgreSQL activo y se ejecuta de forma opt-in.
-La suite de identidad también es opt-in: crea un empleado desechable en PostgreSQL, valida login/sesión/logout/CSRF y elimina el fixture al terminar. Requiere Docker y se ejecuta con `npm run test:e2e:auth`.
+La suite de identidad también es opt-in: crea un empleado desechable en PostgreSQL, valida login/sesión/logout/CSRF y elimina el fixture al terminar. Requiere Docker y se ejecuta con `npm run test:e2e:auth`. La suite de superficies de acceso crea empleados, administrador MFA, cliente y tokens desechables; se ejecuta con `AUTH_SURFACES_E2E=1` y nunca depende de credenciales fijas.
 
 ## Identidad local
 
@@ -146,6 +149,7 @@ Endpoints disponibles:
 - `POST /api/auth/customer/consume-link` — consume un link una sola vez.
 - `GET|POST /api/auth/session` — consulta o cierra la sesión actual.
 - `POST /api/auth/recovery/request` y `POST /api/auth/recovery/consume` — recovery de empleados.
+- `GET /login`, `GET /login/recovery`, `GET /portal/access`, `GET /auth/recovery` y `GET /auth/customer/consume-link` — superficies navegables que consumen los contratos de autenticación anteriores; las rutas son privadas/noindex y no sustituyen los controles backend.
 - `POST /api/quote-requests` — crea un expediente público con consentimiento, folio y respuesta idempotente mediante el header `Idempotency-Key`.
 - `GET /api/staff/quote-requests` y `GET /api/staff/quote-requests/:id` — inbox y detalle para empleados autorizados.
 - `GET /api/staff/quote-requests/assignees`, `POST .../:id/assign` y `POST .../:id/status` — operaciones internas RBAC con auditoría e historial.
