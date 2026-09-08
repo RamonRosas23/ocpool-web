@@ -61,11 +61,16 @@ Todos los eventos de la allowlist producen exactamente las entregas esperadas, l
 
 ## Tarea 5 — Operación staff de entregas
 
-- [ ] Crear API staff de lectura con proyección mínima: estado, template, intento, fecha, categoría de error y edad; nunca dirección completa, ciphertext, token ni error crudo.
-- [ ] Crear acción staff de reintento sólo para `FAILED` recuperable, con RBAC, same-origin, idempotencia y auditoría.
-- [ ] Integrar una superficie interna clara y responsive para pendientes/fallidos, estado vacío, carga, error y confirmación de reintento.
-- [ ] Añadir Axe, teclado, reduced motion, consola limpia, no overflow y payload assertions.
-- [ ] Commit `feat: add staff notification operations`.
+- Alcance técnico fijado: `staff-service.ts` será la única capa que proyecte entregas operativas; la API sólo orquestará sesión, same-origin, validación y serialización HTTP.
+- La proyección devolverá únicamente identificador, canal, estado, template/version, intentos, fechas operativas, código/categoría de error controlado, motivo de cancelación y metadatos del evento; no seleccionará ni serializará destinatario, ciphertext, payload, token, usuario receptor ni `providerMessageId`.
+- El reintento manual será una transición condicional `FAILED → PENDING`, sólo para `TEMPORARY_PROVIDER` y `RATE_LIMIT`, con reinicio explícito de lease/estado procesado, auditoría de éxito y respuesta idempotente para carreras/repetición.
+- La superficie `/staff/notifications` será una vista de operación, no un visor de contenido: filtros de estado, salud agregada, edad, errores categorizados y acción de reintento cuando corresponda.
+
+- [x] Crear API staff de lectura con proyección mínima: estado, template, intento, fecha, categoría de error y edad; nunca dirección completa, ciphertext, token ni error crudo.
+- [x] Crear acción staff de reintento sólo para `FAILED` recuperable, con RBAC, same-origin, idempotencia y auditoría.
+- [x] Integrar una superficie interna clara y responsive para pendientes/fallidos, estado vacío, carga, error y confirmación de reintento.
+- [x] Añadir Axe, teclado, reduced motion, consola limpia, no overflow y payload assertions.
+- [x] Commit `feat: add staff notification operations`.
 
 ### Criterio de terminado
 
