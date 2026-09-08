@@ -4,13 +4,14 @@
 
 ## Estado actual
 
-- **Fase:** Fase 12 — auditoría operativa y seguridad; terminada para el alcance local.
-- **Estado:** Fases 1–12 están implementadas y verificadas dentro del alcance local. Fase 12 tiene contratos, RBAC, repositorio, rate limit, API privada, capabilities, UI responsive/accesible, E2E, `EXPLAIN`, runbook y gate técnico completo. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
+- **Fase:** Fase 13 — superficies de acceso y recuperación; planificación documental completada, implementación aún no iniciada.
+- **Estado:** Fases 1–12 están implementadas y verificadas dentro del alcance local. Fase 13 ya tiene especificación, autorrevisión y plan ordenado; la brecha identificada es de experiencia navegable sobre contratos de autenticación ya probados. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
-- **Últimos commits de Fase 12:** `c341c66` (`feat: add staff audit workspace`), `df315e2` (`feat: expose staff audit api`), `23a9ab5` (`feat: add secure audit read service`), `2a1f5a7` (`feat: add audit permissions`), `443f914` (`feat: define audit contracts and redaction`).
+- **Últimos commits de Fase 12:** `a40d839` (`docs: close audit observability phase`), `d9a87e0` (`fix: stabilize audit verification fixtures`), `c341c66` (`feat: add staff audit workspace`), `df315e2` (`feat: expose staff audit api`), `23a9ab5` (`feat: add secure audit read service`).
 - **Documentos de Fase 12:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
+- **Documentos de Fase 13:** especificación, autorrevisión y plan ordenado versionados; ninguna tarea de implementación se marca como iniciada antes de su E2E contractual.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -168,7 +169,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### En desarrollo
 
-- Fase 12 — auditoría operativa y seguridad: terminada para el alcance local. La lectura operativa/security, redacción, cursor HMAC, RBAC, API, UI, responsive, hardening y documentación están comprobados; quedan sólo decisiones externas de lanzamiento.
+- Fase 13 — superficies de acceso y recuperación: planificación cerrada; pendiente ejecutar Tarea 1 con E2E contractual y luego implementar por vertical slices.
 - La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
@@ -180,7 +181,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
-- Siguiente paso: definir y ejecutar la siguiente fase sólo después de conservar este cierre como baseline; el gate de lanzamiento externo permanece bloqueado.
+- Siguiente paso: ejecutar la Tarea 1 de Fase 13 y conservar Fase 12 como baseline; el gate de lanzamiento externo permanece bloqueado.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
@@ -549,6 +550,9 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/reviews/2026-09-08-ocpool-audit-observability-review.md` — autorrevisión de Fase 12; metadata, RBAC, cursor, N+1, retención y AuthEvent revisados antes de implementación.
 - `docs/superpowers/plans/2026-09-08-ocpool-audit-observability.md` — plan ordenado de Fase 12; Tasks 1–6 cerradas con evidencia de gate.
 - `docs/runbooks/audit-observability.md` — runbook de acceso, filtros, redacción, rate limit, `EXPLAIN`, backup y límites legales de auditoría.
+- `docs/superpowers/specs/2026-09-08-ocpool-auth-surfaces.md` — especificación de Fase 13 para login de empleados, magic link de clientes y recovery.
+- `docs/superpowers/reviews/2026-09-08-ocpool-auth-surfaces-review.md` — autorrevisión de Fase 13 con foco en enumeración, MFA y tokens en URL.
+- `docs/superpowers/plans/2026-09-08-ocpool-auth-surfaces.md` — plan TDD de Fase 13; ninguna tarea de implementación cerrada todavía.
 
 ## Criterio de terminado de Fase 10
 
