@@ -1,6 +1,6 @@
 # OCPOOL — Plan Fase 4: Catálogo, precios y cotizaciones versionadas
 
-> Estado: Tareas 1–5 ejecutadas y verificadas. Tarea 6 en ejecución. No se abrirá una fase posterior sin cerrar el gate documentado.
+> Estado: Tareas 1–6 ejecutadas y verificadas. Gate de Fase 4 cerrado. La siguiente fase tiene especificación independiente.
 
 ## Objetivo
 
@@ -101,7 +101,7 @@ Los permisos existentes de cotizaciones se conservarán y se separará explícit
 - [x] Tarea 3 — servicio de precios y creación de versión reproducible.
 - [x] Tarea 4 — API y UI de catálogo/listas de precios.
 - [x] Tarea 5 — constructor de cotizaciones y operaciones protegidas.
-- [ ] Tarea 6 — gate de fase.
+- [x] Tarea 6 — gate de fase.
 
 ### Tarea 1 — Contratos e invariantes
 
@@ -195,6 +195,15 @@ Evidencia de cierre:
 - Unitarias monetarias, integración PostgreSQL, API negativa y pruebas de snapshot.
 - E2E de constructor y regresión pública/interna.
 - Lint, typecheck, build, auditoría de dependencias, `git diff --check` y documentación.
+
+Evidencia de cierre:
+
+- Commit `89ec64e` (`docs: close phase four quote builder task`).
+- `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed` y `npx prisma migrate status` correctos; no hay migraciones pendientes.
+- `npm audit --omit=dev --audit-level=high` reportó 0 vulnerabilidades.
+- `npm test` pasó completo: typecheck, 41 unitarias, 30 integraciones, contrato de contenido, build, 33 E2E de regresión con 3 omitidas explícitamente y foundation 1/1.
+- `QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1 con login real y flujo empleado completo.
+- `git diff --check` correcto y árbol de trabajo limpio después del commit.
 
 ## Criterios de terminado
 

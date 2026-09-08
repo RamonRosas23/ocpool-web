@@ -4,11 +4,11 @@
 
 ## Estado actual
 
-- **Fase:** Fase 4 — Catálogo, precios y cotizaciones versionadas.
-- **Estado:** Fase 4 está en ejecución. Las Tareas 1–5 están terminadas con evidencia verificable; la Tarea 6 — gate de fase — es el incremento actual.
+- **Fase:** Fase 5 — Portal autenticado del cliente.
+- **Estado:** Fase 4 está terminada con gate verde. Fase 5 tiene especificación aprobada y plan en preparación; todavía no se ha modificado código de portal.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
-- **Commits de la fase:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`.
+- **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
 
@@ -92,10 +92,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - API interna protegida para listar expedientes cotizables, crear/reemplazar borradores y transicionar versiones con same-origin, RBAC, serialización monetaria y errores seguros.
 - Constructor `/staff/quotes` responsive con selección de expediente, lista de precios, líneas, cantidades, descuentos, impuestos, resumen vivo, vigencia, historial y acciones de revisión/envío.
 - Política backend que separa editar precios, aplicar descuentos y aprobar descuentos antes del envío; versiones enviadas no son editables.
+- Gate reproducible de Fase 4 cerrado: migraciones/seed al día, dependencias sin vulnerabilidades altas, regresión completa y E2E del constructor opt-in verificados.
 
 ### En desarrollo
 
-- Fase 4 — Tarea 6: gate de fase y cierre documental.
+- Fase 5 — especificación aprobada; plan técnico en preparación.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -173,6 +174,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 3 de Fase 4: `npm run test:integration` 25/25, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint` y `git diff --check` correctos; se verificaron snapshots históricos, permisos, edición de borrador, transición de envío, aceptación bloqueada, concurrencia y limpieza de fixtures.
 - Tarea 4 de Fase 4: commit `861e4d8` (`feat: add protected catalog and price operations`); `npm run test:integration` 28/28, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` 32/32 ejecutadas con 2 omitidas explícitamente y `git diff --check` correctos. Se verificaron 401/403, same-origin, archivado, precios solapados, permisos de ventas/gerencia, UI restringida sin sesión y formato monetario sin floats.
 - Tarea 5 de Fase 4: commit `2909b62` (`feat: add protected quote builder workflow`); `npm run test:integration` 30/30, `npm run test:unit` 41/41, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:e2e` 33/33 ejecutadas con 3 omitidas explícitamente y `git diff --check` correctos. La prueba opt-in `QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts` pasó 1/1 con login real, selección de expediente, creación de borrador, revisión y envío. Se verificaron serialización BigInt, 401/403, same-origin, IDOR por expediente inexistente, permisos de edición/descuento/aprobación, inmutabilidad post-envío y actualización atómica de la solicitud.
+- Gate de Fase 4: `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npx prisma migrate status`, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y `npm test` correctos. `npm test` quedó en typecheck, 41 unitarias, 30 integraciones, contrato de contenido, build, 33 E2E ejecutadas con 3 omitidas explícitamente y foundation 1/1. La primera ejecución tuvo una condición temporal de artefacto `.next` al encadenar dos servidores en Windows; la reproducción aislada y la repetición completa pasaron sin cambiar código productivo.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -221,6 +223,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - El schema de Fase 4 y la migración son dependencia del servicio de resolución de precios y creación de versiones.
 - El servicio de `src/server/modules/quotes/service.ts` es dependencia de las APIs internas y del constructor operativo.
 - El servicio y las rutas de `src/server/modules/catalog/` son dependencia del selector de conceptos, listas y precios del constructor.
+- Fase 5 depende de sesiones/actor de cliente de Fase 2, solicitudes de Fase 3 y snapshots/versiones de Fase 4.
 
 ## Problemas encontrados y resolución
 
@@ -250,8 +253,9 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
 - `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
-- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–5 ejecutadas; Tarea 6 en curso.
+- `docs/superpowers/specs/2026-09-07-ocpool-client-portal.md` — especificación aprobada para Fase 5.
+- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 6 de Fase 4: ejecutar el gate reproducible, revisar deuda y dejar documentadas las decisiones abiertas antes de iniciar portal, mensajería o archivos.
+Crear y ejecutar el plan de Fase 5: portal autenticado de cliente con alcance por `clientId`, lectura segura de solicitudes/cotizaciones y E2E negativo de IDOR.
