@@ -130,6 +130,7 @@ model User {
   mfaRequired         Boolean      @default(false)
   mfaSecretCiphertext String?      @db.VarChar(512)
   mfaEnrolledAt       DateTime?    @db.Timestamptz(3)
+  mfaLastAcceptedCounter Int?
   clientId            String?      @db.Uuid
   client              Client?      @relation(fields: [clientId], references: [id], onDelete: Restrict)
   roles               UserRole[]
@@ -200,6 +201,7 @@ model Session {
   expiresAt  DateTime  @db.Timestamptz(3)
   lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
   revokedAt  DateTime? @db.Timestamptz(3)
+  mfaVerified Boolean   @default(false)
   ipAddress  String?   @db.VarChar(64)
   userAgent  String?   @db.VarChar(512)
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)

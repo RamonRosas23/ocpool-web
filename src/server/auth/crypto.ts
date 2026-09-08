@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { Algorithm, hash, verify } from '@node-rs/argon2';
+import { hash, verify } from '@node-rs/argon2';
 import { AUTH_POLICY } from '@/server/auth/constants';
 
 const AES_ALGORITHM = 'aes-256-gcm';
@@ -8,7 +8,8 @@ export async function hashPassword(password: string): Promise<string> {
   if (password.length === 0) throw new Error('Password cannot be empty.');
 
   return hash(password, {
-    algorithm: Algorithm.Argon2id,
+    // @node-rs/argon2 exports Algorithm as an ambient const enum; 2 is Argon2id.
+    algorithm: 2,
     memoryCost: AUTH_POLICY.password.memoryCostKiB,
     timeCost: AUTH_POLICY.password.timeCost,
     parallelism: AUTH_POLICY.password.parallelism,
