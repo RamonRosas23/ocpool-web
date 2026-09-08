@@ -101,11 +101,17 @@ Evidencia de cierre:
 
 **Riesgos:** visibilidad interna mezclada, acciones sin permisos, descarga lenta, nombres maliciosos y densidad excesiva.
 
-- [ ] Añadir zona de archivos staff con compartidos/internos, filtros mínimos y metadata operativa segura.
-- [ ] Ocultar borrar/administrar sin capacidad, conservando autorización backend.
-- [ ] Mostrar estados de análisis y errores accionables sin revelar scanner internals.
-- [ ] Verificar Axe, responsive, consola, no overflow, payloads mínimos y estado de sesión.
-- [ ] Commit `feat: add staff private files workspace`.
+- [x] Añadir zona de archivos staff con compartidos/internos, filtros mínimos y metadata operativa segura.
+- [x] Ocultar borrar/administrar sin capacidad, conservando autorización backend.
+- [x] Mostrar estados de análisis y errores accionables sin revelar scanner internals.
+- [x] Verificar Axe, responsive, consola, no overflow, payloads mínimos y estado de sesión.
+- [x] Commit `feat: add staff private files workspace`.
+
+Evidencia de cierre:
+
+- La UI staff vive en `StaffFilesPanel` dentro del detalle del inbox; manager ve `CUSTOMER`/`INTERNAL` en tabs separados y el rol limitado sólo recibe la proyección compartida.
+- El manager completó carga, validación, descarga disponible y borrado confirmado desde navegador; ningún control se considera autorización y el backend conserva el scope/capability.
+- `STAFF_MESSAGING_E2E=1 npx playwright test tests/client-messaging-staff.spec.ts` pasó 2/2 con Axe, consola limpia y no overflow; typecheck, lint y diff check correctos.
 
 ## Tarea 6 — Gate de seguridad, cleanup y cierre
 

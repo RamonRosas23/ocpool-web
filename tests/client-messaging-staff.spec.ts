@@ -5,6 +5,8 @@ import { fingerprintToken } from '@/server/auth/crypto';
 import { createSession } from '@/server/auth/sessions';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { createInternalNote, sendStaffMessage } from '@/server/modules/messaging/service';
+import { completePrivateFile, reservePrivateFile } from '@/server/modules/private-files/service';
+import { getPrivateStorage } from '@/server/modules/private-files/storage';
 import { seedIdentityCatalog } from '../prisma/seed';
 import { expectNoSeriousA11yViolations } from './a11y';
 
@@ -24,12 +26,13 @@ test.describe('staff messaging opt-in flow', () => {
   let limitedRoleId = '';
   let managerToken = '';
   let limitedToken = '';
+  const fileIds: string[] = [];
 
   test.beforeAll(async () => {
     if (process.env.STAFF_MESSAGING_E2E !== '1') return;
     await seedIdentityCatalog(prisma);
     const managerRole = await prisma.role.findUniqueOrThrow({ where: { key: 'manager' } });
-    const permissions = await prisma.permission.findMany({ where: { key: { in: ['requests.read', 'messaging.read', 'messaging.send'] } }, select: { id: true } });
+    const permissions = await prisma.permission.findMany({ where: { key: { in: ['requests.read', 'messaging.read', 'messaging.send', 'files.read', 'files.download'] } }, select: { id: true } });
     const limitedRole = await prisma.role.create({
       data: {
         key: `staff-messaging-reader-${suffix}`,
@@ -75,6 +78,19 @@ test.describe('staff messaging opt-in flow', () => {
     const rateLimit = async () => ({ allowed: true, remaining: 20, retryAfterSeconds: null });
     await sendStaffMessage(actor, requestId, { body: 'Respuesta compartida del equipo.', idempotencyKey: `staff-shared-${suffix}` }, { prisma, now, rateLimit });
     await createInternalNote(actor, requestId, { body: 'Nota privada de coordinación.', idempotencyKey: `staff-note-${suffix}` }, { prisma, now, rateLimit });
+
+    const fileActor = { ...actor, permissionKeys: new Set([...actor.permissionKeys, 'files.read', 'files.upload', 'files.download', 'files.delete', 'files.internal.read', 'files.manage']) };
+    const storage = getPrivateStorage();
+    for (const [originalFileName, category, visibility] of [
+      ['referencia-compartida.pdf', 'CLIENT_DOCUMENT', 'CUSTOMER'],
+      ['nota-interna.pdf', 'INTERNAL_DOCUMENT', 'INTERNAL'],
+    ] as const) {
+      const reservation = await reservePrivateFile(fileActor, { quoteRequestId: requestId, originalFileName, contentType: 'application/pdf', byteSize: 5, category, visibility, idempotencyKey: `staff-file-${visibility.toLowerCase()}-${suffix}` }, { prisma, now, rateLimit });
+      const upload = await fetch(reservation.uploadUrl!, { method: 'PUT', headers: { 'content-type': 'application/pdf' }, body: Buffer.from('%PDF-') });
+      if (!upload.ok) throw new Error(`Unable to seed ${originalFileName}.`);
+      await completePrivateFile(fileActor, requestId, reservation.file.id, { prisma, storage, now });
+      fileIds.push(reservation.file.id);
+    }
   });
 
   test.afterAll(async () => {
@@ -82,8 +98,13 @@ test.describe('staff messaging opt-in flow', () => {
     const conversations = await prisma.conversation.findMany({ where: { quoteRequestId: requestId }, select: { id: true } });
     const conversationIds = conversations.map(({ id }) => id);
     const messageIds = (await prisma.conversationMessage.findMany({ where: { conversationId: { in: conversationIds } }, select: { id: true } })).map(({ id }) => id);
-    const entityIds = [requestId, ...conversationIds, ...messageIds].filter(Boolean);
-    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, ...conversationIds].filter(Boolean) } } });
+    const attachments = await prisma.fileAttachment.findMany({ where: { quoteRequestId: requestId }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } });
+    const storage = getPrivateStorage();
+    for (const { storageObject } of attachments) await storage.delete(storageObject.storageKey);
+    await prisma.fileAttachment.deleteMany({ where: { id: { in: attachments.map(({ id }) => id) } } });
+    await prisma.storageObject.deleteMany({ where: { id: { in: attachments.map(({ storageObjectId }) => storageObjectId) } } });
+    const entityIds = [requestId, ...conversationIds, ...messageIds, ...fileIds].filter(Boolean);
+    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, ...conversationIds, ...fileIds].filter(Boolean) } } });
     await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: entityIds } }, { actorUserId: { in: [managerId, limitedId].filter(Boolean) } }] } });
     if (requestId) await prisma.quoteRequest.delete({ where: { id: requestId } });
     if (contactId) await prisma.clientContact.delete({ where: { id: contactId } });
@@ -116,21 +137,41 @@ test.describe('staff messaging opt-in flow', () => {
     await expect(page.getByRole('heading', { name: 'Solicitudes' })).toBeVisible();
     await page.getByRole('button', { name: new RegExp(folio) }).click();
     await expect(page.getByRole('heading', { name: 'Correspondencia' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /Compartidos/ })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /Notas internas/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Archivos del expediente' })).toBeVisible();
+    const filesPanel = page.locator('.staff-files');
+    const messagingPanel = page.locator('.staff-messaging');
+    await expect(filesPanel.getByRole('tab', { name: /Compartidos/ })).toBeVisible();
+    await expect(filesPanel.getByRole('tab', { name: /Internos/ })).toBeVisible();
+    await expect(page.getByText('referencia-compartida.pdf', { exact: true })).toBeVisible();
+    await expect(page.getByText('nota-interna.pdf', { exact: true })).toBeHidden();
+    await filesPanel.getByRole('tab', { name: /Internos/ }).click();
+    await expect(page.getByText('nota-interna.pdf', { exact: true })).toBeVisible();
+    await expect(page.getByText('referencia-compartida.pdf', { exact: true })).toBeHidden();
+    await filesPanel.getByRole('tab', { name: /Compartidos/ }).click();
+    await expect(filesPanel.getByRole('button', { name: 'Descargar referencia-compartida.pdf' })).toBeVisible();
+    await filesPanel.getByRole('button', { name: 'Añadir archivo' }).click();
+    await filesPanel.locator('input[type="file"]').setInputFiles({ name: 'staff-upload.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-') });
+    await filesPanel.getByRole('button', { name: 'Cargar archivo' }).click();
+    await expect(filesPanel.getByText('staff-upload.pdf', { exact: true })).toBeVisible();
+    const uploadedRow = filesPanel.locator('.staff-file').filter({ hasText: 'staff-upload.pdf' });
+    await uploadedRow.getByRole('button', { name: 'Eliminar archivo' }).click();
+    await uploadedRow.getByRole('button', { name: 'Confirmar eliminación' }).click();
+    await expect(uploadedRow).toHaveCount(0);
+    await expect(messagingPanel.getByRole('tab', { name: /Compartidos/ })).toBeVisible();
+    await expect(messagingPanel.getByRole('tab', { name: /Notas internas/ })).toBeVisible();
     await expect(page.getByText('Respuesta compartida del equipo.')).toBeVisible();
     await expect(page.getByText('Nota privada de coordinación.')).toBeHidden();
 
-    await page.getByRole('tab', { name: /Notas internas/ }).click();
+    await messagingPanel.getByRole('tab', { name: /Notas internas/ }).click();
     await expect(page.getByText('Nota privada de coordinación.')).toBeVisible();
     await expect(page.getByText('Respuesta compartida del equipo.')).toBeHidden();
     await page.getByRole('textbox', { name: 'Nota interna para el equipo' }).fill('Seguimiento interno confirmado.');
     await page.getByRole('button', { name: 'Guardar nota' }).click();
     await expect(page.getByText('Seguimiento interno confirmado.')).toBeVisible();
 
-    await page.getByRole('tab', { name: /Compartidos/ }).click();
-    await page.getByRole('textbox', { name: 'Mensaje visible para cliente' }).fill('El equipo comparte la siguiente actualización.');
-    await page.getByRole('button', { name: 'Enviar mensaje' }).click();
+    await messagingPanel.getByRole('tab', { name: /Compartidos/ }).click();
+    await messagingPanel.getByRole('textbox', { name: 'Mensaje visible para cliente' }).fill('El equipo comparte la siguiente actualización.');
+    await messagingPanel.getByRole('button', { name: 'Enviar mensaje' }).click();
     await expect(page.getByText('El equipo comparte la siguiente actualización.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Cerrar conversación' }).click();
@@ -154,11 +195,20 @@ test.describe('staff messaging opt-in flow', () => {
     await page.goto('/staff/requests');
     await page.getByRole('button', { name: new RegExp(folio) }).click();
     await expect(page.getByRole('heading', { name: 'Correspondencia' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /Compartidos/ })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /Notas internas/ })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Archivos del expediente' })).toBeVisible();
+    const filesPanel = page.locator('.staff-files');
+    await expect(filesPanel.getByRole('tab', { name: /Compartidos/ })).toBeVisible();
+    await expect(filesPanel.getByRole('tab', { name: /Internos/ })).toHaveCount(0);
+    await expect(page.getByText('referencia-compartida.pdf', { exact: true })).toBeVisible();
+    await expect(page.getByText('nota-interna.pdf', { exact: true })).toHaveCount(0);
+    await expect(filesPanel.getByRole('button', { name: 'Añadir archivo' })).toHaveCount(0);
+    await expect(filesPanel.getByRole('button', { name: /Eliminar archivo/ })).toHaveCount(0);
+    const messagingPanel = page.locator('.staff-messaging');
+    await expect(messagingPanel.getByRole('tab', { name: /Compartidos/ })).toBeVisible();
+    await expect(messagingPanel.getByRole('tab', { name: /Notas internas/ })).toHaveCount(0);
     await expect(page.getByText('Nota privada de coordinación.')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Cerrar conversación' })).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'Mensaje visible para cliente' })).toBeVisible();
-    expect(await page.content()).not.toMatch(/Nota privada de coordinación|clientId|senderUserId/i);
+    expect(await page.content()).not.toMatch(/Nota privada de coordinación|nota-interna\.pdf|clientId|senderUserId|storageKey/i);
   });
 });
