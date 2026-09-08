@@ -162,34 +162,34 @@
 - Consumes: `getStaffDashboard()`, `requireStaffActor()`, `requestId()`, `toErrorResponse()` y `readServerEnv().APP_TIMEZONE`.
 - Produces: `GET /api/staff/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD` con `DashboardResponse`, `cache-control: no-store`, alcance y zona visibles.
 
-- [ ] **Step 1: Escribir pruebas rojas del contrato HTTP.**
+- [x] **Step 1: Escribir pruebas rojas del contrato HTTP.**
 
   Probar 401 sin cookie, 403 de customer, 200 para sales/manager, 400 para fechas inválidas/excedidas, `no-store`, `requestId` en errores y respuesta sin PII/SQL/secretos/IDs de cliente.
 
-- [ ] **Step 2: Ejecutar la prueba API para confirmar el rojo.**
+- [x] **Step 2: Ejecutar la prueba API para confirmar el rojo.**
 
   Run: `cross-env RUN_DB_TESTS=1 npx vitest run tests/integration/analytics-api.test.ts --maxWorkers=1`
 
   Expected: FAIL porque la ruta no existe.
 
-- [ ] **Step 3: Implementar parser Zod y handler GET.**
+- [x] **Step 3: Implementar parser Zod y handler GET.**
 
   El schema será `.strict()`, aceptará sólo `from` y `to`, normalizará fechas calendario mediante `normalizeDashboardQuery()` y mapeará errores a `toErrorResponse()`. No se aceptará `scope`, `userId`, `clientId`, `timezone`, SQL ni filtros arbitrarios desde el navegador.
 
-- [ ] **Step 4: Ejecutar pruebas de seguridad API.**
+- [x] **Step 4: Ejecutar pruebas de seguridad API.**
 
   Run: `cross-env RUN_DB_TESTS=1 npx vitest run tests/integration/analytics-api.test.ts --maxWorkers=1`, `npx tsc --noEmit`, `npx eslint src/app/api/staff/dashboard/route.ts tests/integration/analytics-api.test.ts` y `git diff --check`.
 
-  Expected: PASS con payload seguro, autorización backend, fechas acotadas y errores públicos.
+  Result: PASS con 2 pruebas de integración, payload seguro, autorización backend, fechas acotadas, query estricta y errores públicos con `requestId`; el gate global quedó en 37 archivos y 70 pruebas, con build, lint y typecheck verdes.
 
-- [ ] **Step 5: Documentar el endpoint.**
+- [x] **Step 5: Documentar el endpoint.**
 
   Añadir a README el endpoint, rango máximo, scope por rol, `no-store` y la advertencia de que las métricas no son contabilidad ni autorización comercial.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
   ```powershell
-  git add src/app/api/staff/dashboard/route.ts tests/integration/analytics-api.test.ts README.md
+  git add src/app/api/staff/dashboard/route.ts src/server/modules/analytics/service.ts tests/integration/analytics-api.test.ts README.md docs/superpowers/plans/2026-09-08-ocpool-analytics-dashboard.md
   git commit -m "feat: expose staff analytics dashboard API"
   ```
 

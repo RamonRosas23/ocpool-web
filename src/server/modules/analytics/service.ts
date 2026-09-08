@@ -50,7 +50,12 @@ export async function getStaffDashboard(
   const scope = requireDashboardAccess(actor);
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
-  const query = normalizeDashboardQuery({ ...input, now, timezone: input.timezone ?? dependencies.timezone ?? readServerEnv().APP_TIMEZONE });
+  let query;
+  try {
+    query = normalizeDashboardQuery({ ...input, now, timezone: input.timezone ?? dependencies.timezone ?? readServerEnv().APP_TIMEZONE });
+  } catch (error) {
+    throw new AppError('VALIDATION_ERROR', 'El rango de fechas no es válido.', 400, { cause: error });
+  }
   const repositoryQuery: DashboardRepositoryQuery = { ...query, scope, actorUserId: scope === 'self' ? actor.userId : null, now };
   const aggregates = await readDashboardAggregates(prisma, repositoryQuery);
   const timing = {

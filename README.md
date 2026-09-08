@@ -28,8 +28,9 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Operación staff de documentos PDF con estados, descarga efímera, generación condicionada y evidencia de aceptación.
 - Notificaciones transaccionales por email con Outbox, plantillas versionadas, leases, reintentos y entrega local verificable en Mailpit.
 - Operación staff de notificaciones en `/staff/notifications`, con diagnóstico seguro y reintentos RBAC sin exponer PII ni payloads.
+- API privada de métricas operativas en `/api/staff/dashboard`, con scope por rol, rangos acotados y respuesta sin PII.
 
-Las Fases 1–9 están cerradas con gates técnicos verdes para el alcance local. La entrega de notificaciones es reproducible y operable; la revisión jurídica, los proveedores productivos, la retención, los backups, la observabilidad y la preparación de producción permanecen como controles previos al lanzamiento.
+Las Fases 1–10 están cerradas con gates técnicos verdes para el alcance local; la Fase 11 avanza con el dominio, servicio y API de métricas operativas. La entrega de notificaciones es reproducible y operable; la revisión jurídica, los proveedores productivos, la retención, los backups, la observabilidad y la preparación de producción permanecen como controles previos al lanzamiento.
 
 ## Requisitos
 
@@ -148,6 +149,7 @@ Endpoints disponibles:
 - `GET /api/staff/quotes/versions/:versionId/document` — estado operativo seguro del documento y evidencia de aceptación para staff.
 - `GET /api/staff/notifications` — operación de entregas con proyección segura, filtros y salud agregada para staff autorizado.
 - `POST /api/staff/notifications/:id/retry` — reencola una entrega fallida recuperable con RBAC, same-origin, auditoría e idempotencia.
+- `GET /api/staff/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD` — métricas operativas de sólo lectura. `sales` consulta su scope propio con `metrics.read`; `manager`/`admin` requieren `metrics.read.global` para el agregado global. El rango usa `[from,to)`, admite como máximo 93 días, toma por defecto los últimos 30 días completos, usa `APP_TIMEZONE` y responde con `cache-control: no-store`. Estas métricas son operativas; no sustituyen contabilidad ni decisiones de autorización comercial.
 
 Los tokens se guardan como huellas SHA-256. Los eventos Outbox de correo contienen el token únicamente cifrado para que el worker pueda entregarlo; nunca se incluye el token crudo en payloads, respuestas o logs. La interfaz staff sólo expone códigos de error controlados, no destinatarios, ciphertext, payloads ni respuestas crudas del proveedor.
 
@@ -184,7 +186,7 @@ Con `.env.example` el resultado esperado es `BLOCKED`; no se deben reutilizar se
 
 ## Estado de implementación
 
-La identidad, captación, expedientes, cotizaciones, portal, mensajería, archivos privados, PDF/aceptación y notificaciones tienen schema, servicios, endpoints protegidos, UI, pruebas y documentación operativa dentro del alcance local. El siguiente bloque ordenado será el hardening de producción; dashboards/métricas se desarrollarán después, sin presentar el sistema como listo para lanzamiento mientras existan riesgos abiertos.
+La identidad, captación, expedientes, cotizaciones, portal, mensajería, archivos privados, PDF/aceptación, notificaciones y el backend del dashboard operativo tienen schema, servicios, endpoints protegidos, UI parcial, pruebas y documentación operativa dentro del alcance local. El siguiente bloque de Fase 11 es la superficie visual responsive del dashboard; el sistema no se presenta como listo para lanzamiento mientras existan riesgos de producción abiertos.
 
 La auditoría de producción local termina en 0 vulnerabilidades: `deepmerge-ts@8.0.2` y `mysql2@3.24.3` están fijados mediante overrides compatibles con Prisma 7.10.0. Estas versiones deben revisarse cuando Prisma las incorpore de forma nativa.
 
