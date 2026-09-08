@@ -104,19 +104,19 @@
 
 **Interfaces:**
 - Consumes: contratos de Task 1, `Actor`, `requirePermission`, `getPrisma()`, `getNotificationOperationalHealth()` y modelos existentes de solicitudes/cotizaciones/aceptaciones/notificaciones.
-- Produces: `getStaffDashboard(actor: Actor, input: DashboardQueryInput, dependencies?: AnalyticsServiceDependencies): Promise<DashboardResponse>` y un repositorio `readDashboardAggregates(prisma, query: DashboardQuery): Promise<DashboardAggregates>` sin datos de contacto ni payloads. `DashboardResponse` y `DashboardAggregates` serán tipos exportados del módulo y seguirán exactamente el contrato de datos de la especificación.
+- Produces: `getStaffDashboard(actor: Actor, input: DashboardQueryInput, dependencies?: AnalyticsServiceDependencies): Promise<DashboardResponse>` y un repositorio `readDashboardAggregates(prisma, query: DashboardRepositoryQuery): Promise<DashboardAggregates>` sin datos de contacto ni payloads. `DashboardResponse` y `DashboardAggregates` serán tipos exportados del módulo y seguirán exactamente el contrato de datos de la especificación.
 
-- [ ] **Step 1: Escribir pruebas rojas de permiso y alcance.**
+- [x] **Step 1: Escribir pruebas rojas de permiso y alcance.**
 
-  Extender la matriz de permisos para que `sales` tenga `metrics.read`, manteniendo `customer` sin ese permiso; crear fixtures de dos empleados, dos clientes, solicitudes asignadas/cruzadas, cotizaciones en distintas monedas, historiales de estado, aceptaciones y notificaciones. Las aserciones deben exigir que sales sólo agregue su `currentAssigneeId` y que manager/admin vean el agregado global.
+  Extender la matriz de permisos para que `sales` tenga `metrics.read`, mientras `manager/admin` tengan además `metrics.read.global` y `customer` no tenga ninguno; crear fixtures de dos empleados, dos clientes, solicitudes asignadas/cruzadas, cotizaciones en distintas monedas, historiales de estado, aceptaciones y notificaciones. Las aserciones deben exigir que sales sólo agregue su `currentAssigneeId` y que manager/admin vean el agregado global.
 
-- [ ] **Step 2: Ejecutar integración para confirmar el rojo.**
+- [x] **Step 2: Ejecutar integración para confirmar el rojo.**
 
-  Run: `npm run test:integration -- tests/integration/analytics-service.test.ts`
+  Run: `$env:RUN_DB_TESTS='1'; npx vitest run tests/integration/analytics-service.test.ts --maxWorkers=1`
 
-  Expected: FAIL por servicio y repositorio ausentes. Si el script no acepta filtro, ejecutar `cross-env RUN_DB_TESTS=1 npx vitest run tests/integration/analytics-service.test.ts --maxWorkers=1`.
+  Result: FAIL inicial por servicio/repositorio ausentes y catálogo RBAC incompleto.
 
-- [ ] **Step 3: Implementar scope y proyecciones.**
+- [x] **Step 3: Implementar scope y proyecciones.**
 
   Crear funciones internas explícitas:
 
@@ -126,25 +126,25 @@
   function requireDashboardAccess(actor: Actor): DashboardScope;
   ```
 
-  `sales` filtrará solicitudes y relaciones de cotización por `currentAssigneeId = actor.userId`; `manager/admin` usarán scope global. Un actor no empleado o sin `metrics.read` recibirá `FORBIDDEN` con el envelope existente.
+  `sales` filtrará solicitudes y relaciones de cotización por `currentAssigneeId = actor.userId`; sólo `metrics.read.global` habilitará scope global. Un actor no empleado o sin `metrics.read` recibirá `FORBIDDEN` con el envelope existente.
 
-- [ ] **Step 4: Implementar agregados parametrizados.**
+- [x] **Step 4: Implementar agregados parametrizados.**
 
   El repositorio realizará un número fijo de lecturas agregadas para solicitudes, status history, cotizaciones, quote status history, aceptaciones, usuarios responsables y notificaciones. Usará Prisma agregations o `Prisma.sql` con parámetros, nunca interpolación de fechas/IDs. Las proyecciones incluirán sólo conteos, estados, origen, timestamps agregados, moneda y totales snapshot como `bigint`.
 
   Reutilizar `getNotificationOperationalHealth()` para la cola actual y añadir una lectura acotada del periodo para fallos; no duplicar su lógica de estado. No consultar `contact`, `email`, mensajes, archivos, `payload`, ciphertext ni `providerMessageId`.
 
-- [ ] **Step 5: Implementar el servicio y reglas de supresión.**
+- [x] **Step 5: Implementar el servicio y reglas de supresión.**
 
   `getStaffDashboard()` validará fechas, scope, dependencia Prisma y `now`; combinará agregados con métricas puras de Task 1; calculará P50/P90, tasa en basis points, buckets y `freshness`; devolverá `suppressed` con valores numéricos `null` cuando la muestra sea menor a 5.
 
-- [ ] **Step 6: Ejecutar integración y revisión de consulta.**
+- [x] **Step 6: Ejecutar integración y revisión de consulta.**
 
   Run: `npm run test:integration`, `npx tsc --noEmit`, `npx eslint src/server/modules/analytics tests/integration/analytics-service.test.ts src/server/auth/constants.ts tests/unit/auth-permissions.test.ts` y `git diff --check`.
 
-  Expected: PASS; el test debe verificar aislamiento de cliente/empleado, monedas separadas, límites de fecha, snapshots históricos, supresión y ausencia de N+1 mediante un repositorio instrumentado o conteo de llamadas.
+  Result: PASS; `npm run test:integration` completó 36 archivos y 68 pruebas. La integración del dashboard verifica aislamiento de empleado, monedas separadas, aceptación, totales snapshot, notificaciones, supresión y ausencia de PII; la revisión del repositorio confirma agregaciones por lote y una única consulta batch de responsables, sin consultas dentro de iteraciones por fila.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
   ```powershell
   git add src/server/auth/constants.ts tests/unit/auth-permissions.test.ts src/server/modules/analytics/repository.ts src/server/modules/analytics/service.ts tests/integration/analytics-service.test.ts

@@ -107,11 +107,11 @@ La zona de negocio inicial será `America/Chihuahua`, alineada con el entorno ac
 
 ## Contrato de autorización
 
-Se añadirá una capacidad de lectura explícita `dashboard.read` al catálogo RBAC. La ruta no confiará en el frontend:
+Se conservará `metrics.read` como capacidad de lectura limitada y se añadirá `metrics.read.global` como capacidad explícita de scope global. La ruta no confiará en el frontend:
 
 - `sales` podrá consultar un dashboard de operación limitado a solicitudes y cotizaciones asignadas a ese usuario, además de salud global de notificaciones no sensible;
-- `manager` y `admin` podrán consultar agregados globales de operación y carga por responsable;
-- usuarios sin `dashboard.read` recibirán `403` genérico;
+- `manager` y `admin` podrán consultar agregados globales de operación y carga por responsable mediante `metrics.read.global`;
+- usuarios sin `metrics.read` recibirán `403` genérico;
 - clientes y sesiones revocadas nunca accederán a la ruta;
 - ninguna dimensión permitirá enumerar IDs, clientes, correos, teléfonos, mensajes, archivos, storage keys o destinatarios.
 

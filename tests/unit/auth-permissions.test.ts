@@ -9,7 +9,7 @@ import {
 
 describe('authorization policy', () => {
   it('defines the approved least-privilege role catalog', () => {
-    expect(ALL_PERMISSION_KEYS).toHaveLength(38);
+    expect(ALL_PERMISSION_KEYS).toHaveLength(39);
     expect(permissionKeysForRoles(['customer'])).toEqual(new Set([
       'portal.self.read',
       'portal.self.authenticate',
@@ -40,6 +40,7 @@ describe('authorization policy', () => {
       'quotes.pdf.read',
       'quotes.pdf.generate',
       'notifications.read',
+      'metrics.read',
       'messaging.read',
       'messaging.send',
       'messaging.internal_notes.read',
@@ -54,6 +55,7 @@ describe('authorization policy', () => {
     expect(permissionKeysForRoles(['manager'])).toContain('catalog.manage');
     expect(permissionKeysForRoles(['manager'])).toContain('prices.manage');
     expect(permissionKeysForRoles(['manager'])).toContain('quotes.approve_discount');
+    expect(permissionKeysForRoles(['manager'])).toContain('metrics.read.global');
     expect(permissionKeysForRoles(['admin'])).toEqual(new Set(ALL_PERMISSION_KEYS));
     expect(ROLE_DEFINITIONS.admin.systemManaged).toBe(true);
   });

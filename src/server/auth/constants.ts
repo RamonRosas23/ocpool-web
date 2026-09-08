@@ -39,6 +39,7 @@ export const PERMISSION_CATALOG = [
   { key: 'notifications.read', description: 'Consultar el estado operativo de notificaciones autorizadas.' },
   { key: 'notifications.manage', description: 'Reintentar o administrar entregas de notificaciones autorizadas.' },
   { key: 'metrics.read', description: 'Consultar métricas operativas.' },
+  { key: 'metrics.read.global', description: 'Consultar métricas operativas globales y carga por responsable.' },
 ] as const;
 
 export const ROLE_DEFINITIONS = {
@@ -78,6 +79,7 @@ export const ROLE_DEFINITIONS = {
       'quotes.pdf.read',
       'quotes.pdf.generate',
       'notifications.read',
+      'metrics.read',
     ],
   },
   manager: {
@@ -119,6 +121,7 @@ export const ROLE_DEFINITIONS = {
       'notifications.read',
       'notifications.manage',
       'metrics.read',
+      'metrics.read.global',
     ],
   },
   admin: {

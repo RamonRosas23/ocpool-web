@@ -20,6 +20,58 @@ export type DashboardQuery = {
   scope: DashboardScope;
 };
 
+export type MetricSummary = {
+  sampleSize: number | null;
+  p50Seconds: number | null;
+  p90Seconds: number | null;
+  suppressed: boolean;
+};
+
+export type WorkloadRow = {
+  actorKey: string;
+  displayName: string;
+  activeRequests: number | null;
+  draftQuotes: number | null;
+  oldestOpenAt: string | null;
+  suppressed: boolean;
+};
+
+export type DashboardResponse = {
+  meta: {
+    from: string;
+    to: string;
+    timezone: string;
+    generatedAt: string;
+    freshness: 'fresh' | 'stale';
+    scope: DashboardScope;
+  };
+  requests: {
+    received: number;
+    unassigned: number;
+    byStatus: Array<{ status: string; count: number }>;
+    byOrigin: Array<{ origin: string; count: number }>;
+    aging: Array<{ bucket: string; count: number }>;
+  };
+  quotes: {
+    sent: number;
+    accepted: number;
+    acceptanceRateBps: number | null;
+    acceptedTotals: Array<{ currencyCode: string; totalMinor: string; count: number }>;
+    byStatus: Array<{ status: string; count: number }>;
+  };
+  timing: {
+    assignment: MetricSummary;
+    quoteSent: MetricSummary;
+    acceptance: MetricSummary;
+  };
+  workload: WorkloadRow[];
+  notifications: {
+    byStatus: Array<{ status: string; count: number }>;
+    oldestPendingAt: string | null;
+    failedInPeriod: number;
+  };
+};
+
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
 
 function assertTimezone(timezone: string): string {
