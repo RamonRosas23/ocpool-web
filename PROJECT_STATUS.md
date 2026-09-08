@@ -4,12 +4,13 @@
 
 ## Estado actual
 
-- **Fase:** Fase 12 — auditoría operativa y seguridad; planificación documental cerrada, implementación en curso.
-- **Estado:** Fases 1–11 están implementadas y verificadas dentro del alcance local. Fase 12 tiene especificación, autorrevisión y plan ordenado; aún no cuenta como terminada. El objetivo es exponer auditoría transaccional con redacción estricta, RBAC separado para seguridad y una superficie staff sin exportación ni purga. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
+- **Fase:** Fase 12 — auditoría operativa y seguridad; terminada para el alcance local.
+- **Estado:** Fases 1–12 están implementadas y verificadas dentro del alcance local. Fase 12 tiene contratos, RBAC, repositorio, rate limit, API privada, capabilities, UI responsive/accesible, E2E, `EXPLAIN`, runbook y gate técnico completo. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
-- **Documentos de Fase 12:** especificación, autorrevisión y plan ordenado versionados en `f789772`; comienza la implementación TDD.
+- **Últimos commits de Fase 12:** `c341c66` (`feat: add staff audit workspace`), `df315e2` (`feat: expose staff audit api`), `23a9ab5` (`feat: add secure audit read service`), `2a1f5a7` (`feat: add audit permissions`), `443f914` (`feat: define audit contracts and redaction`).
+- **Documentos de Fase 12:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -162,10 +163,12 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 11 — Tarea 3: API privada `GET /api/staff/dashboard`, query estricta, `no-store`, errores con `requestId`, 401/403/400 y respuesta sin PII; integración dirigida 2/2 y build/typecheck/lint correctos.
 - Fase 11 — Tarea 4: dashboard `/staff` responsive con KPIs, alertas, pipeline, antigüedad, tiempos protegidos, carga y salud de notificaciones; E2E opt-in 1/1, Axe sin hallazgos serios, 390/768/1440 sin overflow, reduced motion y consola autenticada limpia. Commit `6fe361e`.
 - Fase 11 — Tarea 5 y gate: mapper de serialización, runbook, documentación, rate limit por empleado configurable y revisión `EXPLAIN`; 99 unitarias, 37 archivos/71 integraciones, E2E base 34/34 ejecutadas con 10 omitidas opt-in, foundation 2/2, dashboard 1/1, build, contenido, auditoría y diff check correctos.
+- Fase 12 — Tareas 1–4: contratos/redacción, permisos separados, repositorio con cursor HMAC y rate limit, API privada con Zod/no-store/request ID; integración dirigida de servicio 5/5 y API 2/2, typecheck/lint/diff check correctos.
+- Fase 12 — Tarea 5: commit `c341c66` (`feat: add staff audit workspace`); panel `/staff/audit`, capabilities seguras y CSS responsive. `AUDIT_E2E=1 npm run test:e2e -- tests/audit.spec.ts` pasó 1/1 con manager, admin security, customer/sales restringidos, error recuperable, filtro/cursor, Axe, foco, reduced motion, 390/768/1440 sin overflow, ausencia de PII y consola autenticada limpia. `npm run test:integration` pasó 39 archivos/79 pruebas; `npx tsc --noEmit`, `npm run lint` y `git diff --check` correctos.
 
 ### En desarrollo
 
-- Fase 12 — auditoría operativa y seguridad: contratos de lectura, permisos, repositorio, API, UI y hardening. La especificación y la revisión están aprobadas; todavía no se ha implementado el módulo.
+- Fase 12 — auditoría operativa y seguridad: terminada para el alcance local. La lectura operativa/security, redacción, cursor HMAC, RBAC, API, UI, responsive, hardening y documentación están comprobados; quedan sólo decisiones externas de lanzamiento.
 - La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
@@ -177,7 +180,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
-- Fase 12: ejecutar el plan ordenado y cerrar el gate de auditoría antes de definir el siguiente vertical slice.
+- Siguiente paso: definir y ejecutar la siguiente fase sólo después de conservar este cierre como baseline; el gate de lanzamiento externo permanece bloqueado.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
@@ -306,6 +309,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 117. La vista de auditoría no muestra UUIDs, emails, teléfonos, IP, user-agent, hashes, ciphertext, payloads, storage keys ni deep links a entidades.
 118. La auditoría es sólo lectura en Fase 12: no hay exportación, purga, retención automática, SIEM ni alertas en tiempo real sin una decisión posterior de producto, legal y operación.
 119. La consulta transversal resuelve actores con una selección acotada y un batch único; no se permiten consultas por fila ni enriquecimiento por `entityId`.
+120. La revisión `EXPLAIN` de PostgreSQL con el volumen local no justifica un índice transversal adicional: `AuthEvent` usa su índice existente y `AuditLog` resuelve el límite con un scan secuencial submilisegundo; cualquier migración futura requiere volumen representativo y evidencia nueva.
 
 ## Pruebas realizadas
 
@@ -381,6 +385,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 11 — Tarea 5: prueba roja de serialización confirmó la ausencia del mapper; después `analytics-serialization.test.ts` pasó 1/1 verificando BigInt como string, monedas separadas, supresión, claves opacas y ausencia de identificadores/payloads/ciphertext/storage keys en JSON.
 - Fase 11 — Tarea 5/gate: se añadió y probó rate limit de lecturas por empleado (`RATE_LIMITED` 429) con limpieza exacta de buckets; `npm run test:integration` terminó en 37 archivos/71 pruebas.
 - Fase 11 — Gate final: `npm run test:e2e` pasó 34/34 con 10 opt-in omitidas de forma explícita; `npm run test:e2e:foundation` pasó 2/2; la E2E `DASHBOARD_E2E=1` pasó 1/1 después del hardening. Build, typecheck, lint, contenido, auditoría (0 vulnerabilidades altas), migraciones, seed y diff check pasaron.
+- Fase 12 — Tarea 6/gate final: runbook `docs/runbooks/audit-observability.md`, contrato documental 5/5, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` en PostgreSQL 16, 110 unitarias, 79 integraciones, contenido, typecheck, lint, build limpio, `npm audit` con 0 vulnerabilidades altas, E2E audit 1/1, E2E normal 34 passed/11 skipped opt-in y diff check. Se corrigieron fixtures contaminables de auditoría y folios analytics; no se agregó índice especulativo.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -395,7 +400,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Pruebas de carga del worker y restauración de backups en destino aislado.
 - Fase 11 no tiene pendientes técnicos locales para su alcance; antes de producción debe repetirse la revisión de rendimiento con volumen representativo y confirmar la política de operación.
 - Confirmar antes de producción la zona `APP_TIMEZONE`, definiciones comerciales de periodo y alcance por ejecutivo/sucursal.
-- Fase 12: unitarias de cursor/redacción, integración de RBAC/paginación/rate limit, API privada, E2E staff responsive/Axe y revisión `EXPLAIN` aún pendientes hasta ejecutar el plan.
+- Fase 12 no tiene pendientes técnicos locales dentro de su alcance; la siguiente revisión deberá tratar retención, exportación, SIEM, alertas y operación productiva como decisiones nuevas, no como deuda oculta de esta fase.
 
 ## Riesgos abiertos
 
@@ -422,6 +427,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - La aceptación backend, portal y staff ya están operativos y protegidos; el lanzamiento todavía requiere revisión legal de términos, política de firma, notificaciones productivas, retención y gate de producción.
 - La primera ejecución E2E de Tarea 6 rechazó correctamente el retry por un `APP_URL` heredado distinto del origen del navegador; se reinició el servidor con `APP_URL=http://127.0.0.1:3100` y la repetición pasó 1/1 sin relajar same-origin.
 - El cleanup inicial de Mailpit usó una ruta individual incorrecta; se consultó el Swagger local y se corrigió a `DELETE /api/v1/messages` con la lista exacta de IDs, dejando el buzón en 0 sin borrar mensajes ajenos.
+- Fase 12 UI: la primera E2E del visor reveló que los tags `<em>` se estaban renderizando como texto y provocaban overflow móvil; se corrigió con JSX semántico. También se aislaron fixtures por categoría/resultado y se limpiaron errores HTTP esperados antes de evaluar la consola autenticada.
 - Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
@@ -541,7 +547,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/runbooks/analytics-dashboard.md` — runbook operativo de definiciones, fechas, permisos, diagnóstico seguro y pruebas.
 - `docs/superpowers/specs/2026-09-08-ocpool-audit-observability.md` — especificación aprobada para Fase 12; lectura segura de auditoría operativa y security.
 - `docs/superpowers/reviews/2026-09-08-ocpool-audit-observability-review.md` — autorrevisión de Fase 12; metadata, RBAC, cursor, N+1, retención y AuthEvent revisados antes de implementación.
-- `docs/superpowers/plans/2026-09-08-ocpool-audit-observability.md` — plan ordenado de Fase 12; Tasks 1–6 pendientes de ejecución.
+- `docs/superpowers/plans/2026-09-08-ocpool-audit-observability.md` — plan ordenado de Fase 12; Tasks 1–6 cerradas con evidencia de gate.
+- `docs/runbooks/audit-observability.md` — runbook de acceso, filtros, redacción, rate limit, `EXPLAIN`, backup y límites legales de auditoría.
 
 ## Criterio de terminado de Fase 10
 
@@ -553,7 +560,7 @@ La fase queda terminada para el alcance local: el dashboard está documentado, s
 
 ## Criterio de terminado de Fase 12
 
-La fase sólo se considerará terminada cuando el contrato de lectura, los permisos separados, la redacción por acción, el cursor HMAC, el repositorio sin N+1, el rate limit, la API privada, la UI responsive/accesible, el runbook y el gate unitario/integración/E2E/build/lint/auditoría estén verificados. La ausencia de exportación y purga será una decisión explícita, no una omisión. Mientras el plan esté en ejecución, Fase 12 permanece en desarrollo.
+La fase queda terminada para el alcance local: el contrato de lectura, los permisos separados, la redacción por acción, el cursor HMAC, el repositorio sin N+1, el rate limit, la API privada, la UI responsive/accesible, el runbook y el gate unitario/integración/E2E/build/lint/auditoría están verificados. La ausencia de exportación y purga quedó documentada como decisión explícita, no como omisión. Las necesidades de retención productiva, exportación, SIEM, alertas y controles externos permanecen fuera del alcance local y no autorizan el lanzamiento.
 
 ## Criterio de terminado de Fase 5
 
@@ -561,4 +568,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar `docs/superpowers/plans/2026-09-08-ocpool-audit-observability.md` tarea por tarea, registrar evidencia y cerrar Fase 12 sólo con su gate. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.
+Preservar Fase 12 como baseline estable y preparar la siguiente especificación, autorrevisión y plan en orden documental antes de modificar código. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.

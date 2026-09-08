@@ -42,4 +42,16 @@ describe('continuity runbook contract', () => {
     expect(runbook).toMatch(/MinIO\/S3/i);
     expect(runbook).toContain('DROP DATABASE IF EXISTS ocpool_restore_verify');
   });
+
+  it('documents the audit read boundary without inventing destructive operations', () => {
+    const runbook = read('docs/runbooks/audit-observability.md');
+    expect(runbook).toContain('audit.read');
+    expect(runbook).toContain('audit.security.read');
+    expect(runbook).toContain('[from,to)');
+    expect(runbook).toMatch(/93 d[ií]as/i);
+    expect(runbook).toMatch(/no-store/i);
+    expect(runbook).toMatch(/no muestra.*UUID|UUIDs.*correo/i);
+    expect(runbook).toMatch(/no hay exportaci[oó]n, purga/i);
+    expect(runbook).not.toMatch(/DELETE\s+FROM|TRUNCATE\s+TABLE|DROP\s+TABLE/i);
+  });
 });

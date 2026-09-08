@@ -227,25 +227,25 @@ git commit -m "feat: expose staff audit api"
 - Estados explícitos: `loading`, `ready`, `empty`, `error`, `forbidden`.
 - Los controles de periodo/categoría/outcome actualizan el primer cursor; “Cargar anteriores” conserva filtros y agrega sin duplicar.
 
-- [ ] **Step 1: Escribir E2E opt-in que falle.** Cubrir manager operativo, admin security, customer/sales restringidos, vacío, error recuperable, filtro y cursor. Añadir `checkA11y`, viewport 390/768/1440, teclado, focus visible, reduced motion, no overflow horizontal y consola sin errores inesperados.
+- [x] **Step 1: Escribir E2E opt-in que falle.** Cubrir manager operativo, admin security, customer/sales restringidos, vacío, error recuperable, filtro y cursor. Añadir `checkA11y`, viewport 390/768/1440, teclado, focus visible, reduced motion, no overflow horizontal y consola sin errores inesperados.
 
-- [ ] **Step 2: Ejecutar E2E de auditoría y confirmar FAIL.**
+- [x] **Step 2: Ejecutar E2E de auditoría y confirmar FAIL.** La primera corrida devolvió 404 porque la página todavía no existía, como esperaba el ciclo TDD.
 
 Run: `cross-env AUDIT_E2E=1 npm run test:e2e -- tests/audit.spec.ts`
 
 Expected: FAIL porque la página y los selectores accesibles todavía no existen.
 
-- [ ] **Step 3: Implementar la página y el panel.** Mantener el shell staff existente; incluir encabezado con propósito, periodo, zona y scope; filtros con labels; lista/tablet con acción, actor, entidad y detalles; badges de resultado con texto y no sólo color; botón “Cargar anteriores” con `aria-live` para feedback; skeleton estable; estado vacío útil; error con reintento; forbidden sin datos. No mostrar correo, UUID, cliente, payload ni metadata no proyectada.
+- [x] **Step 3: Implementar la página y el panel.** Mantener el shell staff existente; incluir encabezado con propósito, periodo, zona y scope; filtros con labels; lista/tablet con acción, actor, entidad y detalles; badges de resultado con texto y no sólo color; botón “Cargar anteriores” con `aria-live` para feedback; skeleton estable; estado vacío útil; error con reintento; forbidden sin datos. No mostrar correo, UUID, cliente, payload ni metadata no proyectada.
 
-- [ ] **Step 4: Integrar navegación y CSS.** Añadir entrada visible sólo donde el usuario tenga capability; mantener la ruta protegida en backend. Usar tokens staff existentes, contraste AA, focus ring, targets táctiles, `@media (prefers-reduced-motion: reduce)` y layouts sin overflow en 390 px. No introducir una librería visual nueva.
+- [x] **Step 4: Integrar navegación y CSS.** Añadir entrada visible sólo donde el usuario tenga capability; mantener la ruta protegida en backend. Usar tokens staff existentes, contraste AA, focus ring, targets táctiles, `@media (prefers-reduced-motion: reduce)` y layouts sin overflow en 390 px. No introducir una librería visual nueva.
 
-- [ ] **Step 5: Ejecutar E2E, Axe y revisión visual.**
+- [x] **Step 5: Ejecutar E2E, Axe y revisión visual.** `AUDIT_E2E=1 npm run test:e2e -- tests/audit.spec.ts` pasó 1/1 después de corregir el fixture de outcome, el título semántico, responsive y ruido esperado de consola.
 
 Run: `cross-env AUDIT_E2E=1 npm run test:e2e -- tests/audit.spec.ts`
 
 Expected: PASS en los tres viewports, sin violaciones Axe conocidas, sin PII en HTML y con paginación estable.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.** `c341c66 feat: add staff audit workspace`.
 
 ```bash
 git add src/components/StaffAuditPanel.tsx src/app/staff/audit/page.tsx src/app/globals.css tests/audit.spec.ts
@@ -265,17 +265,17 @@ git commit -m "feat: add staff audit workspace"
 - Runbook: acceso/RBAC, filtros, fechas, redacción, rate limit, diagnóstico, backup/retención pendiente y rollback sin purga.
 - `PROJECT_STATUS.md`: fase, módulos, dependencias, decisiones, pruebas realizadas/pendientes, riesgos, deuda y próximos pasos.
 
-- [ ] **Step 1: Agregar pruebas de contrato documental.** Extender `tests/unit/runbook-contract.test.ts` para verificar que el runbook menciona `audit.read`, `audit.security.read`, `[from,to)`, 93 días, `no-store`, redacción y que no existe una instrucción destructiva de purga.
+- [x] **Step 1: Agregar pruebas de contrato documental.** Extender `tests/unit/runbook-contract.test.ts` para verificar que el runbook menciona `audit.read`, `audit.security.read`, `[from,to)`, 93 días, `no-store`, redacción y que no existe una instrucción destructiva de purga.
 
-- [ ] **Step 2: Ejecutar `EXPLAIN` representativo antes de migrar.** Con PostgreSQL local sembrar eventos suficientes, capturar planes para la consulta operacional y security con filtros de fecha/categoría/outcome, revisar scans, filas estimadas y tiempo. Sólo si la evidencia muestra una regresión relevante se diseñará una migración separada; esta fase no agrega índice especulativo.
+- [x] **Step 2: Ejecutar `EXPLAIN` representativo antes de migrar.** PostgreSQL 16 local con 960 `AuditLog` y 2,203 `AuthEvent`: la consulta operacional leyó 960 filas en `Seq Scan` y terminó en 0.550 ms; la consulta security leyó 2,203 filas y terminó en 0.483 ms. El planner eligió `Seq Scan` para ambas consultas con el volumen y predicados representativos actuales; `AuthEvent` conserva `auth_events_eventType_createdAt_idx` disponible para otros predicados, pero la evidencia no justifica un índice adicional para `AuditLog`.
 
-- [ ] **Step 3: Ejecutar hardening completo.** Confirmar `npm run typecheck`, `npm run lint`, `npm run build`, `npm audit --omit=dev --audit-level=high`, regresión unit/integration/content, E2E opt-in de auditoría y suite E2E completa. Revisar diff buscando `metadata`, `entityId`, `actorUserId`, `identifierHash`, `ipAddress`, `userAgent`, `ciphertext` en respuestas/UI/logs.
+- [x] **Step 3: Ejecutar hardening completo.** `npm run test:unit` 31 archivos/110 pruebas, `npm run test:integration` 39 archivos/79 pruebas, `npm run test:content`, typecheck, lint, build limpio, `npm audit --omit=dev --audit-level=high` 0 vulnerabilidades, E2E audit 1/1 y E2E normal 34 passed/11 skipped opt-in. La revisión de respuestas/UI/logs confirmó que las señales internas permanecen en repositorio/proyección controlada y no se serializan.
 
-- [ ] **Step 4: Documentar límites y pendientes.** Registrar que retención/purga requiere decisión legal, que no hay exportación/SIEM/alertas, que el endpoint es local/staff y qué pruebas productivas externas siguen bloqueadas. No declarar “producción lista” por tener el panel.
+- [x] **Step 4: Documentar límites y pendientes.** El runbook registra que retención/purga requiere decisión legal, que no hay exportación/SIEM/alertas, que el endpoint es local/staff y que los controles productivos externos continúan bloqueados. La fase local no se presenta como autorización de producción.
 
-- [ ] **Step 5: Actualizar seguimiento y cerrar sólo con evidencia.** Marcar Fase 12 como terminada únicamente cuando dominio, permisos, servicio, API, UI, seguridad, responsive, pruebas y documentación estén comprobados; dejar la siguiente fase explícita y mantener bloqueos externos separados.
+- [x] **Step 5: Actualizar seguimiento y cerrar sólo con evidencia.** Dominio, permisos, servicio, API, UI, seguridad, responsive, pruebas, `EXPLAIN`, runbook y documentación quedaron comprobados; los bloqueos externos permanecen separados y explícitos.
 
-- [ ] **Step 6: Commit de cierre.**
+- [x] **Step 6: Commit de cierre.** La documentación, el runbook, los contratos de seguimiento y las correcciones de verificación se cierran mediante commits lógicos después de actualizar `PROJECT_STATUS.md` con la evidencia final.
 
 ```bash
 git add docs/runbooks/audit-observability.md README.md PROJECT_STATUS.md tests
