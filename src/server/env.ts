@@ -12,12 +12,22 @@ const encryptionKey = z.string().refine((value) => {
   }
 }, 'MFA_ENCRYPTION_KEY must be a canonical base64-encoded 32-byte key');
 
+const headerValue = (maximum: number) => z.string().min(1).max(maximum).refine((value) => !/[\u0000-\u001F\u007F]/u.test(value), 'SMTP header values cannot contain control characters');
+
 const serverEnvSchema = z.object({
   DATABASE_URL: z.string().url().refine((value) => value.startsWith('postgresql://') || value.startsWith('postgres://'), {
     message: 'DATABASE_URL must be a PostgreSQL connection string',
   }),
   APP_URL: z.string().url().default('http://localhost:3000'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  SMTP_HOST: z.string().min(1).max(253).default('localhost'),
+  SMTP_PORT: integerEnv(11025, 1, 65_535),
+  SMTP_SECURE: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  SMTP_FROM_EMAIL: z.string().email().default('no-reply@ocpool.local'),
+  SMTP_FROM_NAME: headerValue(120).default('OCPOOL'),
+  SMTP_REPLY_TO: z.string().email().optional(),
+  SMTP_USER: z.string().min(1).max(320).optional(),
+  SMTP_PASSWORD: z.string().min(1).max(320).optional(),
   MFA_ENCRYPTION_KEY: encryptionKey,
   AUTH_DELIVERY_ENCRYPTION_KEY: encryptionKey,
   NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: encryptionKey,
@@ -35,6 +45,10 @@ const serverEnvSchema = z.object({
   AUTH_RATE_LIMIT_WINDOW_MINUTES: integerEnv(15, 1, 60),
   AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: integerEnv(300, 20, 10_000),
   AUTH_GLOBAL_RATE_LIMIT_WINDOW_MINUTES: integerEnv(1, 1, 10),
+}).superRefine((value, context) => {
+  if ((value.SMTP_USER === undefined) !== (value.SMTP_PASSWORD === undefined)) {
+    context.addIssue({ code: 'custom', path: ['SMTP_USER'], message: 'SMTP_USER and SMTP_PASSWORD must be provided together' });
+  }
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

@@ -18,12 +18,12 @@ Los estados y constraints impiden duplicar la misma intención, `PROCESSING` pue
 
 ## Tarea 2 — Mappers, templates y proveedor local
 
-- [ ] Implementar allowlist de eventos y mappers por evento con recipient scope y payload mínimo.
-- [ ] Crear templates HTML/texto versionados para auth, cotización enviada, aceptación, mensajes compartidos y archivo disponible.
-- [ ] Escapar dinámicos, bloquear header injection y construir URLs desde origen configurado/allowlisted.
-- [ ] Implementar contrato `EmailProvider` y adaptador SMTP Mailpit con configuración validada.
-- [ ] Probar unitariamente render, subject/from/reply-to, no secretos, visibilidad `INTERNAL` y payloads grandes/ilícitos.
-- [ ] Commit `feat: add notification templates and email provider`.
+- [x] Implementar allowlist de eventos y mappers por evento con recipient scope, aggregate validation y payload mínimo.
+- [x] Crear templates HTML/texto versionados para auth, solicitud, cotización enviada, aceptación, mensajes compartidos y archivo disponible.
+- [x] Escapar dinámicos, bloquear header injection y construir URLs desde origen configurado/allowlisted.
+- [x] Implementar contrato `EmailProvider` y adaptador SMTP Mailpit con configuración validada.
+- [x] Probar unitariamente render, subject/from/reply-to, no secretos, visibilidad `INTERNAL` y payloads grandes/ilícitos.
+- [x] Commit `feat: add notification templates and email provider`.
 
 ### Criterio de terminado
 

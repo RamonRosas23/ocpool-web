@@ -7,6 +7,11 @@ describe('readServerEnv', () => {
       DATABASE_URL: 'postgresql://ocpool:secret@localhost:55432/ocpool_dev?schema=public',
       APP_URL: 'http://localhost:3000',
       LOG_LEVEL: 'info',
+      SMTP_HOST: 'localhost',
+      SMTP_PORT: '11025',
+      SMTP_SECURE: 'false',
+      SMTP_FROM_EMAIL: 'no-reply@ocpool.local',
+      SMTP_FROM_NAME: 'OCPOOL',
       MFA_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
       AUTH_DELIVERY_ENCRYPTION_KEY: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
       NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
@@ -20,6 +25,11 @@ describe('readServerEnv', () => {
     })).toMatchObject({
       APP_URL: 'http://localhost:3000',
       LOG_LEVEL: 'info',
+      SMTP_HOST: 'localhost',
+      SMTP_PORT: 11025,
+      SMTP_SECURE: false,
+      SMTP_FROM_EMAIL: 'no-reply@ocpool.local',
+      SMTP_FROM_NAME: 'OCPOOL',
       MFA_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
       AUTH_DELIVERY_ENCRYPTION_KEY: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
       NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
@@ -42,6 +52,18 @@ describe('readServerEnv', () => {
       DATABASE_URL: 'sqlite://local.db',
       APP_URL: 'http://localhost:3000',
     })).toThrow();
+  });
+
+  it('rejects incomplete SMTP credentials and unsafe sender headers', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://ocpool:secret@localhost:55432/ocpool_dev?schema=public',
+      MFA_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+      AUTH_DELIVERY_ENCRYPTION_KEY: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+      NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+    };
+
+    expect(() => readServerEnv({ ...base, SMTP_USER: 'mailer' })).toThrow();
+    expect(() => readServerEnv({ ...base, SMTP_FROM_NAME: 'OCPOOL\r\nBcc:evil@example.test' })).toThrow();
   });
 
   it('rejects an invalid MFA key and out-of-range auth policies', () => {

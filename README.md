@@ -102,6 +102,7 @@ La suite de identidad también es opt-in: crea un empleado desechable en Postgre
 - `MFA_ENCRYPTION_KEY`: clave local para cifrar secretos TOTP; reemplázala mediante un gestor de secretos en producción.
 - `AUTH_DELIVERY_ENCRYPTION_KEY`: clave separada para cifrar tokens de entrega en Outbox; debe rotarse independientemente de MFA.
 - `NOTIFICATION_RECIPIENT_ENCRYPTION_KEY`: clave separada para cifrar destinatarios de notificaciones; no debe reutilizarse para MFA ni tokens de autenticación.
+- `SMTP_*`: host, puerto, TLS, remitente y respuesta del proveedor; en local apuntan a Mailpit y las credenciales son opcionales.
 - `TRUST_PROXY_HEADERS`: habilítala sólo cuando un proxy confiable sobrescriba los headers de IP antes de llegar a la aplicación.
 - `SESSION_TTL_HOURS`: duración máxima de una sesión persistida.
 - `AUTH_TOKEN_TTL_MINUTES`: duración de magic links y recovery.
