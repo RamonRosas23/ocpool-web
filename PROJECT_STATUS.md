@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 15 — onboarding y vinculación de usuarios cliente; terminada para el alcance local.
-- **Estado:** Fases 1–15 están implementadas y verificadas dentro del alcance local. Fase 15 habilita el portal desde el expediente con RBAC, cuenta `INVITED`, magic link único, activación transaccional, deduplicación, aislamiento por cliente, fallback seguro de notificaciones, UI staff responsive y E2E opt-in. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
+- **Fase:** Fase 16 — consolidación de preparación para lanzamiento; terminada para el alcance local.
+- **Estado:** Fases 1–16 están implementadas y verificadas dentro del alcance local. Fase 16 corrigió la contaminación de rate limit en la integración de invitaciones, consolidó el checklist operativo y reconcilió el gate local en `11 PASS`, `0 WARN`, `8 BLOCKED`. El producto aún no está listo para lanzamiento porque runtime productivo y controles externos permanecen bloqueados.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
@@ -15,6 +15,7 @@
 - **Últimos commits de Fase 13:** `5c66c6b` (`docs: close auth surfaces phase`), `3ebf8f6` (`feat: add browser auth surfaces`).
 - **Últimos commits de Fase 14:** `405c3c8` (`feat: improve public quote intake flow`), `ae01fdb` (`feat: show quote intake qualification in staff`), `2d3ada5` (`feat: extend public quote request intake`), `9ce47ed` (`feat: add premium quote intake contracts`), `b187cde` (`docs: define premium quote intake phase`).
 - **Últimos commits de Fase 15:** `8183321` (`test: cover customer onboarding boundary states`), `9a5fb21` (`feat: expose customer portal onboarding in staff`), `67199a9` (`fix: route customer notifications safely before onboarding`), `4f92b2d` (`feat: add transactional customer portal onboarding`), `1c6b78a` (`test: harden customer invitation lifecycle`), `cb7787e` (`feat: activate invited customers through magic link`), `d25bb1a` (`feat: grant customer access management to managers`), `1fe4619` (`docs: define customer onboarding phase`).
+- **Últimos commits de Fase 16:** `00c48c0` (`docs: consolidate launch readiness checklist`), `4fb4a0e` (`test: isolate customer invitation rate limits`).
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -174,12 +175,16 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 12 — Tareas 1–4: contratos/redacción, permisos separados, repositorio con cursor HMAC y rate limit, API privada con Zod/no-store/request ID; integración dirigida de servicio 5/5 y API 2/2, typecheck/lint/diff check correctos.
 - Fase 12 — Tarea 5: commit `c341c66` (`feat: add staff audit workspace`); panel `/staff/audit`, capabilities seguras y CSS responsive. `AUDIT_E2E=1 npm run test:e2e -- tests/audit.spec.ts` pasó 1/1 con manager, admin security, customer/sales restringidos, error recuperable, filtro/cursor, Axe, foco, reduced motion, 390/768/1440 sin overflow, ausencia de PII y consola autenticada limpia. `npm run test:integration` pasó 39 archivos/79 pruebas; `npx tsc --noEmit`, `npm run lint` y `git diff --check` correctos.
 
-### En desarrollo
+### Fases cerradas para el alcance local
 
 - Fase 13 — superficies de acceso y recuperación: terminada para el alcance local. Login, MFA, magic link, recovery, URL limpia, estados restringidos, responsive, accesibilidad, documentación y gate técnico están comprobados; permanecen sólo decisiones externas de lanzamiento.
 - Fase 14 — captación premium: terminada para el alcance local. El formulario público de dos pasos, contrato de datos, migración, API, inbox/constructor staff, validaciones, anti-spam básico, E2E, documentación y gate técnico están comprobados; los adjuntos anónimos permanecen fuera de alcance.
 - Fase 15 — onboarding y vinculación de usuarios cliente: terminada para el alcance local. RBAC, servicio transaccional, API estricta, magic link `INVITED → ACTIVE`, colisiones, fallback de notificaciones, proyección staff, UI, E2E opt-in y documentación están comprobados.
-- La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
+- Fase 16 — consolidación de preparación para lanzamiento: terminada para el alcance local. Se corrigió la contaminación de rate limit de fixtures, la integración completa pasó 42 archivos/87 pruebas, el checklist consolidado tiene contrato documental y el gate completo quedó documentado en 11 `PASS`, 0 `WARN`, 8 `BLOCKED`.
+
+### Bloqueos de lanzamiento
+
+- La preparación real de producción permanece bloqueada por proveedor SMTP, dominio/DNS/TLS/WAF, antivirus, backup externo, RPO/RTO, retención/legal, destino de despliegue, supervisor, observabilidad y rollback.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -193,13 +198,14 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
-- Siguiente paso: Fase 16 — cierre de preparación comercial y controles externos de lanzamiento, sin publicar todavía.
+- Siguiente paso: cerrar controles externos de lanzamiento sin publicar hasta contar con evidencia y aprobación formal.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
 - Retención legal, privacidad, aceptación y operación de auditoría.
 - Destino de despliegue, proxy/WAF, supervisor del worker, alertas y rollback.
 - Prueba explícita de restauración local aislada antes de cerrar continuidad operativa.
+- Preflight firmado usando `docs/runbooks/launch-readiness-checklist.md` y el JSON de `readiness:production:full`.
 
 ## Decisiones arquitectónicas vigentes
 
@@ -334,6 +340,9 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 129. Las comunicaciones para contactos sin cuenta apuntan a `/portal/access` y usan “Solicitar acceso”; las plantillas y el resolver aplican el fallback para que ningún consumidor genere un enlace muerto a `/portal`.
 130. La proyección staff expone únicamente `contact.user.id/status/type`; no expone tokens, hashes, ciphertext, secretos ni datos de autenticación en HTML o API.
 131. Los paneles con tabs deben renderizar siempre el `tabpanel` referenciado por `aria-controls`, incluso cuando la colección esté vacía; esta regla evita estados accesibles inválidos durante la carga/empty state.
+132. Los tests que ejercitan rate limit persistido deben aislar la clave por caso y limpiar únicamente su hash exacto; no se modifica el límite productivo ni se vacía la tabla global para hacer pasar la suite.
+133. El checklist consolidado de lanzamiento separa evidencia local de decisiones externas y mantiene `BLOCKED` mientras falten proveedor, secreto, aprobación legal, RPO/RTO, observabilidad o rollback.
+134. `readiness:production:quick` conserva `WARN` porque omite comandos; `readiness:production:full` ejecuta los controles costosos y ambos comandos mantienen exit code distinto de cero cuando existe cualquier `BLOCKED`.
 
 ## Pruebas realizadas
 
@@ -435,6 +444,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Confirmar antes de producción la zona `APP_TIMEZONE`, definiciones comerciales de periodo y alcance por ejecutivo/sucursal.
 - Fase 12 no tiene pendientes técnicos locales dentro de su alcance; la siguiente revisión deberá tratar retención, exportación, SIEM, alertas y operación productiva como decisiones nuevas, no como deuda oculta de esta fase.
 - Fase 13 Tarea 1: la primera corrida falló en el primer selector esperado porque `/staff/requests` aún no enlazaba `/login`; tras implementar la vertical slice, la repetición pasó 5/5. El contrato documental del runbook quedó añadido a unitarias.
+- Fase 16 no tiene pendientes técnicos locales dentro de su alcance; permanecen pendientes la ejecución operativa de restore local aislado y, para producción, todos los controles externos del checklist consolidado.
 
 ## Riesgos abiertos
 
@@ -445,6 +455,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Requisitos legales de aceptación y evidencia pendientes de revisión jurídica.
 - Destino de despliegue de producción aún no definido.
 - El gate de Fase 10 permanece `BLOCKED` por SMTP productivo, DNS/TLS/SPF/DKIM/DMARC, antivirus, backup externo, retención legal, destino de despliegue y runtime no productivo.
+- Fase 16 confirmó el gate completo en `11 PASS`, `0 WARN`, `8 BLOCKED`; el resultado es correcto pero no equivale a autorización de lanzamiento.
 - El backup/restore local está implementado y protegido por destino fijo, pero la restauración verificable todavía requiere una ejecución operativa explícita; no se ejecuta automáticamente para no destruir datos locales.
 - El gate técnico no sustituye aprobación legal, elección de proveedores, gestión de secretos, RPO/RTO, monitoreo, rollback ni aceptación del responsable del servicio.
 - El dashboard calcula agregados transaccionales directos; falta medir P95 con fixtures representativos y revisar `EXPLAIN` antes de decidir si la escala futura requiere rollups.
@@ -553,6 +564,11 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Fase 15 — Tarea 4: `notifications-templates.test.ts` 8/8 y `notifications-fanout.test.ts` 2/2; contactos sin cuenta usan `/portal/access` + “Solicitar acceso”, mientras usuarios vinculados conservan portal y los eventos internos siguen cancelados. Commit `67199a9`.
 - Fase 15 — Tarea 5: E2E opt-in `CUSTOMER_ONBOARDING_E2E=1 npx playwright test tests/customer-onboarding.spec.ts` 2/2; manager, deduplicación, rol limitado, Axe y responsive 390/768/1440 correctos. La misma ejecución detectó `aria-controls` sin `tabpanel` en archivos vacíos; se corrigió y la repetición pasó. Commit `9a5fb21`.
 - Fase 15 — Gate final: `npm run db:validate` correcto, `npm run db:migrate:deploy` sin pendientes sobre 17 migraciones, `npm run db:seed` idempotente, `npm run typecheck`, `npm run lint`, `npm run test:unit` 31 archivos/114 pruebas, `npm run test:integration` 42 archivos/87 pruebas serializadas, `npm run test:content`, `npm run build`, `npm run test:e2e` 35 passed/18 skipped opt-in, `npm audit --omit=dev --audit-level=high` con 0 vulnerabilidades y `git diff --check` correctos. La E2E opt-in de onboarding quedó verificada aparte en 2/2.
+- Fase 16 — diagnóstico: la integración aislada de invitaciones falló con `consumed.ok === false` por un bucket persistido bloqueado de `127.0.0.1`; la causa fue contaminación de fixture, no del flujo de negocio.
+- Fase 16 — Tarea 1: `customer-auth-invitation.test.ts` usa una IP de prueba única por caso y elimina sólo su hash de `customer-magic-link-consume-ip`; la prueba dirigida pasó 2/2 en dos ejecuciones consecutivas.
+- Fase 16 — Tarea 2: `runbook-contract.test.ts` pasó 7/7; se añadió `docs/runbooks/launch-readiness-checklist.md` y quedó enlazado desde README y `production-readiness.md`.
+- Fase 16 — Gate técnico: `npm run db:validate`, migraciones 17 al día, seed idempotente, typecheck, lint, unitarias 31/115, integración 42/87, contenido, build, auditoría con 0 vulnerabilidades y foundation E2E 2/2 correctos; E2E base 35 passed/18 skipped opt-in.
+- Fase 16 — Readiness: quick `BLOCKED` con `0 PASS / 2 WARN / 7 BLOCKED`; full `BLOCKED` con `11 PASS / 0 WARN / 8 BLOCKED`. Permanecen bloqueados runtime productivo y los siete controles externos; no se autoriza publicación.
 
 ## Criterio de terminado de Fase 1
 
@@ -602,6 +618,10 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-customer-onboarding-design.md` — especificación aprobada de Fase 15 para vinculación, invitaciones, activación y aislamiento.
 - `docs/superpowers/reviews/2026-09-08-ocpool-customer-onboarding-review.md` — autorrevisión de Fase 15 sobre RBAC, colisiones, tokens, Outbox, enumeración y UX.
 - `docs/superpowers/plans/2026-09-08-ocpool-customer-onboarding.md` — plan TDD de Fase 15; Tasks 1–5 cerradas y Task 6 en cierre documental/gate.
+- `docs/superpowers/specs/2026-09-08-ocpool-launch-readiness-consolidation.md` — especificación de Fase 16 para reproducibilidad de fixtures, gate y checklist de lanzamiento.
+- `docs/superpowers/reviews/2026-09-08-ocpool-launch-readiness-consolidation-review.md` — autorrevisión de Fase 16 sobre aislamiento, conteos y límites de publicación.
+- `docs/superpowers/plans/2026-09-08-ocpool-launch-readiness-consolidation.md` — plan TDD de Fase 16; tareas ejecutadas con evidencia final.
+- `docs/runbooks/launch-readiness-checklist.md` — checklist único de preflight local y bloqueos externos.
 - `docs/runbooks/local-development.md` — formulario público, folio, honeypot, worker/Mailpit y dependencia de onboarding.
 
 ## Criterio de terminado de Fase 10
@@ -628,10 +648,14 @@ La fase queda terminada para el alcance local: el intake público persiste sus d
 
 La fase queda terminada para el alcance local cuando el personal autorizado puede habilitar el portal desde un expediente sin crear credenciales manuales, el usuario se vincula a un único cliente, `INVITED` sólo se activa al consumir un magic link vigente, los tokens se deduplican/invalidan con seguridad, las notificaciones previas al onboarding apuntan a `/portal/access`, la UI staff refleja capabilities y estados con responsive/Axe, el flujo tiene pruebas unitarias/integración/E2E y README/runbooks/plan/status contienen evidencia reproducible. No autoriza lanzamiento: correo productivo, proveedores, legal, backups, observabilidad y destino operativo siguen bloqueados.
 
+## Criterio de terminado de Fase 16
+
+La fase queda terminada para el alcance local cuando los fixtures de rate limit son aislados y repetibles, la integración completa pasa sin contaminación de estado, el checklist consolidado separa evidencia local de bloqueos externos, el contrato documental pasa, el gate técnico completo y la regresión E2E están verificados, y el plan/status/README/runbooks contienen los conteos exactos. No autoriza lanzamiento: runtime productivo, SMTP, dominio, antivirus, backups externos, RPO/RTO, retención/legal, destino, supervisor, observabilidad y rollback siguen bloqueados.
+
 ## Criterio de terminado de Fase 5
 
 La fase se considera terminada porque el cliente autenticado sólo lee recursos de su `clientId`, las cotizaciones históricas se sirven desde snapshots, las rutas privadas no enumeran recursos ajenos ni exponen secretos, la UI cubre estados de sesión/carga/vacío/error, responsive, teclado, reduced motion y Axe, y el gate de infraestructura, build, pruebas, auditoría y árbol limpio quedó registrado.
 
 ## Próximo paso autorizado
 
-Preservar Fase 15 como baseline y preparar Fase 16 — cierre de preparación comercial y controles externos de lanzamiento — con especificación, autorrevisión y plan en orden documental. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.
+Preservar Fase 16 como baseline local y cerrar los controles externos de lanzamiento mediante decisiones aprobadas, evidencia verificable y el checklist consolidado. No publicar hasta que `readiness:production:full` no tenga bloqueos técnicos ni externos y exista autorización formal independiente del repositorio.
