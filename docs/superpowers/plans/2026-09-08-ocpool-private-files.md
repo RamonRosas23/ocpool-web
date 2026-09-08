@@ -117,12 +117,20 @@ Evidencia de cierre:
 
 **Objetivo antes de iniciar:** demostrar que ningún archivo privado cruza cliente, estado o proveedor.
 
-- [ ] Crear fixtures de dos clientes, staff manager y rol limitado con objetos disponibles, pendientes y rechazados.
-- [ ] Ejecutar matriz IDOR, roles, sesión revocada, replay, same-origin, cuotas, tipos disfrazados, path traversal, URL expirada y cleanup.
-- [ ] Auditar DB, storage, HTML, payloads, logs y Outbox para confirmar ausencia de secretos, bytes o keys.
-- [ ] Ejecutar E2E portal/staff, Axe, responsive, consola limpia y cleanup exacto.
-- [ ] Ejecutar gate DB, unit, integration, content, typecheck, lint, build, E2E, audit y diff check.
-- [ ] Actualizar riesgos/deuda/decisiones y hacer commit `docs: close phase seven private files`.
+- [x] Crear fixtures de dos clientes, staff manager y rol limitado con objetos disponibles, pendientes y rechazados.
+- [x] Ejecutar matriz IDOR, roles, sesión revocada, replay, same-origin, cuotas, tipos disfrazados, path traversal, URL expirada y cleanup.
+- [x] Auditar DB, storage, HTML, payloads, logs y Outbox para confirmar ausencia de secretos, bytes o keys.
+- [x] Ejecutar E2E portal/staff, Axe, responsive, consola limpia y cleanup exacto.
+- [x] Ejecutar gate DB, unit, integration, content, typecheck, lint, build, E2E, audit y diff check.
+- [x] Actualizar riesgos/deuda/decisiones y hacer commit `docs: close phase seven private files`.
+
+Evidencia de cierre:
+
+- Los fixtures de API cubren dos clientes, manager y rol limitado, con archivos compartidos/internos, reserva pendiente, rechazo por firma, replay, rate limit y expiración; cada suite elimina metadata y objetos físicos de MinIO por key conocida.
+- `private-files-api.test.ts` pasó 4/4 y la integración completa 47/47; se verifican IDOR, visibilidad, RBAC, same-origin, schemas estrictos, `no-store`, URLs efímeras, entrega sólo `AVAILABLE` + `PASSED`, auditoría/Outbox sin bytes/keys y cleanup.
+- `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` pasó 2/2 y `STAFF_MESSAGING_E2E=1 npx playwright test tests/client-messaging-staff.spec.ts` pasó 2/2; ambas validan Axe, consola limpia, responsive/no overflow y aislamiento de payloads. Constructor de cotizaciones y autenticación opt-in se conservaron verdes en sus ejecuciones previas 1/1.
+- Gate reproducible: `npm run db:validate`, `npm run db:generate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npx prisma migrate status`, `npm test`, `npm audit --audit-level=moderate`, `npm audit --omit=dev --audit-level=high` y `git diff --check` correctos; Compose reporta PostgreSQL, Mailpit y MinIO saludables.
+- Fase 7 queda cerrada para el alcance local. El scanner `basic-signature-v1` es una validación de tipo/firma/hash, no antivirus productivo; proveedor de antivirus, cuarentena, backups/restauración de objetos y política de retención permanecen como riesgos explícitos de hardening.
 
 ## Gate de Fase 7
 

@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 7 — Archivos privados por expediente.
-- **Estado:** Fases 1–6 están terminadas con gates verdes. Fase 7 tiene Tareas 1–5 terminadas con evidencia: contrato, persistencia, storage privado, servicio, APIs privadas, UI del portal cliente y UI staff. Tarea 6 — matriz final, cleanup y cierre — es la siguiente; la fase no se considera cerrada hasta completar su gate final.
+- **Fase:** Fase 7 — Archivos privados por expediente (cerrada).
+- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 7 cerró contrato, persistencia, storage privado, servicio, APIs, UI cliente, UI staff, matriz de seguridad, cleanup y documentación de riesgos. El siguiente paso autorizado es abrir la especificación de Fase 8 — PDF comercial y aceptación digital.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -119,10 +119,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - APIs privadas de archivos para portal/staff con reserva, finalización, listado, descarga y borrado; Zod estricto, same-origin, no-store, scope backend, capabilities y rate limit persistido.
 - Panel `ClientFilesPanel` integrado en el detalle del portal cliente con upload presigned, finalización validada, descarga efímera, borrado confirmado, reintento, estados de carga/error/vacío y responsive.
 - Panel `StaffFilesPanel` integrado en `/staff/requests` con tabs de visibilidad, carga por categoría, descarga, borrado condicionado por capability, estados operativos y responsive.
+- Gate de Fase 7 cerrado: aislamiento por cliente/visibilidad/rol, no entrega antes de validación, URLs efímeras, auditoría segura, cleanup exacto, MinIO saludable, regresión completa y riesgos operativos documentados.
 
 ### En desarrollo
 
-- Fase 7 — Tarea 6: gate de seguridad, cleanup y cierre.
+- Fase 8 — PDF comercial y aceptación digital: pendiente de especificación ordenada.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -132,7 +133,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Detalle completo del expediente y cotización versionada dentro del portal.
-- Gate final de archivos privados: matriz de seguridad, cleanup, antivirus productivo, backups de objetos y cierre de Fase 7.
+- PDF comercial, aceptación digital, evidencia legal y notificaciones.
 - PDF comercial.
 - Aceptación digital.
 - Notificaciones y Outbox.
@@ -199,6 +200,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 55. La API separa reserva/finalización: una URL presigned sirve sólo para transportar bytes durante minutos; la autorización de lectura se vuelve a ejecutar al descargar y no se conserva en el frontend como permiso.
 56. La UI cliente muestra únicamente una proyección operativa del archivo; valida experiencia y formato para feedback inmediato, pero reserva, análisis, scope, descarga y borrado siguen siendo decisiones de backend.
 57. La UI staff separa `CUSTOMER` e `INTERNAL` en tabs accesibles y deriva controles de carga/borrado desde capacidades, manteniendo la autorización real en cada endpoint.
+58. Fase 7 queda cerrada con scanner local explícitamente limitado: antivirus productivo, cuarentena, backups/restauración de objetos y retención no se ocultan como completados y quedan en hardening/operación.
 
 ## Pruebas realizadas
 
@@ -247,6 +249,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 7 — Tarea 3: `private-files-api.test.ts` 4/4, typecheck y lint dirigidos correctos. Se verificaron 401/403/404, cliente cruzado, same-origin, Zod estricto, upload/complete/download/delete, visibilidad interna, rol limitado, rate limit, no-store y ausencia de storage keys en proyecciones.
 - Fase 7 — Tarea 4: `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` pasó 2/2 con carga real a MinIO, finalización, disponibilidad, persistencia tras recarga y descarga; Axe, consola, no overflow y logout correctos. `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 - Fase 7 — Tarea 5: `STAFF_MESSAGING_E2E=1 npx playwright test tests/client-messaging-staff.spec.ts` pasó 2/2 con carga staff real, validación, borrado confirmado, descarga, separación compartido/interno, aislamiento de rol limitado, Axe, consola y no overflow. `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
+- Fase 7 — Tarea 6/gate: 54 unitarias, 47 integraciones, contenido, build, 34 E2E públicas con 7 omitidas explícitamente, foundation 1/1, portal 2/2, staff 2/2, migraciones/seed/auditoría de dependencias y Compose saludables. Árbol limpio y diff check correctos.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -347,8 +350,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-customer-messaging-ui.md` — plan enfocado de UI cliente, ejecutado.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-messaging-ui.md` — especificación aprobada y ejecutada para la UI staff de la Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
-- `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; Tareas 1–4 implementadas.
-- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–5 cerradas y Tarea 6 es la siguiente.
+- `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; fase cerrada.
+- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 
@@ -358,4 +361,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 7, Tarea 6: matriz final de seguridad de archivos, cleanup exacto, riesgos operativos y cierre del gate de Fase 7.
+Abrir la especificación y plan ordenados de Fase 8: PDF comercial inmutable, descarga segura y aceptación digital con evidencia.
