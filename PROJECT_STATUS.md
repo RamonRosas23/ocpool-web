@@ -5,7 +5,7 @@
 ## Estado actual
 
 - **Fase:** Fase 6 — Mensajería y notas internas.
-- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tarea 1 — contrato, permisos y persistencia — está lista para iniciar.
+- **Estado:** Fase 5 está terminada con gate verde. Fase 6 tiene especificación, autorrevisión y plan aprobados; Tarea 1 está terminada y Tarea 2 — servicio transaccional y proyecciones — está en desarrollo.
 - **Última actualización:** 2026-09-07.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -99,10 +99,12 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Detalle de expediente y cotización versionada con líneas/totales snapshot, histórico de versiones, descuentos, impuestos y mensaje de vigencia expirada sin acciones fuera de alcance.
 - Hardening del portal: sesiones de clientes archivados invalidadas, pruebas IDOR/UUID/sesión revocada, E2E autenticada opt-in, Axe, auditoría de payloads y limpieza exacta de fixtures.
 - Gate de Fase 5 cerrado: migraciones/seed al día, regresión completa, E2E autenticada separada, auditoría de dependencias sin vulnerabilidades altas y árbol limpio.
+- Contrato de mensajería y notas: permisos RBAC explícitos, conversación única por expediente, mensajes append-only, visibilidad `CUSTOMER`/`INTERNAL`, índices, FKs compuestos y constraints de body/cierre.
+- Migraciones `20260908062317_messaging` y `20260908062400_messaging_constraints` aplicadas; seed idempotente con 27 permisos catalogados.
 
 ### En desarrollo
 
-- Fase 6 — Tarea 1: contrato, permisos y persistencia.
+- Fase 6 — Tarea 2: servicio transaccional y proyecciones.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -158,6 +160,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 33. Fase 6 usará una conversación única por `QuoteRequest`, con `clientId` redundante controlado para mantener scope e impedir cruces de expediente.
 34. Los mensajes serán append-only y tendrán visibilidad explícita `CUSTOMER` o `INTERNAL`; una nota interna nunca se filtra por proyección, conteo, HTML, log ni Outbox.
 35. Los eventos de mensajería publicarán sólo IDs, folio, visibilidad y metadatos mínimos en Outbox; el cuerpo se consultará desde PostgreSQL por el worker futuro.
+36. `ConversationReadState` queda fuera del primer slice de Fase 6; no se implementará unread hasta tener contrato de producto, permisos y pruebas de avance monotónico.
 
 ## Pruebas realizadas
 
@@ -278,7 +281,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado y ejecutado; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
 - `docs/superpowers/specs/2026-09-07-ocpool-messaging.md` — especificación aprobada para Fase 6.
-- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tarea 1 lista para iniciar.
+- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado para Fase 6; Tarea 1 cerrada y Tarea 2 en desarrollo.
 
 ## Criterio de terminado de Fase 5
 
@@ -286,4 +289,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar la Tarea 1 de Fase 6: contrato de mensajería, permisos, persistencia, migración y pruebas de dominio.
+Ejecutar la Tarea 2 de Fase 6: servicio transaccional, scope por cliente, idempotencia, notas internas y Outbox.

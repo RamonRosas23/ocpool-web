@@ -72,6 +72,16 @@ enum PriceListStatus {
   ARCHIVED
 }
 
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum MessageVisibility {
+  CUSTOMER
+  INTERNAL
+}
+
 enum QuoteVersionStatus {
   BORRADOR
   EN_REVISION
@@ -161,6 +171,7 @@ model Client {
   contacts    ClientContact[]
   quoteRequests QuoteRequest[]
   quotes      Quote[]
+  conversations Conversation[]
 
   @@index([status, createdAt])
   @@map("clients")
@@ -191,6 +202,8 @@ model User {
   requestStatusChanges RequestStatusHistory[] @relation("RequestStatusHistoryActor")
   quoteVersionsCreated QuoteVersion[] @relation("QuoteVersionCreator")
   quoteStatusChanges QuoteStatusHistory[] @relation("QuoteStatusHistoryActor")
+  closedConversations Conversation[] @relation("ConversationCloser")
+  conversationMessages ConversationMessage[] @relation("ConversationMessageSender")
   createdAt           DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime     @updatedAt @db.Timestamptz(3)
 
@@ -239,12 +252,50 @@ model QuoteRequest {
   quotes            Quote[]
   assignments       RequestAssignment[]
   statusHistory     RequestStatusHistory[]
+  conversation      Conversation?
 
   @@index([status, createdAt])
   @@index([currentAssigneeId, status, createdAt])
   @@index([clientId, createdAt])
   @@unique([id, clientId])
   @@map("quote_requests")
+}
+
+model Conversation {
+  id              String             @id @default(uuid()) @db.Uuid
+  quoteRequestId  String             @unique @db.Uuid
+  clientId        String             @db.Uuid
+  status          ConversationStatus @default(OPEN)
+  createdAt       DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime           @updatedAt @db.Timestamptz(3)
+  closedAt        DateTime?          @db.Timestamptz(3)
+  closedById      String?            @db.Uuid
+  quoteRequest    QuoteRequest       @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Cascade)
+  client          Client             @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  closedBy        User?              @relation("ConversationCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  messages        ConversationMessage[]
+
+  @@unique([quoteRequestId, clientId])
+  @@index([clientId, status, updatedAt])
+  @@index([status, updatedAt])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id                String            @id @default(uuid()) @db.Uuid
+  conversationId    String            @db.Uuid
+  senderUserId      String?           @db.Uuid
+  visibility        MessageVisibility
+  body              String            @db.Text
+  idempotencyKeyHash String?          @db.VarChar(64)
+  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
+  conversation      Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender            User?             @relation("ConversationMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, senderUserId, idempotencyKeyHash])
+  @@index([conversationId, createdAt, id])
+  @@index([conversationId, visibility, createdAt, id])
+  @@map("conversation_messages")
 }
 
 model QuoteRequestDetail {

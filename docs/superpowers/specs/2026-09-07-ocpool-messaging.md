@@ -1,6 +1,6 @@
 # OCPOOL — Especificación de Fase 6: mensajería y notas internas
 
-> Estado: propuesta técnica lista para implementación incremental después del cierre verificable de Fase 5.
+> Estado: aprobada para implementación incremental después del cierre verificable de Fase 5.
 
 ## Objetivo
 

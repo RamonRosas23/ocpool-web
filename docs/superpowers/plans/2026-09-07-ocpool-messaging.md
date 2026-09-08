@@ -34,6 +34,7 @@
 - `src/components/StaffRequestsPanel.tsx`: mensajes y notas del expediente interno.
 - `src/app/globals.css`: estados y responsive del hilo.
 - `tests/unit/messaging-domain.test.ts`: límites, normalización, estados y reglas puras.
+- `tests/integration/messaging-schema.test.ts`: constraints de una conversación, cuerpo y cierre.
 - `tests/integration/messaging-service.test.ts`: transacciones, idempotencia, scope, notas y Outbox.
 - `tests/integration/messaging-api.test.ts`: 401/403/404, same-origin, rate limit y payloads.
 - `tests/messaging.spec.ts`: E2E opt-in cliente/empleado, privacidad, responsive y Axe.
@@ -47,13 +48,20 @@
 
 **Riesgos:** FKs que permitan cruces de cliente, duplicados de conversación, permisos que amplíen scope, migración no reversible en cleanup.
 
-- [ ] Escribir pruebas rojas de dominio para visibilidad, estados, longitud, caracteres de control e idempotency key.
-- [ ] Agregar permisos `messaging.read`, `messaging.send`, `messaging.internal_notes.read`, `messaging.internal_notes.write`, `messaging.manage` y asignarlos a roles apropiados.
-- [ ] Crear enums/modelos `Conversation` y `ConversationMessage`; decidir formalmente si `ConversationReadState` entra en este slice y documentarlo.
-- [ ] Agregar constraints de append-only lógico, body no vacío, longitud máxima, visibilidad válida, índices y FK compuesto/validación equivalente por scope.
-- [ ] Crear migración, ejecutar validate/generate/deploy y seed idempotente.
-- [ ] Ejecutar unitarias dirigidas, schema dirigido, typecheck, lint y `git diff --check`.
-- [ ] Actualizar estado y hacer commit `feat: add messaging persistence contracts`.
+- [x] Escribir pruebas rojas de dominio para visibilidad, estados, longitud, caracteres de control e idempotency key.
+- [x] Agregar permisos `messaging.read`, `messaging.send`, `messaging.internal_notes.read`, `messaging.internal_notes.write`, `messaging.manage` y asignarlos a roles apropiados.
+- [x] Crear enums/modelos `Conversation` y `ConversationMessage`; decidir formalmente que `ConversationReadState` queda fuera de este slice.
+- [x] Agregar constraints de append-only lógico, body no vacío, longitud máxima, visibilidad válida, índices y FK compuesto/validación equivalente por scope.
+- [x] Crear migraciones, ejecutar validate/generate/deploy y seed idempotente.
+- [x] Ejecutar unitarias dirigidas, schema dirigido, typecheck, lint y `git diff --check`.
+- [x] Actualizar estado y hacer commit `feat: add messaging persistence contracts`.
+
+Evidencia de cierre:
+
+- Contrato de dominio: 3/3 pruebas; permisos actualizados a 27 capacidades totales y roles customer/sales/manager/admin verificados.
+- Migraciones `20260908062317_messaging` y `20260908062400_messaging_constraints` aplicadas; Prisma validado/generado, seed ejecutado y schema al día.
+- Prueba de persistencia `messaging-schema.test.ts` 1/1 confirma conversación única por solicitud, body no vacío/máximo y coherencia de cierre.
+- `npm run typecheck`, `npm run lint` y `git diff --check` correctos; no se agregó dependencia.
 
 **Criterios de terminado:** migración aplicada, permisos probados, contrato puro verde, cleanup exacto posible y ningún dato de mensaje aún expuesto por API.
 
