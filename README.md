@@ -32,7 +32,7 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Auditoría operativa y de seguridad en `/staff/audit`, con `audit.read`/`audit.security.read`, cursor HMAC, rate limit, redacción por allowlist y respuesta `no-store`.
 - Superficies de acceso navegables en `/login`, `/login/recovery`, `/portal/access`, `/auth/recovery` y `/auth/customer/consume-link`, sin credenciales fijas y con limpieza de tokens en URL.
 
-Las Fases 1–12 están cerradas con gates técnicos verdes para el alcance local. La entrega de notificaciones y la auditoría operativa/de seguridad son reproducibles y operables; la revisión jurídica, los proveedores productivos, la retención, los backups, la observabilidad productiva y la preparación de producción permanecen como controles previos al lanzamiento.
+Las Fases 1–13 están cerradas con gates técnicos verdes para el alcance local. La entrega de notificaciones, la auditoría operativa/de seguridad y las superficies de acceso son reproducibles y operables; la revisión jurídica, los proveedores productivos, la retención, los backups, la observabilidad productiva y la preparación de producción permanecen como controles previos al lanzamiento.
 
 ## Requisitos
 

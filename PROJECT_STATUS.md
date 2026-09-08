@@ -4,15 +4,15 @@
 
 ## Estado actual
 
-- **Fase:** Fase 13 — superficies de acceso y recuperación; implementación local completada, gate final de fase en verificación.
-- **Estado:** Fases 1–12 están implementadas y verificadas dentro del alcance local. Fase 13 ya tiene rutas navegables para empleado, MFA, magic link y recovery, con E2E opt-in 5/5; falta cerrar la regresión completa, documentación final y árbol limpio. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
+- **Fase:** Fase 13 — superficies de acceso y recuperación; terminada para el alcance local.
+- **Estado:** Fases 1–13 están implementadas y verificadas dentro del alcance local. Fase 13 tiene rutas navegables para empleado, MFA, magic link y recovery, E2E opt-in 5/5, contrato documental, runbook, regresión normal y árbol limpio. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
 - **Últimos commits de Fase 12:** `a40d839` (`docs: close audit observability phase`), `d9a87e0` (`fix: stabilize audit verification fixtures`), `c341c66` (`feat: add staff audit workspace`), `df315e2` (`feat: expose staff audit api`), `23a9ab5` (`feat: add secure audit read service`).
 - **Documentos de Fase 12:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
-- **Documentos de Fase 13:** especificación, autorrevisión, plan ordenado y runbook versionados. Tasks 1–6 están ejecutadas; falta únicamente versionar este cierre y comprobar árbol limpio.
-- **Último commit de implementación de Fase 13:** `3ebf8f6` (`feat: add browser auth surfaces`).
+- **Documentos de Fase 13:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
+- **Últimos commits de Fase 13:** `5c66c6b` (`docs: close auth surfaces phase`), `3ebf8f6` (`feat: add browser auth surfaces`).
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -170,7 +170,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### En desarrollo
 
-- Fase 13 — superficies de acceso y recuperación: Tasks 1–6 ejecutadas; login, MFA, magic link, recovery, URL limpia, estados restringidos, responsive, accesibilidad, documentación y gate técnico están comprobados. El commit documental final y el árbol limpio son el último cierre administrativo.
+- Fase 13 — superficies de acceso y recuperación: terminada para el alcance local. Login, MFA, magic link, recovery, URL limpia, estados restringidos, responsive, accesibilidad, documentación y gate técnico están comprobados; permanecen sólo decisiones externas de lanzamiento.
 - La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
@@ -578,7 +578,7 @@ La fase queda terminada para el alcance local: el contrato de lectura, los permi
 
 ## Criterio de terminado de Fase 13
 
-La fase sólo se marcará terminada cuando las cinco rutas de acceso funcionen con contratos reales, no enumeren cuentas, no filtren tokens, respeten MFA/sesión/same-origin/rate limit, cubran estados de carga/error/éxito, sean responsive y accesibles, pasen E2E opt-in y regresión completa, estén documentadas y el árbol quede limpio. El gate externo de producción permanece separado y bloqueado.
+La fase queda terminada para el alcance local: las cinco rutas de acceso funcionan con contratos reales, no enumeran cuentas, no filtran tokens, respetan MFA/sesión/same-origin/rate limit, cubren estados de carga/error/éxito, son responsive y accesibles, pasan E2E opt-in y regresión completa, están documentadas y el árbol queda limpio. El gate externo de producción permanece separado y bloqueado.
 
 ## Criterio de terminado de Fase 5
 
