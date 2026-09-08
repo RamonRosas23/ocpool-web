@@ -121,6 +121,12 @@ test.describe('OCPOOL quality contract', () => {
     await page.getByLabel('Correo').fill(`form-${suffix}@example.test`);
     await page.getByLabel('Tipo de obra').selectOption('Alberca residencial');
     await page.getByLabel('Ubicación').fill('Mazatlán, Sinaloa');
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await expect(page.getByText('Paso 2 de 2')).toBeVisible();
+    await page.getByLabel('Etapa del proyecto').selectOption('UNDER_CONSTRUCTION');
+    await page.getByLabel('Medidas aproximadas').fill('12 x 5 m');
+    await page.getByLabel('Horizonte de inicio').selectOption('THREE_TO_SIX_MONTHS');
+    await page.getByLabel('Rango de inversión').selectOption('FROM_500K_TO_1M');
     await page.getByLabel('Descripción del proyecto').fill('Solicitud E2E para validar el expediente público.');
     await page.getByLabel(/Autorizo a OCPOOL/).check();
     await page.getByRole('button', { name: /Enviar solicitud/ }).click();
@@ -128,7 +134,30 @@ test.describe('OCPOOL quality contract', () => {
     const feedback = page.locator('.form-feedback--success');
     await expect(feedback).toHaveAttribute('role', 'status');
     await expect(feedback).toContainText(/Tu folio es OCQ-\d{4}-\d{6}/);
-    await expect(page.getByRole('button', { name: /Enviar solicitud/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Continuar' })).toBeVisible();
+  });
+
+  test('validates the first step and preserves contact data when going back', async ({ page }) => {
+    await page.goto('/#contacto');
+
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await expect(page.getByText('Indica tu nombre para continuar.')).toBeVisible();
+    await expect(page.getByLabel('Nombre')).toBeFocused();
+
+    await page.getByLabel('Nombre').fill('Cliente que revisa');
+    await page.getByLabel('Teléfono').fill('667 123 4567');
+    await page.getByLabel('Correo').fill('revision@example.test');
+    await page.getByLabel('Tipo de obra').selectOption('Remodelación o rehabilitación');
+    await page.getByLabel('Ubicación').fill('Los Mochis, Sinaloa');
+    await page.getByRole('button', { name: 'Continuar' }).click();
+
+    await expect(page.getByText('Paso 2 de 2')).toBeVisible();
+    await page.getByRole('button', { name: 'Regresar' }).click();
+    await expect(page.getByText('Paso 1 de 2')).toBeVisible();
+    await expect(page.getByLabel('Nombre')).toHaveValue('Cliente que revisa');
+    await expect(page.getByLabel('Tipo de obra')).toHaveValue('Remodelación o rehabilitación');
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await expect(page.getByLabel('Descripción del proyecto')).toBeVisible();
   });
 
   test('protects the internal inbox when no employee session exists', async ({ page }) => {
