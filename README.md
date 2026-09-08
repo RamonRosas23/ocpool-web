@@ -27,7 +27,7 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Portal privado `/portal` con cotizaciones históricas, mensajería, archivos privados, descarga de PDF comercial y aceptación explícita con evidencia.
 - Operación staff de documentos PDF con estados, descarga efímera, generación condicionada y evidencia de aceptación.
 
-La Fase 8 está en gate de cierre: quedan regresión integral, hardening, revisión jurídica de términos, notificaciones y preparación de producción antes del lanzamiento.
+La Fase 8 está cerrada con gate técnico verde. La Fase 9 de notificaciones y entrega está en planificación documental; siguen pendientes la revisión jurídica, proveedores productivos, retención, backups y preparación de producción antes del lanzamiento.
 
 ## Requisitos
 

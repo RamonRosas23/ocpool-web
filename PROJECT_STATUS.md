@@ -14,7 +14,7 @@
 
 1. Auditoría y decisiones iniciales.
 2. Especificación de diseño en `docs/superpowers/specs/`.
-3. Autorrevisión de la especificación.
+3. Autorrevisión de la especificación en `docs/superpowers/reviews/`.
 4. Plan de implementación en `docs/superpowers/plans/`.
 5. Implementación por vertical slices.
 6. Verificación de fase.
@@ -135,7 +135,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### En planificación
 
-- Fase 9 — notificaciones y entrega: especificación, autorrevisión y plan pendientes de crear en orden.
+- Fase 9 — notificaciones y entrega: especificación, autorrevisión y plan completados en orden; Tarea 1 lista para implementación.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -228,6 +228,10 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 73. El estado operativo staff se separa de la descarga: puede mostrar `MISSING`/`PENDING`/`FAILED` sin convertir un 409 de disponibilidad en un estado ambiguo; la descarga continúa validando DB + HEAD antes de emitir URL.
 74. La interfaz sólo ofrece generar/reintentar cuando el documento falta o falló; un documento `READY` se conserva como artefacto inmutable y el backend devuelve el existente sin reemplazarlo.
 75. La evidencia de aceptación visible para staff se limita a firmante, versión de términos y fecha; hashes, fingerprints, storage keys y códigos de fallo permanecen en backend/auditoría.
+76. Fase 9 separa `NotificationDelivery` de `OutboxEvent`: un evento puede generar varios destinatarios y cada entrega necesita retry/lease/provider propios sin mutar el agregado comercial.
+77. El primer canal de Fase 9 será email con Mailpit y adaptador SMTP; PostgreSQL gestionará claims y leases, y Redis/broker se reconsiderará sólo con evidencia de volumen o contención.
+78. Los eventos no soportados se cancelan como intención de notificación con causa controlada; nunca se renderizan por inferencia ni se pasa el JSON completo de Outbox a templates.
+79. `SENT` significará aceptación del adaptador/proveedor, no lectura del correo; el portal y el expediente seguirán siendo la fuente de verdad.
 
 ## Pruebas realizadas
 
@@ -392,7 +396,10 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; fase cerrada.
 - `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/specs/2026-09-08-ocpool-pdf-acceptance.md` — especificación aprobada para Fase 8; no implica firma electrónica avanzada por sí sola.
-- `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–5 cerradas y Tarea 6 de gate pendiente.
+- `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–6 cerradas con gate verde.
+- `docs/superpowers/specs/2026-09-08-ocpool-notifications.md` — especificación aprobada para Fase 9.
+- `docs/superpowers/reviews/2026-09-08-ocpool-notifications-review.md` — autorrevisión de Fase 9, con riesgos de exactly-once, PII, worker y proveedor.
+- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tarea 1 lista, sin implementación iniciada.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 
@@ -402,4 +409,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Crear la especificación de Fase 9 — notificaciones y entrega; después autorrevisarla y convertirla en plan antes de implementar.
+Ejecutar Fase 9, Tarea 1: contratos, persistencia y seguridad de destinatarios.
