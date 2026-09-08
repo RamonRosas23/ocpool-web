@@ -346,6 +346,8 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
 - `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; Tareas 1–4 implementadas.
 - `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–4 cerradas y Tarea 5 es la siguiente.
+- `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
+- `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 
 ## Criterio de terminado de Fase 5
 
