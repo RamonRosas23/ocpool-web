@@ -109,9 +109,16 @@ describe('customer onboarding service', () => {
     });
     userIds.push(foreignCustomer.id);
     const request = await createRequest(suffix, `collision-${suffix}@example.test`);
+    const employee = await prisma.user.create({
+      data: { email: `employee-collision-${suffix}@example.test`, emailNormalized: `employee-collision-${suffix}@example.test`, displayName: 'Employee collision', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    userIds.push(employee.id);
+    const employeeRequest = await createRequest(`${suffix}-employee`, employee.email);
 
     await expect(inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+    await expect(inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), employeeRequest.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
     expect((await prisma.clientContact.findUnique({ where: { id: request.contactId } }))?.userId).toBeNull();
+    expect((await prisma.clientContact.findUnique({ where: { id: employeeRequest.contactId } }))?.userId).toBeNull();
     expect((await prisma.user.findUnique({ where: { id: foreignCustomer.id } }))?.clientId).toBe(foreignClient.id);
   });
 
