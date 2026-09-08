@@ -41,11 +41,21 @@
 
 ## Tarea 3 — Servicios y APIs protegidas
 
-- [ ] Implementar lectura/generación/descarga PDF con scope por request+client y URL efímera.
-- [ ] Implementar servicio de aceptación con lock de versión/solicitud, validación de PDF, nombre, consentimiento e idempotencia.
-- [ ] Exponer APIs portal/staff con same-origin, no-store, Zod estricto y errores seguros.
-- [ ] Probar IDOR, historical version, expired quote, missing PDF, replay, concurrent acceptance, wrong client y rol sin capacidad.
-- [ ] Commit `feat: expose quote pdf and acceptance services`.
+- [x] Implementar lectura/generación/descarga PDF con scope por request+client y URL efímera.
+- [x] Implementar servicio de aceptación con lock de versión/solicitud, validación de PDF, nombre, consentimiento e idempotencia.
+- [x] Exponer APIs portal/staff con same-origin, no-store, Zod estricto y errores seguros.
+- [x] Probar IDOR, historical version, expired quote, missing PDF, replay, concurrent acceptance, wrong client y rol sin capacidad.
+- [x] Commit `feat: expose quote pdf and acceptance services`.
+
+### Evidencia de Tarea 3
+
+- `acceptance-service.ts` exige actor cliente con `quotes.accept`, bloquea cotización/solicitud, acepta exclusivamente la versión vigente `ENVIADA`/`EN_NEGOCIACION`, valida vigencia y consistencia HEAD/hash/MIME/tamaño del PDF, persiste aceptación y cambios de estado en una transacción, y publica auditoría/Outbox sin IP, user-agent ni claves de idempotencia crudas.
+- `access-service.ts` exige `quotes.read` + `quotes.pdf.read` para staff y scope `clientId` para cliente; sólo emite URL presigned de 60 segundos para documentos `READY` físicamente disponibles, audita la emisión y nunca serializa `storageKey` ni `sha256`.
+- `generateQuotePdf` ahora exige backend staff con `quotes.read` y `quotes.pdf.generate`; la API no permite que un cliente invoque generación.
+- APIs agregadas: `GET /api/portal/quotes/[id]/pdf`, `POST /api/portal/quotes/[id]/accept`, `GET/POST /api/staff/quotes/versions/[versionId]/pdf`, con same-origin en mutaciones, body Zod estricto, `cache-control: no-store` y envelope de errores existente.
+- `quote-acceptance-service.test.ts` pasó 1/1: evidencia hash/version/PDF, replay idempotente, transición de solicitud/cotización y carrera concurrente con un solo ganador.
+- `quote-documents-api.test.ts` pasó 2/2: 401/403/404, IDOR cliente cruzado, CSRF, schema estricto, permisos staff, URL efímera, `no-store`, no filtrado de storage key/hash y replay/segunda clave.
+- `npm run typecheck`, `npm run lint` y pruebas unitarias dirigidas del dominio/renderer pasaron.
 
 ## Tarea 4 — Portal cliente
 

@@ -1,5 +1,6 @@
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
+import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
@@ -152,12 +153,15 @@ async function markFailed(prisma: PrismaClient, documentId: string, actorUserId:
 }
 
 export async function generateQuotePdf(actor: Actor | null, quoteVersionIdInput: string, dependencies: QuotePdfGenerationDependencies = {}): Promise<GeneratedQuotePdfResult> {
+  if (!actor || actor.type !== 'EMPLOYEE') throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
+  requirePermission(actor, 'quotes.read');
+  requirePermission(actor, 'quotes.pdf.generate');
   const quoteVersionId = requireUuid(quoteVersionIdInput);
   const prisma = dependencies.prisma ?? getPrisma();
   const storage = dependencies.storage ?? getPrivateStorage();
   const renderer = dependencies.renderer ?? renderQuotePdf;
   const now = dependencies.now ?? new Date();
-  const actorUserId = actor?.userId ?? null;
+  const actorUserId = actor.userId;
 
   let pendingDocument: StoredDocument;
   let snapshot: QuotePdfSnapshot;

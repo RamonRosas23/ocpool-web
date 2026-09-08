@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 8 — PDF comercial y aceptación digital, Tarea 3: servicios y APIs protegidas.
-- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 Tareas 1–2 están terminadas y verificadas; el siguiente slice es exponer lectura, generación y aceptación con scope, idempotencia y errores seguros.
+- **Fase:** Fase 8 — PDF comercial y aceptación digital, Tarea 4: integración en portal cliente.
+- **Estado:** Fases 1–7 están terminadas con gates verdes. Fase 8 Tareas 1–3 están terminadas y verificadas; el siguiente slice es integrar descarga y aceptación en el portal cliente con estados UX completos.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
@@ -127,10 +127,12 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Fase 8 — Tarea 2: renderer `pdf-lib` versionado, paginado y basado en snapshot; generación de hash/tamaño, verificación HEAD y almacenamiento privado idempotente.
 - Fase 8 — Tarea 2: fixture PDF de 2 páginas revisado visualmente en PNG; metadata, folio, resumen, total y ausencia de texto interno comprobados por herramientas de inspección.
 - Fase 8 — Tarea 2: dependencia directa `pdf-lib@1.17.1` justificada; no se añadió proveedor externo de PDF ni fuente no portable.
+- Fase 8 — Tarea 3: servicios de aceptación y acceso a PDF protegidos por scope `clientId`, RBAC, lock transaccional, validación de objeto privado, evidencia SHA-256, idempotencia y Outbox/auditoría sin datos sensibles.
+- Fase 8 — Tarea 3: APIs portal/staff de PDF y aceptación con same-origin, Zod estricto, `no-store`, URL presigned efímera y respuestas sin `storageKey`/hash.
 
 ### En desarrollo
 
-- Fase 8 — Tarea 3: servicios y APIs protegidas de PDF/aceptación.
+- Fase 8 — Tarea 4: integración de descarga y aceptación en el portal cliente.
 
 ### Prototipo o incompletos para el producto comercial
 
@@ -215,6 +217,10 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 63. La primera versión de aceptación comercial es evidencia auditable de intención dentro de OCPOOL y no se presenta como firma electrónica avanzada sin revisión jurídica y proveedor especializado.
 64. El renderer PDF será determinista y server-side con `pdf-lib`; el cliente nunca decide totales, contenido, storage key ni bytes del documento.
 65. La primera plantilla usa fuentes PDF estándar para evitar artefactos WOFF no portables; la calidad visual se controla desde composición, color, ritmo y QA rasterizado.
+66. La aceptación de cliente sólo puede operar sobre `Quote.currentVersionId`; no se acepta una versión histórica aunque su PDF siga disponible para lectura.
+67. El lock de aceptación se toma sobre cotización y solicitud antes de crear evidencia; la clave única `(acceptedById, idempotencyKeyHash)` permite replay exacto y la unicidad por versión impide doble aceptación con claves distintas.
+68. La URL de descarga se emite sólo después de validar DB + HEAD del objeto privado, con expiración de 60 segundos y auditoría; el portal recibe metadata mínima y nunca una storage key.
+69. La ruta staff de generación requiere `{}` con schema estricto, para que incluso regeneraciones mantengan contrato JSON y protección same-origin uniforme.
 
 ## Pruebas realizadas
 
@@ -266,6 +272,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 7 — Tarea 6/gate: 54 unitarias, 47 integraciones, contenido, build, 34 E2E públicas con 7 omitidas explícitamente, foundation 1/1, portal 2/2, staff 2/2, migraciones/seed/auditoría de dependencias y Compose saludables. Árbol limpio y diff check correctos.
 - Fase 8 — Tarea 1: prueba roja inicial del dominio; después `npm run test:unit` 57/57, `npm run typecheck`, `npm run db:validate`, `npm run db:generate`, migración aplicada y prueba de persistencia `quote-documents-schema.test.ts` 1/1. Se verificaron estados, elegibilidad, normalización, documentos READY incompletos, duplicados, hashes y aceptación vinculada.
 - Fase 8 — Tarea 2: `quote-pdf-renderer.test.ts` 3/3, `quote-pdf-service.test.ts` 1/1, `npm run typecheck`, fixture generado de 2 páginas, `pdftoppm` sin errores de fuente invalidante, `pdfinfo` metadata estable y `pypdf` con folio/resumen/total presentes y texto interno ausente.
+- Fase 8 — Tarea 3: `quote-acceptance-service.test.ts` 1/1 y `quote-documents-api.test.ts` 2/2 dirigidas; se verificaron aceptación concurrente con un ganador, replay, PDF READY/hash/HEAD, scope cruzado, 401/403/404/409, CSRF, schema estricto, permisos, no-store y no exposición de storage key/hash. `npm run typecheck` y `npm run lint` correctos.
 
 La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el comando normal para no exigir fixtures/infraestructura; ambas ejecuciones opt-in fueron validadas de forma dedicada.
 
@@ -277,8 +284,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - Pruebas finales de archivos privados: staff, seguridad de fase, URLs temporales, cleanup y proveedor antivirus productivo.
 - Pruebas de snapshots e inmutabilidad.
 - Pruebas de cálculo de cotizaciones.
-- E2E cliente y empleado.
-- Pruebas de aceptación, descarga autorizada y concurrencia.
+- Gate serial completo posterior a Tarea 3, incluyendo migración/seed, 61+ unitarias, integración global, build y E2E.
 - Pruebas E2E portal/staff del ciclo PDF y aceptación.
 - Pruebas de notificaciones y reintentos.
 - Pruebas de carga y restauración de backups.
@@ -297,8 +303,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - El scanner local de Fase 7 validará firma y tipo, pero no sustituirá antivirus; antes de producción deberá existir proveedor, política de cuarentena, pruebas de evasión y operación de reintentos.
 - MinIO local está incorporado al Compose con credenciales de desarrollo; producción deberá reemplazarlas mediante secretos y política de bucket privada.
 - El scanner local sólo valida firma/tipo/hash; proveedor antivirus productivo, cuarentena operacional, backups y restauración de objetos siguen pendientes de hardening.
-- El PDF comercial aún no tiene aceptación operativa; ningún botón de aceptación debe exponerse hasta cerrar servicios, APIs, UI y pruebas de concurrencia de Fase 8.
-- El PDF comercial aún no tiene renderer ni aceptación operativa; ningún botón de aceptación debe exponerse hasta cerrar servicios, APIs, UI y pruebas de concurrencia de Fase 8.
+- La aceptación backend ya está operativa y protegida, pero ningún botón de aceptación debe exponerse hasta cerrar la UI, E2E portal/staff, revisión legal de términos y gate completo de Fase 8.
 - Puede existir una diferencia temporal residual entre cuentas existentes e inexistentes en solicitudes de link/recovery; no hay enumeración en respuesta ni payload.
 
 ## Deuda técnica conocida
@@ -325,6 +330,7 @@ La suite E2E completa descubre 31 pruebas: auth y foundation se omiten en el com
 - El servicio y las rutas de `src/server/modules/catalog/` son dependencia del selector de conceptos, listas y precios del constructor.
 - Fase 5 depende de sesiones/actor de cliente de Fase 2, solicitudes de Fase 3 y snapshots/versiones de Fase 4.
 - Fase 6 depende de sesiones/RBAC de Fase 2, scope de solicitudes de Fase 3, Outbox/auditoría transaccional y portal de cliente de Fase 5.
+- Fase 8 depende de snapshots/versiones de cotización de Fase 4, portal/sesiones de Fase 5, storage privado de Fase 7 y del contrato PDF/aceptación de Tareas 1–3 antes de la UI cliente.
 
 ## Problemas encontrados y resolución
 
@@ -374,7 +380,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; fase cerrada.
 - `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–6 cerradas con gate verde.
 - `docs/superpowers/specs/2026-09-08-ocpool-pdf-acceptance.md` — especificación aprobada para Fase 8; no implica firma electrónica avanzada por sí sola.
-- `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–2 cerradas y Tarea 3 en curso.
+- `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–3 cerradas y Tarea 4 en curso.
 - `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
 - `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
 
@@ -384,4 +390,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Ejecutar Fase 8, Tarea 3: servicios y APIs protegidas de lectura, generación y aceptación.
+Ejecutar Fase 8, Tarea 4: integración de descarga y aceptación en el portal cliente.
