@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DOCUMENT_STATUSES,
+  canGenerateQuotePdf,
   canTransitionGeneratedDocument,
   canAcceptQuoteVersion,
   normalizeAcceptanceName,
@@ -15,8 +16,16 @@ describe('quote documents and acceptance domain', () => {
     expect(canTransitionGeneratedDocument('PENDING', 'FAILED')).toBe(true);
     expect(canTransitionGeneratedDocument('READY', 'FAILED')).toBe(false);
     expect(canTransitionGeneratedDocument('READY', 'DELETED')).toBe(true);
+    expect(canTransitionGeneratedDocument('FAILED', 'PENDING')).toBe(true);
     expect(canTransitionGeneratedDocument('DELETED', 'READY')).toBe(false);
     expect(canTransitionGeneratedDocument('PENDING' as GeneratedDocumentStatus, 'PENDING')).toBe(false);
+  });
+
+  it('only renders PDFs from versions that have entered a customer-visible state', () => {
+    expect(canGenerateQuotePdf('BORRADOR')).toBe(false);
+    expect(canGenerateQuotePdf('EN_REVISION')).toBe(false);
+    expect(canGenerateQuotePdf('ENVIADA')).toBe(true);
+    expect(canGenerateQuotePdf('ACEPTADA')).toBe(true);
   });
 
   it('accepts only current, sent and unexpired versions with a ready matching document', () => {

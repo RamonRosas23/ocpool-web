@@ -18,6 +18,7 @@ export type PrivateStorageHead = Readonly<{
 
 export type PrivateStorage = Readonly<{
   ensureBucket: () => Promise<void>;
+  put: (input: { key: string; body: Uint8Array; contentType: string }) => Promise<void>;
   createUploadUrl: (input: { key: string; contentType: string; expiresInSeconds: number }) => Promise<string>;
   createDownloadUrl: (input: { key: string; expiresInSeconds: number }) => Promise<string>;
   head: (key: string) => Promise<PrivateStorageHead | null>;
@@ -60,6 +61,9 @@ export function createS3PrivateStorage(): PrivateStorage {
           if (name !== 'BucketAlreadyOwnedByYou' && name !== 'BucketAlreadyExists') throw createError;
         }
       }
+    },
+    async put({ key, body, contentType }) {
+      await client.send(new PutObjectCommand({ Bucket: env.STORAGE_S3_BUCKET, Key: key, Body: body, ContentType: contentType }));
     },
     async createUploadUrl({ key, contentType, expiresInSeconds }) {
       return getSignedUrl(client, new PutObjectCommand({ Bucket: env.STORAGE_S3_BUCKET, Key: key, ContentType: contentType }), { expiresIn: expiresInSeconds });

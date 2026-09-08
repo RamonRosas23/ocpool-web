@@ -22,11 +22,22 @@
 
 ## Tarea 2 — Renderer determinista y storage
 
-- [ ] Implementar renderer `pdf-lib` basado exclusivamente en snapshot, con plantilla versionada, paginación, totales y fuentes controladas.
-- [ ] Implementar hash/tamaño, generación idempotente y almacenamiento privado sin entregar bytes desde el cliente.
-- [ ] Renderizar PDFs de fixture a PNG y revisar visualmente encabezados, tabla, totales, footer, saltos y legibilidad.
-- [ ] Añadir extracción de texto, metadata y pruebas de regeneración idéntica.
-- [ ] Commit `feat: add immutable quote pdf renderer`.
+- [x] Implementar renderer `pdf-lib` basado exclusivamente en snapshot, con plantilla versionada, paginación, totales y fuentes PDF estándar portables.
+- [x] Implementar hash/tamaño, generación idempotente y almacenamiento privado sin entregar bytes desde el cliente.
+- [x] Renderizar PDFs de fixture a PNG y revisar visualmente encabezados, tabla, totales, footer, saltos y legibilidad.
+- [x] Añadir extracción de texto, metadata y pruebas de regeneración idéntica.
+- [x] Verificar servicio contra almacenamiento en memoria, hash persistido, Outbox y auditoría.
+- [x] Commit `feat: add immutable quote pdf renderer`.
+
+### Evidencia de Tarea 2
+
+- `pdf-lib@1.17.1` se agregó como dependencia directa para generar PDF server-side sin servicio externo ni bytes controlados por el navegador.
+- `renderQuotePdf` genera plantilla `quote-pdf-v1`, A4, encabezado, metadata comercial, tabla paginada, resumen, condiciones y footer estable.
+- El renderer usa exclusivamente valores de `QuotePdfSnapshot`; no recibe catálogo, notas internas, IDs de cliente ni payload de UI.
+- `tests/unit/quote-pdf-renderer.test.ts` pasó 3/3: determinismo byte a byte, hash SHA-256, metadata, paginación y payload interno ausente.
+- `generateQuotePdf` valida el estado de la versión, crea/reintenta `PENDING`, escribe en `PrivateStorage`, verifica HEAD, persiste hash/tamaño y deja `READY` sólo tras verificación completa.
+- `tests/integration/quote-pdf-service.test.ts` pasó 1/1: snapshot real, almacenamiento privado en memoria, replay idempotente, auditoría y Outbox único.
+- Fixture QA: `output/pdf/quote-pdf-fixture.pdf`, 2 páginas; revisión PNG de ambas páginas sin overflow, colisiones ni saltos de página defectuosos. `pdfinfo` y `pypdf` confirmaron metadata, folio, resumen, total y ausencia de texto interno.
 
 ## Tarea 3 — Servicios y APIs protegidas
 

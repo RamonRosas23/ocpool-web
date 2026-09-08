@@ -7,12 +7,18 @@ export type GeneratedDocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 const DOCUMENT_TRANSITIONS: Record<GeneratedDocumentStatus, readonly GeneratedDocumentStatus[]> = {
   PENDING: ['READY', 'FAILED'],
   READY: ['DELETED'],
-  FAILED: ['DELETED'],
+  FAILED: ['PENDING', 'DELETED'],
   DELETED: [],
 };
 
+const PDF_SOURCE_STATUSES = new Set(['ENVIADA', 'EN_NEGOCIACION', 'ACEPTADA', 'RECHAZADA', 'VENCIDA']);
+
 export function canTransitionGeneratedDocument(from: GeneratedDocumentStatus, to: GeneratedDocumentStatus): boolean {
   return DOCUMENT_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+export function canGenerateQuotePdf(versionStatus: string): boolean {
+  return PDF_SOURCE_STATUSES.has(versionStatus);
 }
 
 export type QuoteAcceptanceEligibility = Readonly<{

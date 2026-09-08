@@ -46,11 +46,15 @@ class MemoryPrivateStorage implements PrivateStorage {
     this.objects.delete(key);
   }
 
-  put(uploadUrl: string, body: Uint8Array, contentType: string): void {
-    const token = uploadUrl.replace('memory://', '');
+  async put(input: { key: string; body: Uint8Array; contentType: string } | string, uploadBody?: Uint8Array, uploadContentType?: string): Promise<void> {
+    if (typeof input !== 'string') {
+      this.objects.set(input.key, { body: input.body, contentType: input.contentType });
+      return;
+    }
+    const token = input.replace('memory://', '');
     const key = this.tokens.get(token);
-    if (!key) throw new Error('invalid upload token');
-    this.objects.set(key, { body, contentType });
+    if (!key || !uploadBody || !uploadContentType) throw new Error('invalid upload token');
+    this.objects.set(key, { body: uploadBody, contentType: uploadContentType });
   }
 
   keyForToken(tokenUrl: string): string | undefined {
