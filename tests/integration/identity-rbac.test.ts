@@ -267,10 +267,21 @@ describe('identity and RBAC foundation', () => {
     const passwordHash = await hashPassword(password);
 
     const employeeEmail = `employee-${suffix}@example.test`;
+    const adminEmail = `admin-${suffix}@example.test`;
+    const authIpAddresses = [
+      context.ipAddress,
+      `10.0.1.${hostOctet}`,
+      `10.0.1.${(hostOctet % 200) + 1}`,
+      `10.0.1.${(hostOctet % 198) + 3}`,
+      `10.0.2.${hostOctet}`,
+      `10.0.2.${(hostOctet % 200) + 1}`,
+      `10.0.3.${hostOctet}`,
+      `10.0.3.${(hostOctet % 200) + 1}`,
+    ];
     await prisma.authRateLimit.deleteMany({
       where: {
         scope: { in: ['employee-login-email', 'employee-login-ip'] },
-        keyHash: { in: [fingerprintToken(employeeEmail), fingerprintToken(context.ipAddress)] },
+        keyHash: { in: [fingerprintToken(employeeEmail), fingerprintToken(adminEmail), ...authIpAddresses.map((ip) => fingerprintToken(ip))] },
       },
     });
     const employee = await prisma.user.create({
@@ -291,8 +302,7 @@ describe('identity and RBAC foundation', () => {
     }
     expect((await loginEmployee({ email: employeeEmail, password: 'wrong-password', context }, { prisma, now: new Date(now.getTime() + 1), sessionTokenGenerator: () => `wrong-session-${suffix}-abcdefghijklmnopqrstuvwxyz` })).ok).toBe(false);
 
-    const enrollment = createMfaEnrollment({ accountLabel: `admin-${suffix}@example.test` });
-    const adminEmail = `admin-${suffix}@example.test`;
+    const enrollment = createMfaEnrollment({ accountLabel: adminEmail });
     const admin = await prisma.user.create({
       data: {
         email: adminEmail,
@@ -351,6 +361,12 @@ describe('identity and RBAC foundation', () => {
     await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [employee.id, customer.id] } } });
     await prisma.user.deleteMany({ where: { id: { in: [employee.id, admin.id, customer.id] } } });
     await prisma.client.delete({ where: { id: client.id } });
+    await prisma.authRateLimit.deleteMany({
+      where: {
+        scope: { in: ['auth-global', 'employee-login-email', 'employee-login-ip'] },
+        keyHash: { in: [fingerprintToken(employeeEmail), fingerprintToken(adminEmail), fingerprintToken(customerEmail), ...authIpAddresses.map((ip) => fingerprintToken(ip))] },
+      },
+    });
   }, 30_000);
 
   it('keeps authentication API errors generic and rejects foreign-origin logout', async () => {
