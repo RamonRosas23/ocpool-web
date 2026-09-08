@@ -38,7 +38,9 @@ function contactRecipient(contact: { id: string; email: string; displayName: str
 }
 
 function customerContext(recipient: NotificationRecipientContext, actionPath = '/portal'): NotificationMappingContext {
-  return { recipient, actionPath };
+  return recipient.userId
+    ? { recipient, actionPath }
+    : { recipient, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' };
 }
 
 function staffContext(recipient: NotificationRecipientContext): NotificationMappingContext {
@@ -138,7 +140,7 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       const attachment = await prisma.fileAttachment.findUnique({ where: { id: event.aggregateId }, include: { quoteRequest: { include: { client: true, contact: { include: { user: true } } } } } });
       if (!attachment || attachment.status !== 'AVAILABLE' || attachment.visibility !== 'CUSTOMER' || stringValue(payload, 'fileId') !== attachment.id || stringValue(payload, 'quoteRequestId') !== attachment.quoteRequestId || stringValue(payload, 'visibility') !== 'CUSTOMER' || stringValue(payload, 'category') !== attachment.category) return cancellation(attachment?.visibility === 'INTERNAL' ? 'INTERNAL_VISIBILITY' : 'INVALID_PAYLOAD');
       const recipient = attachment.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(attachment.quoteRequest.contact) : null;
-      return recipient ? { kind: 'RECIPIENTS', contexts: [{ recipient, actionPath: '/portal', folio: attachment.quoteRequest.folio, fileName: attachment.originalFileName }] } : cancellation('NO_RECIPIENT');
+      return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, '/portal'), folio: attachment.quoteRequest.folio, fileName: attachment.originalFileName }] } : cancellation('NO_RECIPIENT');
     }
     default:
       return cancellation('UNSUPPORTED_EVENT');

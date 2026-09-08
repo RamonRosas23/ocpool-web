@@ -69,6 +69,7 @@ async function defaultRenderNotification(delivery: ClaimedNotificationDelivery):
     appUrl: env.APP_URL,
     recipientName: stringValue(payload, 'recipientName') ?? 'Hola',
     actionUrl,
+    ...(stringValue(payload, 'actionLabel') ? { actionLabel: stringValue(payload, 'actionLabel') } : {}),
     ...(stringValue(payload, 'folio') ? { folio: stringValue(payload, 'folio') } : {}),
     ...(numberValue(payload, 'versionNumber') !== undefined ? { versionNumber: numberValue(payload, 'versionNumber') } : {}),
     ...(stringValue(payload, 'totalLabel') ? { totalLabel: stringValue(payload, 'totalLabel') } : {}),

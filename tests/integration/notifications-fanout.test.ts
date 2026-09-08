@@ -58,9 +58,10 @@ describe('transactional notification fan-out', () => {
       expect(deliveries.find((delivery) => delivery.outboxEventId === assignmentEvent.id)?.recipientUserId).toBe(employee.id);
       expect(deliveries.find((delivery) => delivery.outboxEventId === acceptedEvent.id)?.recipientUserId).toBe(employee.id);
       expect(deliveries.find((delivery) => delivery.outboxEventId === messageEvent.id)?.recipientUserId).toBe(employee.id);
-      expect(deliveries.find((delivery) => delivery.outboxEventId === quoteSentEvent.id)?.payload).toMatchObject({ folio: request.folio, actionPath: '/portal' });
+      expect(deliveries.find((delivery) => delivery.outboxEventId === receivedEvent.id)?.payload).toMatchObject({ folio: request.folio, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
+      expect(deliveries.find((delivery) => delivery.outboxEventId === quoteSentEvent.id)?.payload).toMatchObject({ folio: request.folio, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
       expect(deliveries.find((delivery) => delivery.outboxEventId === acceptedEvent.id)?.payload).toMatchObject({ totalLabel: '1,250.00 MXN', actionPath: '/staff/requests' });
-      expect(deliveries.find((delivery) => delivery.outboxEventId === fileEvent.id)?.payload).toMatchObject({ fileName: 'avance.jpg', actionPath: '/portal' });
+      expect(deliveries.find((delivery) => delivery.outboxEventId === fileEvent.id)?.payload).toMatchObject({ fileName: 'avance.jpg', actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
       expect(deliveries.find((delivery) => delivery.outboxEventId === internalEvent.id)).toMatchObject({ status: 'CANCELLED', cancelReason: 'INTERNAL_VISIBILITY', recipientAddressCiphertext: null });
       expect(await prisma.outboxEvent.count({ where: { id: { in: eventIds }, status: 'SENT' } })).toBe(7);
       expect(await processNotificationFanoutBatch({ prisma, now: new Date(workerNow.getTime() + 1_000), batchSize: 50, leaseSeconds: 60 })).toMatchObject({ claimed: 0 });

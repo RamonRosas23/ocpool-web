@@ -47,6 +47,7 @@ export type NotificationEventInput = {
 export type NotificationMappingContext = {
   recipient: NotificationRecipientContext;
   actionPath?: string;
+  actionLabel?: string;
   folio?: string;
   expiresMinutes?: number;
   totalLabel?: string;
@@ -124,7 +125,9 @@ function rejectScope(context: NotificationMappingContext, audience: Notification
 
 function makeIntent(context: NotificationMappingContext, templateKey: NotificationTemplateKey, safePayload: Record<string, string | number>, transient?: NotificationIntent['transient']): NotificationIntent {
   const recipient = recipientFor(context);
-  if (context.actionPath && (!context.actionPath.startsWith('/') || CONTROL_CHARACTERS.test(context.actionPath) || /%0[dDaA]/u.test(context.actionPath))) throw new Error('Invalid notification action path.');
+  const actionPath = context.actionPath ?? (recipient.audience === 'CUSTOMER' && !recipient.userId ? '/portal/access' : undefined);
+  if (actionPath && (!actionPath.startsWith('/') || CONTROL_CHARACTERS.test(actionPath) || /%0[dDaA]/u.test(actionPath))) throw new Error('Invalid notification action path.');
+  const actionLabel = context.actionLabel ?? (recipient.audience === 'CUSTOMER' && !recipient.userId ? 'Solicitar acceso' : undefined);
   return {
     kind: 'INTENT',
     templateKey,
@@ -132,7 +135,8 @@ function makeIntent(context: NotificationMappingContext, templateKey: Notificati
     recipient,
     safePayload: {
       ...safePayload,
-      ...(context.actionPath ? { actionPath: context.actionPath } : {}),
+      ...(actionPath ? { actionPath } : {}),
+      ...(actionLabel ? { actionLabel } : {}),
       ...(typeof safePayload.recipientName === 'string' ? { recipientName: recipient.displayName } : {}),
     },
     ...(transient ? { transient } : {}),
@@ -218,6 +222,7 @@ export type NotificationTemplateData = {
   appUrl: string;
   recipientName: string;
   actionUrl: string;
+  actionLabel?: string;
   expiresMinutes?: number;
   folio?: string;
   versionNumber?: number;
@@ -305,7 +310,7 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
     case 'request.received': {
       const subject = safeHeader(`Recibimos tu solicitud ${folio}`);
       const body = `<p>Hola ${recipientName},</p><p>Tu solicitud ${escapeHtml(folio)} fue recibida y ya forma parte de tu expediente.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nRecibimos tu solicitud ${folio}. Consulta el avance en tu portal.`, html: layout('Solicitud recibida', body, 'Ver expediente', actionUrl) };
+      return { subject, text: `Hola ${data.recipientName},\n\nRecibimos tu solicitud ${folio}. Consulta el avance en tu portal.`, html: layout('Solicitud recibida', body, data.actionLabel ?? 'Ver expediente', actionUrl) };
     }
     case 'request.assigned': {
       const subject = safeHeader(`Solicitud asignada ${folio}`);
@@ -315,7 +320,7 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
     case 'quote.version_sent': {
       const subject = safeHeader(`Tu cotización está disponible ${folio}`);
       const body = `<p>Hola ${recipientName},</p><p>Ya puedes revisar la cotización ${escapeHtml(folio)} en tu portal. La versión y sus importes corresponden al snapshot enviado.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nTu cotización ${folio} está disponible en el portal.`, html: layout('Cotización disponible', body, 'Revisar cotización', actionUrl) };
+      return { subject, text: `Hola ${data.recipientName},\n\nTu cotización ${folio} está disponible en el portal.`, html: layout('Cotización disponible', body, data.actionLabel ?? 'Revisar cotización', actionUrl) };
     }
     case 'quote.accepted': {
       const subject = safeHeader(`Cotización aceptada ${folio}`);
@@ -325,13 +330,13 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
     case 'message.created': {
       const subject = safeHeader(`Nuevo mensaje sobre tu expediente ${folio}`);
       const body = `<p>Hola ${recipientName},</p><p>${sender} dejó un mensaje en tu expediente ${escapeHtml(folio)}:</p><blockquote style="margin:16px 0;padding:12px;border-left:3px solid #8b5e3c">${escapeHtml(preview)}</blockquote>`;
-      return { subject, text: `Hola ${data.recipientName},\n\n${data.senderName ?? 'Tu equipo OCPOOL'} dejó un mensaje sobre ${folio}:\n\n${preview}`, html: layout('Nuevo mensaje', body, 'Leer mensaje', actionUrl) };
+      return { subject, text: `Hola ${data.recipientName},\n\n${data.senderName ?? 'Tu equipo OCPOOL'} dejó un mensaje sobre ${folio}:\n\n${preview}`, html: layout('Nuevo mensaje', body, data.actionLabel ?? 'Leer mensaje', actionUrl) };
     }
     case 'file.available': {
       const fileName = escapeHtml(data.fileName ?? 'Un archivo nuevo');
       const subject = safeHeader(`Archivo disponible en ${folio}`);
       const body = `<p>Hola ${recipientName},</p><p>El archivo <strong>${fileName}</strong> ya está disponible en tu expediente ${escapeHtml(folio)}.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nEl archivo ${data.fileName ?? 'Un archivo nuevo'} ya está disponible en ${folio}.`, html: layout('Archivo disponible', body, 'Ver archivo', actionUrl) };
+      return { subject, text: `Hola ${data.recipientName},\n\nEl archivo ${data.fileName ?? 'Un archivo nuevo'} ya está disponible en ${folio}.`, html: layout('Archivo disponible', body, data.actionLabel ?? 'Ver archivo', actionUrl) };
     }
   }
 }

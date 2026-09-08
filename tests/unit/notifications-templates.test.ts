@@ -71,6 +71,37 @@ describe('notification mappers and templates', () => {
     }, { recipient })).not.toThrow();
   });
 
+  it('routes contacts without a portal account to access request instead of a dead portal', () => {
+    const result = mapNotificationEvent({
+      eventType: 'REQUEST.RECEIVED',
+      aggregateType: 'QUOTE_REQUEST',
+      aggregateId: '00000000-0000-4000-8000-000000000007',
+      payload: { quoteRequestId: '00000000-0000-4000-8000-000000000007', folio: 'OCQ-2026-000002', origin: 'PUBLIC_FORM' },
+    }, { recipient: { userId: null, email: 'new@example.test', displayName: 'Nuevo cliente', audience: 'CUSTOMER' } });
+
+    expect(result.kind).toBe('INTENT');
+    if (result.kind !== 'INTENT') throw new Error('Expected notification intent.');
+    expect(result.safePayload.actionPath).toBe('/portal/access');
+    expect(result.safePayload.actionLabel).toBe('Solicitar acceso');
+  });
+
+  it('allows templates to render an explicit fallback action label safely', () => {
+    const rendered = renderNotificationTemplate({
+      templateKey: 'request.received',
+      templateVersion: 'v1',
+      data: {
+        appUrl: 'http://localhost:3000',
+        recipientName: 'Nuevo cliente',
+        folio: 'OCQ-2026-000002',
+        actionLabel: 'Solicitar acceso',
+        actionUrl: 'http://localhost:3000/portal/access',
+      },
+    });
+
+    expect(rendered.html).toContain('Solicitar acceso');
+    expect(rendered.html).not.toContain('Ver expediente');
+  });
+
   it('bounds enriched user-controlled notification fields before persistence', () => {
     const result = mapNotificationEvent({
       eventType: 'MESSAGE.CREATED',
