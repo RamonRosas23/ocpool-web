@@ -4,6 +4,24 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(path, 'utf8');
 
 describe('continuity runbook contract', () => {
+  it('defines one launch checklist that separates local evidence from external blockers', () => {
+    const checklist = read('docs/runbooks/launch-readiness-checklist.md');
+    expect(checklist).toContain('Evidencia local');
+    expect(checklist).toContain('Bloqueos externos');
+    expect(checklist).toContain('No publicar');
+    expect(checklist).toContain('PASS');
+    expect(checklist).toContain('WARN');
+    expect(checklist).toContain('BLOCKED');
+    expect(checklist).toContain('RPO');
+    expect(checklist).toContain('RTO');
+    expect(checklist).toMatch(/SMTP/i);
+    expect(checklist).toMatch(/antivirus/i);
+    expect(checklist).toMatch(/retenci[oó]n/i);
+    expect(checklist).toMatch(/rollback/i);
+    expect(checklist).toMatch(/responsable/i);
+    expect(checklist).toMatch(/no autoriza.*publicar|no publicar.*PASS/i);
+  });
+
   it('defines a local backup command with explicit output and checksum', () => {
     const scriptPath = 'scripts/db-backup.ps1';
     expect(existsSync(scriptPath)).toBe(true);

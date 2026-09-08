@@ -88,6 +88,7 @@ Los procedimientos operativos están separados de la guía de instalación:
 - [Runbook de desarrollo local](docs/runbooks/local-development.md) — recuperación segura de servicios, pruebas y datos desechables.
 - [Runbook de backup y restauración](docs/runbooks/backup-restore.md) — backup local PostgreSQL y restauración sólo en un destino de verificación explícito.
 - [Runbook de preparación para producción](docs/runbooks/production-readiness.md) — evidencia `PASS`, bloqueos `BLOCKED` y advertencias `WARN` sin convertir decisiones externas en supuestos.
+- [Checklist consolidado de preparación para lanzamiento](docs/runbooks/launch-readiness-checklist.md) — preflight único con evidencia, dependencias, responsables y regla explícita de no publicación.
 - [Runbook del dashboard operativo](docs/runbooks/analytics-dashboard.md) — definiciones, scope, zona horaria, supresión, rendimiento y diagnóstico seguro.
 - [Runbook de auditoría y observabilidad](docs/runbooks/audit-observability.md) — acceso, filtros, redacción, rate limit, diagnóstico, `EXPLAIN` y límites de retención.
 - [Runbook de superficies de acceso](docs/runbooks/auth-surfaces.md) — rutas, Mailpit, worker, tokens, MFA, recovery y pruebas locales.

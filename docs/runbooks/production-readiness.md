@@ -2,6 +2,8 @@
 
 Este checklist separa evidencia técnica local de decisiones que requieren infraestructura, proveedor o aprobación formal. Un resultado local `PASS` no autoriza publicar OCPOOL.
 
+Para el preflight completo con responsables, dependencias y criterios de cierre usa el [checklist consolidado de preparación para lanzamiento](launch-readiness-checklist.md). Este runbook conserva el detalle del gate técnico y sus estados seguros.
+
 ## Estados
 
 - `PASS`: el control se ejecutó y la evidencia está disponible en el entorno indicado.
