@@ -92,6 +92,7 @@ export const ROLE_DEFINITIONS = {
       'identity.session.read',
       'identity.session.revoke',
       'identity.users.read',
+      'identity.users.manage',
       'portal.self.read',
       'messaging.read',
       'messaging.send',

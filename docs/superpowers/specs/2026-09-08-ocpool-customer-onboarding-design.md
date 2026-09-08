@@ -43,7 +43,7 @@ No se agrega una tabla de invitaciones. La unicidad actual de `User.emailNormali
 
 ## Autorización
 
-Se agrega `identity.users.manage` sólo al rol `manager` y ya está disponible para `admin`; `sales` conserva lectura de identidad pero no puede habilitar portal. El backend verifica sesión, tipo EMPLOYEE, permiso y same-origin. La UI sólo oculta acciones no autorizadas; nunca es la única barrera.
+Se otorga el permiso de catálogo existente `identity.users.manage` sólo al rol `manager`; `admin` ya lo hereda por su definición completa y `sales` conserva lectura de identidad pero no puede habilitar portal. El backend verifica sesión, tipo EMPLOYEE, permiso y same-origin. La UI sólo oculta acciones no autorizadas; nunca es la única barrera.
 
 ## Notificaciones
 

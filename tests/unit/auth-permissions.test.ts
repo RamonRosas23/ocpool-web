@@ -57,9 +57,12 @@ describe('authorization policy', () => {
     expect(permissionKeysForRoles(['manager'])).toContain('quotes.approve_discount');
     expect(permissionKeysForRoles(['manager'])).toContain('metrics.read.global');
     expect(permissionKeysForRoles(['manager'])).toContain('audit.read');
+    expect(permissionKeysForRoles(['manager'])).toContain('identity.users.manage');
     expect(permissionKeysForRoles(['manager'])).not.toContain('audit.security.read');
     expect(permissionKeysForRoles(['sales'])).not.toContain('audit.read');
+    expect(permissionKeysForRoles(['sales'])).not.toContain('identity.users.manage');
     expect(permissionKeysForRoles(['customer'])).not.toContain('audit.read');
+    expect(permissionKeysForRoles(['customer'])).not.toContain('identity.users.manage');
     expect(permissionKeysForRoles(['customer'])).not.toContain('audit.security.read');
     expect(permissionKeysForRoles(['admin'])).toContain('audit.read');
     expect(permissionKeysForRoles(['admin'])).toContain('audit.security.read');

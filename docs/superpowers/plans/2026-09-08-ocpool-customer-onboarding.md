@@ -31,7 +31,7 @@
 - Test: `tests/integration/auth-service.test.ts`
 
 **Interfaces:**
-- Produce el permiso `identity.users.manage` para `manager` y `admin`, no para `sales` ni `customer`.
+- Otorga el permiso de catálogo existente `identity.users.manage` a `manager`; `admin` ya lo hereda por su definición completa y `sales`/`customer` no lo reciben.
 - Expone `identityUsersManage` en capabilities staff.
 
 - [ ] **Step 1: Add failing permission assertions**
@@ -46,7 +46,7 @@
 
 - [ ] **Step 3: Add the permission and capability projection**
 
-  Add the catalog entry, add it to manager/admin definitions, and return `identityUsersManage: hasPermission(actor, 'identity.users.manage')` from the existing capability route. Do not add a second capability endpoint.
+  Add the permission to the manager definition (admin already receives all catalog permissions) and return `identityUsersManage: hasPermission(actor, 'identity.users.manage')` from the existing capability route. Do not add a duplicate permission or a second capability endpoint.
 
 - [ ] **Step 4: Run typecheck and focused tests**
 
