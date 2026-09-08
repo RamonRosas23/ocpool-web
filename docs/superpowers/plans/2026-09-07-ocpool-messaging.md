@@ -71,14 +71,22 @@ Evidencia de cierre:
 
 **Riesgos:** doble envío concurrente, notas visibles por error, cuerpo sensible en logs/payload, cierre con carrera.
 
-- [ ] Escribir pruebas rojas de cliente propio/ajeno, empleado con/sin permisos, nota interna, conversación cerrada, UUID inválido y reintento.
-- [ ] Implementar `getOrCreateConversationForRequest` con lock/constraint y coherencia request+client.
-- [ ] Implementar listados paginados estables con proyección cliente sin notas/senders internos y proyección staff con visibilidad controlada.
-- [ ] Implementar envío de cliente, envío de staff y nota interna; nunca aceptar sender/visibility críticos sin derivarlos del actor/capacidad.
-- [ ] Implementar hash de idempotencia por actor/conversación y resultado repetible sin duplicado.
-- [ ] Emitir `MESSAGE.CREATED` y cambios de estado en Outbox sin body; registrar auditoría mínima sin contenido completo.
-- [ ] Implementar cierre/reapertura con lock y reglas documentadas; rechazar nuevos mensajes después del cierre.
-- [ ] Ejecutar unitarias/integración, revisar payloads/logs, typecheck/lint y commit `feat: add transactional messaging service`.
+- [x] Escribir pruebas rojas de cliente propio/ajeno, empleado con/sin permisos, nota interna, conversación cerrada, UUID inválido y reintento.
+- [x] Implementar `getOrCreateConversationForRequest` con lock/constraint y coherencia request+client.
+- [x] Implementar listados paginados estables con proyección cliente sin notas/senders internos y proyección staff con visibilidad controlada.
+- [x] Implementar envío de cliente, envío de staff y nota interna; nunca aceptar sender/visibility críticos sin derivarlos del actor/capacidad.
+- [x] Implementar hash de idempotencia por actor/conversación y resultado repetible sin duplicado.
+- [x] Emitir `MESSAGE.CREATED` y cambios de estado en Outbox sin body; registrar auditoría mínima sin contenido completo.
+- [x] Implementar cierre/reapertura con lock y reglas documentadas; rechazar nuevos mensajes después del cierre.
+- [x] Ejecutar unitarias/integración, revisar payloads/logs, typecheck/lint y commit `feat: add transactional messaging service`.
+
+Evidencia de cierre:
+
+- `messaging-service.test.ts` 1/1 valida aislamiento entre dos clientes, proyección de notas, permisos, reintento idempotente, idempotencia concurrente, cierre, reapertura y rechazo de envío durante cierre.
+- El servicio bloquea la solicitud con `FOR UPDATE`, deriva cliente/visibilidad desde el actor, normaliza el cuerpo, aplica rate limit, actualiza conversación y persiste mensaje, auditoría y Outbox en una transacción.
+- La proyección de cliente sólo incluye mensajes `CUSTOMER`; la proyección de empleado requiere `messaging.internal_notes.read` para incluir `INTERNAL`.
+- El payload Outbox contiene únicamente IDs, folio, visibilidad y estado; la prueba confirma que nunca incluye el cuerpo del mensaje o nota.
+- `npm run test:integration` 34/34, `npm run typecheck`, `npm run lint` y `git diff --check` correctos.
 
 **Criterios de terminado:** servicio transaccional probado con dos clientes, Outbox atómico, idempotencia concurrente y ninguna nota en proyección cliente.
 
