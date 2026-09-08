@@ -32,6 +32,8 @@ export async function GET(request: NextRequest) {
       filesDelete: hasPermission(actor, 'files.delete'),
       filesInternalRead: hasPermission(actor, 'files.internal.read'),
       filesManage: hasPermission(actor, 'files.manage'),
+      auditRead: hasPermission(actor, 'audit.read'),
+      auditSecurityRead: hasPermission(actor, 'audit.security.read'),
     }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);

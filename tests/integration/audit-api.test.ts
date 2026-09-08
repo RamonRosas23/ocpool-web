@@ -6,6 +6,7 @@ import { createSession } from '@/server/auth/sessions';
 import { readServerEnv } from '@/server/env';
 import { getPrisma } from '@/server/db/client';
 import { GET as auditGet } from '@/app/api/staff/audit/route';
+import { GET as capabilitiesGet } from '@/app/api/staff/capabilities/route';
 
 describe('staff audit API', () => {
   const prisma = getPrisma();
@@ -71,6 +72,20 @@ describe('staff audit API', () => {
     expect(adminSecurity.headers.get('cache-control')).toBe('no-store');
     const body = await adminSecurity.json() as Record<string, unknown>;
     expect(JSON.stringify(body)).not.toMatch(/email|phone|ipAddress|userAgent|identifierHash|ciphertext|DATABASE_URL|SELECT|stack/i);
+  });
+
+  it('publishes only safe audit capabilities to the staff UI', async () => {
+    const manager = await capabilitiesGet(endpoint('/api/staff/capabilities', managerToken));
+    expect(manager.status).toBe(200);
+    await expect(manager.json()).resolves.toMatchObject({ auditRead: true, auditSecurityRead: false });
+
+    const admin = await capabilitiesGet(endpoint('/api/staff/capabilities', adminToken));
+    expect(admin.status).toBe(200);
+    await expect(admin.json()).resolves.toMatchObject({ auditRead: true, auditSecurityRead: true });
+
+    const sales = await capabilitiesGet(endpoint('/api/staff/capabilities', salesToken));
+    expect(sales.status).toBe(200);
+    await expect(sales.json()).resolves.toMatchObject({ auditRead: false, auditSecurityRead: false });
   });
 
   it('rejects unknown filters, invalid dates, cursors and exposes only public request IDs', async () => {
