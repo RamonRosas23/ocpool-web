@@ -14,6 +14,12 @@ Este runbook describe las rutas de navegador de autenticación local. La autenti
 
 Todas las rutas tienen `noindex`. El login exitoso de empleado lleva a `/staff`; el magic link exitoso lleva a `/portal`. No se acepta `returnTo` ni se redirige a destinos externos.
 
+## Relación con la captación pública
+
+La landing puede crear un expediente anónimo desde `/#contacto` mediante `POST /api/quote-requests`. Ese flujo sólo crea o reutiliza cliente/contacto y solicitud; no crea una cuenta cliente, no inicia sesión y no convierte el folio `OCQ-YYYY-NNNNNN` en credencial. El enlace de `/portal` en comunicaciones sólo es válido cuando exista un usuario cliente activo vinculado, por lo que el onboarding sigue siendo una dependencia separada.
+
+La captación pública usa consentimiento explícito, idempotencia, rate limiting, protección same-origin, validación backend y honeypot. No se deben documentar contraseñas de prueba ni permitir que el formulario público suba archivos; la autenticación y los archivos permanecen en superficies privadas.
+
 ## Inicio local
 
 ```powershell
@@ -87,4 +93,3 @@ npx cross-env AUTH_SURFACES_E2E=1 npm run test:e2e -- tests/auth-surfaces.spec.t
 La prueba cubre acceso restringido, login de empleado, MFA administrativo, solicitudes neutrales, consumo de magic link, recovery, links inválidos/replay, Axe, foco, reduced motion y los viewports 390/768/1440.
 
 El runner E2E construye en `.next-e2e` para no compartir artefactos con un `next dev` activo en `.next`. No se debe ejecutar un build de producción escribiendo el mismo directorio mientras otro proceso de Next está recompilando.
-

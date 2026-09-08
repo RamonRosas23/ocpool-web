@@ -80,6 +80,29 @@ Invoke-WebRequest http://localhost:18025/api/v1/info
 
 Si el contenedor no está levantado, ejecuta `npm run db:up`. Mailpit es un servicio local de desarrollo; no sustituye la configuración de correo transaccional de producción.
 
+## Formulario público de cotización
+
+La captación pública vive en la landing, en la sección `/#contacto`, y se completa en dos pasos:
+
+1. Contacto y alcance mínimo: nombre, teléfono, correo, tipo de obra y ubicación.
+2. Calificación comercial: etapa del proyecto, medidas aproximadas, horizonte de inicio, rango de inversión opcional y descripción.
+
+El consentimiento para contacto es obligatorio. Al finalizar, la aplicación crea un expediente mediante `POST /api/quote-requests` y muestra un folio `OCQ-YYYY-NNNNNN`. El folio sirve para referencia comercial; nunca funciona como contraseña ni sustituye una sesión del portal.
+
+El endpoint conserva validación server-side, protección same-origin, límite de body, rate limiting, `Idempotency-Key` y errores públicos genéricos. El campo honeypot no debe ser visible ni llenarse manualmente; un valor no vacío se rechaza sin detallar la regla. No se habilitan adjuntos anónimos: los planos, fotografías y documentos deben incorporarse después al expediente mediante el canal privado autorizado.
+
+La solicitud crea cliente/contacto y expediente, pero todavía no crea automáticamente el usuario del portal. El acceso posterior depende del módulo de onboarding y de un usuario cliente activo vinculado; no se deben inventar credenciales de prueba ni usar el folio para entrar.
+
+Para verificar el flujo completo en local, con Docker y la base levantados:
+
+```powershell
+npm run db:migrate:deploy
+npm run db:seed
+npx playwright test tests/quality.spec.ts --grep "public form|first step"
+```
+
+La prueba E2E confirma validación del primer paso, conservación al regresar, campos de calificación, respuesta con folio y feedback accesible. La entrega de notificaciones, cuando exista un evento permitido para el expediente, se inspecciona mediante el worker y Mailpit; la captura del formulario no depende de que el navegador envíe correo directamente.
+
 ## Worker de notificaciones
 
 El worker se ejecuta como proceso separado y usa PostgreSQL para coordinar claims, leases, reintentos y recuperación de trabajos abandonados:

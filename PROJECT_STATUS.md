@@ -4,8 +4,8 @@
 
 ## Estado actual
 
-- **Fase:** Fase 13 — superficies de acceso y recuperación; terminada para el alcance local.
-- **Estado:** Fases 1–13 están implementadas y verificadas dentro del alcance local. Fase 13 tiene rutas navegables para empleado, MFA, magic link y recovery, E2E opt-in 5/5, contrato documental, runbook, regresión normal y árbol limpio. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
+- **Fase:** Fase 14 — captación premium de solicitudes de cotización; terminada para el alcance local.
+- **Estado:** Fases 1–14 están implementadas y verificadas dentro del alcance local. Fase 14 amplía el contrato relacional, la API, las proyecciones staff y el formulario público de dos pasos con validación, calificación, honeypot, responsive, accesibilidad y folio persistido. El gate de Fase 10 mantiene 11 controles técnicos `PASS`, 0 `WARN` y 8 `BLOCKED`; el producto aún no está listo para lanzamiento.
 - **Última actualización:** 2026-09-08.
 - **Rama de implementación:** `codex/ocpool-foundation`.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
@@ -13,6 +13,7 @@
 - **Documentos de Fase 12:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
 - **Documentos de Fase 13:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
 - **Últimos commits de Fase 13:** `5c66c6b` (`docs: close auth surfaces phase`), `3ebf8f6` (`feat: add browser auth surfaces`).
+- **Últimos commits de Fase 14:** `405c3c8` (`feat: improve public quote intake flow`), `ae01fdb` (`feat: show quote intake qualification in staff`), `2d3ada5` (`feat: extend public quote request intake`), `9ce47ed` (`feat: add premium quote intake contracts`), `b187cde` (`docs: define premium quote intake phase`).
 - **Commits de Fase 4:** `cda7a7a`, `4240d15`, `cea2064`, `78bd3fb`, `4236430`, `861e4d8`, `2909b62`, `89ec64e`.
 
 ## Orden documental obligatorio
@@ -171,6 +172,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 ### En desarrollo
 
 - Fase 13 — superficies de acceso y recuperación: terminada para el alcance local. Login, MFA, magic link, recovery, URL limpia, estados restringidos, responsive, accesibilidad, documentación y gate técnico están comprobados; permanecen sólo decisiones externas de lanzamiento.
+- Fase 14 — captación premium: terminada para el alcance local. El formulario público de dos pasos, contrato de datos, migración, API, inbox/constructor staff, validaciones, anti-spam básico, E2E, documentación y gate técnico están comprobados; onboarding de cliente y controles externos de producción permanecen fuera de esta fase.
 - La preparación real de producción permanece bloqueada por proveedor, legal, continuidad, observabilidad y destino de despliegue.
 
 ### Prototipo o incompletos para el producto comercial
@@ -178,14 +180,14 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Contacto directo por correo/WhatsApp: canal informativo, todavía fuera del expediente persistido.
 - Alta y vinculación de usuarios: la captación pública crea cliente/contacto y expediente, pero todavía no crea ni invita automáticamente al usuario cliente del portal; el onboarding administrativo es requisito para cerrar el flujo comercial completo.
 - El correo de recepción puede generarse para el contacto, pero su acción `/portal` requiere que exista un usuario cliente activo y vinculado; debe validarse junto con el módulo de onboarding antes de considerar cerrado el recorrido post-solicitud.
-- Revisión UX de captación: el formulario actual es correcto como primer contacto, pero todavía es mínimo para una solicitud comercial premium; debe evaluarse la incorporación de dimensiones/alcance, etapa o plazo, presupuesto opcional, adjuntos, enlace al aviso de privacidad, validación por campo y medidas anti-spam antes del cierre comercial.
+- Captación premium: el formulario público ya incorpora dimensiones/alcance, etapa, plazo, presupuesto opcional, validación por campo, honeypot y rate limit. Permanecen adjuntos anónimos fuera de alcance y el enlace legal de privacidad pendiente de revisión jurídica.
 
 ### Pendientes
 
 - Arquitectura de aplicación comercial por dominios de negocio.
 - Revisión legal de términos de PDF/aceptación.
 - Auditoría comercial y de seguridad.
-- Siguiente paso: cerrar la Tarea 6 de Fase 13 con regresión completa, auditoría de dependencias, documentación y árbol limpio; conservar Fase 12 como baseline y mantener bloqueado el lanzamiento externo.
+- Siguiente paso: Fase 15 — onboarding y vinculación de usuarios cliente, para que el expediente captado pueda habilitar el portal con un usuario activo sin convertir el folio en credencial.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
@@ -396,6 +398,12 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Fase 12 — Tarea 6/gate final: runbook `docs/runbooks/audit-observability.md`, contrato documental 5/5, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` en PostgreSQL 16, 110 unitarias, 79 integraciones, contenido, typecheck, lint, build limpio, `npm audit` con 0 vulnerabilidades altas, E2E audit 1/1, E2E normal 34 passed/11 skipped opt-in y diff check. Se corrigieron fixtures contaminables de auditoría y folios analytics; no se agregó índice especulativo.
 - Fase 13 — Tasks 1–5: prueba roja inicial confirmó la ausencia de `/login`; después `3ebf8f6` añadió `/login`, `/login/recovery`, `/portal/access`, `/auth/recovery` y `/auth/customer/consume-link`, enlaces desde estados restringidos, shell responsive, metadata `noindex`, MFA opcional, limpieza de tokens y fixtures desechables. `AUTH_SURFACES_E2E=1 npm run test:e2e -- tests/auth-surfaces.spec.ts` pasó 5/5 con Axe, responsive 390/768/1440, reduced motion y replay/expiry.
 - Fase 13 — Tarea 6/gate final: runbook `docs/runbooks/auth-surfaces.md`, contrato documental añadido, 110 unitarias, 79 integraciones, contenido, typecheck, lint, build aislado `.next-e2e`, `npm audit` con 0 vulnerabilidades altas, E2E auth surfaces 5/5, E2E normal 34 passed/16 skipped opt-in y diff check. Se corrigieron contrastes AA y carrera de chunks del runner sin introducir migración ni credenciales fijas.
+- Fase 14 — planificación y revisión: especificación, autorrevisión, plan ordenado y límites de seguridad documentados antes de código.
+- Fase 14 — Tarea 1: migración `20260908201805_premium_quote_intake`, enums PostgreSQL nullable para etapa/horizonte/rango, dimensiones acotadas y contratos de dominio; schema, unitarias y persistencia verificadas.
+- Fase 14 — Tarea 2: API pública y servicio transaccional ampliados con campos opcionales, validación estricta, honeypot genérico e idempotencia preservada; invalid enum/honeypot cubiertos.
+- Fase 14 — Tarea 3: inbox y constructor staff proyectan la calificación con labels controlados y `No indicado`; no se exponen hashes, IDs internos ni BigInt sin serializar.
+- Fase 14 — Tarea 4: formulario público en dos pasos con focus de primer error, conservación al regresar, consentimiento, honeypot, feedback accesible y layout responsive; E2E dirigida 2/2 y regresión normal 35 passed/16 skipped opt-in.
+- Fase 14 — Gate final: `db:validate`, `db:migrate:deploy`, `db:seed`, typecheck, lint, 112 unitarias, 79 integraciones, contenido, build, E2E completa, `npm audit --omit=dev --audit-level=high` (0 vulnerabilidades) y `git diff --check` correctos.
 
 La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería staff y cotizaciones staff se omiten en el comando normal para no exigir fixtures/infraestructura; todas fueron validadas de forma dedicada en el gate.
 
@@ -408,6 +416,7 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - Casos límite adicionales de snapshots, inmutabilidad y cálculo de cotizaciones.
 - Prueba de larga duración del worker continuo bajo apagado coordinado; la lógica de shutdown, recuperación y proveedor no disponible sí tiene cobertura dirigida del servicio.
 - Pruebas de carga del worker y restauración de backups en destino aislado.
+- Fase 14 no tiene pendientes técnicos locales para su alcance; antes de producción debe validarse el copy/legal de privacidad, abuso real del honeypot/rate limit y el onboarding que vincula el contacto captado con un usuario cliente.
 - Fase 11 no tiene pendientes técnicos locales para su alcance; antes de producción debe repetirse la revisión de rendimiento con volumen representativo y confirmar la política de operación.
 - Confirmar antes de producción la zona `APP_TIMEZONE`, definiciones comerciales de periodo y alcance por ejecutivo/sucursal.
 - Fase 12 no tiene pendientes técnicos locales dentro de su alcance; la siguiente revisión deberá tratar retención, exportación, SIEM, alertas y operación productiva como decisiones nuevas, no como deuda oculta de esta fase.
@@ -566,6 +575,10 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 - `docs/superpowers/reviews/2026-09-08-ocpool-auth-surfaces-review.md` — autorrevisión de Fase 13 con foco en enumeración, MFA y tokens en URL.
 - `docs/superpowers/plans/2026-09-08-ocpool-auth-surfaces.md` — plan TDD de Fase 13; Tasks 1–6 cerradas con evidencia de gate.
 - `docs/runbooks/auth-surfaces.md` — rutas, worker/Mailpit, tokens, MFA, recovery y pruebas locales.
+- `docs/superpowers/specs/2026-09-08-ocpool-premium-quote-intake-design.md` — especificación de Fase 14 para captación progresiva y calificación comercial.
+- `docs/superpowers/reviews/2026-09-08-ocpool-premium-quote-intake-review.md` — autorrevisión de Fase 14 sobre datos históricos, anti-spam, privacidad y onboarding.
+- `docs/superpowers/plans/2026-09-08-ocpool-premium-quote-intake.md` — plan TDD de Fase 14; Tasks 1–5 cerradas con evidencia de gate.
+- `docs/runbooks/local-development.md` — formulario público, folio, honeypot, worker/Mailpit y dependencia de onboarding.
 
 ## Criterio de terminado de Fase 10
 
@@ -583,10 +596,14 @@ La fase queda terminada para el alcance local: el contrato de lectura, los permi
 
 La fase queda terminada para el alcance local: las cinco rutas de acceso funcionan con contratos reales, no enumeran cuentas, no filtran tokens, respetan MFA/sesión/same-origin/rate limit, cubren estados de carga/error/éxito, son responsive y accesibles, pasan E2E opt-in y regresión completa, están documentadas y el árbol queda limpio. El gate externo de producción permanece separado y bloqueado.
 
+## Criterio de terminado de Fase 14
+
+La fase queda terminada para el alcance local: el intake público persiste sus datos controlados en columnas relacionales, mantiene folio/idempotencia/consentimiento y protecciones HTTP, proyecta la calificación en staff, ofrece una UI de dos pasos con errores accesibles y responsive, pasa pruebas dirigidas y regresión completa, y cuenta con README, runbooks, autorrevisión, plan y evidencia de gate. No incluye onboarding automático de cliente, adjuntos anónimos ni autorización de lanzamiento.
+
 ## Criterio de terminado de Fase 5
 
 La fase se considera terminada porque el cliente autenticado sólo lee recursos de su `clientId`, las cotizaciones históricas se sirven desde snapshots, las rutas privadas no enumeran recursos ajenos ni exponen secretos, la UI cubre estados de sesión/carga/vacío/error, responsive, teclado, reduced motion y Axe, y el gate de infraestructura, build, pruebas, auditoría y árbol limpio quedó registrado.
 
 ## Próximo paso autorizado
 
-Preservar Fase 13 como baseline y preparar la siguiente especificación, autorrevisión y plan en orden documental. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.
+Preservar Fase 14 como baseline y preparar Fase 15 — onboarding y vinculación de usuarios cliente — con especificación, autorrevisión y plan en orden documental. El gate de lanzamiento permanece bloqueado hasta resolver los riesgos externos documentados.

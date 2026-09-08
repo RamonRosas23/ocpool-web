@@ -21,7 +21,8 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Autenticación API con password Argon2id para empleados, MFA TOTP administrativo, magic link de cliente y recovery de contraseña.
 - Cookies de sesión HttpOnly/SameSite=Lax, autorización backend deny-by-default y protección same-origin.
 - Rate limit por email/IP confiable, circuit breaker de respaldo sin IP y límites streaming de body.
-- Captación pública persistente mediante `POST /api/quote-requests`, folio comercial, idempotencia, Outbox y formulario con feedback accesible.
+- Captación pública persistente mediante `POST /api/quote-requests`, folio comercial, idempotencia, Outbox y formulario premium de dos pasos con feedback accesible.
+- Formulario público de cotización con contacto, tipo de obra, ubicación, etapa, medidas aproximadas, horizonte, rango de inversión opcional, descripción, consentimiento y honeypot anti-spam; los adjuntos anónimos permanecen fuera de alcance.
 - Inbox interno protegido en `/staff/requests`, con filtros, detalle, historial, asignación y transición de estados.
 - Catálogo, listas de precios y constructor versionado en `/staff/quotes`, con snapshots, permisos comerciales y flujo de revisión/envío.
 - Portal privado `/portal` con cotizaciones históricas, mensajería, archivos privados, descarga de PDF comercial y aceptación explícita con evidencia.
@@ -89,6 +90,7 @@ Los procedimientos operativos están separados de la guía de instalación:
 - [Runbook del dashboard operativo](docs/runbooks/analytics-dashboard.md) — definiciones, scope, zona horaria, supresión, rendimiento y diagnóstico seguro.
 - [Runbook de auditoría y observabilidad](docs/runbooks/audit-observability.md) — acceso, filtros, redacción, rate limit, diagnóstico, `EXPLAIN` y límites de retención.
 - [Runbook de superficies de acceso](docs/runbooks/auth-surfaces.md) — rutas, Mailpit, worker, tokens, MFA, recovery y pruebas locales.
+- [Especificación de captación premium](docs/superpowers/specs/2026-09-08-ocpool-premium-quote-intake-design.md) y [plan ejecutado](docs/superpowers/plans/2026-09-08-ocpool-premium-quote-intake.md) — contrato, seguridad, pruebas y límites de la captación pública.
 
 El worker de notificaciones se ejecuta separado de Next.js:
 
@@ -111,6 +113,7 @@ npm run build
 npm run test:e2e
 npm run test:e2e:foundation
 npm run test:e2e:auth
+npx playwright test tests/quality.spec.ts --grep "public form|first step"
 npx cross-env PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts
 npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts
 npx cross-env AUTH_E2E=1 REUSE_E2E_SERVER=1 APP_URL=http://127.0.0.1:3100 playwright test tests/staff-notifications.spec.ts
@@ -150,7 +153,7 @@ Endpoints disponibles:
 - `GET|POST /api/auth/session` — consulta o cierra la sesión actual.
 - `POST /api/auth/recovery/request` y `POST /api/auth/recovery/consume` — recovery de empleados.
 - `GET /login`, `GET /login/recovery`, `GET /portal/access`, `GET /auth/recovery` y `GET /auth/customer/consume-link` — superficies navegables que consumen los contratos de autenticación anteriores; las rutas son privadas/noindex y no sustituyen los controles backend.
-- `POST /api/quote-requests` — crea un expediente público con consentimiento, folio y respuesta idempotente mediante el header `Idempotency-Key`.
+- `POST /api/quote-requests` — crea un expediente público con consentimiento, datos de calificación opcionales, folio y respuesta idempotente mediante el header `Idempotency-Key`; rechaza el honeypot sin revelar la lógica anti-abuso.
 - `GET /api/staff/quote-requests` y `GET /api/staff/quote-requests/:id` — inbox y detalle para empleados autorizados.
 - `GET /api/staff/quote-requests/assignees`, `POST .../:id/assign` y `POST .../:id/status` — operaciones internas RBAC con auditoría e historial.
 - `GET|POST /api/portal/requests/:id/files` y `POST|GET|DELETE .../:fileId` — archivos privados del cliente con reserva, finalización y descarga efímera.
