@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { DirectionalIcon } from '@/components/DirectionalIcon';
 import { contactDetails } from '@/lib/pool-content';
 
@@ -18,6 +19,9 @@ type QuoteFormData = {
 };
 
 type FormErrors = Partial<Record<keyof QuoteFormData | 'consent', string>>;
+type FormFeedback =
+  | { type: 'success'; folio: string }
+  | { type: 'error'; message: string };
 
 const initialForm: QuoteFormData = {
   nombre: '',
@@ -42,7 +46,7 @@ export default function QuoteForm() {
   const [step, setStep] = useState<1 | 2>(1);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [feedback, setFeedback] = useState<FormFeedback | null>(null);
   const idempotencyKeyRef = useRef<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
@@ -158,7 +162,7 @@ export default function QuoteForm() {
         throw new Error(data.error?.message || 'No fue posible registrar tu solicitud.');
       }
 
-      setFeedback({ type: 'success', message: `Recibimos tu solicitud. Tu folio es ${data.folio}. Consérvalo para futuras conversaciones.` });
+      setFeedback({ type: 'success', folio: data.folio });
       setFormData(initialForm);
       setAcceptTerms(false);
       setErrors({});
@@ -281,7 +285,14 @@ export default function QuoteForm() {
             {errorMessage('consent')}
           </label>}
 
-          {feedback && <p className={`form-feedback form-feedback--${feedback.type}`} role={feedback.type === 'error' ? 'alert' : 'status'} aria-live="polite">{feedback.message}</p>}
+          {feedback?.type === 'success' && <div className="form-feedback form-feedback--success" role="status" aria-live="polite">
+            <p className="form-feedback__eyebrow">Solicitud recibida</p>
+            <p className="form-feedback__folio">Tu folio es <strong>{feedback.folio}</strong>.</p>
+            <p className="form-feedback__copy">Guárdalo para futuras conversaciones. El folio identifica tu solicitud; no es una contraseña ni permite iniciar sesión.</p>
+            <p className="form-feedback__copy">Si es tu primera solicitud, todavía no tienes una cuenta del portal. Revisaremos tu información, habilitaremos tu acceso y después recibirás un enlace seguro de un solo uso. Por ahora no necesitas hacer nada más.</p>
+            <Link className="button button--dark form-feedback__action" href="/portal/access">Ya tengo una cuenta: solicitar enlace <DirectionalIcon /></Link>
+          </div>}
+          {feedback?.type === 'error' && <p className="form-feedback form-feedback--error" role="alert" aria-live="polite">{feedback.message}</p>}
 
           <div className="form-actions">
             {step === 2 && <button className="button button--ghost" type="button" onClick={handleBack} disabled={isSubmitting}>Regresar</button>}

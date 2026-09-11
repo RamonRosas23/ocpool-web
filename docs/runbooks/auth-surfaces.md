@@ -71,16 +71,17 @@ La respuesta visible ante credenciales inválidas, cuenta inactiva, MFA incorrec
 ## Flujo de cliente
 
 1. Abrir `/portal/access`.
-2. Introducir el correo asociado al expediente.
-3. Confirmar el mensaje neutral: “Si el correo está asociado a una cuenta activa, recibirás un enlace en unos minutos.”
-4. Ejecutar el worker local si se quiere comprobar entrega completa:
+2. Si el contacto es nuevo, no solicitar un enlace todavía: primero un `manager` o `admin` debe habilitar el portal desde el expediente.
+3. Cuando la cuenta esté habilitada, introducir el correo asociado al expediente.
+4. Confirmar el mensaje que distingue cuenta activa de cliente nuevo; la respuesta no revela si un correo existe.
+5. Ejecutar el worker local si se quiere comprobar entrega completa:
 
 ```powershell
 npm run worker:notifications:once
 ```
 
-5. Abrir Mailpit, localizar el mensaje del fixture y seguir el enlace.
-6. Confirmar que `/auth/customer/consume-link` consume el token, lo elimina del historial mediante `history.replaceState` y redirige a `/portal`.
+6. Abrir Mailpit, localizar el mensaje del fixture y seguir el enlace.
+7. Confirmar que `/auth/customer/consume-link` consume el token, lo elimina del historial mediante `history.replaceState` y redirige a `/portal`.
 
 Los tokens no se guardan en `localStorage`, `sessionStorage`, DOM, logs ni respuestas. Si el enlace expira, se reutiliza o se manipula, la pantalla sólo muestra que no está disponible.
 

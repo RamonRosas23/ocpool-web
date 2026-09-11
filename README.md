@@ -34,7 +34,7 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Superficies de acceso navegables en `/login`, `/login/recovery`, `/portal/access`, `/auth/recovery` y `/auth/customer/consume-link`, sin credenciales fijas y con limpieza de tokens en URL.
 - Onboarding staff de clientes en el expediente: `identity.users.manage`, cuenta `CUSTOMER` en estado `INVITED`, invitación magic link de un solo uso, activación transaccional a `ACTIVE` y deduplicación de invitaciones vigentes.
 
-Las Fases 1–15 están cerradas con gates técnicos verdes para el alcance local. La entrega de notificaciones, la auditoría operativa/de seguridad, las superficies de acceso y el onboarding de clientes son reproducibles y operables; la revisión jurídica, los proveedores productivos, la retención, los backups, la observabilidad productiva y la preparación de producción permanecen como controles previos al lanzamiento.
+Las Fases 1–17 están cerradas con gates técnicos verdes para el alcance local. La entrega de notificaciones, la auditoría operativa/de seguridad, las superficies de acceso, el onboarding de clientes y la continuidad local son reproducibles y operables; la revisión jurídica, los proveedores productivos, la retención, los backups externos, la observabilidad productiva y la preparación de producción permanecen como controles previos al lanzamiento.
 
 ## Requisitos
 
@@ -92,8 +92,7 @@ Los procedimientos operativos están separados de la guía de instalación:
 - [Runbook del dashboard operativo](docs/runbooks/analytics-dashboard.md) — definiciones, scope, zona horaria, supresión, rendimiento y diagnóstico seguro.
 - [Runbook de auditoría y observabilidad](docs/runbooks/audit-observability.md) — acceso, filtros, redacción, rate limit, diagnóstico, `EXPLAIN` y límites de retención.
 - [Runbook de superficies de acceso](docs/runbooks/auth-surfaces.md) — rutas, Mailpit, worker, tokens, MFA, recovery y pruebas locales.
-- [Runbook de superficies de acceso](docs/runbooks/auth-surfaces.md) — rutas, Mailpit, worker, tokens, MFA, recovery, onboarding y pruebas locales.
-- [Especificación de captación premium](docs/superpowers/specs/2026-09-08-ocpool-premium-quote-intake-design.md) y [plan ejecutado](docs/superpowers/plans/2026-09-08-ocpool-premium-quote-intake.md) — contrato, seguridad, pruebas y límites de la captación pública.
+- [Especificación de captación premium](docs/historicos/specs/2026-09-08-ocpool-premium-quote-intake-design.md) y [plan ejecutado](docs/historicos/plans/2026-09-08-ocpool-premium-quote-intake.md) — contrato, seguridad, pruebas y límites de la captación pública.
 
 El worker de notificaciones se ejecuta separado de Next.js:
 
@@ -112,6 +111,9 @@ npm run typecheck
 npm run test:unit
 npm run test:integration
 npm run test:content
+npm run test:v2:gate
+npm run baseline:v2:browser
+npm run baseline:v2:http
 npm run build
 npm run test:e2e
 npm run test:e2e:foundation
@@ -127,7 +129,11 @@ $env:AUTH_SURFACES_E2E='1'; npx playwright test tests/auth-surfaces.spec.ts
 
 La suite E2E pública conserva el contrato visual, responsive, de interacción, consola y accesibilidad de la landing. La prueba foundation requiere PostgreSQL activo y se ejecuta de forma opt-in.
 La suite de identidad también es opt-in: crea un empleado desechable en PostgreSQL, valida login/sesión/logout/CSRF y elimina el fixture al terminar. Requiere Docker y se ejecuta con `npm run test:e2e:auth`. La suite de superficies de acceso crea empleados, administrador MFA, cliente y tokens desechables; se ejecuta con `AUTH_SURFACES_E2E=1` y nunca depende de credenciales fijas.
+Si el puerto 3100 está ocupado, las suites pueden aislarse con `E2E_PORT=3110 APP_URL=http://127.0.0.1:3110`; el servidor E2E, el `baseURL` y los headers same-origin usan el mismo valor.
 La suite de onboarding de cliente es opt-in: crea una solicitud, un manager y un rol de sólo lectura, valida habilitación, deduplicación, visibilidad por permiso, responsive y Axe, y elimina todos los fixtures al terminar. Ejecuta `CUSTOMER_ONBOARDING_E2E=1` sólo contra una base local desechable.
+El gate V2 ejecuta typecheck, lint, unitarias, contrato de contenido y baseline HTTP. Puede terminar con código `2` y estado `BLOCKED` de forma intencional cuando faltan signoffs, baseline autenticado, spike de primitives o hash de la landing; ese resultado no debe interpretarse como una suite omitida ni como autorización de despliegue. Las flags V2 permanecen apagadas por defecto y no están conectadas a ninguna pantalla.
+El baseline de navegador recorre las superficies privadas anónimas en 390, 768 y 1440 px sin guardar contenido ni PII. Si el runner no puede iniciar Chromium (por ejemplo, filesystem `noexec`), termina con código `2` y estado `BLOCKED` para evitar un falso positivo.
+El baseline HTTP comprueba disponibilidad, status, tipos de respuesta y headers de seguridad de las entradas privadas, health/readiness, robots y sitemap; no reemplaza la validación de UI ni de permisos autenticados.
 
 ## Identidad local
 
@@ -200,8 +206,8 @@ Con `.env.example` el resultado esperado es `BLOCKED`; no se deben reutilizar se
 - `tests/unit/` — pruebas unitarias.
 - `tests/integration/` — pruebas contra PostgreSQL local.
 - `tests/*.spec.ts` — pruebas E2E de Playwright.
-- `docs/superpowers/specs/` — diseño aprobado.
-- `docs/superpowers/plans/` — planes de implementación ordenados.
+- `docs/ocpool-commercial-v2/` — especificación, auditoría y plan maestro activos de la rearquitectura comercial.
+- `docs/historicos/` — planes, especificaciones y revisiones de fases anteriores.
 - `docs/runbooks/` — procedimientos operativos locales.
 - `PROJECT_STATUS.md` — fuente única del avance, decisiones, riesgos y evidencia.
 
@@ -216,4 +222,4 @@ La auditoría de producción local termina en 0 vulnerabilidades: `deepmerge-ts@
 
 La base técnica incluye instalación reproducible, migraciones, seed idempotente, health check seguro, pruebas por capa y regresión completa de la landing. El detalle de criterios, riesgos y evidencia de cada fase se mantiene en `PROJECT_STATUS.md`.
 
-La especificación de arquitectura y el orden de fases están en [docs/superpowers/specs/2026-09-07-ocpool-commercial-platform-design.md](docs/superpowers/specs/2026-09-07-ocpool-commercial-platform-design.md).
+La especificación activa y el orden de fases de la rearquitectura están en [`docs/ocpool-commercial-v2/`](docs/ocpool-commercial-v2/). La especificación histórica de arquitectura está en [docs/historicos/specs/2026-09-07-ocpool-commercial-platform-design.md](docs/historicos/specs/2026-09-07-ocpool-commercial-platform-design.md).

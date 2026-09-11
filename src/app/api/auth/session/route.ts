@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     if (!token) throw new AppError('UNAUTHORIZED', 'La sesión no está autenticada.', 401);
     const session = await currentSessionActor(token);
     if (!session) throw new AppError('UNAUTHORIZED', 'La sesión no está autenticada.', 401);
-    return NextResponse.json({ userId: session.actor.userId, type: session.actor.type, clientId: session.actor.clientId, mfaVerified: session.actor.mfaVerified }, { status: 200 });
+    return NextResponse.json({ userId: session.actor.userId, type: session.actor.type, clientId: session.actor.clientId, mfaVerified: session.actor.mfaVerified }, { status: 200, headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     const response = toErrorResponse(error, id);
     if (sessionToken(request)) response.cookies.set(clearSessionCookie());
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     assertSameOrigin(request, readServerEnv().APP_URL);
     const token = sessionToken(request);
     if (token) await logout(token, requestContext(request));
-    const response = NextResponse.json({ loggedOut: true }, { status: 200 });
+    const response = NextResponse.json({ loggedOut: true }, { status: 200, headers: { 'cache-control': 'no-store' } });
     response.cookies.set(clearSessionCookie());
     return response;
   } catch (error) {

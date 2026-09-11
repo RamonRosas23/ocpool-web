@@ -62,6 +62,14 @@ describe('continuity runbook contract', () => {
     expect(runbook).toMatch(/plazos legales inventados/i);
   });
 
+  it('documents the safe build/restart boundary for active Next runtimes', () => {
+    const runbook = read('docs/runbooks/production-readiness.md');
+    expect(runbook).toMatch(/No ejecutes `npm run build`.*\.next.*PM2/i);
+    expect(runbook).toMatch(/404.*JavaScript\/CSS|chunks.*404/i);
+    expect(runbook).toContain('NEXT_DIST_DIR');
+    expect(runbook).toMatch(/rollback.*release anterior/i);
+  });
+
   it('documents safe restore boundaries and private object continuity', () => {
     const runbook = read('docs/runbooks/backup-restore.md');
     expect(runbook).toMatch(/destino.*desechable/i);

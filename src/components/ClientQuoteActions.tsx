@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-const TERMS_VERSION = 'quote-terms-2026-01';
-
 type QuoteVersionActionData = Readonly<{
   id: string;
   versionNumber: number;
+  termsVersion: string;
+  termsLabel: string;
   status: string;
   validUntil: string | null;
+  pdfReady: boolean;
 }>;
 
 type ErrorResponse = { error?: { message?: string } };
@@ -21,7 +22,7 @@ type Props = Readonly<{
 }>;
 
 function acceptanceIsAvailable(version: QuoteVersionActionData, validity: Props['validity']): boolean {
-  return (version.status === 'ENVIADA' || version.status === 'EN_NEGOCIACION') && !validity.expired;
+  return version.pdfReady && (version.status === 'ENVIADA' || version.status === 'EN_NEGOCIACION') && !validity.expired;
 }
 
 async function readResponse<T>(response: Response): Promise<T> {
@@ -118,7 +119,7 @@ export default function ClientQuoteActions({ quoteId, version, validity, onAccep
         credentials: 'include',
         cache: 'no-store',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ signerName, termsVersion: TERMS_VERSION, idempotencyKey: idempotencyKeyRef.current ?? createIdempotencyKey() }),
+        body: JSON.stringify({ signerName, termsVersion: version.termsVersion, idempotencyKey: idempotencyKeyRef.current ?? createIdempotencyKey() }),
       });
       await readResponse(response);
       setAccepted(true);
@@ -134,12 +135,14 @@ export default function ClientQuoteActions({ quoteId, version, validity, onAccep
 
   return <>
     <div className="client-quote-actions" aria-label={`Acciones para la versión ${version.versionNumber}`}>
-      <button className="client-quote-action client-quote-action--quiet" type="button" onClick={() => void downloadPdf()} disabled={pdfLoading}>
-        {pdfLoading ? 'Preparando PDF…' : 'Descargar PDF'}
-      </button>
+      {version.pdfReady
+        ? <button className="client-quote-action client-quote-action--quiet" type="button" onClick={() => void downloadPdf()} disabled={pdfLoading}>
+          {pdfLoading ? 'Preparando PDF…' : 'Descargar PDF'}
+        </button>
+        : <span className="client-quote-action-state client-quote-action-state--muted">PDF en preparación</span>}
       {available && <button className="client-quote-action client-quote-action--primary" type="button" onClick={openDialog}>Revisar y aceptar</button>}
       {alreadyAccepted && <span className="client-quote-action-state" role="status"><i aria-hidden="true" />Aceptada</span>}
-      {!available && !alreadyAccepted && validity.expired && <span className="client-quote-action-state client-quote-action-state--muted">Sin acción: propuesta vencida</span>}
+      {!available && !alreadyAccepted && validity.expired && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta vencida. Escríbenos en la conversación del expediente para solicitar una actualización.</span>}
     </div>
     {pdfError && <p className="client-quote-action-error" role="alert">{pdfError}</p>}
     {dialogOpen && <div className="client-accept-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !accepting) setDialogOpen(false); }}>
@@ -149,7 +152,7 @@ export default function ClientQuoteActions({ quoteId, version, validity, onAccep
           <p id="client-accept-description" className="client-accept-dialog__copy">Revisa el PDF y confirma que deseas avanzar con esta propuesta. Esta acción fija la versión aceptada y no permite modificarla.</p>
           <label className="client-accept-field"><span>Nombre de quien acepta</span><input ref={signerInputRef} value={signerName} onChange={(event) => setSignerName(event.target.value)} autoComplete="name" maxLength={180} required placeholder="Escribe tu nombre completo" /></label>
           <label className="client-accept-check"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} /><span>Confirmo que revisé la propuesta, el PDF y las condiciones comerciales de la versión {version.versionNumber}.</span></label>
-          <p className="client-accept-terms">Términos de propuesta: {TERMS_VERSION}</p>
+          <p className="client-accept-terms">{version.termsLabel}</p>
           {acceptanceError && <p className="client-quote-action-error" role="alert">{acceptanceError}</p>}
           <div className="client-accept-dialog__actions"><button className="client-quote-action client-quote-action--quiet" type="button" onClick={() => setDialogOpen(false)} disabled={accepting}>Cancelar</button><button className="client-quote-action client-quote-action--primary" type="submit" disabled={accepting || !signerName.trim()}>{accepting ? 'Registrando…' : 'Aceptar propuesta'}</button></div>
         </form>}

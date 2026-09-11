@@ -16,7 +16,7 @@ test.describe('staff messaging opt-in flow', () => {
   const prisma = getPrisma();
   const suffix = Date.now().toString();
   const now = new Date('2026-09-08T12:00:00.000Z');
-  const origin = 'http://127.0.0.1:3100';
+  const origin = process.env.APP_URL ?? 'http://127.0.0.1:3100';
   let requestId = '';
   let folio = '';
   let clientId = '';
@@ -144,6 +144,12 @@ test.describe('staff messaging opt-in flow', () => {
     await expect(filesPanel.getByRole('tab', { name: /Internos/ })).toBeVisible();
     await expect(page.getByText('referencia-compartida.pdf', { exact: true })).toBeVisible();
     await expect(page.getByText('nota-interna.pdf', { exact: true })).toBeHidden();
+    const sharedFilesTab = filesPanel.getByRole('tab', { name: /Compartidos/ });
+    const internalFilesTab = filesPanel.getByRole('tab', { name: /Internos/ });
+    await sharedFilesTab.focus();
+    await sharedFilesTab.press('ArrowRight');
+    await expect(internalFilesTab).toBeFocused();
+    await expect(internalFilesTab).toHaveAttribute('aria-selected', 'true');
     await filesPanel.getByRole('tab', { name: /Internos/ }).click();
     await expect(page.getByText('nota-interna.pdf', { exact: true })).toBeVisible();
     await expect(page.getByText('referencia-compartida.pdf', { exact: true })).toBeHidden();
@@ -162,17 +168,25 @@ test.describe('staff messaging opt-in flow', () => {
     await expect(page.getByText('Respuesta compartida del equipo.')).toBeVisible();
     await expect(page.getByText('Nota privada de coordinación.')).toBeHidden();
 
+    const sharedMessagesTab = messagingPanel.getByRole('tab', { name: /Compartidos/ });
+    const internalMessagesTab = messagingPanel.getByRole('tab', { name: /Notas internas/ });
+    await sharedMessagesTab.focus();
+    await sharedMessagesTab.press('ArrowRight');
+    await expect(internalMessagesTab).toBeFocused();
+    await expect(internalMessagesTab).toHaveAttribute('aria-selected', 'true');
     await messagingPanel.getByRole('tab', { name: /Notas internas/ }).click();
     await expect(page.getByText('Nota privada de coordinación.')).toBeVisible();
     await expect(page.getByText('Respuesta compartida del equipo.')).toBeHidden();
     await page.getByRole('textbox', { name: 'Nota interna para el equipo' }).fill('Seguimiento interno confirmado.');
     await page.getByRole('button', { name: 'Guardar nota' }).click();
-    await expect(page.getByText('Seguimiento interno confirmado.')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Nota interna para el equipo' })).toHaveValue('', { timeout: 20_000 });
+    await expect(messagingPanel.locator('.staff-message').filter({ hasText: 'Seguimiento interno confirmado.' })).toBeVisible();
 
     await messagingPanel.getByRole('tab', { name: /Compartidos/ }).click();
     await messagingPanel.getByRole('textbox', { name: 'Mensaje visible para cliente' }).fill('El equipo comparte la siguiente actualización.');
     await messagingPanel.getByRole('button', { name: 'Enviar mensaje' }).click();
-    await expect(page.getByText('El equipo comparte la siguiente actualización.')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Mensaje visible para cliente' })).toHaveValue('', { timeout: 20_000 });
+    await expect(messagingPanel.locator('.staff-message').filter({ hasText: 'El equipo comparte la siguiente actualización.' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Cerrar conversación' }).click();
     await expect(page.getByRole('button', { name: 'Confirmar cierre' })).toBeVisible();
@@ -185,7 +199,10 @@ test.describe('staff messaging opt-in flow', () => {
     await expect(page.locator('.staff-messaging__status')).toHaveText(/Abierta/);
 
     await expectNoSeriousA11yViolations(page);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 844 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `horizontal overflow at ${width}px`).toBe(true);
+    }
     expect(consoleErrors).toEqual([]);
     expect(staffPayloads.join('\n')).not.toContain(managerToken);
   });

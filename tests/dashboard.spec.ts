@@ -53,8 +53,8 @@ test.describe('staff analytics dashboard', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/staff');
     await expect(page.getByRole('heading', { name: 'Pulso comercial' })).toBeVisible();
-    await page.getByLabel('Desde').fill('2020-01-01');
-    await page.getByLabel('Hasta').fill('2020-02-01');
+    await page.getByRole('textbox', { name: 'Desde', exact: true }).fill('2020-01-01');
+    await page.getByRole('textbox', { name: 'Hasta', exact: true }).fill('2020-02-01');
     await page.getByRole('button', { name: 'Aplicar periodo' }).click();
     await expect(page.getByText('No hay solicitudes en este periodo.')).toBeVisible();
     await expect(page.getByText('Salud de notificaciones')).toBeVisible();

@@ -11,6 +11,7 @@ describe('toErrorResponse', () => {
     const serialized = JSON.stringify(body);
 
     expect(response.status).toBe(500);
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(body).toEqual({
       error: {
         code: 'INTERNAL_ERROR',
@@ -31,6 +32,7 @@ describe('toErrorResponse', () => {
   ] as const)('preserves the public contract for %s', async (code, message, status) => {
     const response = toErrorResponse(new AppError(code, message, status), 'request-456');
     expect(response.status).toBe(status);
+    expect(response.headers.get('cache-control')).toBe('no-store');
     await expect(response.json()).resolves.toEqual({
       error: { code, message, requestId: 'request-456' },
     });

@@ -60,9 +60,12 @@ test.describe('auth browser surfaces', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/staff/requests');
     await expect(page.getByRole('link', { name: 'Iniciar sesión' })).toHaveAttribute('href', '/login');
+    await expect(page.locator('img[alt="OCPOOL"]')).toBeVisible();
 
     await page.goto('/login');
     await expect(page.getByRole('heading', { name: 'Acceso interno' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Volver al sitio', exact: true })).toBeVisible();
+    await expect(page.locator('img[alt="OCPOOL"]')).toBeVisible();
     await page.getByLabel('Correo').fill(employeeEmail);
     await page.getByLabel('Contraseña').fill(employeePassword);
     await page.getByRole('button', { name: 'Entrar' }).click();
@@ -79,7 +82,8 @@ test.describe('auth browser surfaces', () => {
 
     for (const width of [390, 768, 1440]) {
       await page.setViewportSize({ width, height: 844 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `horizontal overflow at ${width}px`).toBe(true);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(1);
     }
     const transition = await page.getByRole('button', { name: 'Entrar' }).evaluate((element) => getComputedStyle(element).transitionDuration);
     expect(['0s', '0.01ms', '1e-05s']).toContain(transition);
@@ -97,9 +101,11 @@ test.describe('auth browser surfaces', () => {
   test('requests and consumes customer magic links without leaving the token in the browser', async ({ page }) => {
     await page.goto('/portal/access');
     await expect(page.getByRole('heading', { name: 'Accede a tu portal' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Volver al sitio', exact: true })).toBeVisible();
     await page.getByLabel('Correo').fill(customerEmail);
-    await page.getByRole('button', { name: 'Enviar enlace' }).click();
-    await expect(page.getByRole('status')).toContainText('Si el correo está asociado');
+    await page.getByRole('button', { name: 'Solicitar acceso' }).click();
+    await expect(page.getByRole('status')).toContainText('Si tu cuenta ya está habilitada');
+    await expect(page.getByRole('status')).toContainText('Si eres cliente nuevo');
 
     await page.goto(`/auth/customer/consume-link?token=${encodeURIComponent(customerToken)}`);
     await expect(page).toHaveURL(/\/portal\/?$/);

@@ -6,6 +6,7 @@ import { hashPassword } from '@/server/auth/crypto';
 import { createSession } from '@/server/auth/sessions';
 import { upsertNotificationDelivery } from '@/server/modules/notifications/dispatcher';
 import { expectNoSeriousA11yViolations } from './a11y';
+import { recordBaselineMeasurement } from './fixtures/commercial-baseline-recorder';
 
 test.describe('staff notification operations', () => {
   test.skip(process.env.AUTH_E2E !== '1', 'Notification E2E requires AUTH_E2E=1 and a disposable local database.');
@@ -71,18 +72,36 @@ test.describe('staff notification operations', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/staff/notifications');
     await expect(page.getByRole('heading', { name: 'Notificaciones' })).toBeVisible();
-    await page.getByLabel('Filtrar por estado').selectOption('FAILED');
+    await expect(page.getByRole('link', { name: 'Volver al dashboard' })).toHaveAttribute('href', '/staff');
+    await page.getByRole('combobox', { name: 'Filtrar por estado' }).click();
+    await page.getByRole('option', { name: 'Fallido', exact: true }).click();
     await expect(page.locator('.staff-notification-row').filter({ hasText: 'message.created' }).first()).toBeVisible();
     await expect(page.locator('body')).not.toContainText(recipient);
     await expect(page.locator('body')).not.toContainText('No exponer en interfaz');
     await expect(page.locator('body')).not.toContainText('Contenido privado no visible');
     await expectNoSeriousA11yViolations(page);
 
+    const measurementStartedAt = new Date();
     const focusedRetry = page.getByRole('button', { name: 'Reintentar entrega' }).first();
     await focusedRetry.focus();
     await expect(focusedRetry).toBeFocused();
     await focusedRetry.press('Enter');
     await expect(page.locator('.staff-notice')).toContainText('La entrega fue devuelta a la cola.');
+    await recordBaselineMeasurement({
+      schemaVersion: 1,
+      metricId: 'delivery_failure_to_recovery',
+      scenarioId: 'delivery-failed',
+      actorType: 'MANAGER',
+      surface: 'staff-notifications',
+      viewport: 'desktop',
+      seedVersion: 'notifications-e2e-v1',
+      commit: process.env.BASELINE_COMMIT ?? 'workspace',
+      startedAt: measurementStartedAt.toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: Date.now() - measurementStartedAt.getTime(),
+      errorCount: 0,
+      abandoned: false,
+    });
     expect(consoleErrors).toEqual([]);
 
     for (const width of [390, 768, 1440]) {

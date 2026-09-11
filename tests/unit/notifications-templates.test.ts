@@ -85,6 +85,29 @@ describe('notification mappers and templates', () => {
     expect(result.safePayload.actionLabel).toBe('Solicitar acceso');
   });
 
+  it('maps approval events only to staff and keeps the expediente deep link', () => {
+    const staffRecipient = { userId: '00000000-0000-4000-8000-000000000010', email: 'manager@example.test', displayName: 'Gerencia', audience: 'STAFF' as const };
+    const payload = {
+      quoteId: '00000000-0000-4000-8000-000000000011',
+      quoteVersionId: '00000000-0000-4000-8000-000000000012',
+      quoteRequestId: '00000000-0000-4000-8000-000000000013',
+      folio: 'OCQ-2026-000003',
+      versionNumber: 2,
+      approvalId: '00000000-0000-4000-8000-000000000014',
+      type: 'DISCOUNT',
+    } as const;
+    const requested = mapNotificationEvent({ eventType: 'QUOTE.APPROVAL_REQUESTED', aggregateType: 'QUOTE', aggregateId: payload.quoteId, payload }, { recipient: staffRecipient, actionPath: '/staff/quotes?request=00000000-0000-4000-8000-000000000013' });
+    expect(requested.kind).toBe('INTENT');
+    if (requested.kind === 'INTENT') {
+      expect(requested.templateKey).toBe('quote.approval_requested');
+      expect(requested.safePayload.actionPath).toBe('/staff/quotes?request=00000000-0000-4000-8000-000000000013');
+    }
+    const resolved = mapNotificationEvent({ eventType: 'QUOTE.APPROVAL_RESOLVED', aggregateType: 'QUOTE', aggregateId: payload.quoteId, payload: { ...payload, status: 'APPROVED' } }, { recipient: staffRecipient, actionPath: '/staff/quotes?request=00000000-0000-4000-8000-000000000013' });
+    expect(resolved.kind).toBe('INTENT');
+    if (resolved.kind === 'INTENT') expect(resolved.templateKey).toBe('quote.approval_resolved');
+    expect(mapNotificationEvent({ eventType: 'QUOTE.APPROVAL_REQUESTED', aggregateType: 'QUOTE', aggregateId: payload.quoteId, payload }, { recipient }).kind).toBe('REJECTED');
+  });
+
   it('allows templates to render an explicit fallback action label safely', () => {
     const rendered = renderNotificationTemplate({
       templateKey: 'request.received',
@@ -99,7 +122,32 @@ describe('notification mappers and templates', () => {
     });
 
     expect(rendered.html).toContain('Solicitar acceso');
+    expect(rendered.html).toContain('Nuestro equipo habilitará tu cuenta');
+    expect(rendered.text).toContain('http://localhost:3000/portal/access');
+    expect(rendered.text).toContain('enlace seguro de un solo uso');
     expect(rendered.html).not.toContain('Ver expediente');
+  });
+
+  it('explains activation before access for pending customer messages and files', () => {
+    for (const templateKey of ['message.created', 'file.available'] as const) {
+      const rendered = renderNotificationTemplate({
+        templateKey,
+        templateVersion: 'v1',
+        data: {
+          appUrl: 'http://localhost:3000',
+          recipientName: 'Nuevo cliente',
+          folio: 'OCQ-2026-000002',
+          actionLabel: 'Solicitar acceso',
+          actionUrl: 'http://localhost:3000/portal/access',
+          senderName: 'Equipo OCPOOL',
+          preview: 'Actualización de tu solicitud.',
+          fileName: 'avance.pdf',
+        },
+      });
+
+      expect(rendered.html).toContain('primero habilitaremos tu cuenta');
+      expect(rendered.text).toContain('primero habilitaremos tu cuenta');
+    }
   });
 
   it('bounds enriched user-controlled notification fields before persistence', () => {

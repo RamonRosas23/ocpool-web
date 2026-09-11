@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     const result = await consumeCustomerMagicLink(body.token, requestContext(request));
     if (!result.ok) throw new AppError('UNAUTHORIZED', 'El enlace no es válido o ya expiró.', 401);
 
-    const response = NextResponse.json({ authenticated: true }, { status: 200 });
+    const response = NextResponse.json({ authenticated: true }, { status: 200, headers: { 'cache-control': 'no-store' } });
     response.cookies.set(createSessionCookie(result.rawToken, result.expiresAt));
     return response;
   } catch (error) {

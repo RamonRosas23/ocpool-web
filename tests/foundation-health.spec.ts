@@ -11,6 +11,7 @@ test('reports a healthy database without exposing diagnostics', async ({ request
   const serialized = JSON.stringify(body);
 
   expect(response.status()).toBe(200);
+  expect(response.headers()['cache-control']).toBe('no-store');
   expect(body.status).toBe('ok');
   expect(body.services.database).toBe('ok');
   expect(body.requestId).toEqual(expect.any(String));

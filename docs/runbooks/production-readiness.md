@@ -47,3 +47,19 @@ La retención se define por clase de dato y dependencia. No se ejecutan purgas a
 ## Worker y notificaciones
 
 El supervisor elegido debe ejecutar una sola instancia por entorno lógico, reiniciar ante salida anormal, conservar `SIGTERM` para shutdown limpio y alertar por backlog, edad del evento, fallos permanentes y ausencia del proceso. `SENT` sólo significa aceptación del proveedor; no representa apertura ni lectura.
+
+## Build y reinicio seguro del runtime
+
+No ejecutes `npm run build` sobre el mismo `.next` que está sirviendo un proceso Next/PM2 activo. El build reemplaza chunks con nombres nuevos y un proceso anterior puede conservar HTML que apunta a archivos ya eliminados, provocando respuestas `404` para JavaScript/CSS y dejando la landing sin hidratación.
+
+Las cabeceras que dependen del entorno se resuelven durante el build. En HTTPS productivo, ejecuta el build con el `APP_URL` público real y `NODE_ENV=production`; no uses los valores de `.env.example` para generar el artefacto que servirá el dominio.
+
+Para un despliegue simple de desarrollo controlado, detén o reinicia el proceso después de terminar el build y valida el conjunto completo:
+
+```bash
+pm2 restart <id-o-nombre>
+curl -fsS https://ocpool.com.mx/api/health
+curl -fsS https://ocpool.com.mx/api/ready
+```
+
+Para producción con usuarios, el procedimiento preferido es construir en un directorio de release separado (`NEXT_DIST_DIR`), validar sus assets y hacer un cambio atómico de release antes de reiniciar el supervisor. El rollback debe conservar el release anterior y sus chunks; nunca debe borrar el directorio que todavía usa el proceso activo.

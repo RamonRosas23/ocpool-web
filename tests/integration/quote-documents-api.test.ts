@@ -28,6 +28,7 @@ describe('quote PDF and acceptance API', () => {
   let contactBId = '';
   let quoteId = '';
   let versionId = '';
+  let workingVersionId = '';
   let priceListId = '';
   let itemId = '';
   let categoryId = '';
@@ -123,6 +124,19 @@ describe('quote PDF and acceptance API', () => {
     expect(generatedBody).not.toHaveProperty('storageKey');
     expect(generatedBody).not.toHaveProperty('sha256');
 
+    const working = await createQuoteVersion(
+      { userId: salesId, type: 'EMPLOYEE', clientId: null, permissionKeys: permissionKeysForRoles(['sales']), mfaVerified: true },
+      { quoteRequestId: requestId, priceListId, lines: [{ catalogItemId: itemId, quantity: '2', taxBasisPoints: 1600 }] },
+      { prisma },
+    );
+    workingVersionId = working.versionId;
+    await transitionQuoteVersion(
+      { userId: salesId, type: 'EMPLOYEE', clientId: null, permissionKeys: permissionKeysForRoles(['sales']), mfaVerified: true },
+      workingVersionId,
+      'EN_REVISION',
+      { prisma },
+    );
+
     const staffDownload = await staffPdfGet(endpoint(`/api/staff/quotes/versions/${versionId}`, salesToken), versionContext());
     expect(staffDownload.status).toBe(200);
     expect(staffDownload.headers.get('cache-control')).toBe('no-store');
@@ -144,6 +158,8 @@ describe('quote PDF and acceptance API', () => {
     const ownDownload = await portalPdfGet(endpoint(`/api/portal/quotes/${quoteId}/pdf`, customerAToken), quoteContext());
     expect(ownDownload.status).toBe(200);
     expect(ownDownload.headers.get('cache-control')).toBe('no-store');
+
+    expect((await portalPdfGet(endpoint(`/api/portal/quotes/${quoteId}/pdf?versionId=${workingVersionId}`, customerAToken), quoteContext())).status).toBe(404);
   });
 
   it('accepts only through same-origin, enforces strict input and replays safely', async () => {
@@ -151,6 +167,8 @@ describe('quote PDF and acceptance API', () => {
     expect(foreignOrigin.status).toBe(403);
     const extraField = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Ana', termsVersion: 'quote-terms-2026-01', idempotencyKey: 'api-accept-extra-01', quoteId }, readServerEnv().APP_URL), quoteContext());
     expect(extraField.status).toBe(400);
+    const staleTerms = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Ana', termsVersion: 'quote-terms-2025-12', idempotencyKey: 'api-accept-stale-terms-01' }), quoteContext());
+    expect(staleTerms.status).toBe(409);
     const accepted = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: '  Ana   López Rivera ', termsVersion: ' quote-terms-2026-01 ', idempotencyKey: 'api-accept-success-01' }), quoteContext());
     expect(accepted.status).toBe(200);
     expect(accepted.headers.get('cache-control')).toBe('no-store');

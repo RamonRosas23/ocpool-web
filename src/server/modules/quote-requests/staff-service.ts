@@ -1,6 +1,6 @@
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
-import { requirePermission } from '@/server/auth/permissions';
+import { hasPermission, requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
@@ -29,6 +29,7 @@ export type StaffServiceDependencies = {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
+const QUOTE_BUILDER_REQUEST_STATUSES: readonly QuoteRequestStatus[] = ['EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'];
 
 function requireStaffPermission(actor: Actor, permission: string): void {
   if (actor.type !== 'EMPLOYEE') throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
@@ -99,6 +100,17 @@ function serializeDetail(detail: {
 } | null) {
   if (!detail) return null;
   return { ...detail, budgetCents: detail.budgetCents === null ? null : detail.budgetCents.toString() };
+}
+
+function projectAvailableActions(actor: Actor, status: QuoteRequestStatus) {
+  const availableStatusTransitions = hasPermission(actor, 'requests.status.update')
+    ? QUOTE_REQUEST_STATUSES.filter((candidate) => canStaffTransitionQuoteRequest(status, candidate))
+    : [];
+  const availableActions = availableStatusTransitions.map((candidate) => `request.status:${candidate}`);
+  if (hasPermission(actor, 'quotes.create') && QUOTE_BUILDER_REQUEST_STATUSES.includes(status)) {
+    availableActions.push('quote.open');
+  }
+  return { availableStatusTransitions, availableActions };
 }
 
 export async function listStaffQuoteRequests(actor: Actor, filters: StaffQuoteRequestListFilters = {}, dependencies: StaffServiceDependencies = {}) {
@@ -189,7 +201,7 @@ export async function getStaffQuoteRequest(actor: Actor, quoteRequestId: string,
     },
   });
   if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
-  return { ...request, detail: serializeDetail(request.detail) };
+  return { ...request, detail: serializeDetail(request.detail), ...projectAvailableActions(actor, request.status) };
 }
 
 export async function listStaffAssignees(actor: Actor, dependencies: StaffServiceDependencies = {}) {

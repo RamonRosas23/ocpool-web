@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 import { getPrisma } from '@/server/db/client';
 import { fingerprintToken } from '@/server/auth/crypto';
 import { createSession } from '@/server/auth/sessions';
@@ -10,14 +10,16 @@ import { generateQuotePdf } from '@/server/modules/quote-documents/service';
 import { getPrivateStorage } from '@/server/modules/private-files/storage';
 import { seedIdentityCatalog } from '../prisma/seed';
 import { expectNoSeriousA11yViolations } from './a11y';
+import { recordBaselineMeasurement } from './fixtures/commercial-baseline-recorder';
 
 test.describe('customer portal opt-in flow', () => {
+  test.setTimeout(120_000);
   test.skip(process.env.PORTAL_E2E !== '1', 'Customer portal E2E requires PORTAL_E2E=1 and a disposable local database.');
 
   const prisma = getPrisma();
   const suffix = Date.now().toString();
   const now = new Date('2026-09-01T12:00:00.000Z');
-  const origin = 'http://127.0.0.1:3100';
+  const origin = process.env.APP_URL ?? 'http://127.0.0.1:3100';
   let customerAToken = '';
   let customerBToken = '';
   let customerAUserId = '';
@@ -30,6 +32,7 @@ test.describe('customer portal opt-in flow', () => {
   let contactAId = '';
   let contactBId = '';
   let quoteAId = '';
+  let quoteBId = '';
   let categoryId = '';
   let itemId = '';
   let priceListId = '';
@@ -37,20 +40,18 @@ test.describe('customer portal opt-in flow', () => {
   test.beforeAll(async () => {
     if (process.env.PORTAL_E2E !== '1') return;
 
-    const [requestA, requestB] = await Promise.all([
-      createQuoteRequest({
-        idempotencyKey: `portal-e2e-a-${suffix}`,
-        origin: 'STAFF_CREATED',
-        contact: { displayName: `Portal E2E A ${suffix}`, email: `portal-e2e-a-${suffix}@example.test` },
-        detail: { projectType: 'Residencial', location: 'Culiacán', description: 'Expediente E2E con cotización snapshot.', consentAt: now },
-      }, { prisma, now }),
-      createQuoteRequest({
-        idempotencyKey: `portal-e2e-b-${suffix}`,
-        origin: 'STAFF_CREATED',
-        contact: { displayName: `Portal E2E B ${suffix}`, email: `portal-e2e-b-${suffix}@example.test` },
-        detail: { projectType: 'Comercial', location: 'Mazatlán', description: 'Expediente E2E sin cotización.', consentAt: now },
-      }, { prisma, now }),
-    ]);
+    const requestA = await createQuoteRequest({
+      idempotencyKey: `portal-e2e-a-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Portal E2E A ${suffix}`, email: `portal-e2e-a-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Culiacán', description: 'Expediente E2E con cotización snapshot.', consentAt: now },
+    }, { prisma, now });
+    const requestB = await createQuoteRequest({
+      idempotencyKey: `portal-e2e-b-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Portal E2E B ${suffix}`, email: `portal-e2e-b-${suffix}@example.test` },
+      detail: { projectType: 'Comercial', location: 'Mazatlán', description: 'Expediente E2E sin cotización.', consentAt: now },
+    }, { prisma, now });
     await seedIdentityCatalog(prisma);
     const customerRole = await prisma.role.findUniqueOrThrow({ where: { key: 'customer' } });
     requestAId = requestA.quoteRequestId;
@@ -76,6 +77,7 @@ test.describe('customer portal opt-in flow', () => {
     ]);
 
     await prisma.quoteRequest.update({ where: { id: requestAId }, data: { status: 'EN_ELABORACION' } });
+    await prisma.quoteRequest.update({ where: { id: requestBId }, data: { status: 'EN_ELABORACION' } });
     const category = await prisma.catalogCategory.create({ data: { code: `PORTAL-E2E-${suffix}`, name: 'Portal E2E' } });
     categoryId = category.id;
     const item = await prisma.catalogItem.create({ data: { code: `PORTAL-E2E-ITEM-${suffix}`, name: 'Portal E2E snapshot item', unit: 'pieza', categoryId } });
@@ -106,18 +108,23 @@ test.describe('customer portal opt-in flow', () => {
 
   test.afterAll(async () => {
     if (process.env.PORTAL_E2E !== '1') return;
-    const requestIds = [requestAId, requestBId];
+    const requestIds = [requestAId, requestBId].filter(Boolean);
+    if (requestIds.length === 0) {
+      await prisma.$disconnect();
+      return;
+    }
     const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: { in: requestIds } } }, select: { id: true } })).map(({ id }) => id);
     const conversationIds = (await prisma.conversation.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true } })).map(({ id }) => id);
     const messageIds = (await prisma.conversationMessage.findMany({ where: { conversationId: { in: conversationIds } }, select: { id: true } })).map(({ id }) => id);
     const attachments = await prisma.fileAttachment.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } });
-    const generatedDocuments = quoteAId ? await prisma.generatedDocument.findMany({ where: { quoteId: quoteAId }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } }) : [];
+    const quoteIds = [quoteAId, quoteBId].filter(Boolean);
+    const generatedDocuments = quoteIds.length ? await prisma.generatedDocument.findMany({ where: { quoteId: { in: quoteIds } }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } }) : [];
     const storage = getPrivateStorage();
     for (const { storageObject } of attachments) await storage.delete(storageObject.storageKey);
     for (const document of generatedDocuments) if (document.storageObject?.storageKey) await storage.delete(document.storageObject.storageKey);
     await prisma.fileAttachment.deleteMany({ where: { id: { in: attachments.map(({ id }) => id) } } });
     await prisma.storageObject.deleteMany({ where: { id: { in: attachments.map(({ storageObjectId }) => storageObjectId) } } });
-    if (quoteAId) await prisma.quoteAcceptance.deleteMany({ where: { quoteId: quoteAId } });
+    if (quoteIds.length) await prisma.quoteAcceptance.deleteMany({ where: { quoteId: { in: quoteIds } } });
     await prisma.generatedDocument.deleteMany({ where: { id: { in: generatedDocuments.map(({ id }) => id) } } });
     await prisma.storageObject.deleteMany({ where: { id: { in: generatedDocuments.flatMap(({ storageObjectId }) => storageObjectId ? [storageObjectId] : []) } } });
     await prisma.quote.deleteMany({ where: { quoteRequestId: { in: requestIds } } });
@@ -126,11 +133,14 @@ test.describe('customer portal opt-in flow', () => {
     await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
     await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: entityIds } }, { actorUserId: { in: [customerAUserId, customerBUserId, employeeId] } }] } });
     await prisma.quoteRequest.deleteMany({ where: { id: { in: requestIds } } });
-    await prisma.clientContact.deleteMany({ where: { id: { in: [contactAId, contactBId] } } });
-    await prisma.session.deleteMany({ where: { userId: { in: [customerAUserId, customerBUserId, employeeId] } } });
-    await prisma.user.deleteMany({ where: { id: { in: [customerAUserId, customerBUserId, employeeId] } } });
-    await prisma.authRateLimit.deleteMany({ where: { scope: 'messaging-send', keyHash: fingerprintToken(`${customerAUserId}:${requestAId}`) } });
-    await prisma.client.deleteMany({ where: { id: { in: [clientAId, clientBId] } } });
+    const contactIds = [contactAId, contactBId].filter(Boolean);
+    if (contactIds.length) await prisma.clientContact.deleteMany({ where: { id: { in: contactIds } } });
+    const userIds = [customerAUserId, customerBUserId, employeeId].filter(Boolean);
+    if (userIds.length) await prisma.session.deleteMany({ where: { userId: { in: userIds } } });
+    if (userIds.length) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    if (customerAUserId && requestAId) await prisma.authRateLimit.deleteMany({ where: { scope: 'messaging-send', keyHash: fingerprintToken(`${customerAUserId}:${requestAId}`) } });
+    const clientIds = [clientAId, clientBId].filter(Boolean);
+    if (clientIds.length) await prisma.client.deleteMany({ where: { id: { in: clientIds } } });
     if (priceListId) {
       await prisma.priceListItem.deleteMany({ where: { priceListId } });
       await prisma.priceList.delete({ where: { id: priceListId } });
@@ -147,6 +157,7 @@ test.describe('customer portal opt-in flow', () => {
 
   test('renders the private snapshot view and logs out safely', async ({ page }) => {
     await setSession(page, customerAToken);
+    const measurementStartedAt = new Date();
     const portalPayloads: string[] = [];
     const consoleErrors: string[] = [];
     page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
@@ -157,6 +168,8 @@ test.describe('customer portal opt-in flow', () => {
 
     await page.goto('/portal');
     await expect(page.getByRole('heading', { name: 'Tu proyecto, en cada etapa.' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Volver al sitio', exact: true })).toBeVisible();
+    await expect(page.locator('.client-header img[alt="OCPOOL"]')).toBeVisible();
     await expect(page.locator('.client-request-row')).toHaveCount(1);
     await expect(page.getByText('Portal E2E snapshot item')).toBeVisible();
     await expect(page.locator('.client-quote__total strong')).toHaveText('MXN 348.00');
@@ -181,6 +194,36 @@ test.describe('customer portal opt-in flow', () => {
     await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Aceptar propuesta' }).click();
     await expect(page.getByText('Propuesta aceptada.')).toBeVisible();
+    await recordBaselineMeasurement({
+      schemaVersion: 1,
+      metricId: 'workflow_errors',
+      scenarioId: 'accepted-quote',
+      actorType: 'CUSTOMER',
+      surface: 'customer-portal',
+      viewport: 'desktop',
+      seedVersion: 'portal-e2e-v1',
+      commit: process.env.BASELINE_COMMIT ?? 'workspace',
+      startedAt: measurementStartedAt.toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: Date.now() - measurementStartedAt.getTime(),
+      errorCount: 1,
+      abandoned: false,
+    });
+    await recordBaselineMeasurement({
+      schemaVersion: 1,
+      metricId: 'portal_access_to_decision',
+      scenarioId: 'accepted-quote',
+      actorType: 'CUSTOMER',
+      surface: 'customer-portal',
+      viewport: 'desktop',
+      seedVersion: 'portal-e2e-v1',
+      commit: process.env.BASELINE_COMMIT ?? 'workspace',
+      startedAt: measurementStartedAt.toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: Date.now() - measurementStartedAt.getTime(),
+      errorCount: 0,
+      abandoned: false,
+    });
     await page.getByRole('button', { name: 'Continuar' }).click();
     await expect(page.locator('.client-status')).toHaveText('Aceptada');
     await expect(page.getByRole('heading', { name: 'Conversación del expediente' })).toBeVisible();
@@ -233,5 +276,73 @@ test.describe('customer portal opt-in flow', () => {
     await page.reload();
     await expect(page.locator('.client-alert')).toHaveText('No fue posible cargar el expediente.');
     expect(await page.content()).not.toMatch(/stack|prisma|tokenHash/i);
+  });
+
+  test('explains an expired quote and completes the conversation next step', async ({ page }) => {
+    const employeeActor = { userId: employeeId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.read', 'quotes.create', 'quotes.send', 'quotes.pdf.generate']), mfaVerified: true };
+    const expiredQuote = await createQuoteVersion(employeeActor, { quoteRequestId: requestBId, priceListId, lines: [{ catalogItemId: itemId, quantity: '1', taxBasisPoints: 1600 }], validUntil: new Date('2026-09-02T00:00:00.000Z') }, { prisma, now });
+    quoteBId = expiredQuote.quoteId;
+    await transitionQuoteVersion(employeeActor, expiredQuote.versionId, 'EN_REVISION', { prisma, now });
+    await transitionQuoteVersion(employeeActor, expiredQuote.versionId, 'ENVIADA', { prisma, now });
+    await generateQuotePdf(employeeActor, expiredQuote.versionId, { prisma, now });
+    await prisma.quoteVersion.update({ where: { id: expiredQuote.versionId }, data: { validUntil: new Date('2026-08-15T00:00:00.000Z') } });
+    await setSession(page, customerBToken);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const measurementStartedAt = new Date();
+    await page.goto('/portal');
+    await expect(page.getByRole('heading', { name: 'Comercial' })).toBeVisible();
+    await expect(page.getByText('Propuesta vencida', { exact: true })).toBeVisible();
+    await expect(page.getByText('Vigencia expirada el 15 ago 2026')).toBeVisible();
+    await expect(page.getByText('Propuesta vencida. Escríbenos en la conversación del expediente para solicitar una actualización.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Revisar y aceptar' })).toBeHidden();
+    const message = 'Solicito una actualización de la propuesta vencida.';
+    await page.getByRole('textbox', { name: 'Escribe una actualización' }).fill(message);
+    await page.getByRole('button', { name: 'Enviar mensaje' }).click();
+    await expect(page.getByText(message, { exact: true })).toBeVisible();
+    await expect.poll(async () => prisma.conversationMessage.count({ where: { body: message } })).toBe(1);
+    await recordBaselineMeasurement({
+      schemaVersion: 1,
+      metricId: 'expired_quote_to_next_step',
+      scenarioId: 'expired-version',
+      actorType: 'CUSTOMER',
+      surface: 'customer-portal',
+      viewport: 'mobile',
+      seedVersion: 'portal-e2e-v2',
+      commit: process.env.BASELINE_COMMIT ?? 'workspace',
+      startedAt: measurementStartedAt.toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: Date.now() - measurementStartedAt.getTime(),
+      errorCount: 0,
+      abandoned: false,
+    });
+  });
+
+  test('records a session abandoned before the next portal task', async ({ browser }: { browser: Browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const measurementStartedAt = new Date();
+    try {
+      await setSession(page, customerBToken);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto('/portal');
+      await expect(page.getByText('Propuesta vencida', { exact: true })).toBeVisible();
+    } finally {
+      await context.close();
+    }
+    await recordBaselineMeasurement({
+      schemaVersion: 1,
+      metricId: 'workflow_abandonment',
+      scenarioId: 'expired-version',
+      actorType: 'CUSTOMER',
+      surface: 'customer-portal',
+      viewport: 'mobile',
+      seedVersion: 'portal-e2e-v2',
+      commit: process.env.BASELINE_COMMIT ?? 'workspace',
+      startedAt: measurementStartedAt.toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: Date.now() - measurementStartedAt.getTime(),
+      errorCount: 0,
+      abandoned: true,
+    });
   });
 });

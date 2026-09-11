@@ -15,6 +15,8 @@ import {
   type QuoteVersionStatus,
 } from '@/server/modules/quotes/domain';
 import { canTransitionQuoteRequest, type QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
+import { hasValidApprovedQuoteApproval } from '@/server/modules/quotes/approval-service';
+import { generateQuotePdf } from '@/server/modules/quote-documents/service';
 
 export type QuotePricingLineInput = Readonly<{
   catalogItemId: string;
@@ -82,6 +84,8 @@ type LockedQuoteRequest = {
 type LockedQuote = {
   id: string;
   currentVersionId: string | null;
+  workingVersionId: string | null;
+  publishedVersionId: string | null;
 };
 
 type LockedQuoteVersion = {
@@ -92,6 +96,8 @@ type LockedQuoteVersion = {
   currencyCode: string;
   discountTotalMinor: bigint;
   currentVersionId: string | null;
+  workingVersionId: string | null;
+  publishedVersionId: string | null;
   quoteRequestId: string;
   folio: string;
   requestStatus: QuoteRequestStatus;
@@ -153,7 +159,7 @@ async function lockQuoteRequest(transaction: Prisma.TransactionClient, quoteRequ
 
 async function lockQuote(transaction: Prisma.TransactionClient, quoteId: string): Promise<LockedQuote | null> {
   const rows = await transaction.$queryRaw<LockedQuote[]>(Prisma.sql`
-    SELECT "id", "currentVersionId"
+    SELECT "id", "currentVersionId", "workingVersionId", "publishedVersionId"
     FROM "quotes"
     WHERE "id" = ${quoteId}
     FOR UPDATE
@@ -163,7 +169,7 @@ async function lockQuote(transaction: Prisma.TransactionClient, quoteId: string)
 
 async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<LockedQuoteVersion | null> {
   const rows = await transaction.$queryRaw<LockedQuoteVersion[]>(Prisma.sql`
-    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."discountTotalMinor", q."currentVersionId",
+    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."discountTotalMinor", q."currentVersionId", q."workingVersionId", q."publishedVersionId",
            q."quoteRequestId", qr."folio", qr."status" AS "requestStatus", qrd."currencyCode" AS "requestCurrencyCode"
     FROM "quote_versions" qv
     INNER JOIN "quotes" q ON q."id" = qv."quoteId"
@@ -340,7 +346,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
     assertSameCurrency(request.currencyCode, snapshot.currency);
 
     const existingQuote = await transaction.quote.findUnique({ where: { quoteRequestId }, select: { id: true } });
-    let quote: LockedQuote | { id: string; currentVersionId: string | null };
+    let quote: LockedQuote | { id: string };
     let currentVersion: { id: string; versionNumber: number; status: QuoteVersionStatus; currencyCode: string } | null = null;
 
     if (!existingQuote) {
@@ -350,11 +356,13 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
       const lockedQuote = await lockQuote(transaction, existingQuote.id);
       if (!lockedQuote) throw new AppError('NOT_FOUND', 'La cotización no existe.', 404);
       quote = lockedQuote;
-      currentVersion = lockedQuote.currentVersionId
-        ? await transaction.quoteVersion.findUnique({ where: { id: lockedQuote.currentVersionId }, select: { id: true, versionNumber: true, status: true, currencyCode: true } })
+      const baseVersionId = lockedQuote.workingVersionId ?? lockedQuote.publishedVersionId ?? lockedQuote.currentVersionId;
+      currentVersion = baseVersionId
+        ? await transaction.quoteVersion.findUnique({ where: { id: baseVersionId }, select: { id: true, versionNumber: true, status: true, currencyCode: true } })
         : null;
       if (!currentVersion) conflict('La cotización no tiene una versión vigente.');
       if (currentVersion.status === 'BORRADOR') conflict('Ya existe un borrador editable para esta cotización.');
+      if (lockedQuote.workingVersionId) conflict('La cotización tiene una versión en revisión pendiente de resolución.');
       if (input.expectedCurrentVersionNumber !== undefined && input.expectedCurrentVersionNumber !== currentVersion.versionNumber) conflict('La versión esperada ya cambió.');
       assertSameCurrency(currentVersion.currencyCode, snapshot.currency);
     }
@@ -371,7 +379,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
         statusHistory: { create: { toStatus: 'BORRADOR', changedById: actor.userId, createdAt: now } },
       },
     });
-    await transaction.quote.update({ where: { id: quote.id }, data: { currentVersionId: version.id } });
+    await transaction.quote.update({ where: { id: quote.id }, data: { currentVersionId: version.id, workingVersionId: version.id } });
     await transaction.auditLog.create({
       data: {
         actorUserId: actor.userId,
@@ -404,7 +412,7 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
   return prisma.$transaction(async (transaction) => {
     const version = await lockQuoteVersion(transaction, versionId);
     if (!version) throw new AppError('NOT_FOUND', 'La versión no existe.', 404);
-    if (version.currentVersionId !== version.id || version.status !== 'BORRADOR') conflict('La versión ya no es editable.');
+    if (version.workingVersionId !== version.id || version.status !== 'BORRADOR') conflict('La versión ya no es editable.');
     const request: LockedQuoteRequest = {
       id: version.quoteRequestId,
       folio: version.folio,
@@ -441,6 +449,10 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       subtotalMinor: line.subtotal.amountMinor,
       totalMinor: line.total.amountMinor,
     })) });
+    await transaction.quoteApproval.updateMany({
+      where: { quoteVersionId: version.id, status: { in: ['REQUESTED', 'APPROVED'] } },
+      data: { status: 'SUPERSEDED', decidedAt: null, decidedById: null },
+    });
     await transaction.auditLog.create({
       data: {
         actorUserId: actor.userId,
@@ -478,13 +490,32 @@ export async function transitionQuoteVersion(actor: Actor, quoteVersionId: strin
   return prisma.$transaction(async (transaction) => {
     const version = await lockQuoteVersion(transaction, versionId);
     if (!version) throw new AppError('NOT_FOUND', 'La versión no existe.', 404);
-    if (version.currentVersionId !== version.id) conflict('Sólo la versión vigente puede cambiar de estado.');
+    if (version.workingVersionId !== version.id && !(version.publishedVersionId === version.id && version.status !== 'BORRADOR' && version.status !== 'EN_REVISION')) conflict('Sólo la versión vigente puede cambiar de estado.');
     if (!canTransitionQuoteVersion(version.status, toStatus)) conflict('La transición de cotización no está permitida.');
-    if (toStatus === 'ENVIADA' && version.discountTotalMinor > 0n) requireEmployeePermission(actor, 'quotes.approve_discount');
+    if (toStatus === 'ENVIADA' && version.discountTotalMinor > 0n) {
+      if (!(await hasValidApprovedQuoteApproval(transaction, version.id, 'DISCOUNT', now))) {
+        conflict('La cotización requiere una aprobación vigente antes de enviarse.');
+      }
+    }
     if (toStatus === 'ENVIADA' && await transaction.quoteLineSnapshot.count({ where: { quoteVersionId: version.id } }) === 0) {
       conflict('No se puede enviar una cotización sin conceptos.');
     }
+    const remainsWorking = toStatus === 'BORRADOR' || toStatus === 'EN_REVISION';
     await transaction.quoteVersion.update({ where: { id: version.id }, data: { status: toStatus } });
+    await transaction.quote.update({
+      where: { id: version.quoteId },
+      data: {
+        currentVersionId: version.id,
+        workingVersionId: remainsWorking ? version.id : null,
+        publishedVersionId: toStatus === 'ENVIADA' ? version.id : version.publishedVersionId,
+      },
+    });
+    if (toStatus === 'BORRADOR') {
+      await transaction.quoteApproval.updateMany({
+        where: { quoteVersionId: version.id, status: { in: ['REQUESTED', 'APPROVED'] } },
+        data: { status: 'SUPERSEDED', decidedAt: null, decidedById: null },
+      });
+    }
     await transaction.quoteStatusHistory.create({ data: { quoteVersionId: version.id, fromStatus: version.status, toStatus, changedById: actor.userId, createdAt: now } });
     await transaction.auditLog.create({
       data: {
@@ -513,4 +544,16 @@ export async function transitionQuoteVersion(actor: Actor, quoteVersionId: strin
     }
     return { versionId: version.id, quoteId: version.quoteId, fromStatus: version.status, toStatus };
   });
+}
+
+/**
+ * Publicación comercial: el documento debe quedar listo antes de que la
+ * transición ENVIADA escriba su evento de publicación/notificación. La ruta
+ * de estado usa esta operación; `transitionQuoteVersion` queda como primitive
+ * de dominio para transiciones internas y pruebas de máquina de estados.
+ */
+export async function publishQuoteVersion(actor: Actor, quoteVersionId: string, dependencies: QuoteServiceDependencies = {}) {
+  requireEmployeePermission(actor, 'quotes.send');
+  await generateQuotePdf(actor, quoteVersionId, { prisma: dependencies.prisma, now: dependencies.now });
+  return transitionQuoteVersion(actor, quoteVersionId, 'ENVIADA', dependencies);
 }

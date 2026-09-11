@@ -75,6 +75,8 @@ describe('staff quote request operations', () => {
     expect(detail).toMatchObject({
       id: request.quoteRequestId,
       folio: request.folio,
+      availableStatusTransitions: [],
+      availableActions: [],
       detail: {
         description: 'Staff operation contract',
         projectStage: 'UNDER_CONSTRUCTION',
@@ -93,7 +95,7 @@ describe('staff quote request operations', () => {
     const actor = await createStaffUser(`actor-${Date.now()}`);
     const assignee = await createStaffUser(`assignee-${Date.now()}`);
     const request = await createRequest(`mutate-${Date.now()}`);
-    const operator = staffActor(actor.id, ['requests.read', 'requests.assign', 'requests.status.update']);
+    const operator = staffActor(actor.id, ['requests.read', 'requests.assign', 'requests.status.update', 'quotes.create']);
 
     const assignment = await assignQuoteRequest(operator, request.quoteRequestId, { assignedToId: assignee.id, reason: 'Distribución operativa' }, { prisma, now: new Date('2026-01-04T12:10:00.000Z') });
     const status = await transitionQuoteRequest(operator, request.quoteRequestId, { toStatus: 'EN_REVISION', reason: 'Inicio de revisión' }, { prisma, now: new Date('2026-01-04T12:11:00.000Z') });
@@ -102,8 +104,13 @@ describe('staff quote request operations', () => {
     expect(assignment).toMatchObject({ quoteRequestId: request.quoteRequestId, currentAssigneeId: assignee.id });
     expect(status).toMatchObject({ quoteRequestId: request.quoteRequestId, fromStatus: 'RECIBIDA', toStatus: 'EN_REVISION' });
     expect(detail).toMatchObject({ currentAssignee: { id: assignee.id }, status: 'EN_REVISION' });
+    expect(detail.availableStatusTransitions).toEqual(expect.arrayContaining(['INFORMACION_REQUERIDA', 'EN_ELABORACION', 'RECHAZADA']));
+    expect(detail.availableActions).not.toContain('quote.open');
     expect(detail.assignments).toHaveLength(1);
     expect(detail.statusHistory).toHaveLength(2);
+    await transitionQuoteRequest(operator, request.quoteRequestId, { toStatus: 'EN_ELABORACION' }, { prisma, now: new Date('2026-01-04T12:12:00.000Z') });
+    const quoteReadyDetail = await getStaffQuoteRequest(operator, request.quoteRequestId, { prisma });
+    expect(quoteReadyDetail.availableActions).toContain('quote.open');
     await expect(transitionQuoteRequest(operator, request.quoteRequestId, { toStatus: 'ACEPTADA' }, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
     await expect(assignQuoteRequest(staffActor(actor.id, ['requests.read']), request.quoteRequestId, { assignedToId: assignee.id }, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });

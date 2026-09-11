@@ -74,4 +74,15 @@ describe('quote PDF renderer', () => {
     expect(rendered.pageCount).toBeGreaterThan(1);
     expect(rendered.bytes.byteLength).toBeGreaterThan(1_000);
   });
+
+  it('paginates the complete scope instead of truncating it after four lines', async () => {
+    const rendered = await renderQuotePdf({
+      ...snapshot,
+      description: Array.from({ length: 180 }, (_, index) => `Alcance contractual ${index + 1} SCOPE-END-MARKER`).join(' '),
+    });
+
+    expect(rendered.pageCount).toBeGreaterThan(1);
+    const document = await PDFDocument.load(rendered.bytes);
+    expect(document.getPageCount()).toBe(rendered.pageCount);
+  });
 });

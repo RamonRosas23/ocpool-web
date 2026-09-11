@@ -4,6 +4,7 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { getPrivateStorage, type PrivateStorage } from '@/server/modules/private-files/storage';
+import { CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES, isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
 
 const PDF_CONTENT_TYPE = 'application/pdf';
 const DOWNLOAD_URL_EXPIRES_SECONDS = 60;
@@ -114,6 +115,7 @@ async function getDownload(
       id: true,
       quoteId: true,
       versionNumber: true,
+      status: true,
       generatedDocuments: {
         where: { documentType: 'QUOTE_PDF' },
         include: { storageObject: true },
@@ -122,6 +124,9 @@ async function getDownload(
     },
   });
   if (!version) throw new AppError('NOT_FOUND', 'La cotización no existe.', 404);
+  if (where.clientId && !isCustomerVisibleQuoteVersionStatus(version.status)) {
+    throw new AppError('NOT_FOUND', 'La cotización no existe.', 404);
+  }
   const document = version.generatedDocuments[0];
   if (!document || document.status !== 'READY' || document.contentType !== PDF_CONTENT_TYPE || !document.byteSize || !document.readyAt || !document.storageObject || document.storageObject.deletedAt || document.storageObject.contentType !== PDF_CONTENT_TYPE || document.storageObject.scanStatus !== 'PASSED' || document.storageObject.byteSize !== document.byteSize) {
     throw new AppError('CONFLICT', 'El PDF de la cotización no está disponible.', 409);
@@ -155,10 +160,22 @@ export async function getQuotePdfDownloadForQuote(actor: Actor, quoteIdInput: st
   const prisma = dependencies.prisma ?? getPrisma();
   const quote = await prisma.quote.findFirst({
     where: { id: quoteId, ...(clientId ? { clientId } : {}) },
-    select: { currentVersionId: true },
+    select: {
+      currentVersionId: true,
+      publishedVersionId: true,
+      ...(clientId ? {
+        versions: {
+          where: { status: { in: [...CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES] } },
+          orderBy: [{ versionNumber: 'desc' }],
+          take: 1,
+          select: { id: true },
+        },
+      } : {}),
+    },
   });
   if (!quote) throw new AppError('NOT_FOUND', 'La cotización no existe.', 404);
-  const quoteVersionId = requestedVersionId ?? quote.currentVersionId;
+  const publishedVersionId = clientId ? quote.versions[0]?.id ?? null : quote.publishedVersionId ?? quote.currentVersionId;
+  const quoteVersionId = requestedVersionId ?? publishedVersionId;
   if (!quoteVersionId) throw new AppError('CONFLICT', 'La cotización no tiene una versión vigente.', 409);
   return getDownload(actor, { quoteId, quoteVersionId, ...(clientId ? { clientId } : {}) }, dependencies);
 }

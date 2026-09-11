@@ -99,6 +99,7 @@ describe('staff quotes API', () => {
     await expect(replaced.json()).resolves.toMatchObject({ versionId, totalMinor: '20000' });
     expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${versionId}/status`, salesToken, 'POST', { toStatus: 'EN_REVISION' }), { params: Promise.resolve({ versionId }) })).status).toBe(200);
     expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${versionId}/status`, salesToken, 'POST', { toStatus: 'ENVIADA' }), { params: Promise.resolve({ versionId }) })).status).toBe(200);
+    expect(await prisma.generatedDocument.findUnique({ where: { quoteVersionId_documentType: { quoteVersionId: versionId, documentType: 'QUOTE_PDF' } }, select: { status: true, readyAt: true } })).toMatchObject({ status: 'READY', readyAt: expect.any(Date) });
     expect((await replaceDraftRoute(endpoint(`/api/staff/quotes/versions/${versionId}`, salesToken, 'PATCH', { priceListId, lines: [{ catalogItemId: itemId, quantity: '3' }] }), { params: Promise.resolve({ versionId }) })).status).toBe(409);
     expect(await prisma.quoteRequest.findUnique({ where: { id: requestId }, select: { status: true } })).toMatchObject({ status: 'COTIZACION_DISPONIBLE' });
   });

@@ -33,7 +33,7 @@ test.describe('identity API opt-in flow', () => {
   });
 
   test('logs in, resolves session, rejects foreign logout and logs out', async ({ request }) => {
-    const origin = 'http://127.0.0.1:3100';
+    const origin = process.env.APP_URL ?? 'http://127.0.0.1:3100';
     const login = await request.post('/api/auth/employee/login', {
       headers: { origin },
       data: { email, password },

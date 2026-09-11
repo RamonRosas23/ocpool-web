@@ -1,0 +1,25 @@
+{
+  "name": "ocpool-private-primitives-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4173",
+    "build": "vite build",
+    "check": "node check.mjs",
+    "check:ssr": "node ssr-check.mjs",
+    "check:next": "node next-route-check.mjs"
+  },
+  "dependencies": {
+    "@internationalized/date": "3.12.4",
+    "lucide-react": "1.44.0",
+    "react": "19.1.0",
+    "react-aria-components": "1.21.1",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.62.1",
+    "playwright": "1.62.1",
+    "vite": "8.2.2"
+  }
+}

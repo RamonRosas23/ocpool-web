@@ -90,6 +90,19 @@ function serializeVersion(version: {
   updatedAt: Date;
   createdBy: { id: string; displayName: string };
   lines: Parameters<typeof serializeLine>[0][];
+  approvals: Array<{
+    id: string;
+    type: string;
+    status: string;
+    policyVersion: string;
+    thresholdBps: number | null;
+    reason: string | null;
+    requestedById: string;
+    decidedById: string | null;
+    requestedAt: Date;
+    decidedAt: Date | null;
+    expiresAt: Date | null;
+  }>;
 }) {
   return {
     id: version.id,
@@ -106,6 +119,7 @@ function serializeVersion(version: {
     updatedAt: version.updatedAt,
     createdBy: version.createdBy,
     lines: version.lines.map(serializeLine),
+    approvals: version.approvals.map((approval) => ({ ...approval })),
   };
 }
 
@@ -165,6 +179,28 @@ export async function listQuoteWorkspaces(actor: Actor, filters: QuoteWorkspaceL
                 validUntil: true,
               },
             },
+            workingVersion: {
+              select: {
+                id: true,
+                versionNumber: true,
+                status: true,
+                currencyCode: true,
+                totalMinor: true,
+                discountTotalMinor: true,
+                validUntil: true,
+              },
+            },
+            publishedVersion: {
+              select: {
+                id: true,
+                versionNumber: true,
+                status: true,
+                currencyCode: true,
+                totalMinor: true,
+                discountTotalMinor: true,
+                validUntil: true,
+              },
+            },
           },
           take: 1,
         },
@@ -182,10 +218,10 @@ export async function listQuoteWorkspaces(actor: Actor, filters: QuoteWorkspaceL
       detail: request.detail,
       quote: request.quotes[0] ? {
         id: request.quotes[0].id,
-        currentVersion: request.quotes[0].currentVersion ? {
-          ...request.quotes[0].currentVersion,
-          totalMinor: serializeBigInt(request.quotes[0].currentVersion.totalMinor),
-          discountTotalMinor: serializeBigInt(request.quotes[0].currentVersion.discountTotalMinor),
+        currentVersion: (request.quotes[0].workingVersion ?? request.quotes[0].publishedVersion ?? request.quotes[0].currentVersion) ? {
+          ...(request.quotes[0].workingVersion ?? request.quotes[0].publishedVersion ?? request.quotes[0].currentVersion)!,
+          totalMinor: serializeBigInt((request.quotes[0].workingVersion ?? request.quotes[0].publishedVersion ?? request.quotes[0].currentVersion)!.totalMinor),
+          discountTotalMinor: serializeBigInt((request.quotes[0].workingVersion ?? request.quotes[0].publishedVersion ?? request.quotes[0].currentVersion)!.discountTotalMinor),
         } : null,
       } : null,
     })),
@@ -217,6 +253,8 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
         select: {
           id: true,
           currentVersionId: true,
+          workingVersionId: true,
+          publishedVersionId: true,
           versions: {
             orderBy: [{ versionNumber: 'desc' }],
             select: {
@@ -265,6 +303,22 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
                   changedBy: { select: { id: true, displayName: true } },
                 },
               },
+              approvals: {
+                orderBy: { requestedAt: 'desc' },
+                select: {
+                  id: true,
+                  type: true,
+                  status: true,
+                  policyVersion: true,
+                  thresholdBps: true,
+                  reason: true,
+                  requestedById: true,
+                  decidedById: true,
+                  requestedAt: true,
+                  decidedAt: true,
+                  expiresAt: true,
+                },
+              },
             },
           },
         },
@@ -286,7 +340,8 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
 
   const quote = request.quotes[0] ?? null;
   const versions = quote?.versions ?? [];
-  const currentVersion = quote?.currentVersionId ? versions.find((version) => version.id === quote.currentVersionId) ?? null : null;
+  const displayedVersionId = quote?.workingVersionId ?? quote?.publishedVersionId ?? quote?.currentVersionId ?? null;
+  const currentVersion = displayedVersionId ? versions.find((version) => version.id === displayedVersionId) ?? null : null;
   const history = serializeHistory(versions.flatMap((version) => version.statusHistory));
   return {
     request: {
@@ -302,7 +357,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
     },
     quote: quote ? {
       id: quote.id,
-      currentVersionId: quote.currentVersionId,
+      currentVersionId: displayedVersionId,
       currentVersion: currentVersion ? serializeVersion(currentVersion as WorkspaceVersion) : null,
       versions: versions.map((version) => serializeVersion(version as WorkspaceVersion)),
       history,

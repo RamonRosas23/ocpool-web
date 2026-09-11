@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-10T22:22:47.207Z",
+  "baseUrl": "http://127.0.0.1:3008",
+  "route": "/",
+  "landingTouched": false,
+  "results": [
+    {
+      "viewport": {
+        "id": "mobile",
+        "width": 390,
+        "height": 844
+      },
+      "status": 200,
+      "title": "OCPOOL | Diseño y construcción de albercas",
+      "screenshotSha256": "fe2699a25177a6953215f79590da0bf01c978db8b3791531ba1ed4a4ee82c165",
+      "screenshotFile": "landing-mobile.png",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": {
+        "id": "tablet",
+        "width": 768,
+        "height": 1024
+      },
+      "status": 200,
+      "title": "OCPOOL | Diseño y construcción de albercas",
+      "screenshotSha256": "bdfb252246c7a137f90268f7e38b66e8fa27ab53f452d3bc6746978f131afb34",
+      "screenshotFile": "landing-tablet.png",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": {
+        "id": "desktop",
+        "width": 1440,
+        "height": 900
+      },
+      "status": 200,
+      "title": "OCPOOL | Diseño y construcción de albercas",
+      "screenshotSha256": "602f9f53fce72437f842251bd5d389bc4113a7a187bbfd5a1e01c55772354e49",
+      "screenshotFile": "landing-desktop.png",
+      "horizontalOverflow": false
+    }
+  ]
+}

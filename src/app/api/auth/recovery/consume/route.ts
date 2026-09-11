@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     const body = await parseBody(request, recoveryConsumeSchema);
     const consumed = await consumePasswordRecovery({ rawToken: body.token, newPassword: body.newPassword, context: requestContext(request) });
     if (!consumed) throw new AppError('UNAUTHORIZED', 'El enlace no es válido o ya expiró.', 401);
-    return NextResponse.json({ passwordReset: true }, { status: 200 });
+    return NextResponse.json({ passwordReset: true }, { status: 200, headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);
   }

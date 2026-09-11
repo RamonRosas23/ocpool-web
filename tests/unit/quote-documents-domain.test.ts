@@ -4,6 +4,9 @@ import {
   canGenerateQuotePdf,
   canTransitionGeneratedDocument,
   canAcceptQuoteVersion,
+  CURRENT_QUOTE_TERMS_LABEL,
+  CURRENT_QUOTE_TERMS_VERSION,
+  isCurrentQuoteTermsVersion,
   normalizeAcceptanceName,
   normalizeAcceptanceTermsVersion,
   type GeneratedDocumentStatus,
@@ -21,9 +24,9 @@ describe('quote documents and acceptance domain', () => {
     expect(canTransitionGeneratedDocument('PENDING' as GeneratedDocumentStatus, 'PENDING')).toBe(false);
   });
 
-  it('only renders PDFs from versions that have entered a customer-visible state', () => {
+  it('renders PDFs during review so publication can verify the document first', () => {
     expect(canGenerateQuotePdf('BORRADOR')).toBe(false);
-    expect(canGenerateQuotePdf('EN_REVISION')).toBe(false);
+    expect(canGenerateQuotePdf('EN_REVISION')).toBe(true);
     expect(canGenerateQuotePdf('ENVIADA')).toBe(true);
     expect(canGenerateQuotePdf('ACEPTADA')).toBe(true);
   });
@@ -44,5 +47,9 @@ describe('quote documents and acceptance domain', () => {
     expect(() => normalizeAcceptanceName('')).toThrow();
     expect(() => normalizeAcceptanceName('a'.repeat(181))).toThrow();
     expect(() => normalizeAcceptanceTermsVersion('terms with spaces')).toThrow();
+    expect(CURRENT_QUOTE_TERMS_VERSION).toBe('quote-terms-2026-01');
+    expect(CURRENT_QUOTE_TERMS_LABEL).toBe('Condiciones comerciales de la propuesta · versión 2026-01');
+    expect(isCurrentQuoteTermsVersion('quote-terms-2026-01')).toBe(true);
+    expect(isCurrentQuoteTermsVersion('quote-terms-2025-12')).toBe(false);
   });
 });

@@ -28,6 +28,21 @@ describe('same-origin protection', () => {
     expect(() => assertSameOrigin(new Request('http://localhost:3000/api/auth/customer/request-link', { method: 'POST' }), 'http://localhost:3000')).not.toThrow();
   });
 
+  it('accepts both official OCPOOL hosts without accepting other origins', () => {
+    expect(() => assertSameOrigin(new Request('https://ocpool.com.mx/api/quote-requests', {
+      method: 'POST',
+      headers: { origin: 'https://www.ocpool.com.mx' },
+    }), 'https://ocpool.com.mx')).not.toThrow();
+    expect(() => assertSameOrigin(new Request('https://www.ocpool.com.mx/api/quote-requests', {
+      method: 'POST',
+      headers: { origin: 'https://ocpool.com.mx' },
+    }), 'https://www.ocpool.com.mx')).not.toThrow();
+    expect(() => assertSameOrigin(new Request('https://ocpool.com.mx/api/quote-requests', {
+      method: 'POST',
+      headers: { origin: 'http://ocpool.com.mx' },
+    }), 'https://ocpool.com.mx')).toThrow();
+  });
+
   it('requires JSON bodies and does not trust forwarding headers by default', async () => {
     await expect(parseBody(new Request('http://localhost:3000', { method: 'POST', body: '{}', headers: { 'content-type': 'text/plain' } }), emailBodySchema)).rejects.toThrow();
     await expect(parseBody(new Request('http://localhost:3000', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json', 'content-length': '20000' } }), emailBodySchema)).rejects.toThrow();

@@ -4,6 +4,9 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import StaffFilesPanel, { type StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import StaffMessagingPanel, { type StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
+import SelectField from '@/components/SelectField';
+import WorkspaceLogo from '@/components/WorkspaceLogo';
+import WorkspaceBrand from '@/components/WorkspaceBrand';
 import {
   QUOTE_REQUEST_BUDGET_RANGE_LABELS,
   QUOTE_REQUEST_PROJECT_STAGE_LABELS,
@@ -25,19 +28,6 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_OPTIONS = Object.keys(STATUS_LABELS);
-const NEXT_STATUS_OPTIONS: Record<string, string[]> = {
-  RECIBIDA: ['EN_REVISION'],
-  EN_REVISION: ['INFORMACION_REQUERIDA', 'EN_ELABORACION', 'RECHAZADA'],
-  INFORMACION_REQUERIDA: ['EN_REVISION', 'EN_ELABORACION', 'RECHAZADA'],
-  EN_ELABORACION: ['INFORMACION_REQUERIDA', 'RECHAZADA'],
-  COTIZACION_DISPONIBLE: ['EN_NEGOCIACION', 'PENDIENTE_DE_APROBACION', 'RECHAZADA', 'VENCIDA'],
-  EN_NEGOCIACION: ['EN_ELABORACION', 'PENDIENTE_DE_APROBACION', 'RECHAZADA', 'VENCIDA'],
-  PENDIENTE_DE_APROBACION: ['ACEPTADA', 'RECHAZADA'],
-  ACEPTADA: ['CONVERTIDA_EN_PROYECTO'],
-  RECHAZADA: [],
-  VENCIDA: [],
-  CONVERTIDA_EN_PROYECTO: [],
-};
 
 type RequestSummary = {
   id: string;
@@ -53,6 +43,8 @@ type RequestSummary = {
 };
 
 type RequestDetail = RequestSummary & {
+  availableStatusTransitions: string[];
+  availableActions: string[];
   contact: RequestSummary['contact'] & { roleTitle: string | null; status: string; user: { id: string; type: string; status: string } | null };
   detail: {
     id: string;
@@ -181,7 +173,7 @@ export default function StaffRequestsPanel() {
       const data = await readResponse<RequestDetail>(response);
       setSelected(data);
       setAssignmentId(data.currentAssignee?.id ?? '');
-      setNextStatus(NEXT_STATUS_OPTIONS[data.status]?.[0] ?? '');
+      setNextStatus(data.availableStatusTransitions[0] ?? '');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el expediente.');
     } finally {
@@ -226,7 +218,7 @@ export default function StaffRequestsPanel() {
     void loadCapabilities();
   }, []);
 
-  const nextStatuses = useMemo(() => selected ? NEXT_STATUS_OPTIONS[selected.status] ?? [] : [], [selected]);
+  const nextStatuses = useMemo(() => selected?.availableStatusTransitions ?? [], [selected]);
 
   const refreshCurrent = async () => {
     await loadList(page, statusFilter, appliedSearch);
@@ -298,7 +290,7 @@ export default function StaffRequestsPanel() {
         body: '{}',
       });
       const result = await readResponse<{ status: 'INVITED' | 'ALREADY_PENDING' | 'ALREADY_ACTIVE' }>(response);
-      setNotice(result.status === 'INVITED' ? 'Invitación de acceso enviada.' : result.status === 'ALREADY_PENDING' ? 'Ya existe una invitación vigente.' : 'Nuevo enlace de acceso enviado al cliente.');
+      setNotice(result.status === 'INVITED' ? 'Portal habilitado. Se envió un enlace de un solo uso al correo del cliente.' : result.status === 'ALREADY_PENDING' ? 'Ya existe una invitación vigente. El cliente debe revisar su correo.' : 'La cuenta ya estaba activa. Se envió un nuevo enlace de un solo uso al cliente.');
       await loadDetail(selected.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible habilitar el portal del cliente.');
@@ -308,14 +300,14 @@ export default function StaffRequestsPanel() {
   };
 
   if (accessDenied) {
-    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
+    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
   }
 
   return (
     <main className="staff-shell">
       <header className="staff-header">
-        <Link className="staff-brand" href="/" aria-label="OCPOOL, volver al sitio público"><span>OCPOOL</span><small>Operaciones comerciales</small></Link>
-        <div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Bandeja de solicitudes</div>
+        <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
+        <div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Bandeja de solicitudes</div></div>
       </header>
 
       <div className="staff-content">
@@ -331,7 +323,7 @@ export default function StaffRequestsPanel() {
           <aside className="staff-inbox">
             <form className="staff-filters" onSubmit={submitSearch}>
               <label><span>Buscar</span><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Folio, cliente o correo" maxLength={100} /></label>
-              <label><span>Estado</span><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}><option value="">Todos los estados</option>{STATUS_OPTIONS.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></label>
+              <label><span>Estado</span><SelectField ariaLabel="Estado" value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); }} options={STATUS_OPTIONS.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" /></label>
               <button className="staff-button staff-button--filter" type="submit">Aplicar filtros</button>
             </form>
 
@@ -346,12 +338,12 @@ export default function StaffRequestsPanel() {
 
           <section className="staff-detail" aria-label="Detalle de solicitud">
             {loadingDetail && <div className="staff-detail__loading"><span /><span /><span /></div>}
-            {!loadingDetail && !selected && <div className="staff-empty staff-empty--detail"><span className="staff-empty__mark">OC</span><h2>Selecciona un expediente.</h2><p>El detalle y las acciones operativas aparecerán aquí.</p></div>}
+            {!loadingDetail && !selected && <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>Selecciona un expediente.</h2><p>El detalle y las acciones operativas aparecerán aquí.</p></div>}
             {!loadingDetail && selected && <>
-              <div className="staff-detail__header"><div><p className="staff-kicker">{selected.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{selected.folio}</h2><p className="staff-detail__date">Recibida el {formatDate(selected.createdAt)}</p>{['EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'].includes(selected.status) && <Link className="staff-button staff-button--dark staff-detail__quote-link" href={`/staff/quotes?request=${selected.id}`}>Abrir constructor</Link>}</div><span className={`staff-status-pill staff-status-pill--${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div>
+              <div className="staff-detail__header"><div><p className="staff-kicker">{selected.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{selected.folio}</h2><p className="staff-detail__date">Recibida el {formatDate(selected.createdAt)}</p>{selected.availableActions.includes('quote.open') && <Link className="staff-button staff-button--dark staff-detail__quote-link" href={`/staff/quotes?request=${selected.id}`}>Abrir constructor</Link>}</div><span className={`staff-status-pill staff-status-pill--${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div>
               <div className="staff-detail__grid"><section className="staff-detail__section"><p className="staff-section-label">Contacto</p><h3>{selected.contact.displayName}</h3><a href={`mailto:${selected.contact.email}`}>{selected.contact.email}</a>{selected.contact.phone && <a href={`tel:${selected.contact.phone}`}>{selected.contact.phone}</a>}<div className="staff-contact-access"><span className={`staff-contact-access__status staff-contact-access__status--${selected.contact.user?.status?.toLowerCase() ?? 'none'}`}>{selected.contact.user?.status === 'ACTIVE' ? 'Portal habilitado' : selected.contact.user?.status === 'INVITED' ? 'Invitación pendiente' : 'Portal sin habilitar'}</span>{messagingCapabilities.identityUsersManage && <button className="staff-button staff-button--dark" type="button" disabled={customerAccessBusy} onClick={() => void inviteCustomerAccess()}>{customerAccessBusy ? 'Enviando…' : selected.contact.user?.status === 'ACTIVE' ? 'Enviar nuevo acceso' : selected.contact.user?.status === 'INVITED' ? 'Reenviar acceso' : 'Habilitar portal'}</button>}</div></section><section className="staff-detail__section"><p className="staff-section-label">Proyecto</p><h3>{selected.detail?.projectType ?? 'Sin tipo de proyecto'}</h3><p>{selected.detail?.location ?? 'Sin ubicación'}</p>{selected.detail?.dimensions && <p>{selected.detail.dimensions}</p>}<dl className="staff-qualification"><div><dt>Etapa</dt><dd>{qualificationLabel(selected.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</dd></div><div><dt>Inicio</dt><dd>{qualificationLabel(selected.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)}</dd></div><div><dt>Presupuesto</dt><dd>{qualificationLabel(selected.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</dd></div></dl></section></div>
               <section className="staff-detail__section staff-detail__section--description"><p className="staff-section-label">Alcance compartido</p><p className="staff-description">{selected.detail?.description ?? 'Sin descripción.'}</p></section>
-              <div className="staff-actions-grid"><section className="staff-action"><p className="staff-section-label">Responsable</p><select aria-label="Responsable" value={assignmentId} onChange={(event) => setAssignmentId(event.target.value)}><option value="">Sin responsable</option>{assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.displayName}</option>)}</select><input value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></section><section className="staff-action"><p className="staff-section-label">Siguiente estado</p><select aria-label="Siguiente estado" value={nextStatus} onChange={(event) => setNextStatus(event.target.value)} disabled={nextStatuses.length === 0}><option value="">{nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'}</option>{nextStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select><input value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus} onClick={() => void transition()}>Actualizar estado</button></section></div>
+              <div className="staff-actions-grid"><section className="staff-action"><p className="staff-section-label">Responsable</p><SelectField ariaLabel="Responsable" value={assignmentId} onValueChange={setAssignmentId} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin responsable" /><input value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></section><section className="staff-action"><p className="staff-section-label">Siguiente estado</p><SelectField ariaLabel="Siguiente estado" value={nextStatus} onValueChange={setNextStatus} options={nextStatuses.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder={nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'} disabled={nextStatuses.length === 0} /><input value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus} onClick={() => void transition()}>Actualizar estado</button></section></div>
               {messagingCapabilitiesLoaded && <StaffFilesPanel requestId={selected.id} capabilities={messagingCapabilities} />}
               {messagingCapabilitiesLoaded && <StaffMessagingPanel requestId={selected.id} capabilities={messagingCapabilities} />}
               <section className="staff-history"><div><p className="staff-section-label">Actividad</p><h3>Historial del expediente</h3></div><ol>{selected.statusHistory.map((entry) => <li key={entry.id}><span className="staff-history__line" aria-hidden="true" /><div><strong>{statusLabel(entry.toStatus)}</strong><p>{entry.reason ?? 'Cambio registrado'} · {entry.changedBy?.displayName ?? 'Sistema'}</p><time dateTime={entry.createdAt}>{formatDate(entry.createdAt)}</time></div></li>)}</ol></section>

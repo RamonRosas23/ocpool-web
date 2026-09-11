@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
+import WorkspaceBrand from '@/components/WorkspaceBrand';
 
 type TokenKind = 'customer' | 'recovery';
 type TokenState = 'loading' | 'missing' | 'invalid' | 'ready' | 'success';
@@ -86,7 +87,7 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
 
   return <main className="auth-shell auth-shell--token">
     <section className="auth-context" aria-label="Contexto de acceso">
-      <Link className="auth-brand" href="/" aria-label="OCPOOL, volver al sitio público"><span>OCPOOL</span><small>{customer ? 'Portal de cliente' : 'Acceso interno'}</small></Link>
+      <WorkspaceBrand className="auth-brand" subtitle={customer ? 'Portal de cliente' : 'Acceso interno'} />
       <div className="auth-context__copy"><p className="auth-kicker">{customer ? 'Acceso privado' : 'Seguridad de cuenta'}</p><h1>{customer ? <>Tu expediente, cuando lo <em>necesites.</em></> : <>Recupera el control de tu <em>cuenta.</em></>}</h1><p>{customer ? 'Estamos validando la entrada a tu espacio privado.' : 'Elige una nueva contraseña para volver a trabajar con seguridad.'}</p></div>
       <div className="auth-context__footer"><span>Enlace de un solo uso</span><small>Protegido por sesión privada</small></div>
     </section>
@@ -103,4 +104,3 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
     </section>
   </main>;
 }
-

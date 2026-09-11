@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { Cormorant_Garamond, Manrope } from 'next/font/google';
 import './globals.css';
+import '../components/private/ui/private-ui.css';
 
-const siteUrl = 'https://www.ocpool.com';
+const siteUrl = 'https://ocpool.com.mx';
 const siteTitle = 'OCPOOL | Diseño y construcción de albercas';
 const siteDescription = 'OCPOOL desarrolla soluciones integrales para albercas, jacuzzis y espacios acuáticos: diseño, construcción, equipamiento e iluminación.';
 
@@ -42,9 +44,12 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const requestHeaders = await headers();
+  const locale = requestHeaders.get('x-ocpool-private-locale') === 'es-MX' ? 'es-MX' : 'es';
+
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <body className={`${display.variable} ${sans.variable}`}>
         <a className="skip-link" href="#contenido">Saltar al contenido</a>
         {children}

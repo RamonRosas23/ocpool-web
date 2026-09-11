@@ -17,13 +17,16 @@ const allFiles = walk(root);
 const textFiles = allFiles.filter((file) => textExtensions.has(file.slice(file.lastIndexOf('.')).toLowerCase()));
 const contractFile = resolve(root, 'scripts/pool-site-contract.mjs');
 const layout = readFileSync(resolve(root, 'src/app/layout.tsx'), 'utf8');
+const middleware = readFileSync(resolve(root, 'src/middleware.ts'), 'utf8');
 const source = textFiles.filter((file) => file !== contractFile).map((file) => readFileSync(file, 'utf8')).join('\n');
-assert.match(layout, /<html\s+lang="es"\s+suppressHydrationWarning>/, 'Root layout must ignore browser-injected html attributes during hydration');
+assert.match(layout, /<html\s+lang=\{locale\}\s+suppressHydrationWarning>/, 'Root layout must use the server-selected locale and ignore browser-injected html attributes during hydration');
+assert.match(layout, /=== 'es-MX' \? 'es-MX' : 'es'/, 'Root layout must preserve the public Spanish locale fallback');
+assert.match(middleware, /x-ocpool-private-locale/u, 'Private route locale marker must be server-owned');
 const requiredCopy = [
   'OCPOOL',
-  'info@ocpool.com',
+  'contacto@ocpool.com.mx',
   '667 453 2567',
-  'www.ocpool.com',
+  'ocpool.com.mx',
   'Diseñamos y construimos albercas para residencias, hoteles y clubes de playa.',
   'especialidades integradas',
   'La ejecución, en',

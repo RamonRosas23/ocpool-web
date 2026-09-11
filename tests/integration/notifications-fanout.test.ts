@@ -35,6 +35,8 @@ describe('transactional notification fan-out', () => {
     const storageObject = await prisma.storageObject.create({ data: { storageKey: `private-files/notification-fanout/${suffix}.pdf`, contentType: 'application/pdf', byteSize: 2048n, sha256: 'a'.repeat(64), scanStatus: 'PASSED', verifiedAt: now } });
     const generatedDocument = await prisma.generatedDocument.create({ data: { quoteId: quote.id, quoteVersionId: version.id, storageObjectId: storageObject.id, templateVersion: 'quote-pdf-v1', status: 'READY', byteSize: 2048n, sha256: 'a'.repeat(64), generatedAt: now, readyAt: now } });
     const acceptance = await prisma.quoteAcceptance.create({ data: { quoteId: quote.id, quoteVersionId: version.id, generatedDocumentId: generatedDocument.id, acceptedById: customer.id, documentSha256: 'a'.repeat(64), signerName: 'Fanout customer', termsVersion: 'quote-terms-2026-01', idempotencyKeyHash: 'b'.repeat(64) } });
+    const workingVersion = await prisma.quoteVersion.create({ data: { quoteId: quote.id, versionNumber: 2, status: 'BORRADOR', currencyCode: 'MXN', subtotalMinor: 200000n, taxableTotalMinor: 200000n, totalMinor: 200000n, createdById: employee.id } });
+    await prisma.quote.update({ where: { id: quote.id }, data: { currentVersionId: workingVersion.id } });
     const fileStorage = await prisma.storageObject.create({ data: { storageKey: `private-files/notification-fanout/${suffix}.jpg`, contentType: 'image/jpeg', byteSize: 1024n, sha256: 'c'.repeat(64), scanStatus: 'PASSED', verifiedAt: now } });
     const file = await prisma.fileAttachment.create({ data: { quoteRequestId: request.quoteRequestId, clientId: request.clientId, storageObjectId: fileStorage.id, originalFileName: 'avance.jpg', category: 'REFERENCE_IMAGE', visibility: 'CUSTOMER', status: 'AVAILABLE', uploadedById: employee.id } });
     const [assignmentEvent, quoteSentEvent, acceptedEvent, messageEvent, fileEvent, internalEvent] = await Promise.all([
@@ -76,6 +78,7 @@ describe('transactional notification fan-out', () => {
       await prisma.conversationMessage.delete({ where: { id: message.id } });
       await prisma.conversation.delete({ where: { id: conversation.id } });
       await prisma.quoteVersion.delete({ where: { id: version.id } });
+      await prisma.quoteVersion.delete({ where: { id: workingVersion.id } });
       await prisma.quote.delete({ where: { id: quote.id } });
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: request.quoteRequestId } });
       await prisma.auditLog.deleteMany({ where: { entityId: request.quoteRequestId } });

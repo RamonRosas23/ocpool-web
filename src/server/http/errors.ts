@@ -45,7 +45,7 @@ export function toErrorResponse(error: unknown, requestId: string): NextResponse
         message: error.publicMessage,
         requestId,
       },
-    }, { status: error.status });
+    }, { status: error.status, headers: { 'cache-control': 'no-store' } });
   }
 
   logger.error({
@@ -65,5 +65,5 @@ export function toErrorResponse(error: unknown, requestId: string): NextResponse
       message: 'Ocurrió un error inesperado.',
       requestId,
     },
-  }, { status: 500 });
+  }, { status: 500, headers: { 'cache-control': 'no-store' } });
 }

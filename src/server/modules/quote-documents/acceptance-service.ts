@@ -5,10 +5,11 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
-import { canAcceptQuoteVersion, normalizeAcceptanceName, normalizeAcceptanceTermsVersion } from '@/server/modules/quote-documents/domain';
+import { canAcceptQuoteVersion, getCurrentQuoteTermsVersion, isCurrentQuoteTermsVersion, normalizeAcceptanceName, normalizeAcceptanceTermsVersion } from '@/server/modules/quote-documents/domain';
 import { getPrivateStorage, type PrivateStorage } from '@/server/modules/private-files/storage';
 import { normalizeIdempotencyKey } from '@/server/modules/messaging/domain';
 import { canTransitionQuoteRequest, type QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
+import { isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const PDF_CONTENT_TYPE = 'application/pdf';
@@ -56,6 +57,7 @@ type LockedQuote = {
   clientId: string;
   quoteRequestId: string;
   currentVersionId: string | null;
+  publishedVersionId: string | null;
   requestStatus: QuoteRequestStatus;
   folio: string;
 };
@@ -80,6 +82,9 @@ function normalizeInput(input: QuoteAcceptanceInput): QuoteAcceptanceInput & { i
   try {
     const signerName = normalizeAcceptanceName(input.signerName);
     const termsVersion = normalizeAcceptanceTermsVersion(input.termsVersion);
+    if (!isCurrentQuoteTermsVersion(termsVersion)) {
+      throw new AppError('CONFLICT', `La versión de términos vigente es ${getCurrentQuoteTermsVersion()}.`, 409);
+    }
     const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
     return {
       signerName,
@@ -89,7 +94,8 @@ function normalizeInput(input: QuoteAcceptanceInput): QuoteAcceptanceInput & { i
       ipAddress: input.ipAddress ?? null,
       userAgent: input.userAgent ?? null,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof AppError) throw error;
     throw new AppError('VALIDATION_ERROR', 'Los datos de aceptación no son válidos.', 400);
   }
 }
@@ -132,6 +138,11 @@ async function findReplay(prisma: PrismaClient, acceptedById: string, idempotenc
 async function lockQuote(transaction: Prisma.TransactionClient, quoteId: string, clientId: string): Promise<LockedQuote | null> {
   const rows = await transaction.$queryRaw<LockedQuote[]>(Prisma.sql`
     SELECT q."id", q."clientId", q."quoteRequestId", q."currentVersionId",
+           COALESCE(q."publishedVersionId", (SELECT qv."id" FROM "quote_versions" qv
+            WHERE qv."quoteId" = q."id"
+              AND qv."status" IN ('ENVIADA', 'EN_NEGOCIACION', 'ACEPTADA', 'RECHAZADA', 'VENCIDA')
+            ORDER BY qv."versionNumber" DESC
+            LIMIT 1)) AS "publishedVersionId",
            qr."status" AS "requestStatus", qr."folio"
     FROM "quotes" q
     INNER JOIN "quote_requests" qr ON qr."id" = q."quoteRequestId" AND qr."clientId" = q."clientId"
@@ -215,7 +226,7 @@ export async function acceptCustomerQuote(actor: Actor, quoteIdInput: string, in
     const result = await prisma.$transaction(async (transaction) => {
       const quote = await lockQuote(transaction, quoteId, clientId);
       if (!quote) throw new AppError('NOT_FOUND', 'La cotización no existe.', 404);
-      if (!quote.currentVersionId) throw new AppError('CONFLICT', 'La cotización no tiene una versión vigente.', 409);
+      if (!quote.publishedVersionId) throw new AppError('CONFLICT', 'La cotización no tiene una versión vigente.', 409);
 
       const replay = await transaction.quoteAcceptance.findUnique({
         where: { acceptedById_idempotencyKeyHash: { acceptedById: actor.userId, idempotencyKeyHash: normalized.idempotencyKeyHash } },
@@ -226,7 +237,7 @@ export async function acceptCustomerQuote(actor: Actor, quoteIdInput: string, in
         return serializeAcceptance(replay);
       }
 
-      const version = await transaction.quoteVersion.findUnique({ where: { id: quote.currentVersionId }, select: { id: true, quoteId: true, versionNumber: true, status: true, validUntil: true } });
+      const version = await transaction.quoteVersion.findUnique({ where: { id: quote.publishedVersionId }, select: { id: true, quoteId: true, versionNumber: true, status: true, validUntil: true } });
       if (!version || version.quoteId !== quote.id) throw new AppError('CONFLICT', 'La cotización no tiene una versión vigente.', 409);
       assertRequestCanBeAccepted(quote.requestStatus);
       const document = await loadReadyDocument(transaction, quote.id, version.id);
@@ -241,7 +252,7 @@ export async function acceptCustomerQuote(actor: Actor, quoteIdInput: string, in
 
       const eligible = canAcceptQuoteVersion({
         versionStatus: version.status,
-        isCurrent: quote.currentVersionId === version.id,
+        isCurrent: quote.publishedVersionId === version.id && isCustomerVisibleQuoteVersionStatus(version.status),
         isExpired: version.validUntil !== null && version.validUntil <= now,
         documentStatus: document.status,
         documentHashMatches,

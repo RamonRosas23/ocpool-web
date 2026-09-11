@@ -4,10 +4,40 @@
 
 ## Estado actual
 
-- **Fase:** Fase 17 — verificación de continuidad local; terminada para el alcance local.
-- **Estado:** Fases 1–17 están implementadas y verificadas dentro del alcance local. Fase 17 ejecutó un backup PostgreSQL con checksum y una restauración aislada real en `ocpool_restore_verify`, corrigió la preparación DDL del script y verificó cleanup sin tocar `ocpool_dev`. El producto aún no está listo para lanzamiento porque runtime productivo y controles externos permanecen bloqueados.
-- **Última actualización:** 2026-09-08.
-- **Rama de implementación:** `codex/ocpool-foundation`.
+- **Fase:** Iniciativa Experiencia Comercial V2 — G0 (gobierno, decisiones y baseline) activa; las Fases 1–17 permanecen cerradas para su alcance local.
+- **Estado:** la auditoría crítica de código, dominio, UI/UX y plan quedó documentada; se creó la especificación normativa, su autorrevisión y un plan maestro V2 ejecutable por gates. G0-01 está `APPROVED_LOCAL_PRODUCT` con ADR, fixture y pruebas verdes; G0-02 está aprobado para políticas de producto y permanece bloqueado sólo por fiscalía/jurídico en BIZ-03, BIZ-04, BIZ-09 y BIZ-10. G0-03 tiene matriz, fixture, diccionario de 13 métricas, baseline anónimo 24/24 y una muestra mínima local de 65 registros PII-safe (`13 × n=5`) con objetivos de §29 aprobados localmente; permanece `VERIFIED_LOCAL_PARTIAL` hasta el piloto real y el cierre formal. G0-04 está `APPROVED_LOCAL` con primitives por patrón y `lang="es-MX"` SSR en superficies privadas. En paralelo quedaron implementados y verificados localmente el snapshot financiero S0-02, las acciones server-owned S0-03, los punteros working/published, la aprobación de descuentos y el PDF v2; no están activados por flag ni sustituyen los signoffs de G0. La contención S0-01 continúa impidiendo exponer versiones internas al customer. El producto aún no está listo para lanzamiento y conserva los bloqueos externos previamente documentados.
+- **Última actualización:** 2026-09-11.
+- **Rama de implementación:** `main`.
+- **Integración de servidor:** `main` conserva el dominio `ocpool.com.mx`, el correo `contacto@ocpool.com.mx`, el arranque local en `127.0.0.1:3008` y la ausencia del endpoint legado `/api/send-email`. La rama local continúa adelantada respecto a `origin/main`; cualquier publicación requiere credenciales GitHub del usuario y no equivale a despliegue productivo.
+- **Revisión 2026-09-09:** se mejoró el cierre del formulario público para explicar el folio, el alta del portal y el enlace de un solo uso; se añadió `no-store` a health/readiness, se ocultó `X-Powered-By` y se documentó el límite seguro entre build y reinicio. La mezcla de propietarios en `.next` se corrigió y el proceso PM2 fue reiniciado como `web_front` con el build vigente.
+- **Revisión adicional 2026-09-09:** las respuestas JSON de autenticación y los errores públicos ahora declaran `cache-control: no-store`; la cobertura unitaria verifica que los errores no puedan quedar almacenados por un proxy.
+- **Verificación pública posterior al despliegue:** `ocpool.com.mx` y `www.ocpool.com.mx` responden `200` en la landing y health; las rutas `/portal`, `/portal/access`, `/login`, `/login/recovery`, `/auth/customer/consume-link`, `/auth/recovery`, `/staff`, `/staff/requests`, `/robots.txt` y `/sitemap.xml` responden `200`; los 12 assets estáticos referenciados responden `200`, HSTS está activo y no se expone `X-Powered-By`. La validación de interacción con navegador real queda como prueba manual final, no como evidencia sustituida por HTTP.
+- **Ajuste de onboarding 2026-09-09:** `/portal/access` ya distingue un cliente nuevo sin cuenta de un cliente cuyo portal ya fue habilitado; el botón y la confirmación no prometen un enlace inmediato antes de la revisión staff. El modelo continúa requiriendo habilitación explícita desde el expediente para crear la cuenta `CUSTOMER` invitada y emitir el enlace de un solo uso.
+- **Claridad de mensajes 2026-09-09:** el folio ahora se presenta como identificador no autenticante; el formulario indica que el cliente nuevo no necesita hacer nada más mientras se revisa la solicitud; staff y notificaciones explican la secuencia habilitación → enlace → portal.
+- **Revisión UI/UX 2026-09-09 (baseline histórico):** se consolidó de forma incremental la identidad visual de las superficies privadas con el logo oficial en encabezados, estados restringidos y estados vacíos; staff añadió retorno visible al dashboard y navegación entre módulos, mientras portal conservó el regreso al sitio público. Se mantienen intactos la landing y sus controles públicos. Typecheck, lint, build, 119 unitarias y contrato de contenido pasaron; la prueba E2E foundation requería liberar el puerto local 3100. Este cierre describe aquel alcance incremental y no constituye aprobación del flujo o diseño V2; la auditoría del 2026-09-10 lo reemplaza como autoridad para el trabajo futuro.
+- **Experiencia Comercial V2 2026-09-10:** una segunda auditoría encontró bloqueadores previos al rediseño: `currentVersionId` mezcla borrador y publicación, el portal puede proyectar `EN_REVISION`, el flujo notifica antes del PDF, el constructor puede representar precios vigentes en lugar del snapshot, los términos dependen del navegador y la UI ofrece transiciones distintas al backend. La nueva [`especificación`](docs/ocpool-commercial-v2/specs/2026-09-10-ocpool-commercial-ux-rearchitecture.md), [`autorrevisión`](docs/ocpool-commercial-v2/reviews/2026-09-10-ocpool-commercial-ux-rearchitecture-review.md) y [`plan maestro integrado`](docs/ocpool-commercial-v2/plans/2026-09-10-ocpool-commercial-ux-rearchitecture.md) separan working/published, aprobación, documento, publicación, delivery y aceptación; fijan expediente único, shell privado, catálogo contextual, autosave concurrente, portal profundo, gates premium, piloto y rollout. Una inspección local con Chromium a 390 y 1440 px confirmó los problemas de escala, longitud y regreso de las entradas privadas sin sesión; los flujos críticos pasan 3/3, la suite de acceso pasa 5/5 y la expansión autenticada pasa onboarding 2/2, dashboard 1/1, notificaciones 1/1, auditoría 1/1, mensajería staff 2/2 e identidad API 1/1. Esa expansión corrigió roles ARIA incompletos, overflow móvil en headers operativos/login y selectores ambiguos de fechas. La medición completa, objetivos y decisiones de producto siguen pendientes. La landing está explícitamente congelada. Ninguna implementación V2 se considera iniciada.
+- **Baseline G0-03 2026-09-10/11:** se creó [`ADR de baseline`](docs/adr/2026-09-10-commercial-g0-baseline.md), [`ADR de objetivos locales`](docs/adr/2026-09-11-commercial-g0-03-objectives.md), [`fixture de escenarios y métricas`](tests/fixtures/commercial-baseline-v2.ts) y [`prueba de contrato`](tests/unit/commercial-baseline-contract.test.ts). La matriz cubre ocho superficies (landing pública + siete privadas), tres viewports, diez escenarios, trece métricas, cuatro perfiles de volumen y reglas de telemetría sin PII. El fixture valida muestras sintéticas con 13 campos requeridos, exige una métrica conocida por escenario y rechaza PII de forma recursiva; el recorder opt-in cubre solicitud pública, solicitudes staff, cotizador, portal y notificaciones bajo `test-results/`. El baseline anónimo de navegador pasó 24/24 y la suite autenticada de acceso 5/5; las suites de medición pasaron pública 35/35, solicitudes 1/1, portal+cotizador 3/3, notificaciones 1/1, una repetición del cotizador 1/1 en build fresco y una repetición final del portal 4/4. La muestra mínima posterior reúne 65 registros PII-safe (`13 métricas × n=5`) en corridas independientes y los objetivos de §29 quedaron aprobados localmente. Se verificaron diez conceptos, recuperación de PDF fallido, aprobación con separación de funciones, un error recuperable de aceptación, una cotización vencida con actualización por conversación y una sesión de abandono válida; el piloto T1 y la instrumentación productiva siguen fuera de alcance.
+- **Aprobación de descuentos A1-01/A1-02 2026-09-11:** se añadió [`ADR del dominio`](docs/adr/2026-09-11-quote-approval-domain.md), migración `20260911090000_quote_approvals`, servicio con digest del snapshot, API de solicitud/decisión, auditoría/Outbox e invalidación automática al editar. El constructor staff muestra el siguiente paso y el estado de aprobación dentro del expediente; el envío rechaza descuentos sin aprobación vigente y la autoaprobación se bloquea en servidor. `npx vitest run tests/integration/quotes-service.test.ts --maxWorkers=1` pasó 3/3, incluyendo idempotencia, stale digest y envío final; no se activó flag ni se tocó la landing. Umbrales/permisos finales, cola global y baseline de producto siguen pendientes.
+- **Punteros working/published P0-01 2026-09-11:** se añadió [`ADR de punteros`](docs/adr/2026-09-11-quote-working-published-pointers.md) y migraciones expand/backfill + FK compuestas `20260911093000_quote_working_published_pointers` y `20260911094000_quote_pointer_integrity`. Las nuevas versiones escriben `workingVersionId`, el envío mueve `publishedVersionId`, staff conserva contexto para crear una nueva versión y portal/PDF/aceptación prefieren la publicada. Se preserva `currentVersionId` sólo como compatibilidad temporal. Los servicios dirigidos de cotización, staff, portal y aceptación pasaron 6/6; schema local quedó en 20 migraciones. La retirada del campo legacy requiere un gate posterior.
+- **Términos de aceptación P0-06 2026-09-11:** se añadió [`ADR de términos controlados`](docs/adr/2026-09-11-quote-terms-server-owned.md). El servidor es dueño de `quote-terms-2026-01`, el portal recibe esa versión y una etiqueta humana desde el backend, y la aceptación rechaza identificadores distintos; el navegador ya no define la evidencia. La aprobación del texto y del registro jurídico versionado sigue bloqueada por BIZ-10.
+- **Publicación con preflight PDF P0-05 2026-09-11:** se añadió [`ADR de publicación`](docs/adr/2026-09-11-quote-publication-preflight.md). La ruta que envía una cotización prepara/verifica o reutiliza el PDF antes de cambiar a `ENVIADA` y emitir los eventos de publicación; el constructor ya muestra el documento listo inmediatamente después de enviar. La primitive de transición directa se conserva sólo para compatibilidad interna pendiente de migración.
+- **Snapshot financiero y acciones server-owned S0-02/S0-03 2026-09-11:** el constructor conserva el precio aplicado de la línea al rehidratar un borrador aunque el catálogo cambie; `tests/quotes.spec.ts` pasó 1/1 con ese caso y nueva versión. El detalle de solicitudes recibe del backend `availableStatusTransitions` y `availableActions`, y la UI ya no mantiene el mapa de transiciones como autoridad; la integración dirigida pasó 2 archivos/7 pruebas y `tests/requests.spec.ts` pasó 1/1 en 390/768/1440 px sin overflow, Axe serio ni errores de consola. Se corrigió el título móvil que mantenía escala de escritorio. Estos verticales son implementación local verificable, no activación productiva ni cierre de Gate G0/S0.
+- **Aprobación local G0-01/G0-02 2026-09-11:** la autorización explícita del responsable de la iniciativa aprobó el ciclo canónico y las políticas de producto BIZ-01, BIZ-02, BIZ-05…BIZ-08, BIZ-11…BIZ-14 para slices locales. BIZ-03/BIZ-04 permanecen bloqueadas por fiscalía y BIZ-09/BIZ-10 por jurídico; no se inventan tasas, firmantes ni términos.
+- **PDF comercial P0-08/S0-04 2026-09-11:** `quote-pdf-v2` embebe el logo oficial de OCPOOL y pagina todo el alcance, eliminando el truncado silencioso de cuatro líneas. El renderer pasó 4/4 pruebas, incluyendo contenido extenso; las integraciones dirigidas de generación/publicación pasaron 2 archivos/3 pruebas y el E2E del constructor continuó 1/1. La plantilla comercial estructurada completa, recuperación operativa y aprobación jurídica siguen pendientes; no se activó producción.
+- **Cobertura autenticada G0-03 2026-09-11:** la repetición del cotizador pasó `5/5` en cada recorrido instrumentado; la solicitud pública, solicitudes staff, portal y notificaciones también pasaron `5/5`. La muestra consolidada es de 65 registros PII-safe (`13 métricas × n=5`), con expiración guiada, abandono válido, error recuperable, diez conceptos, fallo/recuperación de PDF, aprobación con dos sesiones y recuperación de entrega. Los objetivos de §29 quedaron aprobados localmente; el piloto T1, la comparación estadística y el cierre formal de G0-03 siguen pendientes.
+- **Primitivas privadas G0-04 2026-09-11:** se aprobó localmente el fallback por patrón: Radix para Select, react-day-picker para DatePicker y wrappers propios auditados para Dialog/Tabs. El spike aislado de React Aria/Lucide pasó 3/3 viewports, teclado, focus restore, SSR/hidratación, responsive y Axe; la revisión humana fue aceptada por autorización explícita. `check:next` pasó 12/12 rutas en 390/1440 px con `lang="es-MX"` SSR, sin overflow, errores de página ni peticiones fallidas; la landing conserva `lang="es"` y no se añadieron dependencias al root.
+- **Catálogo y precios G0-03 2026-09-10:** se añadió [`catalog.spec.ts`](tests/catalog.spec.ts) como recorrido opt-in desechable. Pasó 1/1 aislado y quedó incluido en la regresión cruzada 17/17: categoría/concepto, lista de precios MXN, validación de vigencia invertida, guardado de vigencia válida, archivado, Axe, responsive 390/768/1440 y consola limpia. La prueba descubrió y se corrigió la semántica ARIA incompleta de la tabla de precios; no se modificó la landing.
+- **Pestañas privadas 2026-09-10:** archivos y mensajería staff ahora ofrecen navegación de teclado (`ArrowLeft`/`ArrowRight`/`Home`/`End`) con selección y foco sincronizados. La suite `STAFF_MESSAGING_E2E=1` pasó 2/2, incluyendo ambos paneles, Axe, responsive y consola limpia; la prueba también espera la confirmación real del POST antes de cerrar la conversación para evitar carreras `409`. El prototipo comparativo de G0-04 ya está versionado y pasa su matriz CSR/SSR aislada y formato numérico `es-MX`; Next.js anónimo pasó 12/12, registrando `lang="es"`; lector de pantalla, decisión de locale y decisión final siguen pendientes.
+- **Gate G0-05 2026-09-10/11:** se añadieron [`flags server-side fail-closed`](src/server/flags/commercial-v2.ts), [`pruebas de flags`](tests/unit/commercial-v2-flags.test.ts), [`gate local`](scripts/quality-gate-v2.mjs) y [`manifiesto reproducible de landing`](docs/ocpool-commercial-v2/landing-freeze.md). El gate fresco aislado en `3195` dejó typecheck, lint, 143 unitarias, contenido y baseline HTTP 10/10 verdes; permanece `BLOCKED` deliberadamente por el piloto T1 y los signoffs fiscal/jurídicos. Ninguna flag está conectada a UI o telemetría.
+- **Preparación U1/R1 2026-09-11:** se registró [`ADR de entrada U1/R1`](docs/adr/2026-09-11-u1-r1-entry-readiness.md) con auditoría de rutas privadas, brechas reales, contratos reutilizables, fallback, no-go y orden de implementación. U1/R1 quedan `PREPARADO_LOCAL`, pero la UI nueva, los layouts y la telemetría permanecen sin activar hasta el cierre formal de G0.
+- **Fundamento U1-01/U1-02 2026-09-11:** se creó [`private/ui`](src/components/private/ui/) con tokens semánticos, primitives accesibles y estados privados bajo un namespace aislado, junto con el mapa de navegación por capabilities. El endpoint aditivo de capabilities pasó integración 3/3 con separación RBAC y payload seguro. El código visual está sin consumidores para conservar el fallback; typecheck, lint y la suite local quedan verdes en 36 archivos/143 pruebas.
+- **Baseline de navegador G0-03/G0-05 2026-09-10:** se añadió [`commercial-baseline-browser.mjs`](scripts/commercial-baseline-browser.mjs) como recorrido anónimo de ocho superficies (landing + privadas) y tres viewports. Con Chromium ejecutable en `/var/tmp` pasó 24/24 combinaciones sin overflow, errores de página ni respuestas inesperadas; la evidencia está en [`g0-03-browser-baseline.md`](docs/ocpool-commercial-v2/g0-03-browser-baseline.md).
+- **Baseline HTTP complementario 2026-09-10:** se añadió [`commercial-baseline-http.mjs`](scripts/commercial-baseline-http.mjs) para comprobar diez rutas, status y headers sin navegador; sirve como evidencia de disponibilidad, no como sustituto de UI/permisos autenticados.
+- **E2E autenticada y build aislado 2026-09-10:** la suite `AUTH_SURFACES_E2E=1` pasó 5/5 con `E2E_PORT=3110`, Chromium ejecutable y fixtures limpiados completamente. La suite pública `tests/quality.spec.ts` pasó 35/35 en `E2E_PORT=3112`. Los flujos comerciales críticos `PORTAL_E2E=1 QUOTES_E2E=1` pasaron 3/3 juntos en `E2E_PORT=3120`, incluyendo portal/aceptación/mensajería/archivos, recuperación móvil y cotizador hasta PDF/descarga; durante la validación se corrigió un defecto Axe real en el skeleton de archivos. La expansión autenticada posterior pasó onboarding 2/2, dashboard 1/1, catálogo/precios 1/1, notificaciones 1/1, auditoría 1/1, mensajería staff 2/2 e identidad API 1/1; la corrida cruzada limpia de todas las suites opt-in pasó 17/17 en `E2E_PORT=3149`. Después del hardening de pestañas y esperas de mensajería, las repeticiones aisladas pasaron auth 5/5 (`3158`), catálogo 1/1 (`3159`), portal 2/2 (`3160`) y mensajería 2/2 (`3156`); una corrida masiva posterior sobre la base compartida no se cuenta como verde por latencias/fixtures intermitentes. El build `NEXT_DIST_DIR=.next-verify-final-tabs npm run build` pasó sin tocar el `.next` activo; los artefactos temporales se eliminaron.
+- **Verificación técnica adicional 2026-09-10:** `npm audit --omit=dev --audit-level=high` quedó en 0 vulnerabilidades altas; `npm run db:validate` y `npx prisma migrate status` confirmaron schema válido y 17 migraciones al día en `ocpool_dev`.
+- **Contención S0-01 2026-09-10 (`f787468` + `499bfd4` + `1d408f7` + `6611299` + `0cc3683`):** se corrigió la exposición legacy de versiones internas: portal, PDF y aceptación comparten [`customer-visibility.ts`](src/server/modules/quotes/customer-visibility.ts), excluyen `EN_REVISION`/`BORRADOR`, exigen `portal.self.read` tanto en el guard HTTP como en el servicio, conservan la última versión pública cuando `currentVersionId` apunta a working, sólo muestran acciones cuando el PDF privado está verificablemente listo (`pdfReady`) y las notificaciones de aceptación se atan al `QuoteAcceptance` exacto. Las integraciones de portal, aceptación, PDF y fan-out pasaron; no hubo migración ni cambio en la landing. G0 continúa abierto; S0-02/S0-03 tienen implementación local verificable y S0-04 permanece parcial, pero ningún vertical se activa hasta el gate.
+- **Regresión local 2026-09-11:** `npm run typecheck`, `npm run lint`, `npm run test:unit` pasó 34 archivos/139 pruebas y `git diff --check` pasaron. La integración completa serial con PostgreSQL local pasó 42 archivos/88 pruebas con timeout de 60 s; los logs 401/403/404/409/429 son negativos esperados y quedan sólo avisos conocidos de Node 20/AWS SDK y pg. El E2E de solicitudes pasó 1/1 en 390/768/1440 px sin overflow, Axe serio ni errores de consola; el E2E del constructor pasó 1/1 con conservación del snapshot y PDF v2. El schema local conserva 20 migraciones aplicadas.
+- **Gate técnico G0-05 2026-09-10:** `APP_URL=http://127.0.0.1:3008 npm run test:v2:gate` verificó typecheck, lint, 137 unitarias, contenido y baseline HTTP 10/10; terminó con `exit 2` deliberado (`BLOCKED`) por signoffs, piloto T1 y cierre formal de G0. La verificación final posterior conserva 139 unitarias verdes y objetivos/primitives/locale aprobados localmente.
 - **Últimos commits de Fase 11:** `6fe361e` (`feat: add staff analytics dashboard`), `fbbd641` (`docs: document analytics operations`), `2fc037f` (`security: rate limit analytics reads`).
 - **Últimos commits de Fase 12:** `a40d839` (`docs: close audit observability phase`), `d9a87e0` (`fix: stabilize audit verification fixtures`), `c341c66` (`feat: add staff audit workspace`), `df315e2` (`feat: expose staff audit api`), `23a9ab5` (`feat: add secure audit read service`).
 - **Documentos de Fase 12:** especificación, autorrevisión, plan ordenado y runbook versionados; Tasks 1–6 cerradas con evidencia de gate.
@@ -21,14 +51,15 @@
 ## Orden documental obligatorio
 
 1. Auditoría y decisiones iniciales.
-2. Especificación de diseño en `docs/superpowers/specs/`.
-3. Autorrevisión de la especificación en `docs/superpowers/reviews/`.
-4. Plan de implementación en `docs/superpowers/plans/`.
-5. Implementación por vertical slices.
-6. Verificación de fase.
-7. Actualización de este archivo y documentación técnica.
+2. Especificación activa V2 en `docs/ocpool-commercial-v2/specs/`.
+3. Autorrevisión activa V2 en `docs/ocpool-commercial-v2/reviews/`.
+4. Plan maestro activo V2 en `docs/ocpool-commercial-v2/plans/`.
+5. Documentos sustituidos y fases cerradas en `docs/historicos/`.
+6. Implementación por vertical slices.
+7. Verificación de fase.
+8. Actualización de este archivo y documentación técnica.
 
-No se iniciará una fase posterior si la fase anterior no tiene criterios de terminado verificables.
+No se iniciará una slice si su dependencia o gate anterior no tiene criterios de terminado verificables. Sólo pueden avanzar en paralelo las ramas que el grafo del plan V2 declare independientes y después de cerrar sus dependencias compartidas.
 
 ## Módulos
 
@@ -196,10 +227,11 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ### Pendientes
 
-- Arquitectura de aplicación comercial por dominios de negocio.
+- Cerrar G0 del plan V2: completar baseline de tareas, resolver fiscal/jurídico, validar flags y congelación visual de landing.
+- Cerrar S0 antes de cualquier rediseño amplio: privacidad de versiones, fidelidad cross-surface del snapshot, acciones legales, PDF antes de aviso y términos server-owned. S0-02/S0-03 ya tienen implementación local verificable; falta completar su matriz de cierre y mantenerlos sin activación hasta G0.
 - Revisión legal de términos de PDF/aceptación.
-- Auditoría comercial y de seguridad.
-- Siguiente paso: cerrar controles externos de lanzamiento sin publicar hasta contar con evidencia y aprobación formal.
+- Completar en G0/H1 la auditoría autenticada, comercial y de seguridad con fixtures reproducibles; la auditoría estática y la inspección sin sesión del 2026-09-10 ya están documentadas.
+- Siguiente paso de producto: completar la medición comercial autenticada de G0-03 y revisar los cuatro bloqueos fiscales/legales restantes. G0-04 ya tiene aprobación local, `lang="es-MX"` SSR y primitives decididas. G0-05 ya tiene infraestructura fail-closed, browser baseline y manifiesto/hash de landing; no activa flags ni instrumentación hasta cerrar los signoffs restantes. Los controles externos de lanzamiento continúan en paralelo y no autorizan publicación.
 - Selección y configuración de proveedores productivos.
 - Backup externo cifrado, restauración periódica y RPO/RTO aprobados.
 - Antivirus productivo, cuarentena y política de objetos.
@@ -208,7 +240,9 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 - Backup/restore local aislado: verificado en Fase 17; la continuidad productiva externa permanece pendiente.
 - Preflight firmado usando `docs/runbooks/launch-readiness-checklist.md` y el JSON de `readiness:production:full`.
 
-## Decisiones arquitectónicas vigentes
+## Decisiones arquitectónicas acumuladas
+
+Las decisiones siguientes preservan la historia técnica de las Fases 1–17. Para todo trabajo futuro en superficies privadas, la especificación y el plan V2 prevalecen cuando exista contradicción; una entrada marcada `LEGACY` describe el comportamiento actual que debe contenerse o migrarse, no el contrato objetivo.
 
 1. Mantener la web pública existente y su identidad visual.
 2. Construir un monolito modular, no microservicios.
@@ -239,7 +273,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 27. La API de cotizaciones serializa todas las unidades monetarias como cadenas antes de construir JSON; las vistas internas pueden calcular previews con `BigInt` sin confiar en los totales del navegador.
 28. El constructor trabaja sobre una solicitud existente y una cotización raíz; cada cambio después de una versión enviada crea una nueva versión y nunca muta el histórico.
 29. El portal cliente aplica el scope `clientId` en backend; el actor, no el request, define el cliente autorizado.
-30. Las versiones `BORRADOR` no se exponen al cliente; el portal sólo presenta versiones enviadas o posteriores y una proyección sin actores internos ni notas operativas.
+30. **LEGACY:** las versiones `BORRADOR` no se exponen al cliente, pero el filtro actual de “enviadas o posteriores” es insuficiente; V2 exige publicación deliberada mediante `publishedVersionId` + `QuotePublication`.
 31. La resolución de sesión invalida a un cliente cuyo vínculo `Client` está archivado; un usuario cliente sin vínculo se conserva como actor para que cada guard de superficie responda 403 explícito sin convertirlo en una sesión inexistente.
 32. Las fechas comerciales del portal se formatean en UTC porque `validUntil` representa una fecha de vigencia persistida, no la zona horaria local arbitraria del navegador.
 33. Fase 6 usará una conversación única por `QuoteRequest`, con `clientId` redundante controlado para mantener scope e impedir cruces de expediente.
@@ -275,7 +309,7 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 63. La primera versión de aceptación comercial es evidencia auditable de intención dentro de OCPOOL y no se presenta como firma electrónica avanzada sin revisión jurídica y proveedor especializado.
 64. El renderer PDF será determinista y server-side con `pdf-lib`; el cliente nunca decide totales, contenido, storage key ni bytes del documento.
 65. La primera plantilla usa fuentes PDF estándar para evitar artefactos WOFF no portables; la calidad visual se controla desde composición, color, ritmo y QA rasterizado.
-66. La aceptación de cliente sólo puede operar sobre `Quote.currentVersionId`; no se acepta una versión histórica aunque su PDF siga disponible para lectura.
+66. **LEGACY:** la aceptación actual opera sobre `Quote.currentVersionId`; V2 reemplaza este contrato porque debe aceptar exclusivamente la publicación vigente exacta y conservar una working interna separada.
 67. El lock de aceptación se toma sobre cotización y solicitud antes de crear evidencia; la clave única `(acceptedById, idempotencyKeyHash)` permite replay exacto y la unicidad por versión impide doble aceptación con claves distintas.
 68. La URL de descarga se emite sólo después de validar DB + HEAD del objeto privado, con expiración de 60 segundos y auditoría; el portal recibe metadata mínima y nunca una storage key.
 69. La ruta staff de generación requiere `{}` con schema estricto, para que incluso regeneraciones mantengan contrato JSON y protección same-origin uniforme.
@@ -349,6 +383,19 @@ No se iniciará una fase posterior si la fase anterior no tiene criterios de ter
 
 ## Pruebas realizadas
 
+Verificación de integración en servidor Linux sobre `d7e40cb`:
+
+- Instalación reproducible con `npm ci`, Node `22.23.2` aislado y Prisma Client 7.10.0 generado.
+- `npm run typecheck`, `npm run lint`, `npm run test:unit` (31 archivos/116 pruebas), `npm run test:content` y `npm run build` — correctos.
+- PostgreSQL, Mailpit y MinIO locales — saludables; 17 migraciones aplicadas y seed correcto.
+- `npm run test:integration` — 40/42 archivos pasaron en la corrida serial; dos hooks excedieron el timeout de 10 segundos durante el arranque inicial. La repetición aislada de ambos archivos pasó 2/2 archivos y 4/4 pruebas sin cambios de código.
+- E2E pública contractual: el puerto `127.0.0.1:3100` está ocupado por un servicio ajeno que responde 404; no se detuvo ni modificó ese proceso. Se ejecutó la misma suite en `127.0.0.1:3101` con `APP_URL` coincidente y Chromium en una ruta ejecutable fuera del repositorio: `tests/quality.spec.ts` pasó `35/35`; `tests/foundation-health.spec.ts` pasó `2/2`.
+- La primera corrida del formulario en el puerto temporal fue rechazada por el `APP_URL` de `.env.example` (`localhost:3000`); al reiniciar el proceso con el origen exacto, el flujo pasó de forma aislada `3/3` y en la regresión completa `35/35`. Esto confirma la protección same-origin y no requiere cambio de producto.
+- El build aislado con `NEXT_DIST_DIR` terminó correctamente y se revirtió el cambio automático de Next sobre `tsconfig.json`; no quedan artefactos de pruebas en el repositorio. Node del sistema sigue siendo `20.19.6` (el proyecto recomienda Node 22) y sólo genera la advertencia de compatibilidad del SDK AWS durante las pruebas.
+- Revisión 2026-09-09: `npm run typecheck`, `npm run lint`, `npm run test:unit` (31 archivos/118 pruebas), `npm run test:content`, `npm audit --omit=dev --audit-level=high`, `npm run db:validate`, `npx prisma migrate status` y el build aislado con `NEXT_DIST_DIR=.next-verify` pasaron. La integración completa tuvo tres timeouts bajo ejecución paralela; `catalog-quotes-schema` y `messaging-api` pasaron al ejecutarse de forma dirigida. La verificación pública actual queda pendiente de reiniciar PM2 porque el HTML servido referencia chunks que responden `404`.
+- Repetición serial posterior: `npm run test:integration` pasó `42/42` archivos y `87/87` pruebas con PostgreSQL local; se conserva la advertencia de Node `20.19.6` frente al runtime recomendado Node 22.
+- Tras reiniciar el proceso `ocpool-website` (PM2 ID `7`) con el entorno de desarrollo exportado, el proceso vivo en `127.0.0.1:3008` responde `200` en `/`, `/portal`, `/staff/requests`, `/robots.txt`, `/sitemap.xml`, `/api/health` y `/api/ready`; el formulario público real respondió `201` y generó un folio de prueba. El proceso quedó ejecutándose como `web_front`; el `503` anterior era únicamente la configuración de entorno que PM2 no había recibido.
+
 Gate final ejecutado después de instalación limpia de dependencias:
 
 - `npm ci --no-audit --fund=false --foreground-scripts` — correcto; se recuperó previamente un conflicto Windows `ENOTEMPTY` moviendo sólo directorios generados de `node_modules`, sin tocar código ni datos.
@@ -388,7 +435,7 @@ Gate final ejecutado después de instalación limpia de dependencias:
 - Tarea 4 de Fase 6: implementación y cierre documental de UI cliente; E2E opt-in `PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts` 2/2, `npm run test:unit` 45/45, `npm run test:integration` 37/37 serializado, `npm run test:e2e` 34/34 ejecutadas con 5 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content` y `git diff --check` correctos. Se verificaron lectura/envío/refresh, notas internas invisibles, cierre de conversación, error recuperable, responsive, Axe, consola limpia y payload cliente mínimo.
 - Tarea 5 de Fase 6: commits `09d979f`, `f2b0e4b` y `9eb9a04`; E2E opt-in `STAFF_MESSAGING_E2E=1 npx playwright test tests/client-messaging-staff.spec.ts` 2/2, `messaging-api.test.ts` 4/4, `npm run test:unit` 45/45, `npm run test:integration` 38/38, `npm run test:e2e` 34/34 ejecutadas con 7 omitidas explícitamente, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:content`, migraciones/seed, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron separación de visibilidades, dos perfiles RBAC, compositores independientes, cierre/reapertura, Axe, consola y no overflow.
 - Tarea 6 de Fase 6: commit `6e1037c` (`test: harden messaging security matrix`) más cierre documental; API `messaging-api.test.ts` 4/4 con negative checks finales, E2E cliente 2/2, staff 2/2, auth 1/1 y constructor 1/1. Gate `npm test` 45 unitarias, 38 integraciones, contenido, build, 34 E2E públicas ejecutadas con 7 omitidas explícitamente y foundation 1/1; `npm run db:validate`, `npm run db:migrate:deploy`, `npm run db:seed`, `npm audit --omit=dev --audit-level=high` (0) y `git diff --check` correctos. Se verificaron IDOR, sesión/RBAC, same-origin, rate limit, idempotencia concurrente, cierre, UUID inválido, Axe, responsive, consola, cleanup y ausencia de cuerpos sensibles en HTML/payloads/logs/Outbox.
-- Fase 7 — planificación: especificación `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` y plan `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` creados y revisados; aún no cuenta como evidencia de implementación ni como fase terminada.
+- Fase 7 — planificación: especificación `docs/historicos/specs/2026-09-08-ocpool-private-files.md` y plan `docs/historicos/plans/2026-09-08-ocpool-private-files.md` creados y revisados; aún no cuenta como evidencia de implementación ni como fase terminada.
 - Fase 7 — Tarea 1: prueba dirigida de dominio 6/6, schema 1/1, migración aplicada, Prisma validate/generate, seed, typecheck, lint y diff check correctos. No se agregaron dependencias ni servicios externos.
 - Fase 7 — Tarea 2: scanner 3/3, servicio transaccional 3/3, storage MinIO 1/1, unitarias completas 54/54, typecheck/lint, Compose y auditoría de dependencias correctos. Se verificaron replay/concurrencia, rechazo por firma, expiración, cleanup, soft delete, URL efímera y no exposición de keys/bytes.
 - Fase 7 — Tarea 3: `private-files-api.test.ts` 4/4, typecheck y lint dirigidos correctos. Se verificaron 401/403/404, cliente cruzado, same-origin, Zod estricto, upload/complete/download/delete, visibilidad interna, rol limitado, rate limit, no-store y ausencia de storage keys en proyecciones.
@@ -518,6 +565,10 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 
 ## Problemas encontrados y resolución
 
+- El `pull` del servidor estaba bloqueado por diez cambios locales sobre `a1887ed`. Se protegieron en un commit, se rebasaron sobre `c8f748e` y se resolvieron los conflictos manteniendo el flujo persistido actual; la ruta `send-email` permaneció eliminada y el lockfile remoto quedó libre de ruido de metadata local.
+- El servidor exponía Node 20 y una caché npm con propietario distinto. La verificación usó Node 22 y caché temporal aislados, sin cambiar propietarios globales ni mezclar las cuentas del sistema.
+- `.next` conservaba tipos generados para `/api/send-email`; el artefacto previo se movió a `/tmp/ocpool-next-pre-integration-20260908` y Prisma/Next regeneraron artefactos coherentes con las rutas actuales.
+
 - Vitest 5 exigía tipos Node 22; se actualizó `@types/node` al rango compatible con Node 22.14.
 - Playwright descubría pruebas unitarias `.test.ts`; se limitó el patrón E2E a `*.spec.ts`.
 - Vitest no cargaba `.env` en integración; se añadió `tests/setup-env.ts`.
@@ -541,7 +592,6 @@ La suite E2E completa descubre 41 pruebas: auth, foundation, portal, mensajería
 - La primera E2E de archivos encontró selectores ambiguos porque el nombre del archivo también aparece en la acción de descarga; se ajustaron los asserts a nombres exactos y Axe detectó un contraste insuficiente en el distintivo `PDF`, corregido antes de cerrar Tarea 4. En Tarea 5, Axe detectó un `<ul role="tabpanel">` inválido; se separó el contenedor ARIA del listado.
 - La primera E2E de aceptación abrió el popup en `about:blank` antes de navegar al PDF; la aserción se trasladó a la respuesta API y se mantuvo el popup sólo como verificación de apertura. El primer flujo de éxito remonteaba el componente antes de mostrar confirmación; el refresh del expediente se movió a `Continuar`. Finalmente, la prueba de mensajería esperaba un mensaje optimista antes de que el fetch terminara; se añadió polling de persistencia DB antes de recargar.
 - Axe del inbox staff detectó contraste bajo y selects sin nombre; se corrigieron variables de color y `aria-label` explícitos, y la E2E staff volvió a pasar 2/2.
-- La primera E2E del constructor con PDF encontró un selector ambiguo por el `role=status` del estado de carga documental; se acotaron los asserts al aviso principal. La misma revisión Axe detectó contraste insuficiente en fechas del historial y un selector sin nombre; se corrigieron color y `aria-label`, y la repetición pasó 1/1 en desktop y móvil.
 - La primera E2E del constructor con PDF encontró un selector ambiguo por el `role=status` del estado de carga documental; se acotaron los asserts al aviso principal. La misma revisión Axe detectó contraste insuficiente en fechas del historial y un selector sin nombre; se corrigieron color y `aria-label`, y la repetición pasó 1/1 en desktop y móvil.
 - El cold build local agotó el timeout original de 120 segundos al iniciar Playwright; se amplió sólo `webServer.timeout` a 600 segundos y el build explícito terminó correctamente.
 - El gate de seguridad encontró vulnerabilidades transitorias de Prisma; se resolvieron con overrides verificables y se repitió la suite completa antes de cerrar Fase 3.
@@ -582,55 +632,61 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 
 ## Planes vigentes
 
-- `docs/superpowers/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
-- `docs/superpowers/specs/2026-09-07-ocpool-client-portal.md` — especificación aprobada para Fase 5.
-- `docs/superpowers/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado y ejecutado; Tareas 1–6 cerradas con gate verde.
-- `docs/superpowers/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
-- `docs/superpowers/specs/2026-09-07-ocpool-messaging.md` — especificación aprobada para Fase 6.
-- `docs/superpowers/specs/2026-09-07-ocpool-messaging-apis.md` — contrato HTTP privado de la Tarea 3, aprobado y ejecutado.
-- `docs/superpowers/plans/2026-09-07-ocpool-messaging.md` — plan aprobado y ejecutado para Fase 6; Tareas 1–6 cerradas con gate verde.
-- `docs/superpowers/plans/2026-09-07-ocpool-messaging-apis.md` — plan enfocado de APIs, ejecutado.
-- `docs/superpowers/specs/2026-09-07-ocpool-customer-messaging-ui.md` — especificación aprobada y ejecutada para la UI cliente de la Tarea 4.
-- `docs/superpowers/plans/2026-09-07-ocpool-customer-messaging-ui.md` — plan enfocado de UI cliente, ejecutado.
-- `docs/superpowers/specs/2026-09-08-ocpool-staff-messaging-ui.md` — especificación aprobada y ejecutada para la UI staff de la Tarea 5.
-- `docs/superpowers/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
-- `docs/superpowers/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; fase cerrada.
-- `docs/superpowers/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–6 cerradas con gate verde.
-- `docs/superpowers/specs/2026-09-08-ocpool-pdf-acceptance.md` — especificación aprobada para Fase 8; no implica firma electrónica avanzada por sí sola.
-- `docs/superpowers/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–6 cerradas con gate verde.
-- `docs/superpowers/specs/2026-09-08-ocpool-notifications.md` — especificación aprobada para Fase 9.
-- `docs/superpowers/reviews/2026-09-08-ocpool-notifications-review.md` — autorrevisión de Fase 9, completada antes de código.
-- `docs/superpowers/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tareas 1–6 cerradas para el gate local, con hardening productivo y revisión legal todavía explícitos como riesgos de lanzamiento.
-- `docs/superpowers/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
-- `docs/superpowers/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
-- `docs/superpowers/specs/2026-09-08-ocpool-production-hardening.md` — especificación aprobada para Fase 10; separa controles técnicos locales de decisiones externas.
-- `docs/superpowers/plans/2026-09-08-ocpool-production-hardening.md` — plan ordenado de Fase 10; Tareas 1–4 ejecutadas con gate local `BLOCKED` de forma intencional.
-- `docs/superpowers/specs/2026-09-08-ocpool-analytics-dashboard.md` — especificación aprobada para Fase 11; métricas operativas, scope, privacidad, rendimiento y UI.
-- `docs/superpowers/plans/2026-09-08-ocpool-analytics-dashboard.md` — plan ordenado de Fase 11; Tareas 1–6 cerradas con gate técnico local.
+- `docs/ocpool-commercial-v2/specs/2026-09-10-ocpool-commercial-ux-rearchitecture.md` — especificación normativa V2 activa para todas las superficies privadas; landing excluida.
+- `docs/ocpool-commercial-v2/reviews/2026-09-10-ocpool-commercial-ux-rearchitecture-review.md` — auditoría crítica y mapa de evidencia P0 que justifican el reemplazo del plan anterior.
+- `docs/ocpool-commercial-v2/plans/2026-09-10-ocpool-commercial-ux-rearchitecture.md` — fuente operativa maestra V2; G0-01 es el siguiente paso.
+- `docs/adr/2026-09-10-commercial-lifecycle-v2.md` — ADR de ciclo canónico V2, verificado localmente y pendiente de aprobación de producto.
+- `docs/adr/2026-09-10-commercial-policy-v1.md` — ADR de política comercial/fiscal/legal, bloqueado hasta registrar decisiones.
+
+- `docs/historicos/plans/2026-09-07-ocpool-foundation.md` — Fase 1, fundamentos técnicos, ejecutado.
+- `docs/historicos/plans/2026-09-07-ocpool-identity-rbac.md` — Fase 2, plan aprobado y ejecutado.
+- `docs/historicos/plans/2026-09-07-ocpool-clients-requests.md` — Fase 3, plan técnico ejecutado; Tareas 1–6 terminadas con gate final.
+- `docs/historicos/specs/2026-09-07-ocpool-client-portal.md` — especificación aprobada para Fase 5.
+- `docs/historicos/plans/2026-09-07-ocpool-client-portal.md` — Fase 5, plan aprobado y ejecutado; Tareas 1–6 cerradas con gate verde.
+- `docs/historicos/plans/2026-09-07-ocpool-catalog-quotes.md` — Fase 4, Tareas 1–6 ejecutadas; gate cerrado.
+- `docs/historicos/specs/2026-09-07-ocpool-messaging.md` — especificación aprobada para Fase 6.
+- `docs/historicos/specs/2026-09-07-ocpool-messaging-apis.md` — contrato HTTP privado de la Tarea 3, aprobado y ejecutado.
+- `docs/historicos/plans/2026-09-07-ocpool-messaging.md` — plan aprobado y ejecutado para Fase 6; Tareas 1–6 cerradas con gate verde.
+- `docs/historicos/plans/2026-09-07-ocpool-messaging-apis.md` — plan enfocado de APIs, ejecutado.
+- `docs/historicos/specs/2026-09-07-ocpool-customer-messaging-ui.md` — especificación aprobada y ejecutada para la UI cliente de la Tarea 4.
+- `docs/historicos/plans/2026-09-07-ocpool-customer-messaging-ui.md` — plan enfocado de UI cliente, ejecutado.
+- `docs/historicos/specs/2026-09-08-ocpool-staff-messaging-ui.md` — especificación aprobada y ejecutada para la UI staff de la Tarea 5.
+- `docs/historicos/plans/2026-09-08-ocpool-staff-messaging-ui.md` — plan enfocado de UI staff, ejecutado.
+- `docs/historicos/specs/2026-09-08-ocpool-private-files.md` — especificación aprobada para Fase 7; fase cerrada.
+- `docs/historicos/plans/2026-09-08-ocpool-private-files.md` — plan ordenado de Fase 7; Tareas 1–6 cerradas con gate verde.
+- `docs/historicos/specs/2026-09-08-ocpool-pdf-acceptance.md` — especificación aprobada para Fase 8; no implica firma electrónica avanzada por sí sola.
+- `docs/historicos/plans/2026-09-08-ocpool-pdf-acceptance.md` — plan ordenado de Fase 8; Tareas 1–6 cerradas con gate verde.
+- `docs/historicos/specs/2026-09-08-ocpool-notifications.md` — especificación aprobada para Fase 9.
+- `docs/historicos/reviews/2026-09-08-ocpool-notifications-review.md` — autorrevisión de Fase 9, completada antes de código.
+- `docs/historicos/plans/2026-09-08-ocpool-notifications.md` — plan ordenado de Fase 9; Tareas 1–6 cerradas para el gate local, con hardening productivo y revisión legal todavía explícitos como riesgos de lanzamiento.
+- `docs/historicos/specs/2026-09-08-ocpool-staff-private-files-ui.md` — especificación enfocada para la UI staff de archivos de Tarea 5.
+- `docs/historicos/plans/2026-09-08-ocpool-staff-private-files-ui.md` — plan enfocado ordenado para ejecutar Tarea 5.
+- `docs/historicos/specs/2026-09-08-ocpool-production-hardening.md` — especificación aprobada para Fase 10; separa controles técnicos locales de decisiones externas.
+- `docs/historicos/plans/2026-09-08-ocpool-production-hardening.md` — plan ordenado de Fase 10; Tareas 1–4 ejecutadas con gate local `BLOCKED` de forma intencional.
+- `docs/historicos/specs/2026-09-08-ocpool-analytics-dashboard.md` — especificación aprobada para Fase 11; métricas operativas, scope, privacidad, rendimiento y UI.
+- `docs/historicos/plans/2026-09-08-ocpool-analytics-dashboard.md` — plan ordenado de Fase 11; Tareas 1–6 cerradas con gate técnico local.
 - `docs/runbooks/analytics-dashboard.md` — runbook operativo de definiciones, fechas, permisos, diagnóstico seguro y pruebas.
-- `docs/superpowers/specs/2026-09-08-ocpool-audit-observability.md` — especificación aprobada para Fase 12; lectura segura de auditoría operativa y security.
-- `docs/superpowers/reviews/2026-09-08-ocpool-audit-observability-review.md` — autorrevisión de Fase 12; metadata, RBAC, cursor, N+1, retención y AuthEvent revisados antes de implementación.
-- `docs/superpowers/plans/2026-09-08-ocpool-audit-observability.md` — plan ordenado de Fase 12; Tasks 1–6 cerradas con evidencia de gate.
+- `docs/historicos/specs/2026-09-08-ocpool-audit-observability.md` — especificación aprobada para Fase 12; lectura segura de auditoría operativa y security.
+- `docs/historicos/reviews/2026-09-08-ocpool-audit-observability-review.md` — autorrevisión de Fase 12; metadata, RBAC, cursor, N+1, retención y AuthEvent revisados antes de implementación.
+- `docs/historicos/plans/2026-09-08-ocpool-audit-observability.md` — plan ordenado de Fase 12; Tasks 1–6 cerradas con evidencia de gate.
 - `docs/runbooks/audit-observability.md` — runbook de acceso, filtros, redacción, rate limit, `EXPLAIN`, backup y límites legales de auditoría.
-- `docs/superpowers/specs/2026-09-08-ocpool-auth-surfaces.md` — especificación de Fase 13 para login de empleados, magic link de clientes y recovery.
-- `docs/superpowers/reviews/2026-09-08-ocpool-auth-surfaces-review.md` — autorrevisión de Fase 13 con foco en enumeración, MFA y tokens en URL.
-- `docs/superpowers/plans/2026-09-08-ocpool-auth-surfaces.md` — plan TDD de Fase 13; Tasks 1–6 cerradas con evidencia de gate.
+- `docs/historicos/specs/2026-09-08-ocpool-auth-surfaces.md` — especificación de Fase 13 para login de empleados, magic link de clientes y recovery.
+- `docs/historicos/reviews/2026-09-08-ocpool-auth-surfaces-review.md` — autorrevisión de Fase 13 con foco en enumeración, MFA y tokens en URL.
+- `docs/historicos/plans/2026-09-08-ocpool-auth-surfaces.md` — plan TDD de Fase 13; Tasks 1–6 cerradas con evidencia de gate.
 - `docs/runbooks/auth-surfaces.md` — rutas, worker/Mailpit, tokens, MFA, recovery y pruebas locales.
-- `docs/superpowers/specs/2026-09-08-ocpool-premium-quote-intake-design.md` — especificación de Fase 14 para captación progresiva y calificación comercial.
-- `docs/superpowers/reviews/2026-09-08-ocpool-premium-quote-intake-review.md` — autorrevisión de Fase 14 sobre datos históricos, anti-spam, privacidad y onboarding.
-- `docs/superpowers/plans/2026-09-08-ocpool-premium-quote-intake.md` — plan TDD de Fase 14; Tasks 1–5 cerradas con evidencia de gate.
-- `docs/superpowers/specs/2026-09-08-ocpool-customer-onboarding-design.md` — especificación aprobada de Fase 15 para vinculación, invitaciones, activación y aislamiento.
-- `docs/superpowers/reviews/2026-09-08-ocpool-customer-onboarding-review.md` — autorrevisión de Fase 15 sobre RBAC, colisiones, tokens, Outbox, enumeración y UX.
-- `docs/superpowers/plans/2026-09-08-ocpool-customer-onboarding.md` — plan TDD de Fase 15; Tasks 1–5 cerradas y Task 6 en cierre documental/gate.
-- `docs/superpowers/specs/2026-09-08-ocpool-launch-readiness-consolidation.md` — especificación de Fase 16 para reproducibilidad de fixtures, gate y checklist de lanzamiento.
-- `docs/superpowers/reviews/2026-09-08-ocpool-launch-readiness-consolidation-review.md` — autorrevisión de Fase 16 sobre aislamiento, conteos y límites de publicación.
-- `docs/superpowers/plans/2026-09-08-ocpool-launch-readiness-consolidation.md` — plan TDD de Fase 16; tareas ejecutadas con evidencia final.
+- `docs/historicos/specs/2026-09-08-ocpool-premium-quote-intake-design.md` — especificación de Fase 14 para captación progresiva y calificación comercial.
+- `docs/historicos/reviews/2026-09-08-ocpool-premium-quote-intake-review.md` — autorrevisión de Fase 14 sobre datos históricos, anti-spam, privacidad y onboarding.
+- `docs/historicos/plans/2026-09-08-ocpool-premium-quote-intake.md` — plan TDD de Fase 14; Tasks 1–5 cerradas con evidencia de gate.
+- `docs/historicos/specs/2026-09-08-ocpool-customer-onboarding-design.md` — especificación aprobada de Fase 15 para vinculación, invitaciones, activación y aislamiento.
+- `docs/historicos/reviews/2026-09-08-ocpool-customer-onboarding-review.md` — autorrevisión de Fase 15 sobre RBAC, colisiones, tokens, Outbox, enumeración y UX.
+- `docs/historicos/plans/2026-09-08-ocpool-customer-onboarding.md` — plan TDD histórico de Fase 15; Tasks 1–6 cerradas para su alcance local.
+- `docs/historicos/specs/2026-09-08-ocpool-launch-readiness-consolidation.md` — especificación de Fase 16 para reproducibilidad de fixtures, gate y checklist de lanzamiento.
+- `docs/historicos/reviews/2026-09-08-ocpool-launch-readiness-consolidation-review.md` — autorrevisión de Fase 16 sobre aislamiento, conteos y límites de publicación.
+- `docs/historicos/plans/2026-09-08-ocpool-launch-readiness-consolidation.md` — plan TDD de Fase 16; tareas ejecutadas con evidencia final.
 - `docs/runbooks/launch-readiness-checklist.md` — checklist único de preflight local y bloqueos externos.
-- `docs/superpowers/specs/2026-09-08-ocpool-local-continuity-verification.md` — especificación de Fase 17 para backup/restore local aislado.
-- `docs/superpowers/reviews/2026-09-08-ocpool-local-continuity-verification-review.md` — autorrevisión de Fase 17; identificó la restricción DDL de PostgreSQL antes del cierre.
-- `docs/superpowers/plans/2026-09-08-ocpool-local-continuity-verification.md` — plan ordenado de Fase 17 con evidencia del backup, restore, cleanup y regresión.
+- `docs/historicos/specs/2026-09-08-ocpool-local-continuity-verification.md` — especificación de Fase 17 para backup/restore local aislado.
+- `docs/historicos/reviews/2026-09-08-ocpool-local-continuity-verification-review.md` — autorrevisión de Fase 17; identificó la restricción DDL de PostgreSQL antes del cierre.
+- `docs/historicos/plans/2026-09-08-ocpool-local-continuity-verification.md` — plan ordenado de Fase 17 con evidencia del backup, restore, cleanup y regresión.
 - `docs/runbooks/local-development.md` — formulario público, folio, honeypot, worker/Mailpit y dependencia de onboarding.
 
 ## Criterio de terminado de Fase 10
@@ -671,4 +727,4 @@ La fase se considera terminada porque el cliente autenticado sólo lee recursos 
 
 ## Próximo paso autorizado
 
-Preservar Fase 17 como baseline local y cerrar los controles externos de lanzamiento mediante decisiones aprobadas, evidencia verificable y el checklist consolidado. No publicar hasta que `readiness:production:full` no tenga bloqueos técnicos ni externos y exista autorización formal independiente del repositorio.
+Registrar aprobación/rechazo de G0-01 en el artefacto de aceptación del plan maestro V2 y, si se aprueba, continuar G0-02…G0-05 antes de cualquier mutación funcional S0. Las Fases 1–17 se conservan como baseline histórico y los controles externos de lanzamiento continúan en paralelo. No publicar hasta que `readiness:production:full` no tenga bloqueos técnicos ni externos y exista autorización formal independiente del repositorio.

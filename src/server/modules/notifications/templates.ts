@@ -10,6 +10,8 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   'request.received',
   'request.assigned',
   'quote.version_sent',
+  'quote.approval_requested',
+  'quote.approval_resolved',
   'quote.accepted',
   'message.created',
   'file.available',
@@ -22,6 +24,8 @@ export const SUPPORTED_NOTIFICATION_EVENT_TYPES = [
   'REQUEST.RECEIVED',
   'REQUEST.ASSIGNED',
   'QUOTE.VERSION_STATUS_CHANGED',
+  'QUOTE.APPROVAL_REQUESTED',
+  'QUOTE.APPROVAL_RESOLVED',
   'QUOTE.ACCEPTED',
   'MESSAGE.CREATED',
   'FILE.AVAILABLE',
@@ -89,6 +93,8 @@ const authEmployeePayload = z.object({ tokenId: uuid, tokenCiphertext: z.string(
 const requestReceivedPayload = z.object({ quoteRequestId: uuid, folio, origin: z.enum(['PUBLIC_FORM', 'STAFF_CREATED']) }).passthrough();
 const requestAssignedPayload = z.object({ quoteRequestId: uuid, folio, assignedToId: uuid }).passthrough();
 const quoteStatusPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, fromStatus: z.string().min(1).max(40), toStatus: z.literal('ENVIADA') }).passthrough();
+const quoteApprovalRequestedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, versionNumber: z.number().int().positive(), approvalId: uuid, type: z.enum(['DISCOUNT', 'PRICE_OVERRIDE']) }).passthrough();
+const quoteApprovalResolvedPayload = quoteApprovalRequestedPayload.extend({ status: z.enum(['APPROVED', 'REJECTED']) });
 const quoteAcceptedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, versionNumber: z.number().int().positive(), acceptanceId: uuid, generatedDocumentId: uuid, termsVersion: z.string().min(1).max(64) }).passthrough();
 const messagePayload = z.object({ conversationId: uuid, quoteRequestId: uuid, clientId: uuid, messageId: uuid, visibility: z.enum(['CUSTOMER', 'INTERNAL']), folio }).passthrough();
 const filePayload = z.object({ fileId: uuid, quoteRequestId: uuid, visibility: z.enum(['CUSTOMER', 'INTERNAL']), category: z.string().min(1).max(64) }).passthrough();
@@ -99,6 +105,8 @@ const EVENT_AGGREGATE_TYPES: Record<string, string> = {
   'REQUEST.RECEIVED': 'QUOTE_REQUEST',
   'REQUEST.ASSIGNED': 'QUOTE_REQUEST',
   'QUOTE.VERSION_STATUS_CHANGED': 'QUOTE',
+  'QUOTE.APPROVAL_REQUESTED': 'QUOTE',
+  'QUOTE.APPROVAL_RESOLVED': 'QUOTE',
   'QUOTE.ACCEPTED': 'QUOTE',
   'MESSAGE.CREATED': 'CONVERSATION',
   'FILE.AVAILABLE': 'FILE_ATTACHMENT',
@@ -189,6 +197,20 @@ export function mapNotificationEvent(event: NotificationEventInput, context: Not
         if (scope) return scope;
         return makeIntent(context, 'quote.version_sent', { recipientName: context.recipient.displayName, folio: parsed.data.folio });
       }
+      case 'QUOTE.APPROVAL_REQUESTED': {
+        const parsed = quoteApprovalRequestedPayload.safeParse(event.payload);
+        const scope = rejectScope(context, 'STAFF');
+        if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        if (scope) return scope;
+        return makeIntent(context, 'quote.approval_requested', { recipientName: context.recipient.displayName, folio: parsed.data.folio, versionNumber: parsed.data.versionNumber, approvalType: parsed.data.type });
+      }
+      case 'QUOTE.APPROVAL_RESOLVED': {
+        const parsed = quoteApprovalResolvedPayload.safeParse(event.payload);
+        const scope = rejectScope(context, 'STAFF');
+        if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        if (scope) return scope;
+        return makeIntent(context, 'quote.approval_resolved', { recipientName: context.recipient.displayName, folio: parsed.data.folio, versionNumber: parsed.data.versionNumber, approvalType: parsed.data.type, approvalStatus: parsed.data.status });
+      }
       case 'QUOTE.ACCEPTED': {
         const parsed = quoteAcceptedPayload.safeParse(event.payload);
         const scope = rejectScope(context, 'STAFF');
@@ -226,6 +248,8 @@ export type NotificationTemplateData = {
   expiresMinutes?: number;
   folio?: string;
   versionNumber?: number;
+  approvalType?: string;
+  approvalStatus?: string;
   totalLabel?: string;
   senderName?: string;
   preview?: string;
@@ -288,9 +312,11 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
   const actionUrl = validateActionUrl(data.appUrl, data.actionUrl);
   const folio = data.folio ? safeHeader(data.folio) : '';
   const version = data.versionNumber ? ` versión ${data.versionNumber}` : '';
+  const approvalType = data.approvalType === 'DISCOUNT' ? 'descuento' : 'ajuste de precio';
   const total = data.totalLabel ? escapeHtml(data.totalLabel) : '';
   const sender = escapeHtml(data.senderName ?? 'Tu equipo OCPOOL');
   const preview = data.preview ?? '';
+  const portalAccessPending = new URL(actionUrl).pathname === '/portal/access';
 
   switch (input.templateKey) {
     case 'auth.customer.magic_link': {
@@ -309,8 +335,13 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
     }
     case 'request.received': {
       const subject = safeHeader(`Recibimos tu solicitud ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>Tu solicitud ${escapeHtml(folio)} fue recibida y ya forma parte de tu expediente.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nRecibimos tu solicitud ${folio}. Consulta el avance en tu portal.`, html: layout('Solicitud recibida', body, data.actionLabel ?? 'Ver expediente', actionUrl) };
+      const body = portalAccessPending
+        ? `<p>Hola ${recipientName},</p><p>Tu solicitud ${escapeHtml(folio)} fue recibida y ya forma parte de tu expediente.</p><p>Para consultar avances en línea, solicita acceso al portal. Nuestro equipo habilitará tu cuenta y después recibirás un enlace seguro de un solo uso en este correo.</p>`
+        : `<p>Hola ${recipientName},</p><p>Tu solicitud ${escapeHtml(folio)} fue recibida y ya forma parte de tu expediente.</p><p>Consulta los avances directamente en tu portal.</p>`;
+      const text = portalAccessPending
+        ? `Hola ${data.recipientName},\n\nRecibimos tu solicitud ${folio}.\n\nPara consultar avances en línea, solicita acceso al portal: ${actionUrl}\n\nNuestro equipo habilitará tu cuenta y después recibirás un enlace seguro de un solo uso en este correo.`
+        : `Hola ${data.recipientName},\n\nRecibimos tu solicitud ${folio}. Consulta el avance en tu portal: ${actionUrl}`;
+      return { subject, text, html: layout('Solicitud recibida', body, data.actionLabel ?? 'Ver expediente', actionUrl) };
     }
     case 'request.assigned': {
       const subject = safeHeader(`Solicitud asignada ${folio}`);
@@ -319,8 +350,24 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
     }
     case 'quote.version_sent': {
       const subject = safeHeader(`Tu cotización está disponible ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>Ya puedes revisar la cotización ${escapeHtml(folio)} en tu portal. La versión y sus importes corresponden al snapshot enviado.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nTu cotización ${folio} está disponible en el portal.`, html: layout('Cotización disponible', body, data.actionLabel ?? 'Revisar cotización', actionUrl) };
+      const body = portalAccessPending
+        ? `<p>Hola ${recipientName},</p><p>La cotización ${escapeHtml(folio)} ya está disponible para tu expediente.</p><p>Solicita acceso al portal para consultarla. Nuestro equipo habilitará tu cuenta y recibirás un enlace seguro de un solo uso en este correo.</p>`
+        : `<p>Hola ${recipientName},</p><p>Ya puedes revisar la cotización ${escapeHtml(folio)} en tu portal. La versión y sus importes corresponden al snapshot enviado.</p>`;
+      const text = portalAccessPending
+        ? `Hola ${data.recipientName},\n\nLa cotización ${folio} ya está disponible para tu expediente. Solicita acceso al portal: ${actionUrl}\n\nNuestro equipo habilitará tu cuenta y recibirás un enlace seguro de un solo uso en este correo.`
+        : `Hola ${data.recipientName},\n\nTu cotización ${folio} está disponible en el portal: ${actionUrl}`;
+      return { subject, text, html: layout('Cotización disponible', body, data.actionLabel ?? 'Revisar cotización', actionUrl) };
+    }
+    case 'quote.approval_requested': {
+      const subject = safeHeader(`Aprobación comercial requerida ${folio}`);
+      const body = `<p>Hola ${recipientName},</p><p>La versión${version} de la cotización ${escapeHtml(folio)} requiere tu aprobación para continuar.</p><p>Tipo: <strong>${escapeHtml(approvalType)}</strong></p>`;
+      return { subject, text: `La cotización ${folio}${version} requiere aprobación de ${approvalType}. Revisa el expediente: ${actionUrl}`, html: layout('Aprobación requerida', body, data.actionLabel ?? 'Revisar aprobación', actionUrl) };
+    }
+    case 'quote.approval_resolved': {
+      const approved = data.approvalStatus === 'APPROVED';
+      const subject = safeHeader(`${approved ? 'Aprobación autorizada' : 'Aprobación rechazada'} ${folio}`);
+      const body = `<p>Hola ${recipientName},</p><p>La aprobación de ${escapeHtml(approvalType)} para la cotización ${escapeHtml(folio)}${version} fue <strong>${approved ? 'autorizada' : 'rechazada'}</strong>.</p>`;
+      return { subject, text: `La aprobación de ${approvalType} para ${folio}${version} fue ${approved ? 'autorizada' : 'rechazada'}. Revisa el expediente: ${actionUrl}`, html: layout(approved ? 'Aprobación autorizada' : 'Aprobación rechazada', body, data.actionLabel ?? 'Abrir expediente', actionUrl) };
     }
     case 'quote.accepted': {
       const subject = safeHeader(`Cotización aceptada ${folio}`);
@@ -329,14 +376,24 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
     }
     case 'message.created': {
       const subject = safeHeader(`Nuevo mensaje sobre tu expediente ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>${sender} dejó un mensaje en tu expediente ${escapeHtml(folio)}:</p><blockquote style="margin:16px 0;padding:12px;border-left:3px solid #8b5e3c">${escapeHtml(preview)}</blockquote>`;
-      return { subject, text: `Hola ${data.recipientName},\n\n${data.senderName ?? 'Tu equipo OCPOOL'} dejó un mensaje sobre ${folio}:\n\n${preview}`, html: layout('Nuevo mensaje', body, data.actionLabel ?? 'Leer mensaje', actionUrl) };
+      const body = portalAccessPending
+        ? `<p>Hola ${recipientName},</p><p>${sender} dejó un mensaje en tu expediente ${escapeHtml(folio)}:</p><blockquote style="margin:16px 0;padding:12px;border-left:3px solid #8b5e3c">${escapeHtml(preview)}</blockquote><p>Si eres cliente nuevo, primero habilitaremos tu cuenta. Después podrás continuar la conversación en el portal.</p>`
+        : `<p>Hola ${recipientName},</p><p>${sender} dejó un mensaje en tu expediente ${escapeHtml(folio)}:</p><blockquote style="margin:16px 0;padding:12px;border-left:3px solid #8b5e3c">${escapeHtml(preview)}</blockquote>`;
+      const text = portalAccessPending
+        ? `Hola ${data.recipientName},\n\n${data.senderName ?? 'Tu equipo OCPOOL'} dejó un mensaje sobre ${folio}:\n\n${preview}\n\nSi eres cliente nuevo, primero habilitaremos tu cuenta. Solicita acceso al portal: ${actionUrl}`
+        : `Hola ${data.recipientName},\n\n${data.senderName ?? 'Tu equipo OCPOOL'} dejó un mensaje sobre ${folio}:\n\n${preview}\n\nAbrir mensaje: ${actionUrl}`;
+      return { subject, text, html: layout('Nuevo mensaje', body, data.actionLabel ?? 'Leer mensaje', actionUrl) };
     }
     case 'file.available': {
       const fileName = escapeHtml(data.fileName ?? 'Un archivo nuevo');
       const subject = safeHeader(`Archivo disponible en ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>El archivo <strong>${fileName}</strong> ya está disponible en tu expediente ${escapeHtml(folio)}.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nEl archivo ${data.fileName ?? 'Un archivo nuevo'} ya está disponible en ${folio}.`, html: layout('Archivo disponible', body, data.actionLabel ?? 'Ver archivo', actionUrl) };
+      const body = portalAccessPending
+        ? `<p>Hola ${recipientName},</p><p>El archivo <strong>${fileName}</strong> ya está disponible en tu expediente ${escapeHtml(folio)}.</p><p>Si eres cliente nuevo, primero habilitaremos tu cuenta. Después podrás consultar el archivo en el portal.</p>`
+        : `<p>Hola ${recipientName},</p><p>El archivo <strong>${fileName}</strong> ya está disponible en tu expediente ${escapeHtml(folio)}.</p>`;
+      const text = portalAccessPending
+        ? `Hola ${data.recipientName},\n\nEl archivo ${data.fileName ?? 'Un archivo nuevo'} ya está disponible en ${folio}.\n\nSi eres cliente nuevo, primero habilitaremos tu cuenta. Solicita acceso al portal: ${actionUrl}`
+        : `Hola ${data.recipientName},\n\nEl archivo ${data.fileName ?? 'Un archivo nuevo'} ya está disponible en ${folio}.\n\nVer archivo: ${actionUrl}`;
+      return { subject, text, html: layout('Archivo disponible', body, data.actionLabel ?? 'Ver archivo', actionUrl) };
     }
   }
 }

@@ -1,8 +1,11 @@
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
 import type { Actor } from '@/server/auth/types';
+import { requirePermission } from '@/server/auth/permissions';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { getCurrentQuoteTermsLabel, getCurrentQuoteTermsVersion } from '@/server/modules/quote-documents/domain';
+import { CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES, isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
 
 export type ClientPortalServiceDependencies = Readonly<{ prisma?: PrismaClient; now?: Date }>;
 
@@ -24,6 +27,7 @@ function requireCustomerScope(actor: Actor): string {
   if (actor.type !== 'CUSTOMER' || !actor.clientId || !UUID_PATTERN.test(actor.clientId)) {
     throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
   }
+  requirePermission(actor, 'portal.self.read');
   return actor.clientId;
 }
 
@@ -104,11 +108,14 @@ function serializeVersion(version: {
   totalMinor: bigint;
   createdAt: Date;
   updatedAt: Date;
+  pdfReady: boolean;
   lines: Parameters<typeof serializeLine>[0][];
 }) {
   return {
     id: version.id,
     versionNumber: version.versionNumber,
+    termsVersion: getCurrentQuoteTermsVersion(),
+    termsLabel: getCurrentQuoteTermsLabel(),
     status: publicQuoteStatus(version.status),
     currencyCode: version.currencyCode,
     validUntil: version.validUntil,
@@ -119,18 +126,58 @@ function serializeVersion(version: {
     totalMinor: version.totalMinor.toString(),
     createdAt: version.createdAt,
     updatedAt: version.updatedAt,
+    pdfReady: version.pdfReady,
     lines: version.lines.map(serializeLine),
   };
 }
 
+function isQuotePdfReady(document: {
+  status: string;
+  contentType: string;
+  byteSize: bigint | null;
+  sha256: string | null;
+  readyAt: Date | null;
+  deletedAt: Date | null;
+  storageObject: {
+    contentType: string;
+    byteSize: bigint;
+    sha256: string | null;
+    scanStatus: string;
+    deletedAt: Date | null;
+  } | null;
+} | undefined): boolean {
+  return Boolean(
+    document
+      && document.status === 'READY'
+      && document.contentType === 'application/pdf'
+      && document.byteSize
+      && document.byteSize > 0n
+      && document.sha256
+      && document.readyAt
+      && !document.deletedAt
+      && document.storageObject
+      && document.storageObject.contentType === 'application/pdf'
+      && document.storageObject.byteSize === document.byteSize
+      && document.storageObject.sha256 === document.sha256
+      && document.storageObject.scanStatus === 'PASSED'
+      && !document.storageObject.deletedAt,
+  );
+}
+
 function visibleVersions<T extends { status: string }>(versions: readonly T[]): T[] {
-  return versions.filter((version) => version.status !== 'BORRADOR');
+  return versions.filter((version) => isCustomerVisibleQuoteVersionStatus(version.status));
+}
+
+function selectVisibleVersion<T extends { id: string; status: string }>(versions: readonly T[], currentVersionId: string | null): T | null {
+  const visible = visibleVersions(versions);
+  if (visible.length === 0) return null;
+  return visible.find((version) => version.id === currentVersionId) ?? visible[0];
 }
 
 function serializeStatusHistory(history: Array<{ id: string; fromStatus: string | null; toStatus: string; createdAt: Date }>) {
-  return history.filter((entry) => entry.toStatus !== 'BORRADOR').map((entry) => ({
+  return history.filter((entry) => isCustomerVisibleQuoteVersionStatus(entry.toStatus)).map((entry) => ({
     id: entry.id,
-    fromStatus: entry.fromStatus && entry.fromStatus !== 'BORRADOR' ? publicQuoteStatus(entry.fromStatus) : null,
+    fromStatus: entry.fromStatus && isCustomerVisibleQuoteVersionStatus(entry.fromStatus) ? publicQuoteStatus(entry.fromStatus) : null,
     toStatus: publicQuoteStatus(entry.toStatus),
     createdAt: entry.createdAt,
   }));
@@ -183,7 +230,14 @@ export async function listCustomerQuoteRequests(actor: Actor, filters: CustomerQ
         quotes: {
           select: {
             id: true,
-            currentVersion: { select: quoteVersionSummarySelect },
+            currentVersionId: true,
+            publishedVersionId: true,
+            versions: {
+              where: { status: { in: [...CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES] } },
+              orderBy: [{ versionNumber: 'desc' }],
+              take: 1,
+              select: quoteVersionSummarySelect,
+            },
           },
           take: 1,
         },
@@ -193,7 +247,7 @@ export async function listCustomerQuoteRequests(actor: Actor, filters: CustomerQ
 
   return {
     items: requests.map((request) => {
-      const version = request.quotes[0]?.currentVersion && request.quotes[0].currentVersion.status !== 'BORRADOR' ? request.quotes[0].currentVersion : null;
+      const version = request.quotes[0]?.versions[0] ?? null;
       return {
         id: request.id,
         folio: request.folio,
@@ -246,7 +300,8 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
       quotes: {
         select: {
           id: true,
-          currentVersionId: true,
+            currentVersionId: true,
+            publishedVersionId: true,
           versions: {
             orderBy: [{ versionNumber: 'desc' }],
             select: {
@@ -285,6 +340,20 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
                 orderBy: { createdAt: 'asc' },
                 select: { id: true, fromStatus: true, toStatus: true, createdAt: true },
               },
+              generatedDocuments: {
+                where: { documentType: 'QUOTE_PDF' },
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+                select: {
+                  status: true,
+                  contentType: true,
+                  byteSize: true,
+                  sha256: true,
+                  readyAt: true,
+                  deletedAt: true,
+                  storageObject: { select: { contentType: true, byteSize: true, sha256: true, scanStatus: true, deletedAt: true } },
+                },
+              },
             },
           },
         },
@@ -296,7 +365,9 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
 
   const quote = request.quotes[0] ?? null;
   const versions = quote ? visibleVersions(quote.versions) : [];
-  const currentVersion = quote?.currentVersionId ? versions.find((version) => version.id === quote.currentVersionId) ?? null : null;
+  const currentVersion = quote ? selectVisibleVersion(versions, quote.publishedVersionId ?? quote.currentVersionId) : null;
+  const serializedVersions = versions.map((version) => serializeVersion({ ...version, pdfReady: isQuotePdfReady(version.generatedDocuments[0]) }));
+  const serializedCurrentVersion = currentVersion ? serializeVersion({ ...currentVersion, pdfReady: isQuotePdfReady(currentVersion.generatedDocuments[0]) }) : null;
   return {
     request: {
       id: request.id,
@@ -311,9 +382,9 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
     },
     quote: quote ? {
       id: quote.id,
-      currentVersionId: currentVersion?.id ?? null,
-      currentVersion: currentVersion ? serializeVersion(currentVersion) : null,
-      versions: versions.map(serializeVersion),
+      currentVersionId: serializedCurrentVersion?.id ?? null,
+      currentVersion: serializedCurrentVersion,
+      versions: serializedVersions,
       history: serializeStatusHistory(versions.flatMap((version) => version.statusHistory)),
     } : null,
   };

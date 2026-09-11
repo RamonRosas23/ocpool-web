@@ -54,11 +54,11 @@ export type ProofItem = {
 };
 
 export const contactDetails = {
-  email: 'info@ocpool.com',
+  email: 'contacto@ocpool.com.mx',
   phone: '667 453 2567',
   phoneHref: 'tel:+526674532567',
   whatsappHref: 'https://wa.me/526674532567',
-  website: 'https://www.ocpool.com',
+  website: 'https://ocpool.com.mx',
 };
 
 const cdpGallery: ProjectMedia[] = [

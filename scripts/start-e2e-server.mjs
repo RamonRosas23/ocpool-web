@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const e2ePort = process.env.E2E_PORT ?? '3100';
 const e2eEnvironment = {
   ...process.env,
-  APP_URL: process.env.APP_URL ?? 'http://127.0.0.1:3100',
+  APP_URL: process.env.APP_URL ?? `http://127.0.0.1:${e2ePort}`,
   NEXT_DIST_DIR: process.env.NEXT_DIST_DIR ?? '.next-e2e',
 };
 const spawnOptions = {
@@ -20,7 +21,7 @@ const run = (args) => new Promise((resolve) => {
 const build = await run(['run', 'build']);
 if (build.signal || build.code !== 0) process.exit(build.code);
 
-const server = spawn(npmCommand, ['run', 'start', '--', '--hostname', '127.0.0.1', '--port', '3100'], spawnOptions);
+const server = spawn(npmCommand, ['run', 'start', '--', '--hostname', '127.0.0.1', '--port', e2ePort], spawnOptions);
 server.on('exit', (code, signal) => {
   if (signal) process.kill(process.pid, signal);
   process.exit(code ?? 1);

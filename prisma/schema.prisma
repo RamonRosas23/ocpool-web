@@ -169,6 +169,19 @@ enum QuoteVersionStatus {
   VENCIDA
 }
 
+enum QuoteApprovalType {
+  DISCOUNT
+  PRICE_OVERRIDE
+}
+
+enum QuoteApprovalStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  SUPERSEDED
+}
+
 enum AuthTokenType {
   MAGIC_LINK
   PASSWORD_RESET
@@ -317,6 +330,8 @@ model User {
   conversationMessages       ConversationMessage[]  @relation("ConversationMessageSender")
   uploadedFileAttachments    FileAttachment[]       @relation("FileAttachmentUploader")
   notificationDeliveries     NotificationDelivery[] @relation("NotificationRecipient")
+  quoteApprovalsRequested    QuoteApproval[]        @relation("QuoteApprovalRequester")
+  quoteApprovalsDecided      QuoteApproval[]        @relation("QuoteApprovalDecider")
   createdAt                  DateTime               @default(now()) @db.Timestamptz(3)
   updatedAt                  DateTime               @updatedAt @db.Timestamptz(3)
 
@@ -612,12 +627,17 @@ model Quote {
   quoteRequestId     String              @db.Uuid
   clientId           String              @db.Uuid
   currentVersionId   String?             @unique @db.Uuid
+  workingVersionId   String?             @unique @db.Uuid
+  publishedVersionId String?             @unique @db.Uuid
   quoteRequest       QuoteRequest        @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Restrict)
   client             Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
   currentVersion     QuoteVersion?       @relation("QuoteCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  workingVersion     QuoteVersion?       @relation("QuoteWorkingVersion", fields: [workingVersionId], references: [id], onDelete: SetNull)
+  publishedVersion   QuoteVersion?       @relation("QuotePublishedVersion", fields: [publishedVersionId], references: [id], onDelete: SetNull)
   versions           QuoteVersion[]      @relation("QuoteVersions")
   generatedDocuments GeneratedDocument[]
   quoteAcceptances   QuoteAcceptance[]
+  approvals          QuoteApproval[]
   createdAt          DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -641,11 +661,14 @@ model QuoteVersion {
   createdById        String               @db.Uuid
   quote              Quote                @relation("QuoteVersions", fields: [quoteId], references: [id], onDelete: Cascade)
   currentForQuote    Quote?               @relation("QuoteCurrentVersion")
+  workingForQuote    Quote?               @relation("QuoteWorkingVersion")
+  publishedForQuote  Quote?               @relation("QuotePublishedVersion")
   createdBy          User                 @relation("QuoteVersionCreator", fields: [createdById], references: [id], onDelete: Restrict)
   lines              QuoteLineSnapshot[]
   statusHistory      QuoteStatusHistory[]
   generatedDocuments GeneratedDocument[]
   acceptance         QuoteAcceptance?
+  approvals          QuoteApproval[]
   createdAt          DateTime             @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime             @updatedAt @db.Timestamptz(3)
 
@@ -696,6 +719,34 @@ model QuoteStatusHistory {
   @@index([quoteVersionId, createdAt])
   @@index([changedById, createdAt])
   @@map("quote_status_history")
+}
+
+model QuoteApproval {
+  id             String              @id @default(uuid()) @db.Uuid
+  quoteId        String              @db.Uuid
+  quoteVersionId String              @db.Uuid
+  type           QuoteApprovalType
+  status         QuoteApprovalStatus @default(REQUESTED)
+  policyVersion  String              @db.VarChar(64)
+  digest         String              @db.Char(64)
+  thresholdBps   Int?
+  reason         String?             @db.VarChar(500)
+  requestedById  String              @db.Uuid
+  decidedById    String?             @db.Uuid
+  requestedAt    DateTime            @default(now()) @db.Timestamptz(3)
+  decidedAt      DateTime?           @db.Timestamptz(3)
+  expiresAt      DateTime?           @db.Timestamptz(3)
+  quote          Quote               @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quoteVersion   QuoteVersion        @relation(fields: [quoteVersionId, quoteId], references: [id, quoteId], onDelete: Cascade)
+  requestedBy    User                @relation("QuoteApprovalRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  decidedBy      User?               @relation("QuoteApprovalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@unique([quoteVersionId, type, digest])
+  @@index([quoteVersionId, type, status])
+  @@index([quoteId, status, requestedAt])
+  @@index([requestedById, requestedAt])
+  @@index([decidedById, decidedAt])
+  @@map("quote_approvals")
 }
 
 model RequestAssignment {

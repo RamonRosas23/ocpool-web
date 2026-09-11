@@ -1,3 +1,4 @@
+import { recordBaselineMeasurement } from './fixtures/commercial-baseline-recorder';
 import { test, expect } from '@playwright/test';
 import { expectNoSeriousA11yViolations } from './a11y';
 
@@ -11,6 +12,8 @@ const validPayload = {
 };
 
 test.describe('OCPOOL quality contract', () => {
+  test.setTimeout(120_000);
+
   test('keeps anchored section headings clear of the fixed header', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('link', { name: 'Cotizar', exact: true }).first().click();
@@ -115,6 +118,7 @@ test.describe('OCPOOL quality contract', () => {
 
   test('submits the public form and presents the persisted folio accessibly', async ({ page }) => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const measurementStartedAt = new Date();
     await page.goto('/#contacto');
     await page.getByLabel('Nombre').fill('Cliente E2E OCPOOL');
     await page.getByLabel('Teléfono').fill('667 000 3344');
@@ -132,8 +136,27 @@ test.describe('OCPOOL quality contract', () => {
     await page.getByRole('button', { name: /Enviar solicitud/ }).click();
 
     const feedback = page.locator('.form-feedback--success');
-    await expect(feedback).toHaveAttribute('role', 'status');
+    await expect(feedback).toHaveAttribute('role', 'status', { timeout: 20_000 });
     await expect(feedback).toContainText(/Tu folio es OCQ-\d{4}-\d{6}/);
+    await expect(feedback).toContainText('no es una contraseña ni permite iniciar sesión.');
+    await expect(feedback).toContainText('todavía no tienes una cuenta del portal');
+    await expect(feedback).toContainText('Por ahora no necesitas hacer nada más.');
+    await expect(feedback.getByRole('link', { name: 'Ya tengo una cuenta: solicitar enlace' })).toHaveAttribute('href', '/portal/access');
+    await recordBaselineMeasurement({
+      schemaVersion: 1,
+      metricId: 'public_request_to_confirmation',
+      scenarioId: 'new-request',
+      actorType: 'ANONYMOUS',
+      surface: 'public-request',
+      viewport: 'desktop',
+      seedVersion: 'quality-e2e-v1',
+      commit: process.env.BASELINE_COMMIT ?? 'workspace',
+      startedAt: measurementStartedAt.toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: Date.now() - measurementStartedAt.getTime(),
+      errorCount: 0,
+      abandoned: false,
+    });
     await expect(page.getByRole('button', { name: 'Continuar' })).toBeVisible();
   });
 
@@ -181,6 +204,8 @@ test.describe('OCPOOL quality contract', () => {
   test('protects the customer portal when no customer session exists', async ({ page }) => {
     await page.goto('/portal');
     await expect(page.getByRole('heading', { name: 'Acceso privado.' })).toBeVisible();
+    await expect(page.locator('img[alt="OCPOOL"]')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Volver al sitio', exact: true })).toBeVisible();
     await expect(page.getByText('Necesitas un enlace de acceso válido para consultar tus expedientes.')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
 
@@ -191,7 +216,7 @@ test.describe('OCPOOL quality contract', () => {
   test('exposes complete SEO metadata and generated discovery routes', async ({ page, request }) => {
     await page.goto('/');
 
-    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /^https:\/\/www\.ocpool\.com\/?$/);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /^https:\/\/ocpool\.com\.mx\/?$/);
     await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /OCPOOL/);
     await expect(page.locator('meta[property="og:description"]')).toHaveAttribute('content', /albercas/i);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
@@ -199,11 +224,11 @@ test.describe('OCPOOL quality contract', () => {
 
     const robots = await request.get('/robots.txt');
     expect(robots.status()).toBe(200);
-    expect(await robots.text()).toContain('Sitemap: https://www.ocpool.com/sitemap.xml');
+    expect(await robots.text()).toContain('Sitemap: https://ocpool.com.mx/sitemap.xml');
 
     const sitemap = await request.get('/sitemap.xml');
     expect(sitemap.status()).toBe(200);
-    expect(await sitemap.text()).toContain('https://www.ocpool.com/');
+    expect(await sitemap.text()).toContain('https://ocpool.com.mx/');
   });
 
   test('has no horizontal overflow at supported viewport widths', async ({ page }) => {

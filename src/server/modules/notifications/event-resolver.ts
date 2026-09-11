@@ -47,6 +47,10 @@ function staffContext(recipient: NotificationRecipientContext): NotificationMapp
   return { recipient, actionPath: '/staff/requests' };
 }
 
+function staffApprovalContext(recipient: NotificationRecipientContext, quoteRequestId: string): NotificationMappingContext {
+  return { recipient, actionPath: `/staff/quotes?request=${encodeURIComponent(quoteRequestId)}` };
+}
+
 function totalLabel(totalMinor: bigint, currencyCode: string): string {
   const negative = totalMinor < 0n;
   const absolute = negative ? -totalMinor : totalMinor;
@@ -107,17 +111,50 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       if (!quote || !quoteVersionId || !quoteRequestId || stringValue(payload, 'folio') !== quote.quoteRequest.folio || quote.quoteRequestId !== quoteRequestId || !quoteVersion) return cancellation('INVALID_PAYLOAD');
       return recipient ? { kind: 'RECIPIENTS', contexts: [customerContext(recipient)] } : cancellation('NO_RECIPIENT');
     }
+    case 'QUOTE.APPROVAL_REQUESTED': {
+      if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
+      const approvalId = stringValue(payload, 'approvalId');
+      const quoteRequestId = stringValue(payload, 'quoteRequestId');
+      const quoteVersionId = stringValue(payload, 'quoteVersionId');
+      const approval = isUuid(approvalId) ? await prisma.quoteApproval.findUnique({ where: { id: approvalId }, select: { id: true, quoteId: true, quoteVersionId: true, type: true, status: true, requestedById: true } }) : null;
+      const quote = await prisma.quote.findUnique({ where: { id: event.aggregateId }, select: { id: true, quoteRequestId: true, quoteRequest: { select: { folio: true } } } });
+      if (!approval || approval.status !== 'REQUESTED' || approval.quoteId !== event.aggregateId || approval.quoteVersionId !== quoteVersionId || !quote || quote.quoteRequestId !== quoteRequestId || stringValue(payload, 'folio') !== quote.quoteRequest.folio || stringValue(payload, 'type') !== approval.type) return cancellation('INVALID_PAYLOAD');
+      const users = await prisma.user.findMany({
+        where: {
+          id: { not: approval.requestedById },
+          type: 'EMPLOYEE',
+          status: 'ACTIVE',
+          roles: { some: { role: { permissions: { some: { permission: { key: 'quotes.approve_discount' } } } } } },
+        },
+        select: { id: true, email: true, displayName: true, type: true, status: true },
+        orderBy: { id: 'asc' },
+      });
+      const contexts = users.map(activeStaff).filter((recipient): recipient is NotificationRecipientContext => Boolean(recipient)).map((recipient) => staffApprovalContext(recipient, quote.quoteRequestId));
+      return contexts.length ? { kind: 'RECIPIENTS', contexts } : cancellation('NO_RECIPIENT');
+    }
+    case 'QUOTE.APPROVAL_RESOLVED': {
+      if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
+      const approvalId = stringValue(payload, 'approvalId');
+      const quoteRequestId = stringValue(payload, 'quoteRequestId');
+      const quoteVersionId = stringValue(payload, 'quoteVersionId');
+      const status = stringValue(payload, 'status');
+      const approval = isUuid(approvalId) ? await prisma.quoteApproval.findUnique({ where: { id: approvalId }, include: { requestedBy: true } }) : null;
+      const quote = await prisma.quote.findUnique({ where: { id: event.aggregateId }, select: { id: true, quoteRequestId: true, quoteRequest: { select: { folio: true } } } });
+      const recipient = activeStaff(approval?.requestedBy);
+      if (!approval || !['APPROVED', 'REJECTED'].includes(approval.status) || approval.status !== status || approval.quoteId !== event.aggregateId || approval.quoteVersionId !== quoteVersionId || !quote || quote.quoteRequestId !== quoteRequestId || stringValue(payload, 'folio') !== quote.quoteRequest.folio || !recipient) return cancellation('INVALID_PAYLOAD');
+      return { kind: 'RECIPIENTS', contexts: [staffApprovalContext(recipient, quote.quoteRequestId)] };
+    }
     case 'QUOTE.ACCEPTED': {
       if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
       const quoteVersionId = stringValue(payload, 'quoteVersionId');
       const acceptanceId = stringValue(payload, 'acceptanceId');
-      const quote = await prisma.quote.findUnique({ where: { id: event.aggregateId }, include: { currentVersion: true, quoteRequest: { include: { currentAssignee: true } } } });
-      const acceptance = isUuid(acceptanceId) ? await prisma.quoteAcceptance.findUnique({ where: { id: acceptanceId }, select: { quoteId: true, quoteVersionId: true, generatedDocumentId: true, termsVersion: true } }) : null;
-      if (!quote || !quoteVersionId || stringValue(payload, 'quoteRequestId') !== quote.quoteRequestId || stringValue(payload, 'folio') !== quote.quoteRequest.folio || quote.currentVersionId !== quoteVersionId || quote.currentVersion?.status !== 'ACEPTADA' || !acceptance || acceptance.quoteId !== quote.id || acceptance.quoteVersionId !== quoteVersionId || stringValue(payload, 'generatedDocumentId') !== acceptance.generatedDocumentId || stringValue(payload, 'termsVersion') !== acceptance.termsVersion) return cancellation('INVALID_PAYLOAD');
+      const quote = await prisma.quote.findUnique({ where: { id: event.aggregateId }, include: { quoteRequest: { include: { currentAssignee: true } } } });
+      const acceptance = isUuid(acceptanceId) ? await prisma.quoteAcceptance.findUnique({ where: { id: acceptanceId }, select: { quoteId: true, quoteVersionId: true, generatedDocumentId: true, termsVersion: true, quoteVersion: { select: { status: true, totalMinor: true, currencyCode: true } } } }) : null;
+      if (!quote || !quoteVersionId || stringValue(payload, 'quoteRequestId') !== quote.quoteRequestId || stringValue(payload, 'folio') !== quote.quoteRequest.folio || !acceptance || acceptance.quoteId !== quote.id || acceptance.quoteVersionId !== quoteVersionId || acceptance.quoteVersion.status !== 'ACEPTADA' || stringValue(payload, 'generatedDocumentId') !== acceptance.generatedDocumentId || stringValue(payload, 'termsVersion') !== acceptance.termsVersion) return cancellation('INVALID_PAYLOAD');
       const recipient = activeStaff(quote.quoteRequest.currentAssignee);
       if (!recipient) return cancellation('NO_RECIPIENT');
       return { kind: 'RECIPIENTS', contexts: [
-        { recipient, actionPath: '/staff/requests', totalLabel: totalLabel(quote.currentVersion.totalMinor, quote.currentVersion.currencyCode) },
+        { recipient, actionPath: '/staff/requests', totalLabel: totalLabel(acceptance.quoteVersion.totalMinor, acceptance.quoteVersion.currencyCode) },
       ] };
     }
     case 'MESSAGE.CREATED': {

@@ -57,6 +57,8 @@ describe('customer quote acceptance service', () => {
       await transitionQuoteVersion(employee, created.versionId, 'EN_REVISION', { prisma, now });
       await transitionQuoteVersion(employee, created.versionId, 'ENVIADA', { prisma, now });
       await generateQuotePdf(employee, created.versionId, { prisma, storage, now });
+      const working = await createQuoteVersion(employee, { quoteRequestId: request.quoteRequestId, priceListId: priceList.id, lines: [{ catalogItemId: item.id, quantity: '2', taxBasisPoints: 1600 }] }, { prisma, now });
+      await transitionQuoteVersion(employee, working.versionId, 'EN_REVISION', { prisma, now });
 
       const customerActorValue = customerActor(customer.id, request.clientId);
       const acceptedQuoteId = quoteId;
@@ -97,6 +99,7 @@ describe('customer quote acceptance service', () => {
       const updatedRequest = await prisma.quoteRequest.findUnique({ where: { id: request.quoteRequestId } });
 
       expect(accepted).toMatchObject({ quoteId, quoteVersionId: created.versionId, status: 'ACEPTADA', signerName: expectedSigner, termsVersion: 'quote-terms-2026-01' });
+      expect(accepted.quoteVersionId).not.toBe(working.versionId);
       expect(replay.id).toBe(accepted.id);
       expect(version?.status).toBe('ACEPTADA');
       expect(updatedRequest?.status).toBe('ACEPTADA');

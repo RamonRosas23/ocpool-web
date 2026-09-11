@@ -46,6 +46,10 @@ node scripts/require-env.mjs DATABASE_URL
 
 No copies credenciales reales a `.env.example`. El valor local esperado apunta a `localhost:55432`.
 
+## Build mientras existe un servidor activo
+
+No ejecutes `npm run build` escribiendo `.next` mientras un proceso `next start`, PM2 o un proxy local está sirviendo ese mismo directorio. El proceso puede conservar HTML del build anterior mientras los chunks ya fueron reemplazados y producir `404` en recursos estáticos. Para E2E usa el directorio aislado que configura `scripts/start-e2e-server.mjs`; para una verificación manual, detén/reinicia el proceso después del build o configura un `NEXT_DIST_DIR` separado.
+
 ## Cliente Prisma no generado
 
 Regenera el cliente a partir del schema:

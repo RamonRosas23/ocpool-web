@@ -11,7 +11,7 @@ test.describe('customer onboarding staff flow', () => {
 
   const prisma = getPrisma();
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const origin = 'http://127.0.0.1:3100';
+  const origin = process.env.APP_URL ?? 'http://127.0.0.1:3100';
   let requestId = '';
   let folio = '';
   let clientId = '';
@@ -90,11 +90,11 @@ test.describe('customer onboarding staff flow', () => {
     await page.getByRole('button', { name: new RegExp(folio) }).click();
     await expect(page.getByRole('button', { name: 'Habilitar portal' })).toBeVisible();
     await page.getByRole('button', { name: 'Habilitar portal' }).click();
-    await expect(page.locator('.staff-notice')).toContainText('Invitación de acceso enviada.');
+    await expect(page.locator('.staff-notice')).toContainText('Portal habilitado. Se envió un enlace de un solo uso');
     await expect(page.getByText('Invitación pendiente')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reenviar acceso' })).toBeVisible();
     await page.getByRole('button', { name: 'Reenviar acceso' }).click();
-    await expect(page.locator('.staff-notice')).toContainText('Ya existe una invitación vigente.');
+    await expect(page.locator('.staff-notice')).toContainText('Ya existe una invitación vigente. El cliente debe revisar su correo.');
     await expectNoSeriousA11yViolations(page);
     for (const width of [390, 768, 1440]) {
       await page.setViewportSize({ width, height: 844 });

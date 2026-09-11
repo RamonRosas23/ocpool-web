@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+/spikes/private-primitives-react-aria/node_modules
+/spikes/private-primitives-react-aria/dist
 /.worktrees
 /.pnp
 .pnp.*

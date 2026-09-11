@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { createQuoteVersion, replaceQuoteDraft, transitionQuoteVersion } from '@/server/modules/quotes/service';
+import { decideQuoteApproval, requestQuoteApproval } from '@/server/modules/quotes/approval-service';
 import { getPrisma } from '@/server/db/client';
 import type { Actor } from '@/server/auth/types';
 
@@ -130,6 +131,7 @@ describe('quote pricing and versioning service', () => {
         lines: [{ catalogItemId: item.id, quantity: '1' }],
       }, { prisma, now });
       quoteId = first.quoteId;
+      expect(await prisma.quote.findUnique({ where: { id: first.quoteId }, select: { workingVersionId: true, publishedVersionId: true } })).toMatchObject({ workingVersionId: first.versionId, publishedVersionId: null });
       const editedDraft = await replaceQuoteDraft(actor, first.versionId, {
         priceListId: priceList.id,
         lines: [{ catalogItemId: item.id, quantity: '2' }],
@@ -138,6 +140,7 @@ describe('quote pricing and versioning service', () => {
       expect(await prisma.quoteLineSnapshot.count({ where: { quoteVersionId: first.versionId } })).toBe(1);
       await transitionQuoteVersion(actor, first.versionId, 'EN_REVISION', { prisma, now });
       await transitionQuoteVersion(actor, first.versionId, 'ENVIADA', { prisma, now });
+      expect(await prisma.quote.findUnique({ where: { id: first.quoteId }, select: { workingVersionId: true, publishedVersionId: true } })).toMatchObject({ workingVersionId: null, publishedVersionId: first.versionId });
       await expect(transitionQuoteVersion(actor, first.versionId, 'ACEPTADA', { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
       await expect(replaceQuoteDraft(manager, first.versionId, {
         priceListId: priceList.id,
@@ -165,13 +168,14 @@ describe('quote pricing and versioning service', () => {
 
       const draftResult = second.status === 'fulfilled' ? second.value : concurrent.status === 'fulfilled' ? concurrent.value : null;
       expect(draftResult).not.toBeNull();
+      expect(await prisma.quote.findUnique({ where: { id: first.quoteId }, select: { workingVersionId: true, publishedVersionId: true } })).toMatchObject({ workingVersionId: draftResult!.versionId, publishedVersionId: first.versionId });
       const discountEditor = salesActor(employee.id, ['quotes.create', 'quotes.send', 'quotes.apply_discount', 'prices.read']);
       await replaceQuoteDraft(discountEditor, draftResult!.versionId, {
         priceListId: priceList.id,
         lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 500 }],
       }, { prisma, now });
       await transitionQuoteVersion(discountEditor, draftResult!.versionId, 'EN_REVISION', { prisma, now });
-      await expect(transitionQuoteVersion(discountEditor, draftResult!.versionId, 'ENVIADA', { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+      await expect(transitionQuoteVersion(discountEditor, draftResult!.versionId, 'ENVIADA', { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
     } finally {
       const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
@@ -182,6 +186,112 @@ describe('quote pricing and versioning service', () => {
       await prisma.clientContact.delete({ where: { id: request.contactId } });
       await prisma.client.delete({ where: { id: request.clientId } });
       await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.delete({ where: { id: item.id } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
+
+  it('requires an independent, current approval before sending a discounted quote', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-02-12T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-service-${suffix}-approval`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quote approval ${suffix}`, email: `quote-approval-${suffix}@example.test` },
+      detail: { projectType: 'Industrial', location: 'Mazatlán', description: 'Approval fixture', consentAt: now },
+    }, { prisma, now });
+    const requester = await prisma.user.create({
+      data: {
+        email: `quote-approval-requester-${suffix}@example.test`,
+        emailNormalized: `quote-approval-requester-${suffix}@example.test`,
+        displayName: 'Quote approval requester',
+        type: 'EMPLOYEE',
+        status: 'ACTIVE',
+      },
+    });
+    const approver = await prisma.user.create({
+      data: {
+        email: `quote-approval-approver-${suffix}@example.test`,
+        emailNormalized: `quote-approval-approver-${suffix}@example.test`,
+        displayName: 'Quote approval approver',
+        type: 'EMPLOYEE',
+        status: 'ACTIVE',
+      },
+    });
+    const category = await prisma.catalogCategory.create({ data: { code: `APPROVAL-${suffix}`, name: 'Approval service' } });
+    const item = await prisma.catalogItem.create({ data: { code: `APPROVAL-ITEM-${suffix}`, name: 'Approval service item', unit: 'servicio', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `APPROVAL-PRICE-${suffix}`, name: 'Approval service prices', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 10_000n, validFrom: now } });
+    let quoteId: string | null = null;
+
+    const requesterActor = salesActor(requester.id, ['quotes.create', 'quotes.send', 'quotes.apply_discount', 'prices.read']);
+    const approverActor = salesActor(approver.id, ['quotes.read', 'quotes.approve_discount']);
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const created = await createQuoteVersion(requesterActor, {
+        quoteRequestId: request.quoteRequestId,
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 500 }],
+      }, { prisma, now });
+      quoteId = created.quoteId;
+      await transitionQuoteVersion(requesterActor, created.versionId, 'EN_REVISION', { prisma, now });
+
+      const approval = await requestQuoteApproval(requesterActor, created.versionId, {
+        type: 'DISCOUNT',
+        policyVersion: 'discount-v1',
+        thresholdBps: 500,
+        reason: 'Condición comercial autorizada para el cliente.',
+      }, { prisma, now });
+      expect(approval).toMatchObject({ status: 'REQUESTED', type: 'DISCOUNT', policyVersion: 'discount-v1' });
+      expect(approval.digest).toMatch(/^[a-f0-9]{64}$/u);
+      expect((await requestQuoteApproval(requesterActor, created.versionId, {
+        type: 'DISCOUNT',
+        policyVersion: 'discount-v1',
+        thresholdBps: 500,
+      }, { prisma, now })).id).toBe(approval.id);
+
+      await expect(transitionQuoteVersion(requesterActor, created.versionId, 'ENVIADA', { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      await expect(decideQuoteApproval({ ...requesterActor, permissionKeys: new Set([...requesterActor.permissionKeys, 'quotes.approve_discount']) }, approval.id, { decision: 'APPROVED' }, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      const approved = await decideQuoteApproval(approverActor, approval.id, { decision: 'APPROVED' }, { prisma, now });
+      expect(approved.status).toBe('APPROVED');
+
+      await transitionQuoteVersion(requesterActor, created.versionId, 'BORRADOR', { prisma, now });
+      expect(await prisma.quoteApproval.findUnique({ where: { id: approval.id }, select: { status: true } })).toMatchObject({ status: 'SUPERSEDED' });
+      await replaceQuoteDraft(requesterActor, created.versionId, {
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 600 }],
+      }, { prisma, now });
+      await transitionQuoteVersion(requesterActor, created.versionId, 'EN_REVISION', { prisma, now });
+      await expect(transitionQuoteVersion(requesterActor, created.versionId, 'ENVIADA', { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+
+      const refreshedApproval = await requestQuoteApproval(requesterActor, created.versionId, {
+        type: 'DISCOUNT',
+        policyVersion: 'discount-v1',
+        thresholdBps: 600,
+      }, { prisma, now });
+      expect(refreshedApproval.id).not.toBe(approval.id);
+      await decideQuoteApproval(approverActor, refreshedApproval.id, { decision: 'APPROVED' }, { prisma, now });
+      await transitionQuoteVersion(requesterActor, created.versionId, 'ENVIADA', { prisma, now });
+      expect(await prisma.quoteVersion.findUnique({ where: { id: created.versionId }, select: { status: true } })).toMatchObject({ status: 'ENVIADA' });
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      const approvalIds = (await prisma.quoteApproval.findMany({ where: { quoteVersionId: { in: versionIds } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds, ...approvalIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.deleteMany({ where: { id: { in: [requester.id, approver.id] } } });
       await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
       await prisma.priceList.delete({ where: { id: priceList.id } });
       await prisma.catalogItem.delete({ where: { id: item.id } });

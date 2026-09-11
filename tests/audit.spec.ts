@@ -121,10 +121,12 @@ test.describe('staff audit workspace', () => {
     await page.getByRole('button', { name: 'Reintentar' }).click();
     await expect(page.getByRole('heading', { name: 'Auditoría operativa' }).first()).toBeVisible();
     consoleErrors.length = 0;
-    await page.getByLabel('Desde').fill('2026-09-07');
-    await page.getByLabel('Hasta').fill('2026-09-08');
-    await page.getByLabel('Filtrar por categoría').selectOption('documents');
-    await page.getByLabel('Filtrar por resultado').selectOption('FAILURE');
+    await page.getByRole('textbox', { name: 'Desde', exact: true }).fill('2026-09-07');
+    await page.getByRole('textbox', { name: 'Hasta', exact: true }).fill('2026-09-08');
+    await page.getByRole('combobox', { name: 'Filtrar por categoría' }).click();
+    await page.getByRole('option', { name: 'Documentos', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Filtrar por resultado' }).click();
+    await page.getByRole('option', { name: 'Fallido', exact: true }).click();
     await page.getByRole('button', { name: 'Aplicar filtros' }).click();
     await expect(page.getByTestId('audit-entry')).toHaveCount(25);
     await expect(page.getByRole('button', { name: 'Cargar eventos anteriores' })).toBeVisible();
@@ -137,14 +139,15 @@ test.describe('staff audit workspace', () => {
     await expect(page.locator('body')).not.toContainText(secretUserAgent);
     await expectNoSeriousA11yViolations(page);
 
-    await page.getByLabel('Desde').fill('2020-01-01');
-    await page.getByLabel('Hasta').fill('2020-02-01');
+    await page.getByRole('textbox', { name: 'Desde', exact: true }).fill('2020-01-01');
+    await page.getByRole('textbox', { name: 'Hasta', exact: true }).fill('2020-02-01');
     await page.getByRole('button', { name: 'Aplicar filtros' }).click();
     await expect(page.getByText('No hay eventos en este periodo.')).toBeVisible();
 
     await setSession(page, 'admin');
     await page.goto('/staff/audit');
-    await page.getByLabel('Filtrar por categoría').selectOption('security');
+    await page.getByRole('combobox', { name: 'Filtrar por categoría' }).click();
+    await page.getByRole('option', { name: 'Seguridad', exact: true }).click();
     await page.getByRole('button', { name: 'Aplicar filtros' }).click();
     await expect(page.getByRole('heading', { name: 'Eventos de seguridad' }).first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Inicio de sesión exitoso' }).first()).toBeVisible();

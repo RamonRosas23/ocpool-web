@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     assertSameOrigin(request, readServerEnv().APP_URL);
     const body = await parseBody(request, emailBodySchema);
     await requestPasswordRecovery({ ...body, context: requestContext(request) });
-    return NextResponse.json({ accepted: true }, { status: 202 });
+    return NextResponse.json({ accepted: true }, { status: 202, headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);
   }

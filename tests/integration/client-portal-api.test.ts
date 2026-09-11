@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
+import { seedIdentityCatalog } from '../../prisma/seed';
 import { readServerEnv } from '@/server/env';
 import { getPrisma } from '@/server/db/client';
 import { createSession } from '@/server/auth/sessions';
@@ -14,6 +15,7 @@ describe('customer portal API', () => {
   const userIds: string[] = [];
   let customerAToken = '';
   let customerBToken = '';
+  let customerNoPermissionToken = '';
   let employeeToken = '';
   let customerASessionId = '';
   let requestAId = '';
@@ -33,6 +35,8 @@ describe('customer portal API', () => {
 
   beforeAll(async () => {
     if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    await seedIdentityCatalog(prisma);
+    const customerRole = await prisma.role.findUniqueOrThrow({ where: { key: 'customer' } });
     const suffix = Date.now().toString();
     const now = new Date('2026-04-02T12:00:00.000Z');
     const [requestA, requestB] = await Promise.all([
@@ -46,18 +50,21 @@ describe('customer portal API', () => {
     contactAId = requestA.contactId;
     contactBId = requestB.contactId;
     await prisma.quoteRequest.updateMany({ where: { id: { in: [requestAId, requestBId] } }, data: { status: 'EN_ELABORACION' } });
-    const [customerA, customerB, employee] = await Promise.all([
-      prisma.user.create({ data: { email: `portal-api-user-a-${suffix}@example.test`, emailNormalized: `portal-api-user-a-${suffix}@example.test`, displayName: 'Portal API A user', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientAId } }),
-      prisma.user.create({ data: { email: `portal-api-user-b-${suffix}@example.test`, emailNormalized: `portal-api-user-b-${suffix}@example.test`, displayName: 'Portal API B user', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientBId } }),
+    const [customerA, customerB, customerNoPermission, employee] = await Promise.all([
+      prisma.user.create({ data: { email: `portal-api-user-a-${suffix}@example.test`, emailNormalized: `portal-api-user-a-${suffix}@example.test`, displayName: 'Portal API A user', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientAId, roles: { create: { roleId: customerRole.id } } } }),
+      prisma.user.create({ data: { email: `portal-api-user-b-${suffix}@example.test`, emailNormalized: `portal-api-user-b-${suffix}@example.test`, displayName: 'Portal API B user', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientBId, roles: { create: { roleId: customerRole.id } } } }),
+      prisma.user.create({ data: { email: `portal-api-user-no-permission-${suffix}@example.test`, emailNormalized: `portal-api-user-no-permission-${suffix}@example.test`, displayName: 'Portal API user without permission', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientAId } }),
       prisma.user.create({ data: { email: `portal-api-employee-${suffix}@example.test`, emailNormalized: `portal-api-employee-${suffix}@example.test`, displayName: 'Portal API employee', type: 'EMPLOYEE', status: 'ACTIVE' } }),
     ]);
-    userIds.push(customerA.id, customerB.id, employee.id);
+    userIds.push(customerA.id, customerB.id, customerNoPermission.id, employee.id);
     customerAToken = `portal-api-a-${suffix}-abcdefghijklmnopqrstuvwxyz`;
     customerBToken = `portal-api-b-${suffix}-abcdefghijklmnopqrstuvwxyz`;
+    customerNoPermissionToken = `portal-api-no-permission-${suffix}-abcdefghijklmnopqrstuvwxyz`;
     employeeToken = `portal-api-e-${suffix}-abcdefghijklmnopqrstuvwxyz`;
     const [customerASession] = await Promise.all([
       createSession({ userId: customerA.id, ipAddress: null, userAgent: 'integration-test' }, { prisma, tokenGenerator: () => customerAToken }),
       createSession({ userId: customerB.id, ipAddress: null, userAgent: 'integration-test' }, { prisma, tokenGenerator: () => customerBToken }),
+      createSession({ userId: customerNoPermission.id, ipAddress: null, userAgent: 'integration-test' }, { prisma, tokenGenerator: () => customerNoPermissionToken }),
       createSession({ userId: employee.id, ipAddress: null, userAgent: 'integration-test' }, { prisma, tokenGenerator: () => employeeToken }),
     ]);
     customerASessionId = customerASession.sessionId;
@@ -78,6 +85,7 @@ describe('customer portal API', () => {
   it('requires a customer session, enforces client scope and returns safe public projections', async () => {
     expect((await listPortalRequestsRoute(endpoint('/api/portal/requests'))).status).toBe(401);
     expect((await listPortalRequestsRoute(endpoint('/api/portal/requests', employeeToken))).status).toBe(403);
+    expect((await listPortalRequestsRoute(endpoint('/api/portal/requests', customerNoPermissionToken))).status).toBe(403);
     const list = await listPortalRequestsRoute(endpoint('/api/portal/requests', customerAToken));
     expect(list.status).toBe(200);
     await expect(list.json()).resolves.toMatchObject({ total: 1, items: [{ id: requestAId }] });

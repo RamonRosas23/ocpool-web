@@ -189,7 +189,7 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
     </div>
     {uploadState && <p className="client-files__progress" role="status" aria-live="polite">{uploadState}</p>}
     {error && <div className="client-files__error" role="alert"><p>{error}</p><button type="button" onClick={() => void loadFiles()}>Reintentar</button></div>}
-    {loading && <div className="client-files__loading" aria-label="Cargando archivos"><i /><i /></div>}
+    {loading && <div className="client-files__loading" role="status" aria-label="Cargando archivos"><i /><i /></div>}
     {!loading && !items.length && <p className="client-files__empty">Aún no hay archivos.</p>}
     {!loading && items.length > 0 && <ul className="client-files__list">
       {items.map((file) => <li className="client-file" key={file.id}>

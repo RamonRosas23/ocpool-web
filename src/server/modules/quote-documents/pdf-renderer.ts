@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
-import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from 'pdf-lib';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
 
-export const QUOTE_PDF_TEMPLATE_VERSION = 'quote-pdf-v1';
+export const QUOTE_PDF_TEMPLATE_VERSION = 'quote-pdf-v2';
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -10,6 +12,10 @@ const CONTENT_WIDTH = PAGE_WIDTH - (MARGIN_X * 2);
 const FOOTER_Y = 30;
 const BODY_BOTTOM = 82;
 const FIXED_METADATA_DATE = new Date('2026-01-01T00:00:00.000Z');
+const OFFICIAL_LOGO_PATH = path.resolve(process.cwd(), 'public/brand/ocpool-logo.png');
+const TERMS_LINE_HEIGHT = 11;
+const TERMS_HEADER_HEIGHT = 24;
+const TERMS_LEGAL_NOTE = 'Esta propuesta se emite con base en el alcance y los importes snapshot de la versión indicada.';
 
 const COLORS = {
   ink: rgb(0.10, 0.12, 0.14),
@@ -118,10 +124,10 @@ function drawFooter(page: PDFPage, pageNumber: number, folio: string, regular: P
   drawRightAligned(page, `${folio} · Página ${pageNumber}`, MARGIN_X, CONTENT_WIDTH, FOOTER_Y, regular, 7.5, COLORS.muted);
 }
 
-function drawFirstPageHeader(page: PDFPage, snapshot: QuotePdfSnapshot, regular: PDFFont, bold: PDFFont): number {
+function drawFirstPageHeader(page: PDFPage, snapshot: QuotePdfSnapshot, regular: PDFFont, bold: PDFFont, logo: PDFImage): number {
   page.drawRectangle({ x: 0, y: PAGE_HEIGHT - 10, width: PAGE_WIDTH, height: 10, color: COLORS.copper });
-  page.drawText('OCPOOL', { x: MARGIN_X, y: PAGE_HEIGHT - 62, size: 23, font: bold, color: COLORS.ink });
-  page.drawText('PROPUESTA COMERCIAL', { x: MARGIN_X, y: PAGE_HEIGHT - 83, size: 9, font: bold, color: COLORS.copper });
+  page.drawImage(logo, { x: MARGIN_X, y: PAGE_HEIGHT - 84, width: 72, height: 54 });
+  page.drawText('PROPUESTA COMERCIAL', { x: MARGIN_X, y: PAGE_HEIGHT - 96, size: 9, font: bold, color: COLORS.copper });
   drawRightAligned(page, snapshot.folio, MARGIN_X, CONTENT_WIDTH, PAGE_HEIGHT - 56, bold, 12, COLORS.ink);
   drawRightAligned(page, `Versión ${snapshot.versionNumber}`, MARGIN_X, CONTENT_WIDTH, PAGE_HEIGHT - 75, regular, 9, COLORS.muted);
   page.drawLine({ start: { x: MARGIN_X, y: PAGE_HEIGHT - 100 }, end: { x: PAGE_WIDTH - MARGIN_X, y: PAGE_HEIGHT - 100 }, thickness: 1, color: COLORS.rule });
@@ -147,9 +153,9 @@ function drawFirstPageHeader(page: PDFPage, snapshot: QuotePdfSnapshot, regular:
   return panelTop - panelHeight - 26;
 }
 
-function drawContinuationHeader(page: PDFPage, snapshot: QuotePdfSnapshot, regular: PDFFont, bold: PDFFont): number {
+function drawContinuationHeader(page: PDFPage, snapshot: QuotePdfSnapshot, regular: PDFFont, bold: PDFFont, logo: PDFImage): number {
   page.drawRectangle({ x: 0, y: PAGE_HEIGHT - 10, width: PAGE_WIDTH, height: 10, color: COLORS.copper });
-  page.drawText('OCPOOL', { x: MARGIN_X, y: PAGE_HEIGHT - 49, size: 14, font: bold, color: COLORS.ink });
+  page.drawImage(logo, { x: MARGIN_X, y: PAGE_HEIGHT - 60, width: 48, height: 36 });
   drawRightAligned(page, `${snapshot.folio} · Versión ${snapshot.versionNumber}`, MARGIN_X, CONTENT_WIDTH, PAGE_HEIGHT - 47, regular, 9, COLORS.muted);
   page.drawLine({ start: { x: MARGIN_X, y: PAGE_HEIGHT - 64 }, end: { x: PAGE_WIDTH - MARGIN_X, y: PAGE_HEIGHT - 64 }, thickness: 1, color: COLORS.rule });
   return PAGE_HEIGHT - 88;
@@ -201,15 +207,35 @@ function drawTotals(page: PDFPage, snapshot: QuotePdfSnapshot, y: number, regula
   return boxY;
 }
 
-function drawTerms(page: PDFPage, snapshot: QuotePdfSnapshot, y: number, regular: PDFFont, bold: PDFFont): number {
-  page.drawText('ALCANCE Y CONDICIONES', { x: MARGIN_X, y, size: 8, font: bold, color: COLORS.copper });
-  const descriptionLines = wrapText(snapshot.description, regular, 8.5, CONTENT_WIDTH);
-  descriptionLines.slice(0, 4).forEach((text, index) => {
-    page.drawText(text, { x: MARGIN_X, y: y - 16 - (index * 11), size: 8.5, font: regular, color: COLORS.ink });
+function drawTermsChunk(page: PDFPage, lines: readonly string[], offset: number, lineCount: number, y: number, regular: PDFFont, bold: PDFFont): number {
+  page.drawText(offset === 0 ? 'ALCANCE Y CONDICIONES' : 'ALCANCE Y CONDICIONES · CONTINUACIÓN', { x: MARGIN_X, y, size: 8, font: bold, color: COLORS.copper });
+  lines.slice(offset, offset + lineCount).forEach((text, index) => {
+    page.drawText(text, { x: MARGIN_X, y: y - 16 - (index * TERMS_LINE_HEIGHT), size: 8.5, font: regular, color: COLORS.ink });
   });
-  const legalY = y - 24 - (Math.min(descriptionLines.length, 4) * 11);
-  page.drawText('Esta propuesta se emite con base en el alcance y los importes snapshot de la versión indicada.', { x: MARGIN_X, y: legalY, size: 7.5, font: regular, color: COLORS.muted });
-  return legalY;
+  const nextY = y - TERMS_HEADER_HEIGHT - (lineCount * TERMS_LINE_HEIGHT);
+  if (offset + lineCount >= lines.length) {
+    page.drawText(TERMS_LEGAL_NOTE, { x: MARGIN_X, y: nextY, size: 7.5, font: regular, color: COLORS.muted });
+    return nextY;
+  }
+  return nextY;
+}
+
+function drawTermsPages(pdf: PDFDocument, snapshot: QuotePdfSnapshot, lines: readonly string[], regular: PDFFont, bold: PDFFont, logo: PDFImage, pageNumber: number): number {
+  let offset = 0;
+  do {
+    const page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    pageNumber += 1;
+    const y = drawContinuationHeader(page, snapshot, regular, bold, logo);
+    const contentStartY = y - TERMS_HEADER_HEIGHT;
+    const maximumWithoutLegal = Math.max(1, Math.floor((contentStartY - BODY_BOTTOM) / TERMS_LINE_HEIGHT));
+    const maximumWithLegal = Math.max(0, Math.floor((contentStartY - BODY_BOTTOM - 12) / TERMS_LINE_HEIGHT));
+    const remaining = lines.length - offset;
+    const lineCount = remaining <= maximumWithLegal ? remaining : Math.min(remaining, maximumWithoutLegal);
+    drawTermsChunk(page, lines, offset, lineCount, y, regular, bold);
+    drawFooter(page, pageNumber, snapshot.folio, regular);
+    offset += lineCount;
+  } while (offset < lines.length);
+  return pageNumber;
 }
 
 export async function renderQuotePdf(snapshot: QuotePdfSnapshot): Promise<RenderedQuotePdf> {
@@ -220,6 +246,7 @@ export async function renderQuotePdf(snapshot: QuotePdfSnapshot): Promise<Render
   const pdf = await PDFDocument.create({ updateMetadata: false });
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const logo = await pdf.embedPng(await readFile(OFFICIAL_LOGO_PATH));
   pdf.setTitle(`Cotización OCPOOL ${cleanText(snapshot.folio)} v${snapshot.versionNumber}`);
   pdf.setAuthor('OCPOOL');
   pdf.setSubject('Propuesta comercial');
@@ -230,7 +257,7 @@ export async function renderQuotePdf(snapshot: QuotePdfSnapshot): Promise<Render
 
   let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   let pageNumber = 1;
-  let y = drawFirstPageHeader(page, snapshot, regular, bold);
+  let y = drawFirstPageHeader(page, snapshot, regular, bold, logo);
   y = drawTableHeader(page, y, regular, bold);
 
   snapshot.lines.forEach((line, index) => {
@@ -240,7 +267,7 @@ export async function renderQuotePdf(snapshot: QuotePdfSnapshot): Promise<Render
       drawFooter(page, pageNumber, snapshot.folio, regular);
       page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
       pageNumber += 1;
-      y = drawContinuationHeader(page, snapshot, regular, bold);
+    y = drawContinuationHeader(page, snapshot, regular, bold, logo);
       y = drawTableHeader(page, y, regular, bold);
     }
     y = drawLineRow(page, line, index, y, snapshot.currencyCode, regular, bold);
@@ -250,11 +277,19 @@ export async function renderQuotePdf(snapshot: QuotePdfSnapshot): Promise<Render
     drawFooter(page, pageNumber, snapshot.folio, regular);
     page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
     pageNumber += 1;
-    y = drawContinuationHeader(page, snapshot, regular, bold);
+      y = drawContinuationHeader(page, snapshot, regular, bold, logo);
   }
   y = drawTotals(page, snapshot, y - 18, regular, bold);
-  drawTerms(page, snapshot, y - 28, regular, bold);
-  drawFooter(page, pageNumber, snapshot.folio, regular);
+  const termsLines = wrapText(snapshot.description, regular, 8.5, CONTENT_WIDTH);
+  const termsY = y - 28;
+  const termsFit = termsY - TERMS_HEADER_HEIGHT - (termsLines.length * TERMS_LINE_HEIGHT) >= BODY_BOTTOM;
+  if (termsFit) {
+    drawTermsChunk(page, termsLines, 0, termsLines.length, termsY, regular, bold);
+    drawFooter(page, pageNumber, snapshot.folio, regular);
+  } else {
+    drawFooter(page, pageNumber, snapshot.folio, regular);
+    pageNumber = drawTermsPages(pdf, snapshot, termsLines, regular, bold, logo, pageNumber);
+  }
 
   const bytes = await pdf.save({ useObjectStreams: false, addDefaultPage: false });
   return {

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
+import WorkspaceBrand from '@/components/WorkspaceBrand';
 
 type SessionResponse = { type?: 'EMPLOYEE' | 'CUSTOMER' };
 type ErrorResponse = { error?: { message?: string } };
@@ -57,7 +58,7 @@ export default function EmployeeLoginPanel() {
 
   return <main className="auth-shell auth-shell--staff">
     <section className="auth-context" aria-label="Contexto de acceso">
-      <Link className="auth-brand" href="/" aria-label="OCPOOL, volver al sitio público"><span>OCPOOL</span><small>Operaciones comerciales</small></Link>
+      <WorkspaceBrand className="auth-brand" subtitle="Operaciones comerciales" />
       <div className="auth-context__copy"><p className="auth-kicker">Espacios que toman forma</p><h1>La operación también merece <em>intención.</em></h1><p>Un espacio de trabajo para dar seguimiento a cada solicitud, cada conversación y cada propuesta con claridad.</p></div>
       <div className="auth-context__footer"><span>Acceso protegido</span><small>Sesiones privadas · permisos por rol · MFA administrativo</small></div>
     </section>
@@ -80,4 +81,3 @@ export default function EmployeeLoginPanel() {
     </section>
   </main>;
 }
-

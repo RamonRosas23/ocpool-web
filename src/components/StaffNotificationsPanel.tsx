@@ -2,6 +2,9 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import SelectField from '@/components/SelectField';
+import WorkspaceLogo from '@/components/WorkspaceLogo';
+import WorkspaceBrand from '@/components/WorkspaceBrand';
 
 const STATUS_OPTIONS = ['', 'PENDING', 'PROCESSING', 'SENT', 'FAILED', 'CANCELLED'] as const;
 type NotificationStatus = (typeof STATUS_OPTIONS)[number];
@@ -160,7 +163,7 @@ export default function StaffNotificationsPanel() {
   };
 
   if (accessDenied) {
-    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">OC</span><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
+    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
   }
 
   const health = data?.health;
@@ -169,8 +172,8 @@ export default function StaffNotificationsPanel() {
   return (
     <main className="staff-shell">
       <header className="staff-header">
-        <Link className="staff-brand" href="/" aria-label="OCPOOL, volver al sitio público"><span>OCPOOL</span><small>Operaciones comerciales</small></Link>
-        <div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Operación de notificaciones</div>
+        <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
+        <div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Operación de notificaciones</div></div>
       </header>
 
       <div className="staff-content staff-notifications">
@@ -193,7 +196,7 @@ export default function StaffNotificationsPanel() {
 
         <section className="staff-notification-workspace" aria-label="Cola de notificaciones">
           <div className="staff-notification-toolbar">
-            <label htmlFor="notification-status"><span>Filtrar por estado</span><select id="notification-status" value={statusFilter} onChange={(event) => { setNotice(null); setStatusFilter(event.target.value as NotificationStatus); }}><option value="">Todos los estados</option>{STATUS_OPTIONS.slice(1).map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></label>
+            <label htmlFor="notification-status"><span>Filtrar por estado</span><SelectField id="notification-status" ariaLabel="Filtrar por estado" value={statusFilter} onValueChange={(value) => { setNotice(null); setStatusFilter(value as NotificationStatus); }} options={STATUS_OPTIONS.slice(1).map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" /></label>
             <div className="staff-notification-toolbar__summary"><span>{loading ? 'Actualizando…' : `${data?.total ?? 0} entregas`}</span><small>La vista se actualiza al cambiar el filtro.</small></div>
           </div>
 

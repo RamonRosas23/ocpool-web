@@ -37,8 +37,10 @@ describe('customer portal scoped service', () => {
       quoteIds = [quoteA.quoteId, quoteB.quoteId];
       await transitionQuoteVersion(employeeActor, quoteA.versionId, 'EN_REVISION', { prisma, now });
       await transitionQuoteVersion(employeeActor, quoteA.versionId, 'ENVIADA', { prisma, now });
+      const quoteAWorking = await createQuoteVersion(employeeActor, { quoteRequestId: requestA.quoteRequestId, priceListId: priceList.id, lines: [{ catalogItemId: item.id, quantity: '3', taxBasisPoints: 1600 }] }, { prisma, now });
+      await transitionQuoteVersion(employeeActor, quoteAWorking.versionId, 'EN_REVISION', { prisma, now });
       await prisma.catalogItem.update({ where: { id: item.id }, data: { name: 'Portal catálogo actualizado' } });
-      const customerActor = actor('customer-user-a', requestA.clientId, 'CUSTOMER');
+      const customerActor = actor('customer-user-a', requestA.clientId, 'CUSTOMER', ['portal.self.read']);
 
       const list = await listCustomerQuoteRequests(customerActor, {}, { prisma });
       expect(list.items).toHaveLength(1);
@@ -46,11 +48,15 @@ describe('customer portal scoped service', () => {
 
       const detail = await getCustomerQuoteRequest(customerActor, requestA.quoteRequestId, { prisma });
       expect(detail.request).toMatchObject({ id: requestA.quoteRequestId, client: { id: requestA.clientId }, detail: { description: 'Cliente A alcance compartido' } });
-      expect(detail.quote?.currentVersion).toMatchObject({ id: quoteA.versionId, totalMinor: '18560' });
+      expect(detail.quote?.currentVersion).toMatchObject({ id: quoteA.versionId, totalMinor: '18560', termsVersion: 'quote-terms-2026-01', termsLabel: 'Condiciones comerciales de la propuesta · versión 2026-01' });
+      expect(detail.quote?.currentVersion?.pdfReady).toBe(false);
       expect(detail.quote?.currentVersion?.lines[0]).toMatchObject({ name: 'Portal snapshot item', quantityMilliunits: '2000', unitPriceMinor: '8000', taxMinor: '2560', totalMinor: '18560' });
+      expect(detail.quote?.versions.map((version) => version.id)).toContain(quoteA.versionId);
+      expect(detail.quote?.versions.map((version) => version.id)).not.toContain(quoteAWorking.versionId);
       expect(JSON.stringify(detail)).not.toContain('Portal B privado');
       expect(JSON.stringify(detail)).not.toContain('createdBy');
       await expect(getCustomerQuoteRequest(customerActor, requestB.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+      await expect(listCustomerQuoteRequests(actor('customer-no-permission', requestA.clientId, 'CUSTOMER'), {}, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
       await expect(listCustomerQuoteRequests(employeeActor, {}, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
     } finally {
       const requestIds = [requestA.quoteRequestId, requestB.quoteRequestId];

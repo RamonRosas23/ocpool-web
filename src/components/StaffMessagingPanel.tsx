@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 export type StaffMessagingCapabilities = {
   messagingRead: boolean;
@@ -214,6 +214,19 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
   const internalCount = messages.filter((message) => message.visibility === 'INTERNAL').length;
   const closed = conversation?.status === 'CLOSED';
   const modeLabel = mode === 'CUSTOMER' ? 'Mensaje visible para cliente' : 'Nota interna para el equipo';
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const tabButtons = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []);
+    const currentIndex = tabButtons.indexOf(event.currentTarget);
+    if (currentIndex < 0 || tabButtons.length < 2) return;
+    const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : event.key === 'Home' ? 0 : event.key === 'End' ? tabButtons.length - 1 : null;
+    if (direction === null) return;
+    event.preventDefault();
+    const nextIndex = event.key === 'Home' || event.key === 'End' ? direction : (currentIndex + direction + tabButtons.length) % tabButtons.length;
+    const nextMode = nextIndex === 0 ? 'CUSTOMER' : 'INTERNAL';
+    setMode(nextMode);
+    setSendError(null);
+    tabButtons[nextIndex]?.focus();
+  };
 
   return <section className="staff-messaging" aria-labelledby={headingId}>
     <div className="staff-messaging__head">
@@ -238,9 +251,9 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
     {canRead && loading && <div className="staff-messaging__loading" role="status" aria-label="Cargando conversación"><i /><i /><i /></div>}
     {canRead && !loading && error && <div className="staff-messaging__error" role="alert"><p>{error}</p><button type="button" className="staff-messaging__retry" onClick={retry}>Reintentar</button></div>}
     {canRead && !loading && !error && <>
-      <div className="staff-messaging__tabs" role="tablist" aria-label="Visibilidad de la conversación">
-        <button id={sharedTabId} type="button" role="tab" aria-selected={mode === 'CUSTOMER'} aria-controls={sharedPanelId} className={mode === 'CUSTOMER' ? 'is-active' : ''} onClick={() => { setMode('CUSTOMER'); setSendError(null); }}>{`Compartidos ${sharedCount}`}</button>
-        {canSeeInternal && <button id={internalTabId} type="button" role="tab" aria-selected={mode === 'INTERNAL'} aria-controls={internalPanelId} className={mode === 'INTERNAL' ? 'is-active' : ''} onClick={() => { setMode('INTERNAL'); setSendError(null); }}>{`Notas internas ${internalCount}`}</button>}
+      <div className="staff-messaging__tabs" role="tablist" aria-label="Visibilidad de la conversación" aria-orientation="horizontal">
+        <button id={sharedTabId} type="button" role="tab" tabIndex={mode === 'CUSTOMER' ? 0 : -1} aria-selected={mode === 'CUSTOMER'} aria-controls={mode === 'CUSTOMER' ? sharedPanelId : undefined} className={mode === 'CUSTOMER' ? 'is-active' : ''} onKeyDown={handleTabKeyDown} onClick={() => { setMode('CUSTOMER'); setSendError(null); }}>{`Compartidos ${sharedCount}`}</button>
+        {canSeeInternal && <button id={internalTabId} type="button" role="tab" tabIndex={mode === 'INTERNAL' ? 0 : -1} aria-selected={mode === 'INTERNAL'} aria-controls={mode === 'INTERNAL' ? internalPanelId : undefined} className={mode === 'INTERNAL' ? 'is-active' : ''} onKeyDown={handleTabKeyDown} onClick={() => { setMode('INTERNAL'); setSendError(null); }}>{`Notas internas ${internalCount}`}</button>}
       </div>
       <div id={mode === 'CUSTOMER' ? sharedPanelId : internalPanelId} role="tabpanel" aria-labelledby={mode === 'CUSTOMER' ? sharedTabId : internalTabId} className={`staff-messaging__panel${mode === 'INTERNAL' ? ' is-internal' : ''}`}>
         {nextCursor && <button type="button" className="staff-messaging__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando mensajes…' : 'Ver mensajes anteriores'}</button>}
