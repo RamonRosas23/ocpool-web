@@ -1,6 +1,8 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useId, useState } from 'react';
+import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
+import { getApiErrorMessage } from '@/lib/api-error-message';
 
 type PortalMessage = {
   id: string;
@@ -26,7 +28,7 @@ type PortalConversationResponse = {
   nextCursor: string | null;
 };
 
-type PortalErrorResponse = { error?: { message?: string } };
+type PortalErrorResponse = { error?: { message?: string; requestId?: string } };
 
 const MAX_MESSAGE_LENGTH = 10_000;
 
@@ -45,7 +47,7 @@ function formatMessageDate(value: string): string {
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & PortalErrorResponse;
-  if (!response.ok) throw new Error(data.error?.message ?? 'No fue posible cargar la conversación.');
+  if (!response.ok) throw new Error(getApiErrorMessage(data, 'No fue posible cargar la conversación.'));
   return data as T;
 }
 
@@ -66,6 +68,7 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
   const [error, setError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
 
   const loadMessages = useCallback(async (cursor?: string, signal?: AbortSignal) => {
     const query = cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=30` : '?limit=30';
@@ -81,6 +84,7 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     setConversation(null);
     setMessages([]);
     setNextCursor(null);
+    setSendIdempotencyKey(null);
     void loadMessages(undefined, controller.signal).then((data) => {
       if (controller.signal.aborted) return;
       setConversation(data.conversation);
@@ -128,7 +132,8 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     setSending(true);
     setSendError(null);
     const body = draft;
-    const idempotencyKey = `portal-${requestId}-${globalThis.crypto.randomUUID()}`;
+    const idempotencyKey = getOrCreateMessageIdempotencyKey(sendIdempotencyKey, `portal-${requestId}`);
+    setSendIdempotencyKey(idempotencyKey);
     void fetch(`/api/portal/requests/${requestId}/messages`, {
       method: 'POST',
       credentials: 'include',
@@ -138,8 +143,8 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     }).then(readJson<PortalMessage & { conversation: PortalConversation }>).then((data) => {
       setConversation(data.conversation);
       setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data]);
-      setNextCursor(null);
       setDraft('');
+      setSendIdempotencyKey(null);
       setAnnouncement('Mensaje enviado.');
     }).catch((caught: unknown) => {
       setSendError(caught instanceof Error ? caught.message : 'No fue posible enviar el mensaje.');
@@ -171,7 +176,7 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
       </ol>}
       {conversation?.status === 'CLOSED' ? <div className="client-messaging__closed" role="status"><strong>Esta conversación está cerrada.</strong><span>El expediente conserva su historial como referencia. Si necesitas continuar, ponte en contacto con OCPOOL.</span></div> : <form className="client-messaging__composer" onSubmit={sendMessage}>
         <label htmlFor={composerId}>Escribe una actualización</label>
-        <textarea id={composerId} value={draft} maxLength={MAX_MESSAGE_LENGTH} onChange={(event) => setDraft(event.target.value)} placeholder="Comparte una duda, ajuste o próximo paso…" rows={4} disabled={sending} />
+        <textarea id={composerId} value={draft} maxLength={MAX_MESSAGE_LENGTH} onChange={(event) => { setDraft(event.target.value); setSendIdempotencyKey(null); }} placeholder="Comparte una duda, ajuste o próximo paso…" rows={4} disabled={sending} />
         <div className="client-messaging__composer-bottom"><span>{draft.length.toLocaleString('es-MX')} / {MAX_MESSAGE_LENGTH.toLocaleString('es-MX')} caracteres</span><button type="submit" className="client-messaging__send" disabled={sending || !draft.trim()} aria-busy={sending}>{sending ? 'Enviando…' : 'Enviar mensaje'}</button></div>
         {sendError && <p className="client-messaging__send-error" role="alert">{sendError}</p>}
       </form>}

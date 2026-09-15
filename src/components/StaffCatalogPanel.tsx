@@ -6,6 +6,7 @@ import WorkspaceBrand from '@/components/WorkspaceBrand';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import DateField from '@/components/DateField';
 import SelectField from '@/components/SelectField';
+import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 
 type Category = { id: string; code: string; name: string; status: string };
 type CatalogItem = { id: string; code: string; name: string; description: string | null; unit: string; status: string; category: { id: string; code: string; name: string } | null; createdAt: string; updatedAt: string };
@@ -163,9 +164,9 @@ export default function StaffCatalogPanel() {
     finally { setSaving(false); }
   };
 
-  if (accessDenied) return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar el catálogo.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
+  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar el catálogo.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
 
-  return <main className="staff-shell">
+  return <PrivateSurfaceRoot className="staff-shell">
     <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Catálogo y precios</div></div></header>
     <div className="staff-content catalog-content">
       <div className="staff-intro"><div><p className="staff-kicker">Fuente comercial</p><h1>Catálogo</h1><p className="staff-intro__copy">Mantén conceptos y precios claros para que cada cotización nazca de una fuente controlada.</p></div><div className="staff-intro__metric"><strong>{total}</strong><span>conceptos activos</span></div></div>
@@ -192,5 +193,5 @@ export default function StaffCatalogPanel() {
         </section>
       </section>
     </div>
-  </main>;
+  </PrivateSurfaceRoot>;
 }

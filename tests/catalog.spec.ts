@@ -73,7 +73,9 @@ test.describe('staff catalog operations', () => {
     await expect(page.getByRole('heading', { name: 'Catálogo' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Volver al dashboard' })).toHaveAttribute('href', '/staff');
     await expect(page.getByRole('button', { name: new RegExp(itemCode) })).toBeVisible();
-    await expect(page.getByRole('button', { name: new RegExp(priceListCode) })).toBeVisible();
+    const fixturePriceList = page.getByRole('button', { name: new RegExp(priceListCode) });
+    await expect(fixturePriceList).toBeVisible();
+    await fixturePriceList.click();
     await expect(page.getByRole('table', { name: 'Precios de la lista seleccionada' })).toContainText('MXN 1,250.00');
     await expectNoSeriousA11yViolations(page);
 

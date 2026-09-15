@@ -242,15 +242,31 @@ test.describe('customer portal opt-in flow', () => {
     await expect(page.getByRole('textbox', { name: 'Escribe una actualización' })).toBeHidden();
     await expect(page.getByRole('heading', { name: 'Archivos del expediente' })).toBeVisible();
     await expect(page.getByText('Aún no hay archivos.')).toBeVisible();
+    await page.route('**/*', async (route) => {
+      const requestUrl = new URL(route.request().url());
+      if (route.request().method() === 'PUT' && requestUrl.port === '19000') {
+        await route.fulfill({ status: 500, body: '' });
+        return;
+      }
+      await route.continue();
+    });
+    await page.locator('input[type="file"]').setInputFiles({ name: 'planos-fallo.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-') });
+    await expect(page.getByRole('button', { name: 'Reintentar carga' })).toBeVisible();
+    await page.unroute('**/*');
+    await page.getByRole('button', { name: 'Reintentar carga' }).click();
+    await expect(page.getByTitle('planos-fallo.pdf')).toBeVisible();
+    await expect(page.locator('.client-files__add')).toHaveText('Añadir archivo');
+    await expect(page.locator('input[type="file"]')).toBeEnabled();
     await page.locator('input[type="file"]').setInputFiles({ name: 'planos.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-') });
-    await expect(page.getByText('planos.pdf', { exact: true })).toBeVisible();
-    await expect(page.getByText('Disponible', { exact: true })).toBeVisible();
+    const uploadedPortalFile = page.locator('.client-file').filter({ hasText: 'planos.pdf' });
+    await expect(uploadedPortalFile.getByText('planos.pdf', { exact: true })).toBeVisible();
+    await expect(uploadedPortalFile.getByText('Disponible', { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByText('planos.pdf', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Descargar planos.pdf' })).toBeVisible();
     await expectNoSeriousA11yViolations(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    expect(consoleErrors).toEqual([]);
+    expect(consoleErrors.filter((message) => !message.includes('status of 500 (Internal Server Error)'))).toEqual([]);
     expect(portalPayloads.join('\n')).not.toContain('tokenHash');
     expect(portalPayloads.join('\n')).not.toContain(customerAToken);
     expect(portalPayloads.join('\n')).not.toContain('Portal E2E catálogo actualizado');

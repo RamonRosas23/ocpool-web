@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import SelectField from '@/components/SelectField';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 
 const STATUS_OPTIONS = ['', 'PENDING', 'PROCESSING', 'SENT', 'FAILED', 'CANCELLED'] as const;
 type NotificationStatus = (typeof STATUS_OPTIONS)[number];
@@ -163,14 +164,14 @@ export default function StaffNotificationsPanel() {
   };
 
   if (accessDenied) {
-    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
+    return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
   }
 
   const health = data?.health;
   const items = data?.items ?? [];
 
   return (
-    <main className="staff-shell">
+    <PrivateSurfaceRoot className="staff-shell">
       <header className="staff-header">
         <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
         <div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Operación de notificaciones</div></div>
@@ -211,6 +212,6 @@ export default function StaffNotificationsPanel() {
           </div>
         </section>
       </div>
-    </main>
+    </PrivateSurfaceRoot>
   );
 }

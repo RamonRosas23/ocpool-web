@@ -7,20 +7,10 @@ import ClientMessagingThread from '@/components/ClientMessagingThread';
 import ClientQuoteActions from '@/components/ClientQuoteActions';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
+import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 
-const STATUS_LABELS: Record<string, string> = {
-  RECIBIDA: 'Recibida',
-  INFORMACION_REQUERIDA: 'Información requerida',
-  EN_ELABORACION: 'En elaboración',
-  COTIZACION_DISPONIBLE: 'Cotización disponible',
-  EN_NEGOCIACION: 'En negociación',
-  EN_REVISION: 'En revisión',
-  ENVIADA: 'Enviada',
-  PENDIENTE_DE_APROBACION: 'Pendiente de aprobación',
-  ACEPTADA: 'Aceptada',
-  RECHAZADA: 'Rechazada',
-  VENCIDA: 'Vencida',
-};
+const STATUS_LABELS: Record<string, string> = QUOTE_REQUEST_STATUS_LABELS;
 
 type RequestSummary = {
   id: string;
@@ -177,11 +167,11 @@ export default function ClientPortalPanel() {
     setRequests([]);
   };
 
-  if (restricted) return <main className="client-portal client-portal--restricted"><section className="client-restricted"><WorkspaceLogo tone="light" className="client-restricted__logo" /><p className="client-eyebrow">Portal privado</p><h1>Acceso privado.</h1><p>Necesitas un enlace de acceso válido para consultar tus expedientes.</p><div className="client-restricted__actions"><Link className="client-button client-button--dark" href="/portal/access">Solicitar acceso</Link><Link className="client-restricted__link" href="/">Volver al sitio</Link></div></section></main>;
+  if (restricted) return <PrivateSurfaceRoot className="client-portal client-portal--restricted"><section className="client-restricted"><WorkspaceLogo tone="light" className="client-restricted__logo" /><p className="client-eyebrow">Portal privado</p><h1>Acceso privado.</h1><p>Necesitas un enlace de acceso válido para consultar tus expedientes.</p><div className="client-restricted__actions"><Link className="client-button client-button--dark" href="/portal/access">Solicitar acceso</Link><Link className="client-restricted__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
 
   const validity = workspace?.quote?.currentVersion ? quoteValidityLabel(workspace.quote.currentVersion.validUntil) : null;
 
-  return <main className="client-portal">
+  return <PrivateSurfaceRoot className="client-portal">
     <header className="client-header"><WorkspaceBrand className="client-brand" subtitle="Portal de cliente" /><div className="client-header__right"><Link className="client-header__home" href="/">Volver al sitio</Link><span className="client-header__state"><i aria-hidden="true" /> Sesión privada</span><button type="button" className="client-header__logout" onClick={() => void logout()}>Cerrar sesión</button></div></header>
     <div className="client-content">
       <section className="client-hero"><div><p className="client-eyebrow">Espacios que toman forma</p><h1>Tu proyecto, en cada etapa.</h1><p className="client-hero__copy">Aquí encontrarás el avance de tus solicitudes y las propuestas que hemos preparado para ti.</p></div><div className="client-hero__note"><span>Expedientes</span><strong>{total.toString().padStart(2, '0')}</strong><small>seguimiento privado</small></div></section>
@@ -196,5 +186,5 @@ export default function ClientPortalPanel() {
       </section>
     </div>
     <footer className="client-footer"><WorkspaceLogo className="client-footer__logo" /><small>Diseño, ingeniería y agua con intención.</small></footer>
-  </main>;
+  </PrivateSurfaceRoot>;
 }

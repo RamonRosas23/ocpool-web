@@ -7,26 +7,15 @@ import StaffMessagingPanel, { type StaffMessagingCapabilities } from '@/componen
 import SelectField from '@/components/SelectField';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import {
   QUOTE_REQUEST_BUDGET_RANGE_LABELS,
   QUOTE_REQUEST_PROJECT_STAGE_LABELS,
   QUOTE_REQUEST_TIMELINE_LABELS,
 } from '@/server/modules/quote-requests/domain';
+import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 
-const STATUS_LABELS: Record<string, string> = {
-  RECIBIDA: 'Recibida',
-  EN_REVISION: 'En revisión',
-  INFORMACION_REQUERIDA: 'Información requerida',
-  EN_ELABORACION: 'En elaboración',
-  COTIZACION_DISPONIBLE: 'Cotización disponible',
-  EN_NEGOCIACION: 'En negociación',
-  PENDIENTE_DE_APROBACION: 'Pendiente de aprobación',
-  ACEPTADA: 'Aceptada',
-  RECHAZADA: 'Rechazada',
-  VENCIDA: 'Vencida',
-  CONVERTIDA_EN_PROYECTO: 'Convertida en proyecto',
-};
-
+const STATUS_LABELS: Record<string, string> = QUOTE_REQUEST_STATUS_LABELS;
 const STATUS_OPTIONS = Object.keys(STATUS_LABELS);
 
 type RequestSummary = {
@@ -78,7 +67,7 @@ type RequestDetail = RequestSummary & {
 };
 
 type Assignee = { id: string; displayName: string; email: string };
-type StaffRequestCapabilities = StaffMessagingCapabilities & StaffFilesCapabilities & { identityUsersManage: boolean };
+type StaffRequestCapabilities = StaffMessagingCapabilities & StaffFilesCapabilities & { identityUsersManage: boolean; requestsAssign: boolean; requestsReadGlobal: boolean };
 type ListResponse = { items: RequestSummary[]; page: number; pageSize: number; total: number; totalPages: number };
 type ErrorResponse = { error?: { message?: string } };
 
@@ -136,6 +125,8 @@ export default function StaffRequestsPanel() {
     filesInternalRead: false,
     filesManage: false,
     identityUsersManage: false,
+    requestsAssign: false,
+    requestsReadGlobal: false,
   });
   const [messagingCapabilitiesLoaded, setMessagingCapabilitiesLoaded] = useState(false);
   const [customerAccessBusy, setCustomerAccessBusy] = useState(false);
@@ -192,6 +183,10 @@ export default function StaffRequestsPanel() {
 
   useEffect(() => {
     const loadAssignees = async () => {
+      if (!messagingCapabilitiesLoaded || !messagingCapabilities.requestsAssign) {
+        setAssignees([]);
+        return;
+      }
       try {
         const response = await fetch('/api/staff/quote-requests/assignees', { credentials: 'include', cache: 'no-store' });
         const data = await readResponse<{ items: Assignee[] }>(response);
@@ -201,7 +196,7 @@ export default function StaffRequestsPanel() {
       }
     };
     void loadAssignees();
-  }, []);
+  }, [messagingCapabilitiesLoaded, messagingCapabilities.requestsAssign, messagingCapabilities.requestsReadGlobal]);
 
   useEffect(() => {
     const loadCapabilities = async () => {
@@ -231,8 +226,8 @@ export default function StaffRequestsPanel() {
     setAppliedSearch(searchInput.trim());
   };
 
-  const assign = async () => {
-    if (!selected || !assignmentId) return;
+  const assign = async (targetId = assignmentId) => {
+    if (!selected || !targetId) return;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -241,7 +236,7 @@ export default function StaffRequestsPanel() {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ assignedToId: assignmentId, reason: assignmentReason || undefined }),
+        body: JSON.stringify({ assignedToId: targetId, reason: assignmentReason || undefined }),
       });
       await readResponse(response);
       setNotice('Responsable actualizado.');
@@ -300,11 +295,11 @@ export default function StaffRequestsPanel() {
   };
 
   if (accessDenied) {
-    return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
+    return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
   }
 
   return (
-    <main className="staff-shell">
+    <PrivateSurfaceRoot className="staff-shell">
       <header className="staff-header">
         <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
         <div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Bandeja de solicitudes</div></div>
@@ -343,7 +338,7 @@ export default function StaffRequestsPanel() {
               <div className="staff-detail__header"><div><p className="staff-kicker">{selected.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{selected.folio}</h2><p className="staff-detail__date">Recibida el {formatDate(selected.createdAt)}</p>{selected.availableActions.includes('quote.open') && <Link className="staff-button staff-button--dark staff-detail__quote-link" href={`/staff/quotes?request=${selected.id}`}>Abrir constructor</Link>}</div><span className={`staff-status-pill staff-status-pill--${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div>
               <div className="staff-detail__grid"><section className="staff-detail__section"><p className="staff-section-label">Contacto</p><h3>{selected.contact.displayName}</h3><a href={`mailto:${selected.contact.email}`}>{selected.contact.email}</a>{selected.contact.phone && <a href={`tel:${selected.contact.phone}`}>{selected.contact.phone}</a>}<div className="staff-contact-access"><span className={`staff-contact-access__status staff-contact-access__status--${selected.contact.user?.status?.toLowerCase() ?? 'none'}`}>{selected.contact.user?.status === 'ACTIVE' ? 'Portal habilitado' : selected.contact.user?.status === 'INVITED' ? 'Invitación pendiente' : 'Portal sin habilitar'}</span>{messagingCapabilities.identityUsersManage && <button className="staff-button staff-button--dark" type="button" disabled={customerAccessBusy} onClick={() => void inviteCustomerAccess()}>{customerAccessBusy ? 'Enviando…' : selected.contact.user?.status === 'ACTIVE' ? 'Enviar nuevo acceso' : selected.contact.user?.status === 'INVITED' ? 'Reenviar acceso' : 'Habilitar portal'}</button>}</div></section><section className="staff-detail__section"><p className="staff-section-label">Proyecto</p><h3>{selected.detail?.projectType ?? 'Sin tipo de proyecto'}</h3><p>{selected.detail?.location ?? 'Sin ubicación'}</p>{selected.detail?.dimensions && <p>{selected.detail.dimensions}</p>}<dl className="staff-qualification"><div><dt>Etapa</dt><dd>{qualificationLabel(selected.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</dd></div><div><dt>Inicio</dt><dd>{qualificationLabel(selected.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)}</dd></div><div><dt>Presupuesto</dt><dd>{qualificationLabel(selected.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</dd></div></dl></section></div>
               <section className="staff-detail__section staff-detail__section--description"><p className="staff-section-label">Alcance compartido</p><p className="staff-description">{selected.detail?.description ?? 'Sin descripción.'}</p></section>
-              <div className="staff-actions-grid"><section className="staff-action"><p className="staff-section-label">Responsable</p><SelectField ariaLabel="Responsable" value={assignmentId} onValueChange={setAssignmentId} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin responsable" /><input value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></section><section className="staff-action"><p className="staff-section-label">Siguiente estado</p><SelectField ariaLabel="Siguiente estado" value={nextStatus} onValueChange={setNextStatus} options={nextStatuses.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder={nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'} disabled={nextStatuses.length === 0} /><input value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus} onClick={() => void transition()}>Actualizar estado</button></section></div>
+              <div className="staff-actions-grid">{messagingCapabilitiesLoaded && messagingCapabilities.requestsAssign && <section className="staff-action"><p className="staff-section-label">Responsable</p>{messagingCapabilities.requestsReadGlobal ? <><SelectField ariaLabel="Responsable" value={assignmentId} onValueChange={setAssignmentId} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin responsable" /><input value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></> : selected.currentAssignee ? <p>Esta solicitud está tomada por ti o por el responsable asignado.</p> : <><p>Las solicitudes sin responsable aparecen disponibles para que las tomes.</p><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignees[0]} onClick={() => void assign(assignees[0]?.id)}>Tomar solicitud</button></>}</section>}<section className="staff-action"><p className="staff-section-label">Siguiente estado</p><SelectField ariaLabel="Siguiente estado" value={nextStatus} onValueChange={setNextStatus} options={nextStatuses.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder={nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'} disabled={nextStatuses.length === 0} /><input value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus} onClick={() => void transition()}>Actualizar estado</button></section></div>
               {messagingCapabilitiesLoaded && <StaffFilesPanel requestId={selected.id} capabilities={messagingCapabilities} />}
               {messagingCapabilitiesLoaded && <StaffMessagingPanel requestId={selected.id} capabilities={messagingCapabilities} />}
               <section className="staff-history"><div><p className="staff-section-label">Actividad</p><h3>Historial del expediente</h3></div><ol>{selected.statusHistory.map((entry) => <li key={entry.id}><span className="staff-history__line" aria-hidden="true" /><div><strong>{statusLabel(entry.toStatus)}</strong><p>{entry.reason ?? 'Cambio registrado'} · {entry.changedBy?.displayName ?? 'Sistema'}</p><time dateTime={entry.createdAt}>{formatDate(entry.createdAt)}</time></div></li>)}</ol></section>
@@ -351,6 +346,6 @@ export default function StaffRequestsPanel() {
           </section>
         </section>
       </div>
-    </main>
+    </PrivateSurfaceRoot>
   );
 }

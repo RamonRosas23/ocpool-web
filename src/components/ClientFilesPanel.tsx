@@ -1,6 +1,8 @@
 'use client';
 
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
+import { shouldResetUploadIdempotencyKey, type UploadStage } from '@/lib/private-file-upload';
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
@@ -19,9 +21,15 @@ type FileItem = {
   downloadAvailable: boolean;
 };
 
-type FilesResponse = { items: FileItem[] };
+type FilesResponse = { items: FileItem[]; nextCursor: string | null };
 type ReserveResponse = { file: FileItem; uploadUrl: string | null };
 type ErrorResponse = { error?: { message?: string } };
+class ApiResponseError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = 'ApiResponseError';
+  }
+}
 
 function fileEndpoint(requestId: string, suffix = ''): string {
   return `/api/portal/requests/${requestId}/files${suffix}`;
@@ -29,7 +37,7 @@ function fileEndpoint(requestId: string, suffix = ''): string {
 
 async function readResponse<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & ErrorResponse;
-  if (!response.ok) throw new Error(data.error?.message ?? 'No fue posible completar la operación.');
+  if (!response.ok) throw new ApiResponseError(data.error?.message ?? 'No fue posible completar la operación.', response.status);
   return data as T;
 }
 
@@ -53,6 +61,15 @@ function statusLabel(file: FileItem): string {
   return 'No disponible';
 }
 
+function mergeFiles(current: FileItem[], incoming: FileItem[]): FileItem[] {
+  const byId = new Map(current.map((file) => [file.id, file]));
+  incoming.forEach((file) => byId.set(file.id, file));
+  return [...byId.values()].sort((left, right) => {
+    const dateDiff = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+    return dateDiff || left.id.localeCompare(right.id);
+  });
+}
+
 function fileIsAccepted(file: File): boolean {
   return (ACCEPTED_TYPES.has(file.type) || file.type === '' && ACCEPTED_EXTENSIONS.test(file.name)) && ACCEPTED_EXTENSIONS.test(file.name);
 }
@@ -60,44 +77,90 @@ function fileIsAccepted(file: File): boolean {
 export default function ClientFilesPanel({ requestId }: { requestId: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<FileItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [busyFileId, setBusyFileId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadState, setUploadState] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadIdempotencyKey, setUploadIdempotencyKey] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadFiles = useCallback(async () => {
-    setLoading(true);
+  const loadFiles = useCallback(async (cursor?: string) => {
+    if (cursor) setLoadingMore(true);
+    else setLoading(true);
     try {
-      const response = await fetch(fileEndpoint(requestId, '?limit=50'), { credentials: 'include', cache: 'no-store' });
+      const params = new URLSearchParams({ limit: '30' });
+      if (cursor) params.set('cursor', cursor);
+      const response = await fetch(fileEndpoint(requestId, `?${params.toString()}`), { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<FilesResponse>(response);
-      setItems(data.items);
+      setItems((current) => cursor ? mergeFiles(current, data.items) : data.items);
+      setNextCursor(data.nextCursor);
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar los archivos del expediente.');
     } finally {
-      setLoading(false);
+      if (cursor) setLoadingMore(false);
+      else setLoading(false);
     }
   }, [requestId]);
 
   useEffect(() => { void loadFiles(); }, [loadFiles]);
 
-  const upload = async (event: ChangeEvent<HTMLInputElement>) => {
+  const loadMore = () => {
+    if (!nextCursor || loadingMore) return;
+    void loadFiles(nextCursor);
+  };
+
+  const selectFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
     if (!fileIsAccepted(file)) {
       setError('Elige un PDF, JPG, PNG o WebP válido.');
+      setSelectedFile(null);
+      setUploadIdempotencyKey(null);
+      setUploadProgress(null);
       return;
     }
     if (file.size < 1 || file.size > MAX_FILE_BYTES) {
       setError('El archivo debe pesar entre 1 byte y 25 MB.');
+      setSelectedFile(null);
+      setUploadIdempotencyKey(null);
+      setUploadProgress(null);
       return;
     }
+    setSelectedFile(file);
+    setUploadIdempotencyKey(getOrCreateIdempotencyKey(null, `portal-${requestId}`));
+    setUploadProgress(null);
+    void upload(file);
+  };
+
+  const uploadToStorage = (uploadUrl: string, file: File, onProgress: (progress: number) => void): Promise<void> => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl);
+    xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    };
+    xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('No fue posible subir el archivo. Inténtalo de nuevo.'));
+    xhr.onerror = () => reject(new Error('No fue posible subir el archivo. Inténtalo de nuevo.'));
+    xhr.onabort = () => reject(new Error('La carga del archivo fue cancelada.'));
+    xhr.send(file);
+  });
+
+  const upload = async (file: File = selectedFile as File) => {
+    if (!file || uploading) return;
 
     setUploading(true);
     setError(null);
+    setUploadProgress(0);
+    const idempotencyKey = getOrCreateIdempotencyKey(uploadIdempotencyKey, `portal-${requestId}`);
+    setUploadIdempotencyKey(idempotencyKey);
+    let uploadStage: UploadStage = 'reserve';
     try {
       setUploadState('Preparando carga…');
       const reserveResponse = await fetch(fileEndpoint(requestId), {
@@ -110,19 +173,23 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
           byteSize: file.size,
           category: 'CLIENT_DOCUMENT',
           visibility: 'CUSTOMER',
-          idempotencyKey: `portal-${window.crypto.randomUUID()}`,
+          idempotencyKey,
         }),
       });
       const reservation = await readResponse<ReserveResponse>(reserveResponse);
       if (!reservation.uploadUrl) {
+        setSelectedFile(null);
+        setUploadIdempotencyKey(null);
+        setUploadProgress(null);
         await loadFiles();
         return;
       }
 
+      uploadStage = 'storage';
       setUploadState('Subiendo archivo…');
-      const uploadResponse = await fetch(reservation.uploadUrl, { method: 'PUT', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file });
-      if (!uploadResponse.ok) throw new Error('No fue posible subir el archivo. Inténtalo de nuevo.');
+      await uploadToStorage(reservation.uploadUrl, file, (progress) => setUploadProgress(progress));
 
+      uploadStage = 'complete';
       setUploadState('Validando archivo…');
       const completeResponse = await fetch(fileEndpoint(requestId, `/${reservation.file.id}/complete`), {
         method: 'POST',
@@ -131,10 +198,15 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
         body: '{}',
       });
       await readResponse<{ file: FileItem }>(completeResponse);
+      setSelectedFile(null);
+      setUploadIdempotencyKey(null);
+      setUploadProgress(null);
       await loadFiles();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No fue posible cargar el archivo.');
+      const message = caught instanceof Error ? caught.message : 'No fue posible cargar el archivo.';
+      if (caught instanceof ApiResponseError && shouldResetUploadIdempotencyKey(uploadStage, caught.status)) setUploadIdempotencyKey(null);
       await loadFiles();
+      setError(message);
     } finally {
       setUploading(false);
       setUploadState('');
@@ -184,11 +256,11 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
       </div>
       <label className={`client-files__add${uploading ? ' is-disabled' : ''}`}>
         <span>{uploading ? 'Cargando…' : 'Añadir archivo'}</span>
-        <input ref={inputRef} className="sr-only" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" aria-label="Añadir archivo" disabled={uploading} onChange={(event) => void upload(event)} />
+        <input ref={inputRef} className="sr-only" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" aria-label="Añadir archivo" disabled={uploading} onChange={selectFile} />
       </label>
     </div>
-    {uploadState && <p className="client-files__progress" role="status" aria-live="polite">{uploadState}</p>}
-    {error && <div className="client-files__error" role="alert"><p>{error}</p><button type="button" onClick={() => void loadFiles()}>Reintentar</button></div>}
+    {uploadState && <p className="client-files__progress" role="status" aria-live="polite">{uploadState}{uploadProgress !== null && uploadState.startsWith('Subiendo') ? ` ${uploadProgress}%` : ''}</p>}
+    {error && <div className="client-files__error" role="alert"><p>{error}</p><div className="client-files__error-actions">{selectedFile && !uploading && <button type="button" onClick={() => void upload()}>Reintentar carga</button>}<button type="button" onClick={() => void loadFiles()}>Actualizar lista</button></div></div>}
     {loading && <div className="client-files__loading" role="status" aria-label="Cargando archivos"><i /><i /></div>}
     {!loading && !items.length && <p className="client-files__empty">Aún no hay archivos.</p>}
     {!loading && items.length > 0 && <ul className="client-files__list">
@@ -202,6 +274,7 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
         </div>
       </li>)}
     </ul>}
+    {nextCursor && <button type="button" className="client-files__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando archivos…' : 'Ver más archivos'}</button>}
     <p className="client-files__note">Formatos permitidos: PDF, JPG, PNG y WebP · máximo 25 MB.</p>
   </section>;
 }

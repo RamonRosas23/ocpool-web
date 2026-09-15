@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DateField from '@/components/DateField';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
+import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 
 type MetricSummary = {
   sampleSize: number | null;
@@ -37,19 +39,7 @@ type DashboardResponse = {
 type ApiError = { error?: { code?: string; message?: string } };
 type DashboardQuery = { from?: string; to?: string };
 
-const STATUS_LABELS: Record<string, string> = {
-  RECIBIDA: 'Recibida',
-  EN_REVISION: 'En revisión',
-  INFORMACION_REQUERIDA: 'Información requerida',
-  EN_ELABORACION: 'En elaboración',
-  COTIZACION_DISPONIBLE: 'Cotización disponible',
-  EN_NEGOCIACION: 'En negociación',
-  PENDIENTE_DE_APROBACION: 'Pendiente de aprobación',
-  ACEPTADA: 'Aceptada',
-  RECHAZADA: 'Rechazada',
-  VENCIDA: 'Vencida',
-  CONVERTIDA_EN_PROYECTO: 'Convertida en proyecto',
-};
+const STATUS_LABELS: Record<string, string> = QUOTE_REQUEST_STATUS_LABELS;
 
 const ORIGIN_LABELS: Record<string, string> = { PUBLIC_FORM: 'Formulario público', STAFF_CREATED: 'Creada por staff' };
 const NOTIFICATION_LABELS: Record<string, string> = { PENDING: 'Pendientes', PROCESSING: 'En proceso', SENT: 'Enviadas', FAILED: 'Fallidas', CANCELLED: 'Canceladas' };
@@ -178,9 +168,9 @@ export default function StaffDashboardPanel() {
 
   const displayRange = useMemo(() => data ? `${formatDate(data.meta.from, data.meta.timezone)} — ${formatDate(data.meta.to, data.meta.timezone)}` : 'Preparando periodo', [data]);
 
-  if (accessDenied) return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado autorizada para consultar las métricas operativas.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></main>;
+  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado autorizada para consultar las métricas operativas.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
 
-  if (error && !data) return <main className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">!</span><p className="staff-kicker">Dashboard operativo</p><h1>No fue posible cargarlo.</h1><p role="alert">{error}</p><button className="staff-button staff-button--dark" type="button" onClick={() => { setError(null); setReloadToken((current) => current + 1); }}>Reintentar</button></section></main>;
+  if (error && !data) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">!</span><p className="staff-kicker">Dashboard operativo</p><h1>No fue posible cargarlo.</h1><p role="alert">{error}</p><button className="staff-button staff-button--dark" type="button" onClick={() => { setError(null); setReloadToken((current) => current + 1); }}>Reintentar</button></section></PrivateSurfaceRoot>;
 
   const dashboard = data;
   const pipeline = dashboard?.requests.byStatus.map((item) => ({ label: labelForStatus(item.status), count: item.count })) ?? [];
@@ -192,7 +182,7 @@ export default function StaffDashboardPanel() {
     ...(dashboard.notifications.failedInPeriod > 0 ? [{ label: `${formatInteger(dashboard.notifications.failedInPeriod)} entrega${dashboard.notifications.failedInPeriod === 1 ? '' : 's'} fallida${dashboard.notifications.failedInPeriod === 1 ? '' : 's'}`, detail: 'Revisa la operación de correo del periodo.', href: '/staff/notifications' }] : []),
   ] : [];
 
-  return <main className="staff-shell analytics-shell">
+  return <PrivateSurfaceRoot className="staff-shell analytics-shell">
     <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><nav className="analytics-nav" aria-label="Navegación de operaciones"><Link href="/staff" aria-current="page">Dashboard</Link><Link href="/staff/requests">Solicitudes</Link><Link href="/staff/quotes">Cotizaciones</Link><Link href="/staff/catalog">Catálogo</Link><Link href="/staff/notifications">Notificaciones</Link><Link href="/staff/audit">Auditoría</Link></nav><div className="staff-header__tools"><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Lectura operativa</div></div></header>
     <div className="staff-content analytics-content" aria-busy={loading}>
       <section className="analytics-hero" aria-labelledby="analytics-title"><div><p className="staff-kicker">Centro de operación</p><h1 id="analytics-title">Pulso <em>comercial</em></h1><p className="staff-intro__copy">Una lectura compacta de la operación para decidir qué merece atención ahora.</p></div><div className="analytics-period"><p className="staff-section-label">Periodo de lectura</p><strong>{displayRange}</strong><span>Zona de negocio: {dashboard?.meta.timezone ?? '—'}</span><span>Actualizado {dashboard ? formatDate(dashboard.meta.generatedAt, dashboard.meta.timezone, true) : '—'}</span></div></section>
@@ -213,5 +203,5 @@ export default function StaffDashboardPanel() {
         <section className="analytics-workload" aria-labelledby="analytics-workload-title"><div className="analytics-workload__heading"><div><p className="staff-section-label">Distribución de trabajo</p><h2 id="analytics-workload-title">Carga por responsable</h2><p>La identidad visible se limita al personal operativo. Las muestras pequeñas permanecen protegidas.</p></div><span className="analytics-workload__scope">{dashboard.meta.scope === 'global' ? 'Vista global' : 'Tu alcance'}</span></div>{dashboard.workload.length === 0 ? <div className="analytics-empty"><strong>Sin carga abierta visible.</strong><p>Las solicitudes y cotizaciones activas aparecerán cuando exista actividad asignada.</p></div> : <div className="analytics-workload-table" role="table" aria-label="Carga por responsable"><div className="analytics-workload-table__row analytics-workload-table__row--head" role="row"><span role="columnheader">Responsable</span><span role="columnheader">Solicitudes activas</span><span role="columnheader">Borradores</span><span role="columnheader">Más antigua</span></div>{dashboard.workload.map((row) => <div className="analytics-workload-table__row" role="row" key={row.actorKey}><strong role="rowheader">{row.displayName}</strong>{row.suppressed ? <><span className="is-suppressed" role="cell">Muestra protegida</span><span className="is-suppressed" role="cell">Muestra protegida</span><span className="is-suppressed" role="cell">Muestra protegida</span></> : <><span role="cell">{formatInteger(row.activeRequests)}</span><span role="cell">{formatInteger(row.draftQuotes)}</span><span role="cell">{formatDate(row.oldestOpenAt, dashboard.meta.timezone)}</span></>}</div>)}</div>}</section>
       </>}
     </div>
-  </main>;
+  </PrivateSurfaceRoot>;
 }

@@ -1,6 +1,9 @@
 'use client';
 
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { nextRovingTabIndex } from '@/components/private/ui';
+import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
+import { getApiErrorMessage } from '@/lib/api-error-message';
 
 export type StaffMessagingCapabilities = {
   messagingRead: boolean;
@@ -46,7 +49,7 @@ type StaffConversationStatusResponse = {
   closedAt: string | null;
 };
 
-type ErrorResponse = { error?: { message?: string } };
+type ErrorResponse = { error?: { message?: string; requestId?: string } };
 
 const MAX_MESSAGE_LENGTH = 10_000;
 
@@ -64,7 +67,7 @@ function formatDate(value: string): string {
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & ErrorResponse;
-  if (!response.ok) throw new Error(data.error?.message ?? 'No fue posible completar la operación.');
+  if (!response.ok) throw new Error(getApiErrorMessage(data, 'No fue posible completar la operación.'));
   return data as T;
 }
 
@@ -77,7 +80,7 @@ function mergeMessages(current: StaffMessage[], incoming: StaffMessage[]): Staff
   });
 }
 
-export default function StaffMessagingPanel({ requestId, capabilities }: { requestId: string; capabilities: StaffMessagingCapabilities }) {
+export default function StaffMessagingPanel({ requestId, capabilities, draft: controlledDraft, onDraftChange }: { requestId: string; capabilities: StaffMessagingCapabilities; draft?: string; onDraftChange?: (draft: string) => void }) {
   const headingId = useId();
   const sharedTabId = useId();
   const internalTabId = useId();
@@ -88,7 +91,7 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
   const [messages, setMessages] = useState<StaffMessage[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [mode, setMode] = useState<ComposerMode>('CUSTOMER');
-  const [draft, setDraft] = useState('');
+  const [localDraft, setLocalDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [sending, setSending] = useState(false);
@@ -98,10 +101,17 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
   const [statusError, setStatusError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConversationStatus | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
 
   const canRead = capabilities.messagingRead;
   const canSeeInternal = canRead && capabilities.messagingInternalNotesRead;
   const canCompose = mode === 'CUSTOMER' ? capabilities.messagingSend : capabilities.messagingInternalNotesWrite;
+  const draft = controlledDraft ?? localDraft;
+  const updateDraft = (value: string) => {
+    if (value !== draft) setSendIdempotencyKey(null);
+    if (onDraftChange) onDraftChange(value);
+    else setLocalDraft(value);
+  };
 
   const loadMessages = useCallback(async (cursor?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams({ limit: '30' });
@@ -127,10 +137,11 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
     setSendError(null);
     setStatusError(null);
     setConfirmation(null);
+    setSendIdempotencyKey(null);
     setConversation(null);
     setMessages([]);
     setNextCursor(null);
-    setDraft('');
+    if (!onDraftChange) setLocalDraft('');
     void loadMessages(undefined, controller.signal).then((data) => {
       if (!controller.signal.aborted) applyResponse(data);
     }).catch((caught: unknown) => {
@@ -139,7 +150,7 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [loadMessages]);
+  }, [loadMessages, onDraftChange]);
 
   useEffect(() => {
     if (!canSeeInternal && mode === 'INTERNAL') setMode('CUSTOMER');
@@ -172,7 +183,8 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
     setSendError(null);
     const body = draft;
     const endpoint = mode === 'CUSTOMER' ? 'messages' : 'notes';
-    const idempotencyKey = `staff-${requestId}-${globalThis.crypto.randomUUID()}`;
+    const idempotencyKey = getOrCreateMessageIdempotencyKey(sendIdempotencyKey, `staff-${requestId}`);
+    setSendIdempotencyKey(idempotencyKey);
     void fetch(`/api/staff/quote-requests/${requestId}/${endpoint}`, {
       method: 'POST',
       credentials: 'include',
@@ -182,7 +194,8 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
     }).then(readJson<StaffMessage & { conversation: StaffConversation }>).then((data) => {
       setConversation(data.conversation);
       setMessages((current) => mergeMessages(current, [data]));
-      setDraft('');
+      updateDraft('');
+      setSendIdempotencyKey(null);
       setAnnouncement(mode === 'CUSTOMER' ? 'Mensaje compartido enviado.' : 'Nota interna guardada.');
     }).catch((caught: unknown) => {
       setSendError(caught instanceof Error ? caught.message : 'No fue posible enviar el contenido.');
@@ -217,13 +230,12 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const tabButtons = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []);
     const currentIndex = tabButtons.indexOf(event.currentTarget);
-    if (currentIndex < 0 || tabButtons.length < 2) return;
-    const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : event.key === 'Home' ? 0 : event.key === 'End' ? tabButtons.length - 1 : null;
-    if (direction === null) return;
+    const nextIndex = nextRovingTabIndex(event.key, currentIndex, tabButtons.length);
+    if (nextIndex === null) return;
     event.preventDefault();
-    const nextIndex = event.key === 'Home' || event.key === 'End' ? direction : (currentIndex + direction + tabButtons.length) % tabButtons.length;
     const nextMode = nextIndex === 0 ? 'CUSTOMER' : 'INTERNAL';
     setMode(nextMode);
+    setSendIdempotencyKey(null);
     setSendError(null);
     tabButtons[nextIndex]?.focus();
   };
@@ -252,11 +264,11 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
     {canRead && !loading && error && <div className="staff-messaging__error" role="alert"><p>{error}</p><button type="button" className="staff-messaging__retry" onClick={retry}>Reintentar</button></div>}
     {canRead && !loading && !error && <>
       <div className="staff-messaging__tabs" role="tablist" aria-label="Visibilidad de la conversación" aria-orientation="horizontal">
-        <button id={sharedTabId} type="button" role="tab" tabIndex={mode === 'CUSTOMER' ? 0 : -1} aria-selected={mode === 'CUSTOMER'} aria-controls={mode === 'CUSTOMER' ? sharedPanelId : undefined} className={mode === 'CUSTOMER' ? 'is-active' : ''} onKeyDown={handleTabKeyDown} onClick={() => { setMode('CUSTOMER'); setSendError(null); }}>{`Compartidos ${sharedCount}`}</button>
-        {canSeeInternal && <button id={internalTabId} type="button" role="tab" tabIndex={mode === 'INTERNAL' ? 0 : -1} aria-selected={mode === 'INTERNAL'} aria-controls={mode === 'INTERNAL' ? internalPanelId : undefined} className={mode === 'INTERNAL' ? 'is-active' : ''} onKeyDown={handleTabKeyDown} onClick={() => { setMode('INTERNAL'); setSendError(null); }}>{`Notas internas ${internalCount}`}</button>}
+        <button id={sharedTabId} type="button" role="tab" tabIndex={mode === 'CUSTOMER' ? 0 : -1} aria-selected={mode === 'CUSTOMER'} aria-controls={mode === 'CUSTOMER' ? sharedPanelId : undefined} className={mode === 'CUSTOMER' ? 'is-active' : ''} onKeyDown={handleTabKeyDown} onClick={() => { setMode('CUSTOMER'); setSendIdempotencyKey(null); setSendError(null); }}>{`Compartidos ${sharedCount}`}</button>
+        {canSeeInternal && <button id={internalTabId} type="button" role="tab" tabIndex={mode === 'INTERNAL' ? 0 : -1} aria-selected={mode === 'INTERNAL'} aria-controls={mode === 'INTERNAL' ? internalPanelId : undefined} className={mode === 'INTERNAL' ? 'is-active' : ''} onKeyDown={handleTabKeyDown} onClick={() => { setMode('INTERNAL'); setSendIdempotencyKey(null); setSendError(null); }}>{`Notas internas ${internalCount}`}</button>}
       </div>
       <div id={mode === 'CUSTOMER' ? sharedPanelId : internalPanelId} role="tabpanel" aria-labelledby={mode === 'CUSTOMER' ? sharedTabId : internalTabId} className={`staff-messaging__panel${mode === 'INTERNAL' ? ' is-internal' : ''}`}>
-        {nextCursor && <button type="button" className="staff-messaging__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando mensajes…' : 'Ver mensajes anteriores'}</button>}
+        {nextCursor && <button type="button" className="staff-messaging__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando mensajes…' : 'Ver más mensajes'}</button>}
         {visibleMessages.length === 0 && <div className="staff-messaging__empty"><strong>{mode === 'CUSTOMER' ? 'Aún no hay mensajes compartidos.' : 'Aún no hay notas internas.'}</strong><span>{mode === 'CUSTOMER' ? 'Las respuestas de este hilo quedarán visibles para el cliente.' : 'Usa este espacio para coordinar detalles que no deben salir del equipo.'}</span></div>}
         {visibleMessages.length > 0 && <ol className="staff-messaging__list" aria-live="polite">
           {visibleMessages.map((message) => <li className={`staff-message${message.visibility === 'INTERNAL' ? ' staff-message--internal' : ''}`} key={message.id}>
@@ -266,7 +278,7 @@ export default function StaffMessagingPanel({ requestId, capabilities }: { reque
         </ol>}
         {closed ? <div className="staff-messaging__closed" role="status"><strong>Conversación cerrada.</strong><span>El historial permanece disponible; reabre la conversación para continuar.</span></div> : canCompose ? <form className="staff-messaging__composer" onSubmit={sendMessage}>
           <label htmlFor={composerId}>{modeLabel}</label>
-          <textarea id={composerId} value={draft} maxLength={MAX_MESSAGE_LENGTH} onChange={(event) => setDraft(event.target.value)} placeholder={mode === 'CUSTOMER' ? 'Escribe una actualización para el cliente…' : 'Registra una nota que sólo verá el equipo…'} rows={4} disabled={sending} />
+          <textarea id={composerId} value={draft} maxLength={MAX_MESSAGE_LENGTH} onChange={(event) => updateDraft(event.target.value)} placeholder={mode === 'CUSTOMER' ? 'Escribe una actualización para el cliente…' : 'Registra una nota que sólo verá el equipo…'} rows={4} disabled={sending} />
           <div className="staff-messaging__composer-bottom"><span>{draft.length.toLocaleString('es-MX')} / {MAX_MESSAGE_LENGTH.toLocaleString('es-MX')} caracteres</span><button type="submit" className={`staff-button ${mode === 'INTERNAL' ? 'staff-button--copper' : 'staff-button--dark'}`} disabled={sending || !draft.trim()} aria-busy={sending}>{sending ? 'Guardando…' : mode === 'INTERNAL' ? 'Guardar nota' : 'Enviar mensaje'}</button></div>
           {sendError && <p className="staff-messaging__error" role="alert">{sendError}</p>}
         </form> : <div className="staff-messaging__locked" role="status"><strong>No tienes permiso para escribir aquí.</strong><span>Tu acceso actual permite consultar esta conversación.</span></div>}

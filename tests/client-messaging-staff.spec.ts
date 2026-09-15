@@ -156,6 +156,18 @@ test.describe('staff messaging opt-in flow', () => {
     await filesPanel.getByRole('tab', { name: /Compartidos/ }).click();
     await expect(filesPanel.getByRole('button', { name: 'Descargar referencia-compartida.pdf' })).toBeVisible();
     await filesPanel.getByRole('button', { name: 'Añadir archivo' }).click();
+    const storageUploadPattern = '**/*';
+    await page.route(storageUploadPattern, async (route) => {
+      if (route.request().method() === 'PUT' && new URL(route.request().url()).port === '19000') await route.abort();
+      else await route.continue();
+    });
+    await filesPanel.locator('input[type="file"]').setInputFiles({ name: 'staff-retry.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-') });
+    await filesPanel.getByRole('button', { name: 'Cargar archivo' }).click();
+    await expect(filesPanel.getByRole('button', { name: 'Reintentar carga' })).toBeVisible();
+    await page.unroute(storageUploadPattern);
+    await filesPanel.getByRole('button', { name: 'Reintentar carga' }).click();
+    await expect(filesPanel.getByTitle('staff-retry.pdf')).toBeVisible();
+    await filesPanel.getByRole('button', { name: 'Añadir archivo' }).click();
     await filesPanel.locator('input[type="file"]').setInputFiles({ name: 'staff-upload.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-') });
     await filesPanel.getByRole('button', { name: 'Cargar archivo' }).click();
     await expect(filesPanel.getByText('staff-upload.pdf', { exact: true })).toBeVisible();
@@ -203,7 +215,7 @@ test.describe('staff messaging opt-in flow', () => {
       await page.setViewportSize({ width, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `horizontal overflow at ${width}px`).toBe(true);
     }
-    expect(consoleErrors).toEqual([]);
+    expect(consoleErrors.filter((message) => !message.includes('net::ERR_FAILED'))).toEqual([]);
     expect(staffPayloads.join('\n')).not.toContain(managerToken);
   });
 

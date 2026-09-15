@@ -143,14 +143,14 @@ test.describe('staff quote builder opt-in flow', () => {
     const draftStartedAt = new Date();
     await page.getByRole('button', { name: 'Crear borrador' }).click();
     await expect(page.locator('p.staff-notice')).toContainText(/Borrador actualizado|Nueva versión creada/, { timeout: 10_000 });
-    await expect(page.locator('.staff-inbox__head')).toContainText('1 de 1', { timeout: 10_000 });
+    await expect(page.locator('.quotes-request-row.is-selected')).toContainText('Quote builder client', { timeout: 10_000 });
     const draftVersion = await prisma.quoteVersion.findFirst({ where: { quote: { quoteRequestId: requestId }, status: 'BORRADOR' }, orderBy: { versionNumber: 'desc' }, select: { id: true } });
     expect(draftVersion).not.toBeNull();
     const staffActor = { userId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.read', 'quotes.pdf.generate']), mfaVerified: true };
     const publishStartedAt = new Date();
     await page.getByRole('button', { name: 'Pasar a revisión' }).click();
     await expect(page.locator('p.staff-notice')).toContainText('revisión', { timeout: 10_000 });
-    await expect(page.locator('.staff-inbox__head')).toContainText('1 de 1', { timeout: 10_000 });
+    await expect(page.locator('.quotes-request-row.is-selected')).toContainText('Quote builder client', { timeout: 10_000 });
     const pdfRecoveryStartedAt = new Date();
     const reviewVersion = await prisma.quoteVersion.findFirst({ where: { id: draftVersion!.id, status: 'EN_REVISION' }, select: { id: true } });
     expect(reviewVersion).not.toBeNull();
@@ -219,7 +219,7 @@ test.describe('staff quote builder opt-in flow', () => {
     await pdfPopup.close();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
-    await expect(page.locator('.staff-inbox__head')).toContainText('1 de 1', { timeout: 20_000 });
+    await expect(page.locator('.quotes-request-row.is-selected')).toContainText('Quote builder client', { timeout: 20_000 });
     await expect(page.getByRole('heading', { name: 'PDF y aceptación · V1' })).toBeVisible({ timeout: 10_000 });
     await expectNoSeriousA11yViolations(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
