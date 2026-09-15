@@ -129,6 +129,43 @@ export async function createCatalogCategory(actor: Actor, input: { code: string;
   }
 }
 
+export async function updateCatalogCategory(actor: Actor, categoryId: string, input: { name?: string; description?: string | null; sortOrder?: number; status?: CatalogStatus }, dependencies: CatalogServiceDependencies = {}) {
+  requireStaffPermission(actor, 'catalog.manage');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const id = requireUuid(categoryId, 'La categoría no es válida.');
+  const current = await prisma.catalogCategory.findUnique({ where: { id }, select: { id: true } });
+  if (!current) throw new AppError('NOT_FOUND', 'La categoría no existe.', 404);
+  const data: Prisma.CatalogCategoryUpdateInput = {};
+  if (input.name !== undefined) data.name = normalizeText(input.name, 180, 'El nombre de categoría no es válido.');
+  if (input.description !== undefined) data.description = normalizeOptionalText(input.description, 500, 'La descripción de categoría no es válida.');
+  if (input.sortOrder !== undefined) {
+    if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0 || input.sortOrder > 100_000) throw new AppError('VALIDATION_ERROR', 'El orden no es válido.', 400);
+    data.sortOrder = input.sortOrder;
+  }
+  if (input.status !== undefined) data.status = normalizeStatus(input.status, 'ACTIVE');
+  if (Object.keys(data).length === 0) throw new AppError('VALIDATION_ERROR', 'No hay cambios para guardar.', 400);
+
+  if (data.status === 'ARCHIVED') {
+    const [activeChildren, activeItems] = await Promise.all([
+      prisma.catalogCategory.count({ where: { parentId: id, status: 'ACTIVE' } }),
+      prisma.catalogItem.count({ where: { categoryId: id, status: 'ACTIVE' } }),
+    ]);
+    if (activeChildren > 0 || activeItems > 0) conflict('No puedes archivar una categoría con conceptos o subcategorías activas; reasígnalos o archívalos primero.');
+  }
+
+  try {
+    return await prisma.$transaction(async (transaction) => {
+      const category = await transaction.catalogCategory.update({ where: { id }, data });
+      await audit(transaction, actor, 'catalog.category.updated', 'catalog_category', category.id, { code: category.code, status: category.status });
+      await outbox(transaction, 'CATALOG.CATEGORY_UPDATED', 'CATALOG_CATEGORY', category.id, { categoryId: category.id, status: category.status });
+      return category;
+    });
+  } catch (error) {
+    if (isPersistenceConflict(error)) conflict('No fue posible actualizar la categoría.');
+    throw error;
+  }
+}
+
 export async function listCatalogItems(actor: Actor, filters: CatalogListFilters = {}, dependencies: CatalogServiceDependencies = {}) {
   requireStaffPermission(actor, 'catalog.read');
   const prisma = dependencies.prisma ?? getPrisma();
@@ -244,6 +281,30 @@ export async function createPriceList(actor: Actor, input: { code: string; name:
     });
   } catch (error) {
     if (isPersistenceConflict(error)) conflict('La clave de lista ya existe o no es válida.');
+    throw error;
+  }
+}
+
+export async function updatePriceList(actor: Actor, priceListId: string, input: { name?: string; status?: PriceListStatus }, dependencies: CatalogServiceDependencies = {}) {
+  requireStaffPermission(actor, 'prices.manage');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const id = requireUuid(priceListId, 'La lista de precios no es válida.');
+  const current = await prisma.priceList.findUnique({ where: { id }, select: { id: true } });
+  if (!current) throw new AppError('NOT_FOUND', 'La lista de precios no existe.', 404);
+  const data: Prisma.PriceListUpdateInput = {};
+  if (input.name !== undefined) data.name = normalizeText(input.name, 180, 'El nombre de lista no es válido.');
+  if (input.status !== undefined) data.status = normalizeStatus(input.status, 'ACTIVE');
+  if (Object.keys(data).length === 0) throw new AppError('VALIDATION_ERROR', 'No hay cambios para guardar.', 400);
+
+  try {
+    return await prisma.$transaction(async (transaction) => {
+      const priceList = await transaction.priceList.update({ where: { id }, data });
+      await audit(transaction, actor, 'prices.list.updated', 'price_list', priceList.id, { code: priceList.code, status: priceList.status });
+      await outbox(transaction, 'PRICES.LIST_UPDATED', 'PRICE_LIST', priceList.id, { priceListId: priceList.id, status: priceList.status });
+      return priceList;
+    });
+  } catch (error) {
+    if (isPersistenceConflict(error)) conflict('No fue posible actualizar la lista de precios.');
     throw error;
   }
 }

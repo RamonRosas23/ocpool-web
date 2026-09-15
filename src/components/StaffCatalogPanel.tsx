@@ -9,7 +9,7 @@ import SelectField from '@/components/SelectField';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { parseMoneyInput } from '@/lib/money-input';
 
-type Category = { id: string; code: string; name: string; status: string };
+type Category = { id: string; code: string; name: string; description: string | null; status: string; sortOrder: number };
 type CatalogItem = { id: string; code: string; name: string; description: string | null; unit: string; status: string; category: { id: string; code: string; name: string } | null; createdAt: string; updatedAt: string };
 type PriceList = { id: string; code: string; name: string; currencyCode: string; status: string; validFrom: string; validUntil: string | null; _count: { items: number } };
 type PriceListDetail = PriceList & { items: Array<{ id: string; catalogItemId: string; unitPriceMinor: string; validFrom: string; validUntil: string | null; catalogItem: { code: string; name: string; unit: string; status: string } }> };
@@ -55,9 +55,18 @@ export default function StaffCatalogPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [showItemForm, setShowItemForm] = useState(false);
   const [showPriceListForm, setShowPriceListForm] = useState(false);
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [itemForm, setItemForm] = useState({ code: '', name: '', unit: 'pieza', description: '', categoryId: '' });
   const [priceListForm, setPriceListForm] = useState({ code: '', name: '', currencyCode: 'MXN' });
   const [priceForm, setPriceForm] = useState({ catalogItemId: '', amountInput: '', effectiveFrom: '', reason: '' });
+  const [categoryForm, setCategoryForm] = useState({ code: '', name: '', description: '', sortOrder: '0' });
+  const [editingItem, setEditingItem] = useState(false);
+  const [itemEditForm, setItemEditForm] = useState({ name: '', description: '', unit: '', categoryId: '' });
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [categoryEditForm, setCategoryEditForm] = useState({ name: '', description: '', sortOrder: '0' });
+  const [editingPriceList, setEditingPriceList] = useState(false);
+  const [priceListEditForm, setPriceListEditForm] = useState({ name: '' });
 
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId]);
   const previewItem = useMemo(() => priceListDetail?.items.find((price) => price.catalogItemId === priceForm.catalogItemId && price.validUntil === null) ?? null, [priceListDetail, priceForm.catalogItemId]);
@@ -67,12 +76,14 @@ export default function StaffCatalogPanel() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ page: String(currentPage), pageSize: '25', status: 'ACTIVE' });
+      const params = new URLSearchParams({ page: String(currentPage), pageSize: '25' });
+      if (!showArchived) params.set('status', 'ACTIVE');
       if (query) params.set('query', query);
+      const statusSuffix = showArchived ? '' : '?status=ACTIVE';
       const [itemsResponse, categoriesResponse, listsResponse, capabilitiesResponse] = await Promise.all([
         fetch(`/api/staff/catalog/items?${params.toString()}`, { credentials: 'include', cache: 'no-store' }),
-        fetch('/api/staff/catalog/categories?status=ACTIVE', { credentials: 'include', cache: 'no-store' }),
-        fetch('/api/staff/catalog/price-lists?status=ACTIVE', { credentials: 'include', cache: 'no-store' }),
+        fetch(`/api/staff/catalog/categories${statusSuffix}`, { credentials: 'include', cache: 'no-store' }),
+        fetch(`/api/staff/catalog/price-lists${statusSuffix}`, { credentials: 'include', cache: 'no-store' }),
         fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store' }),
       ]);
       const [itemsData, categoriesData, listsData, capabilitiesData] = await Promise.all([
@@ -88,8 +99,8 @@ export default function StaffCatalogPanel() {
       setTotal(itemsData.total);
       setTotalPages(Math.max(itemsData.totalPages, 1));
       setAccessDenied(false);
-      setSelectedItemId((current) => current && itemsData.items.some((item) => item.id === current) ? current : itemsData.items[0]?.id ?? null);
-      setSelectedPriceListId((current) => current && listsData.some((list) => list.id === current) ? current : listsData[0]?.id ?? null);
+      setSelectedItemId((current) => current ?? itemsData.items[0]?.id ?? null);
+      setSelectedPriceListId((current) => current ?? listsData[0]?.id ?? null);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No fue posible cargar el catálogo.';
       setAccessDenied(message.includes('autenticada') || message.includes('permisos'));
@@ -99,7 +110,7 @@ export default function StaffCatalogPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showArchived]);
 
   const loadPriceList = useCallback(async (priceListId: string) => {
     setLoadingDetail(true);
@@ -135,12 +146,97 @@ export default function StaffCatalogPanel() {
     finally { setSaving(false); }
   };
 
-  const archiveItem = async () => {
-    if (!selectedItem) return; setSaving(true); setError(null); setNotice(null);
+  const startEditItem = () => {
+    if (!selectedItem) return;
+    setItemEditForm({ name: selectedItem.name, description: selectedItem.description ?? '', unit: selectedItem.unit, categoryId: selectedItem.category?.id ?? '' });
+    setEditingItem(true);
+  };
+
+  const saveItemEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedItem) return;
+    setSaving(true); setError(null); setNotice(null);
     try {
-      await readResponse(await fetch(`/api/staff/catalog/items/${selectedItem.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'ARCHIVED' }) }));
-      setNotice('Concepto archivado.'); setSelectedItemId(null); await refresh();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible archivar el concepto.'); }
+      await readResponse(await fetch(`/api/staff/catalog/items/${selectedItem.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: itemEditForm.name, description: itemEditForm.description || null, unit: itemEditForm.unit, categoryId: itemEditForm.categoryId || null }) }));
+      setNotice('Concepto actualizado.'); setEditingItem(false); await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar el concepto.'); }
+    finally { setSaving(false); }
+  };
+
+  const toggleItemStatus = async () => {
+    if (!selectedItem) return; setSaving(true); setError(null); setNotice(null);
+    const nextStatus = selectedItem.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE';
+    try {
+      await readResponse(await fetch(`/api/staff/catalog/items/${selectedItem.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }));
+      setNotice(nextStatus === 'ARCHIVED' ? 'Concepto archivado.' : 'Concepto reactivado.');
+      await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar el concepto.'); }
+    finally { setSaving(false); }
+  };
+
+  const createCategory = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSaving(true); setError(null); setNotice(null);
+    try {
+      const response = await fetch('/api/staff/catalog/categories', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: categoryForm.code, name: categoryForm.name, description: categoryForm.description || undefined, sortOrder: Number(categoryForm.sortOrder) || 0 }) });
+      const created = await readResponse<Category>(response);
+      setNotice(`Categoría ${created.code} creada.`); setCategoryForm({ code: '', name: '', description: '', sortOrder: '0' }); setShowCategoryForm(false); await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible crear la categoría.'); }
+    finally { setSaving(false); }
+  };
+
+  const startEditCategory = (category: Category) => {
+    setEditingCategoryId(category.id);
+    setCategoryEditForm({ name: category.name, description: category.description ?? '', sortOrder: String(category.sortOrder) });
+  };
+
+  const saveCategoryEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingCategoryId) return;
+    setSaving(true); setError(null); setNotice(null);
+    try {
+      await readResponse(await fetch(`/api/staff/catalog/categories/${editingCategoryId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: categoryEditForm.name, description: categoryEditForm.description || null, sortOrder: Number(categoryEditForm.sortOrder) || 0 }) }));
+      setNotice('Categoría actualizada.'); setEditingCategoryId(null); await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar la categoría.'); }
+    finally { setSaving(false); }
+  };
+
+  const toggleCategoryStatus = async (category: Category) => {
+    setSaving(true); setError(null); setNotice(null);
+    const nextStatus = category.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE';
+    try {
+      await readResponse(await fetch(`/api/staff/catalog/categories/${category.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }));
+      setNotice(nextStatus === 'ARCHIVED' ? 'Categoría archivada.' : 'Categoría reactivada.');
+      await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar la categoría.'); }
+    finally { setSaving(false); }
+  };
+
+  const startEditPriceList = () => {
+    if (!priceListDetail) return;
+    setPriceListEditForm({ name: priceListDetail.name });
+    setEditingPriceList(true);
+  };
+
+  const savePriceListEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedPriceListId) return;
+    setSaving(true); setError(null); setNotice(null);
+    try {
+      await readResponse(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: priceListEditForm.name }) }));
+      setNotice('Lista actualizada.'); setEditingPriceList(false); await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar la lista.'); }
+    finally { setSaving(false); }
+  };
+
+  const togglePriceListStatus = async () => {
+    if (!selectedPriceListId || !priceListDetail) return;
+    setSaving(true); setError(null); setNotice(null);
+    const nextStatus = priceListDetail.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE';
+    try {
+      await readResponse(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }));
+      setNotice(nextStatus === 'ARCHIVED' ? 'Lista archivada.' : 'Lista reactivada.');
+      await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar la lista.'); }
     finally { setSaving(false); }
   };
 
@@ -189,23 +285,37 @@ export default function StaffCatalogPanel() {
       {notice && <p className="staff-notice" role="status">{notice}</p>}{error && <p className="staff-error" role="alert">{error}</p>}
       <section className="catalog-workspace" aria-label="Gestión de catálogo y precios">
         <aside className="catalog-rail">
-          <form className="staff-filters" onSubmit={submitSearch}><label><span>Buscar concepto</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Clave o nombre" maxLength={100} /></label><button className="staff-button staff-button--filter" type="submit">Buscar</button></form>
+          <form className="staff-filters" onSubmit={submitSearch}><label><span>Buscar concepto</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Clave o nombre" maxLength={100} /></label><label className="catalog-filters__toggle"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>Mostrar archivados</span></label><button className="staff-button staff-button--filter" type="submit">Buscar</button></form>
           <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `${items.length} de ${total}`}</span><span>Página {page} / {totalPages}</span></div>
-          <div className="catalog-item-list" aria-live="polite">{loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}{!loading && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark">—</span><h2>Catálogo vacío.</h2><p>Prueba otra búsqueda o agrega el primer concepto.</p></div>}{!loading && items.map((item) => <button className={`catalog-item-row${selectedItemId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedItemId(item.id)}><span className="catalog-item-row__code">{item.code}</span><strong>{item.name}</strong><small>{item.category?.name ?? 'Sin categoría'} · {item.unit}</small></button>)}</div>
+          <div className="catalog-item-list" aria-live="polite">{loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}{!loading && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark">—</span><h2>Catálogo vacío.</h2><p>Prueba otra búsqueda o agrega el primer concepto.</p></div>}{!loading && items.map((item) => <button className={`catalog-item-row${selectedItemId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedItemId(item.id)}><span className="catalog-item-row__code">{item.code}</span><strong>{item.name}</strong><small>{item.category?.name ?? 'Sin categoría'} · {item.unit}{item.status === 'ARCHIVED' ? ' · Archivado' : ''}</small></button>)}</div>
           <div className="staff-pagination"><button type="button" className="staff-pagination__button" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Anterior</button><button type="button" className="staff-pagination__button" disabled={page >= totalPages || loading} onClick={() => setPage((current) => current + 1)}>Siguiente</button></div>
         </aside>
         <section className="catalog-main">
-          <div className="catalog-main__top"><div><p className="staff-section-label">Concepto seleccionado</p>{selectedItem ? <><h2>{selectedItem.name}</h2><p className="catalog-main__meta">{selectedItem.code} · {selectedItem.unit} · actualizado {formatDate(selectedItem.updatedAt)}</p></> : <h2>Selecciona un concepto</h2>}</div>{selectedItem && capabilities.catalogManage && <button className="staff-button" type="button" disabled={saving} onClick={() => void archiveItem()}>Archivar</button>}</div>
+          <div className="catalog-main__top"><div><p className="staff-section-label">Concepto seleccionado</p>{selectedItem ? <><h2>{selectedItem.name}</h2><p className="catalog-main__meta">{selectedItem.code} · {selectedItem.unit} · actualizado {formatDate(selectedItem.updatedAt)}</p></> : <h2>Selecciona un concepto</h2>}</div>{selectedItem && capabilities.catalogManage && <div className="catalog-main__actions"><button className="staff-button" type="button" disabled={saving} onClick={startEditItem}>Editar</button><button className="staff-button" type="button" disabled={saving} onClick={() => void toggleItemStatus()}>{selectedItem.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'}</button></div>}</div>
           {!selectedItem && <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>La fuente antes de la propuesta.</h2><p>Selecciona un concepto para revisar sus precios o crea uno nuevo.</p></div>}
-          {selectedItem && <div className="catalog-detail"><p>{selectedItem.description ?? 'Este concepto todavía no tiene descripción.'}</p><dl><div><dt>Categoría</dt><dd>{selectedItem.category?.name ?? 'Sin categoría'}</dd></div><div><dt>Estado</dt><dd>{selectedItem.status === 'ACTIVE' ? 'Activo' : 'Archivado'}</dd></div></dl></div>}
+          {selectedItem && !editingItem && <div className="catalog-detail"><p>{selectedItem.description ?? 'Este concepto todavía no tiene descripción.'}</p><dl><div><dt>Categoría</dt><dd>{selectedItem.category?.name ?? 'Sin categoría'}</dd></div><div><dt>Estado</dt><dd>{selectedItem.status === 'ACTIVE' ? 'Activo' : 'Archivado'}</dd></div></dl></div>}
+          {selectedItem && editingItem && <form className="catalog-form" onSubmit={saveItemEdit}><label><span>Nombre</span><input required value={itemEditForm.name} onChange={(event) => setItemEditForm({ ...itemEditForm, name: event.target.value })} maxLength={180} /></label><label><span>Unidad</span><input required value={itemEditForm.unit} onChange={(event) => setItemEditForm({ ...itemEditForm, unit: event.target.value })} maxLength={40} /></label><label><span>Categoría</span><SelectField ariaLabel="Categoría (editar concepto)" value={itemEditForm.categoryId} onValueChange={(value) => setItemEditForm({ ...itemEditForm, categoryId: value })} options={categories.filter((category) => category.status === 'ACTIVE').map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} /></label><label><span>Descripción</span><textarea rows={3} value={itemEditForm.description} onChange={(event) => setItemEditForm({ ...itemEditForm, description: event.target.value })} maxLength={2000} /></label><div className="catalog-form__actions"><button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar cambios</button><button className="staff-button" type="button" disabled={saving} onClick={() => setEditingItem(false)}>Cancelar</button></div></form>}
           <section className="catalog-price-panel"><div className="catalog-price-panel__head"><div><p className="staff-section-label">Listas de precio</p><h3>{priceLists.length ? 'Precios vigentes' : 'Todavía no hay listas'}</h3></div>{capabilities.pricesManage && <button className="staff-button staff-button--copper" type="button" onClick={() => setShowPriceListForm((current) => !current)}>{showPriceListForm ? 'Cerrar' : 'Nueva lista'}</button>}</div>
             {showPriceListForm && capabilities.pricesManage && <form className="catalog-form" onSubmit={createPriceList}><label><span>Clave</span><input required value={priceListForm.code} onChange={(event) => setPriceListForm({ ...priceListForm, code: event.target.value })} placeholder="LISTA-MXN" maxLength={64} /></label><label><span>Nombre</span><input required value={priceListForm.name} onChange={(event) => setPriceListForm({ ...priceListForm, name: event.target.value })} placeholder="Lista residencial" maxLength={180} /></label><label><span>Moneda</span><input required value={priceListForm.currencyCode} onChange={(event) => setPriceListForm({ ...priceListForm, currencyCode: event.target.value.toUpperCase() })} maxLength={3} /></label><button className="staff-button staff-button--dark" type="submit" disabled={saving}>Crear lista</button></form>}
-            <div className="catalog-list-picker">{priceLists.map((list) => <button className={`catalog-list-row${selectedPriceListId === list.id ? ' is-selected' : ''}`} type="button" key={list.id} onClick={() => setSelectedPriceListId(list.id)}><span><strong>{list.name}</strong><small>{list.code} · {list.currencyCode} · {list._count.items} conceptos</small></span><b>{formatDate(list.validFrom)}</b></button>)}</div>
+            <div className="catalog-list-picker">{priceLists.map((list) => <button className={`catalog-list-row${selectedPriceListId === list.id ? ' is-selected' : ''}`} type="button" key={list.id} onClick={() => setSelectedPriceListId(list.id)}><span><strong>{list.name}</strong><small>{list.code} · {list.currencyCode} · {list._count.items} conceptos{list.status === 'ARCHIVED' ? ' · Archivada' : ''}</small></span><b>{formatDate(list.validFrom)}</b></button>)}</div>
             {loadingDetail && <div className="catalog-detail-loading"><span /><span /></div>}
-            {!loadingDetail && priceListDetail && <><div className="catalog-price-summary"><span>{priceListDetail.name}</span><strong>{priceListDetail.items.length} precios</strong></div><div className="catalog-price-table" role="table" aria-label="Precios de la lista seleccionada"><div className="catalog-price-table__head" role="row"><span role="columnheader">Concepto</span><span role="columnheader">Importe</span><span role="columnheader">Vigencia</span></div>{priceListDetail.items.map((price) => <div className="catalog-price-table__row" role="row" key={price.id}><span role="cell"><strong>{price.catalogItem.name}</strong><small>{price.catalogItem.code} · {price.catalogItem.unit}</small></span><b role="cell">{moneyLabel(price.unitPriceMinor, priceListDetail.currencyCode)}</b><small role="cell">{formatDate(price.validFrom)}{price.validUntil ? ` — ${formatDate(price.validUntil)}` : ' — abierta'}</small></div>)}</div></>}
-            {capabilities.pricesManage && selectedPriceListId && <form className="catalog-form catalog-form--price" onSubmit={schedulePriceForItem}><p className="staff-section-label">Programar precio</p><label><span>Concepto</span><SelectField ariaLabel="Concepto" value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={items.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder="Selecciona un concepto" disabled={saving} /></label><label><span>Importe</span><input required inputMode="decimal" value={priceForm.amountInput} onChange={(event) => setPriceForm({ ...priceForm, amountInput: event.target.value })} placeholder="1,250.00" /></label><label><span>Vigente desde</span><DateField ariaLabel="Vigente desde" value={priceForm.effectiveFrom} onValueChange={(value) => setPriceForm({ ...priceForm, effectiveFrom: value })} disabled={saving} /></label><label><span>Motivo opcional</span><input value={priceForm.reason} onChange={(event) => setPriceForm({ ...priceForm, reason: event.target.value })} placeholder="Ajuste de proveedor" maxLength={300} /></label>{previewText && <p className="catalog-form__preview" aria-live="polite">{previewText}</p>}<button className="staff-button staff-button--dark" type="submit" disabled={saving}>Programar precio</button></form>}
+            {!loadingDetail && priceListDetail && <>
+              <div className="catalog-price-summary"><span>{priceListDetail.name}{priceListDetail.status === 'ARCHIVED' ? ' · Archivada' : ''}</span><strong>{priceListDetail.items.length} precios</strong>{capabilities.pricesManage && !editingPriceList && <div className="catalog-main__actions"><button className="staff-button" type="button" disabled={saving} onClick={startEditPriceList}>Editar</button><button className="staff-button" type="button" disabled={saving} onClick={() => void togglePriceListStatus()}>{priceListDetail.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'}</button></div>}</div>
+              {editingPriceList && <form className="catalog-form catalog-form--inline" onSubmit={savePriceListEdit}><label><span>Nombre</span><input required value={priceListEditForm.name} onChange={(event) => setPriceListEditForm({ name: event.target.value })} maxLength={180} /></label><div className="catalog-form__actions"><button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar cambios</button><button className="staff-button" type="button" disabled={saving} onClick={() => setEditingPriceList(false)}>Cancelar</button></div></form>}
+              <div className="catalog-price-table" role="table" aria-label="Precios de la lista seleccionada"><div className="catalog-price-table__head" role="row"><span role="columnheader">Concepto</span><span role="columnheader">Importe</span><span role="columnheader">Vigencia</span></div>{priceListDetail.items.map((price) => <div className="catalog-price-table__row" role="row" key={price.id}><span role="cell"><strong>{price.catalogItem.name}</strong><small>{price.catalogItem.code} · {price.catalogItem.unit}</small></span><b role="cell">{moneyLabel(price.unitPriceMinor, priceListDetail.currencyCode)}</b><small role="cell">{formatDate(price.validFrom)}{price.validUntil ? ` — ${formatDate(price.validUntil)}` : ' — abierta'}</small></div>)}</div>
+            </>}
+            {capabilities.pricesManage && selectedPriceListId && priceListDetail?.status === 'ACTIVE' && <form className="catalog-form catalog-form--price" onSubmit={schedulePriceForItem}><p className="staff-section-label">Programar precio</p><label><span>Concepto</span><SelectField ariaLabel="Concepto" value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={items.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder="Selecciona un concepto" disabled={saving} /></label><label><span>Importe</span><input required inputMode="decimal" value={priceForm.amountInput} onChange={(event) => setPriceForm({ ...priceForm, amountInput: event.target.value })} placeholder="1,250.00" /></label><label><span>Vigente desde</span><DateField ariaLabel="Vigente desde" value={priceForm.effectiveFrom} onValueChange={(value) => setPriceForm({ ...priceForm, effectiveFrom: value })} disabled={saving} /></label><label><span>Motivo opcional</span><input value={priceForm.reason} onChange={(event) => setPriceForm({ ...priceForm, reason: event.target.value })} placeholder="Ajuste de proveedor" maxLength={300} /></label>{previewText && <p className="catalog-form__preview" aria-live="polite">{previewText}</p>}<button className="staff-button staff-button--dark" type="submit" disabled={saving}>Programar precio</button></form>}
+            {capabilities.pricesManage && selectedPriceListId && priceListDetail?.status === 'ARCHIVED' && <p className="catalog-form__note">Esta lista está archivada. Reactívala para poder programar nuevos precios.</p>}
           </section>
-          {capabilities.catalogManage && <section className="catalog-add"><button className="staff-button staff-button--outline" type="button" onClick={() => setShowItemForm((current) => !current)}>{showItemForm ? 'Cerrar alta' : 'Agregar concepto'}</button>{showItemForm && <form className="catalog-form" onSubmit={createItem}><label><span>Clave</span><input required value={itemForm.code} onChange={(event) => setItemForm({ ...itemForm, code: event.target.value })} placeholder="EQUIPO-001" maxLength={64} /></label><label><span>Nombre</span><input required value={itemForm.name} onChange={(event) => setItemForm({ ...itemForm, name: event.target.value })} placeholder="Bomba de filtrado" maxLength={180} /></label><label><span>Unidad</span><input required value={itemForm.unit} onChange={(event) => setItemForm({ ...itemForm, unit: event.target.value })} placeholder="pieza" maxLength={40} /></label><label><span>Categoría</span><SelectField ariaLabel="Categoría" value={itemForm.categoryId} onValueChange={(value) => setItemForm({ ...itemForm, categoryId: value })} options={categories.map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} /></label><label><span>Descripción</span><textarea rows={3} value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} maxLength={2000} /></label><button className="staff-button staff-button--copper" type="submit" disabled={saving}>Guardar concepto</button></form>}</section>}
+          {capabilities.catalogManage && <section className="catalog-add"><button className="staff-button staff-button--outline" type="button" onClick={() => setShowItemForm((current) => !current)}>{showItemForm ? 'Cerrar alta' : 'Agregar concepto'}</button>{showItemForm && <form className="catalog-form" onSubmit={createItem}><label><span>Clave</span><input required value={itemForm.code} onChange={(event) => setItemForm({ ...itemForm, code: event.target.value })} placeholder="EQUIPO-001" maxLength={64} /></label><label><span>Nombre</span><input required value={itemForm.name} onChange={(event) => setItemForm({ ...itemForm, name: event.target.value })} placeholder="Bomba de filtrado" maxLength={180} /></label><label><span>Unidad</span><input required value={itemForm.unit} onChange={(event) => setItemForm({ ...itemForm, unit: event.target.value })} placeholder="pieza" maxLength={40} /></label><label><span>Categoría</span><SelectField ariaLabel="Categoría" value={itemForm.categoryId} onValueChange={(value) => setItemForm({ ...itemForm, categoryId: value })} options={categories.filter((category) => category.status === 'ACTIVE').map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} /></label><label><span>Descripción</span><textarea rows={3} value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} maxLength={2000} /></label><button className="staff-button staff-button--copper" type="submit" disabled={saving}>Guardar concepto</button></form>}</section>}
+          <section className="catalog-category-panel" aria-label="Gestión de categorías"><div className="catalog-price-panel__head"><div><p className="staff-section-label">Categorías</p><h3>{categories.length ? 'Organiza el catálogo' : 'Todavía no hay categorías'}</h3></div>{capabilities.catalogManage && <button className="staff-button staff-button--copper" type="button" onClick={() => setShowCategoryForm((current) => !current)}>{showCategoryForm ? 'Cerrar' : 'Nueva categoría'}</button>}</div>
+            {showCategoryForm && capabilities.catalogManage && <form className="catalog-form" onSubmit={createCategory}><label><span>Clave</span><input required value={categoryForm.code} onChange={(event) => setCategoryForm({ ...categoryForm, code: event.target.value })} placeholder="CAT-EQUIPO" maxLength={64} /></label><label><span>Nombre</span><input required value={categoryForm.name} onChange={(event) => setCategoryForm({ ...categoryForm, name: event.target.value })} placeholder="Equipo de filtrado" maxLength={180} /></label><label><span>Orden</span><input inputMode="numeric" value={categoryForm.sortOrder} onChange={(event) => setCategoryForm({ ...categoryForm, sortOrder: event.target.value })} maxLength={6} /></label><label><span>Descripción</span><textarea rows={2} value={categoryForm.description} onChange={(event) => setCategoryForm({ ...categoryForm, description: event.target.value })} maxLength={500} /></label><button className="staff-button staff-button--dark" type="submit" disabled={saving}>Crear categoría</button></form>}
+            <div className="catalog-category-list">{categories.length === 0 && <p className="catalog-form__note">Todavía no hay categorías registradas.</p>}{categories.map((category) => <div className="catalog-category-row" key={category.id}>
+              {editingCategoryId === category.id
+                ? <form className="catalog-form catalog-form--inline" onSubmit={saveCategoryEdit}><label><span>Nombre</span><input required value={categoryEditForm.name} onChange={(event) => setCategoryEditForm({ ...categoryEditForm, name: event.target.value })} maxLength={180} /></label><label><span>Orden</span><input inputMode="numeric" value={categoryEditForm.sortOrder} onChange={(event) => setCategoryEditForm({ ...categoryEditForm, sortOrder: event.target.value })} maxLength={6} /></label><label><span>Descripción</span><textarea rows={2} value={categoryEditForm.description} onChange={(event) => setCategoryEditForm({ ...categoryEditForm, description: event.target.value })} maxLength={500} /></label><div className="catalog-form__actions"><button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar</button><button className="staff-button" type="button" disabled={saving} onClick={() => setEditingCategoryId(null)}>Cancelar</button></div></form>
+                : <><span><strong>{category.name}</strong><small>{category.code} · orden {category.sortOrder}{category.status === 'ARCHIVED' ? ' · Archivada' : ''}</small></span>{capabilities.catalogManage && <div className="catalog-category-row__actions"><button className="staff-button" type="button" disabled={saving} onClick={() => startEditCategory(category)}>Editar</button><button className="staff-button" type="button" disabled={saving} onClick={() => void toggleCategoryStatus(category)}>{category.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'}</button></div>}</>}
+            </div>)}</div>
+          </section>
         </section>
       </section>
     </div>

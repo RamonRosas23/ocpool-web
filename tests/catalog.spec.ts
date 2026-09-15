@@ -22,6 +22,7 @@ test.describe('staff catalog operations', () => {
   let itemId = '';
   let priceListId = '';
   let createdItemId = '';
+  let newCategoryId = '';
 
   test.beforeAll(async () => {
     await seedIdentityCatalog(prisma);
@@ -48,7 +49,7 @@ test.describe('staff catalog operations', () => {
   });
 
   test.afterAll(async () => {
-    const aggregateIds = [categoryId, itemId, priceListId, createdItemId].filter(Boolean);
+    const aggregateIds = [categoryId, itemId, priceListId, createdItemId, newCategoryId].filter(Boolean);
     if (aggregateIds.length) {
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
       await prisma.auditLog.deleteMany({ where: { entityId: { in: aggregateIds } } });
@@ -58,6 +59,7 @@ test.describe('staff catalog operations', () => {
     if (createdItemId) await prisma.catalogItem.delete({ where: { id: createdItemId } });
     if (itemId) await prisma.catalogItem.delete({ where: { id: itemId } });
     if (categoryId) await prisma.catalogCategory.delete({ where: { id: categoryId } });
+    if (newCategoryId) await prisma.catalogCategory.delete({ where: { id: newCategoryId } });
     if (sessionId) await prisma.session.delete({ where: { id: sessionId } });
     if (userId) await prisma.user.delete({ where: { id: userId } });
     await prisma.$disconnect();
@@ -70,7 +72,7 @@ test.describe('staff catalog operations', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/staff/catalog');
 
-    await expect(page.getByRole('heading', { name: 'Catálogo' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Catálogo', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Volver al dashboard' })).toHaveAttribute('href', '/staff');
     const fixtureItemRow = page.getByRole('button', { name: new RegExp(itemCode) });
     await expect(fixtureItemRow).toBeVisible();
@@ -106,9 +108,61 @@ test.describe('staff catalog operations', () => {
     await expect(createdRow).toBeVisible();
     createdItemId = (await prisma.catalogItem.findUniqueOrThrow({ where: { code: createdItemCode }, select: { id: true } })).id;
 
-    await page.getByRole('button', { name: 'Archivar' }).click();
+    const itemActions = page.locator('.catalog-main__top .catalog-main__actions');
+    await itemActions.getByRole('button', { name: 'Archivar' }).click();
     await expect(page.getByRole('status')).toContainText('Concepto archivado.');
     await expect(page.getByRole('button', { name: new RegExp(createdItemCode) })).toHaveCount(0);
+
+    // K1-03: create a category from the UI (previously impossible), then edit/archive/reactivate
+    // the fixture item and price list, using "Mostrar archivados" to see them reappear.
+    const newCategoryCode = `E2E-NEWCAT-${suffix}`;
+    await page.getByRole('button', { name: 'Nueva categoría' }).click();
+    await page.getByLabel('Clave', { exact: true }).fill(newCategoryCode);
+    await page.getByLabel('Nombre', { exact: true }).fill(`Categoría nueva ${suffix}`);
+    await page.getByRole('button', { name: 'Crear categoría' }).click();
+    await expect(page.getByRole('status')).toContainText(`Categoría ${newCategoryCode} creada.`);
+    newCategoryId = (await prisma.catalogCategory.findUniqueOrThrow({ where: { code: newCategoryCode }, select: { id: true } })).id;
+    await expect(page.locator('.catalog-category-row', { hasText: newCategoryCode })).toBeVisible();
+
+    await fixtureItemRow.click();
+    await itemActions.getByRole('button', { name: 'Editar' }).click();
+    const editedItemName = `Concepto E2E editado ${suffix}`;
+    await page.getByLabel('Nombre', { exact: true }).fill(editedItemName);
+    await page.getByLabel('Unidad', { exact: true }).fill('lote');
+    await page.getByRole('button', { name: 'Guardar cambios' }).click();
+    await expect(page.getByRole('status')).toContainText('Concepto actualizado.');
+    await expect(fixtureItemRow).toContainText(editedItemName);
+
+    await itemActions.getByRole('button', { name: 'Archivar' }).click();
+    await expect(page.getByRole('status')).toContainText('Concepto archivado.');
+    await expect(page.getByRole('button', { name: new RegExp(itemCode) })).toHaveCount(0);
+
+    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).check();
+    await expect(fixtureItemRow).toBeVisible();
+    await expect(fixtureItemRow).toContainText('Archivado');
+    await fixtureItemRow.click();
+    await itemActions.getByRole('button', { name: 'Reactivar' }).click();
+    await expect(page.getByRole('status')).toContainText('Concepto reactivado.');
+    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).uncheck();
+
+    const priceListActions = page.locator('.catalog-price-summary .catalog-main__actions');
+    await fixturePriceList.click();
+    await priceListActions.getByRole('button', { name: 'Editar' }).click();
+    const editedPriceListName = `Lista E2E editada ${suffix}`;
+    await page.getByLabel('Nombre', { exact: true }).fill(editedPriceListName);
+    await page.getByRole('button', { name: 'Guardar cambios' }).click();
+    await expect(page.getByRole('status')).toContainText('Lista actualizada.');
+    await expect(fixturePriceList).toContainText(editedPriceListName);
+
+    await priceListActions.getByRole('button', { name: 'Archivar' }).click();
+    await expect(page.getByRole('status')).toContainText('Lista archivada.');
+    await expect(page.getByText('Esta lista está archivada.')).toBeVisible();
+
+    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).check();
+    await expect(fixturePriceList).toContainText('Archivada');
+    await priceListActions.getByRole('button', { name: 'Reactivar' }).click();
+    await expect(page.getByRole('status')).toContainText('Lista reactivada.');
+    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).uncheck();
 
     for (const width of [390, 768, 1440]) {
       await page.setViewportSize({ width, height: 844 });

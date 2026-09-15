@@ -7,7 +7,8 @@ import { createSession } from '@/server/auth/sessions';
 import { GET as listItemsRoute, POST as createItemRoute } from '@/app/api/staff/catalog/items/route';
 import { PATCH as updateItemRoute } from '@/app/api/staff/catalog/items/[id]/route';
 import { POST as createCategoryRoute } from '@/app/api/staff/catalog/categories/route';
-import { GET as priceListRoute } from '@/app/api/staff/catalog/price-lists/[id]/route';
+import { PATCH as updateCategoryRoute } from '@/app/api/staff/catalog/categories/[id]/route';
+import { GET as priceListRoute, PATCH as updatePriceListRoute } from '@/app/api/staff/catalog/price-lists/[id]/route';
 import { POST as createPriceListRoute } from '@/app/api/staff/catalog/price-lists/route';
 import { POST as priceItemRoute } from '@/app/api/staff/catalog/price-lists/[id]/items/route';
 import { GET as searchRoute } from '@/app/api/staff/catalog/price-lists/[id]/search/route';
@@ -82,7 +83,7 @@ describe('staff catalog API', () => {
 
     const listResponse = await createPriceListRoute(endpoint('/api/staff/catalog/price-lists', managerToken, 'POST', { code: `API-PRICE-${Date.now()}`, name: 'API prices', currencyCode: 'MXN', validFrom: '2026-03-01T00:00:00.000Z' }));
     expect(listResponse.status).toBe(201);
-    const priceList = await listResponse.json() as { id: string };
+    const priceList = await listResponse.json() as { id: string; code: string };
     priceListIds.push(priceList.id);
     const archivedItem = await priceItemRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/items`, managerToken, 'POST', { catalogItemId: item.id, unitPriceMinor: '1000', validFrom: '2026-03-01T00:00:00.000Z' }), { params: Promise.resolve({ id: priceList.id }) });
     expect(archivedItem.status).toBe(400);
@@ -112,6 +113,24 @@ describe('staff catalog API', () => {
     const scheduled = await schedulePriceRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/schedule`, managerToken, 'POST', { catalogItemId: item.id, unitPriceMinor: '2000', effectiveFrom: '2026-04-01T00:00:00.000Z', reason: 'Ajuste API' }), { params: Promise.resolve({ id: priceList.id }) });
     expect(scheduled.status).toBe(201);
     await expect(scheduled.json()).resolves.toMatchObject({ unitPriceMinor: '2000', closedPreviousPriceId: expect.any(String) });
+
+    const unauthenticatedCategoryUpdate = await updateCategoryRoute(endpoint(`/api/staff/catalog/categories/${category.id}`, undefined, 'PATCH', { name: 'X' }), { params: Promise.resolve({ id: category.id }) });
+    expect(unauthenticatedCategoryUpdate.status).toBe(401);
+    const salesCategoryUpdate = await updateCategoryRoute(endpoint(`/api/staff/catalog/categories/${category.id}`, salesToken, 'PATCH', { name: 'X' }), { params: Promise.resolve({ id: category.id }) });
+    expect(salesCategoryUpdate.status).toBe(403);
+    const categoryUpdate = await updateCategoryRoute(endpoint(`/api/staff/catalog/categories/${category.id}`, managerToken, 'PATCH', { name: 'API category renamed' }), { params: Promise.resolve({ id: category.id }) });
+    expect(categoryUpdate.status).toBe(200);
+    await expect(categoryUpdate.json()).resolves.toMatchObject({ name: 'API category renamed' });
+    const categoryArchiveBlocked = await updateCategoryRoute(endpoint(`/api/staff/catalog/categories/${category.id}`, managerToken, 'PATCH', { status: 'ARCHIVED' }), { params: Promise.resolve({ id: category.id }) });
+    expect(categoryArchiveBlocked.status).toBe(409);
+
+    const priceListUpdate = await updatePriceListRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}`, managerToken, 'PATCH', { name: 'API prices renamed' }), { params: Promise.resolve({ id: priceList.id }) });
+    expect(priceListUpdate.status).toBe(200);
+    await expect(priceListUpdate.json()).resolves.toMatchObject({ name: 'API prices renamed', code: priceList.code });
+    const priceListArchive = await updatePriceListRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}`, managerToken, 'PATCH', { status: 'ARCHIVED' }), { params: Promise.resolve({ id: priceList.id }) });
+    expect(priceListArchive.status).toBe(200);
+    const salesPriceListUpdate = await updatePriceListRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}`, salesToken, 'PATCH', { name: 'X' }), { params: Promise.resolve({ id: priceList.id }) });
+    expect(salesPriceListUpdate.status).toBe(403);
   });
 
   afterAll(async () => {
