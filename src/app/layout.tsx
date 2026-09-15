@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { Cormorant_Garamond, Manrope } from 'next/font/google';
 import './globals.css';
-import '../components/private/ui/private-ui.css';
 
 const siteUrl = 'https://ocpool.com.mx';
 const siteTitle = 'OCPOOL | Diseño y construcción de albercas';

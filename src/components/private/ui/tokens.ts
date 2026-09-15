@@ -1,8 +1,10 @@
 /**
  * Semantic tokens for private commercial surfaces.
  *
- * This module is intentionally not imported by the current legacy screens.
- * U1 will connect it from the private layouts after the G0 gate is closed.
+ * `private-ui.css` is the source of truth these tokens render as: its
+ * `.private-ui-scope` block declares the same custom properties as CSS.
+ * `tests/unit/private-ui-contract.test.ts` cross-checks both so they cannot
+ * drift apart silently.
  */
 
 export const PRIVATE_UI_TOKENS = Object.freeze({
@@ -20,6 +22,7 @@ export const PRIVATE_UI_TOKENS = Object.freeze({
   '--private-color-border-strong': 'rgba(24, 37, 42, .42)',
   '--private-shadow-popover': '0 18px 50px rgba(5, 24, 34, .18)',
   '--private-font-interface': 'var(--font-interface, var(--font-sans, system-ui, sans-serif))',
+  '--private-font-display': 'var(--font-display, var(--private-font-interface))',
   '--private-space-1': '4px',
   '--private-space-2': '8px',
   '--private-space-3': '12px',

@@ -1,21 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
-import type { PrivateNavigationItem } from '@/components/private/navigation';
+import { pathMatches, privateShellTrail, type PrivateNavigationItem } from '@/components/private/navigation';
+import type { PrivateShellSurface } from '@/server/private-shell';
 
 type PrivateShellChromeProps = {
-  surface: 'staff' | 'portal';
+  surface: PrivateShellSurface;
   user: { displayName: string; email: string };
   roleLabel: string;
   navigation: readonly PrivateNavigationItem[];
 };
-
-function isCurrentPath(pathname: string, href: string): boolean {
-  return href === '/staff' || href === '/portal' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
-}
 
 export default function PrivateShellChrome({ surface, user, roleLabel, navigation }: PrivateShellChromeProps) {
   const pathname = usePathname();
@@ -23,7 +20,14 @@ export default function PrivateShellChrome({ surface, user, roleLabel, navigatio
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const brandClass = surface === 'staff' ? 'staff-brand' : 'client-brand';
+  const brandHref = surface === 'staff' ? '/staff' : '/portal';
+  const brandAriaLabel = surface === 'staff' ? 'OCPOOL, volver al centro de trabajo' : 'OCPOOL, volver a mis expedientes';
   const logoutTarget = surface === 'staff' ? '/login' : '/portal/access';
+  const trail = privateShellTrail(pathname, surface, navigation);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
   const logout = async () => {
     if (logoutBusy) return;
@@ -42,15 +46,16 @@ export default function PrivateShellChrome({ surface, user, roleLabel, navigatio
   return (
     <header className="private-shell__header">
       <div className="private-shell__topline">
-        <WorkspaceBrand className={brandClass} subtitle={surface === 'staff' ? 'Operaciones comerciales' : 'Portal de cliente'} />
+        <WorkspaceBrand className={brandClass} subtitle={surface === 'staff' ? 'Operaciones comerciales' : 'Portal de cliente'} href={brandHref} ariaLabel={brandAriaLabel} />
         <button className="private-shell__menu-toggle" type="button" aria-expanded={menuOpen} aria-controls="private-shell-navigation" onClick={() => setMenuOpen((current) => !current)}>
           <span aria-hidden="true">{menuOpen ? '×' : '☰'}</span>{menuOpen ? 'Cerrar' : 'Menú'}
         </button>
       </div>
+      {trail && <nav className="private-shell__trail" aria-label="Ruta actual"><Link href={trail.returnHref}>← {trail.returnLabel}</Link><span aria-hidden="true">/</span><span aria-current="page">{trail.currentLabel}</span></nav>}
       <div className={`private-shell__body${menuOpen ? ' is-open' : ''}`}>
         <nav id="private-shell-navigation" className="private-shell__navigation" aria-label={surface === 'staff' ? 'Navegación de operaciones' : 'Navegación del portal'}>
           {navigation.map((item) => {
-            const current = isCurrentPath(pathname, item.href);
+            const current = pathMatches(pathname, item.href);
             return <Link href={item.href} aria-current={current ? 'page' : undefined} key={item.key} onClick={() => setMenuOpen(false)}>{item.label}</Link>;
           })}
         </nav>

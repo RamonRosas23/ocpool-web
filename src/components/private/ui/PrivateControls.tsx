@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { ComponentPropsWithoutRef, ReactNode } from 'react';
+import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { privateFieldA11y } from './a11y';
 import PrivateField, { type PrivateFieldChromeProps } from './PrivateField';
@@ -15,10 +15,11 @@ export type PrivateButtonProps = ComponentPropsWithoutRef<'button'> & {
   variant?: 'primary' | 'secondary' | 'quiet' | 'danger';
 };
 
-export function PrivateButton({ busy = false, variant = 'primary', disabled = false, className, children, ...props }: PrivateButtonProps) {
+export const PrivateButton = forwardRef<HTMLButtonElement, PrivateButtonProps>(function PrivateButton({ busy = false, variant = 'primary', disabled = false, className, children, ...props }, ref) {
   return (
     <button
       {...props}
+      ref={ref}
       className={joinClasses('private-button', `private-button--${variant}`, className)}
       aria-busy={busy || undefined}
       disabled={busy || disabled}
@@ -27,7 +28,7 @@ export function PrivateButton({ busy = false, variant = 'primary', disabled = fa
       <span>{children}</span>
     </button>
   );
-}
+});
 
 export type PrivateIconButtonProps = Omit<PrivateButtonProps, 'children'> & {
   label: string;

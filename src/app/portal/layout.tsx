@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import PrivateShell from '@/components/private/PrivateShell';
 import { getPrivateShellContext } from '@/server/private-shell';
 import { readCommercialV2Flags } from '@/server/flags/commercial-v2';
+import '@/components/private/ui/private-ui.css';
 
 const PORTAL_NAVIGATION = [{ key: 'portal', href: '/portal', label: 'Mis expedientes', capability: 'requestsRead' }] as const;
 

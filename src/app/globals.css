@@ -878,6 +878,9 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .staff-files__loading i:nth-child(2) { animation-delay: 120ms; }
 .staff-files__loading i:nth-child(3) { animation-delay: 240ms; }
 .staff-files__note { margin: 14px 0 0; color: var(--staff-muted); font-size: 10px; line-height: 1.5; }
+.staff-files__more { display: block; min-height: 38px; margin: 18px auto 0; border: 1px solid rgba(27,82,102,.36); padding: 0 14px; background: transparent; color: var(--staff-water); cursor: pointer; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.staff-files__more:hover:not(:disabled), .staff-files__more:focus-visible { border-color: var(--staff-water); background: var(--staff-water); color: #fff; }
+.staff-files__more:disabled { cursor: wait; opacity: .55; }
 .staff-messaging { padding: 28px 0 34px; border-bottom: 1px solid var(--staff-line); }
 .staff-messaging__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .staff-messaging__head h3 { margin: 0 0 6px; color: var(--staff-deep); font-family: var(--font-display); font-size: clamp(25px, 3vw, 34px); font-weight: 500; letter-spacing: -.045em; line-height: .95; }
@@ -1358,6 +1361,7 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .client-files__progress { margin: 24px 0 0; border-left: 2px solid var(--copper); padding: 10px 13px; background: #f2eee5; color: var(--deep); font-size: 12px; }
 .client-files__error { display: flex; align-items: center; justify-content: space-between; gap: 17px; margin-top: 25px; border-left: 2px solid #9b4a3f; padding: 10px 13px; background: rgba(155,74,63,.08); color: #7d3029; font-size: 12px; line-height: 1.5; }
 .client-files__error p { margin: 0; }
+.client-files__error-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .client-files__error button, .client-file__action, .client-file__cancel { min-height: 34px; border: 1px solid rgba(24,37,42,.28); padding: 0 11px; background: transparent; color: var(--water); cursor: pointer; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; transition: background 180ms ease, border-color 180ms ease, color 180ms ease; }
 .client-files__error button:hover, .client-files__error button:focus-visible, .client-file__action:hover:not(:disabled), .client-file__action:focus-visible, .client-file__cancel:hover:not(:disabled), .client-file__cancel:focus-visible { border-color: var(--water); background: var(--water); color: #fff; }
 .client-files__list { display: grid; gap: 0; margin: 26px 0 0; padding: 0; list-style: none; border-top: 1px solid rgba(24,37,42,.15); }
@@ -1380,6 +1384,9 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .client-files__loading { display: grid; gap: 12px; margin-top: 26px; padding: 3px 0 7px; }
 .client-files__loading i { display: block; height: 13px; background: linear-gradient(90deg, rgba(24,37,42,.08), rgba(24,37,42,.16), rgba(24,37,42,.08)); background-size: 200% 100%; animation: client-shimmer 1.5s ease-in-out infinite; }
 .client-files__loading i:last-child { width: 68%; }
+.client-files__more { display: block; min-height: 38px; margin: 18px auto 0; border: 1px solid rgba(24,37,42,.28); padding: 0 14px; background: transparent; color: var(--water); cursor: pointer; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.client-files__more:hover:not(:disabled), .client-files__more:focus-visible { border-color: var(--water); background: var(--water); color: #fff; }
+.client-files__more:disabled { cursor: wait; opacity: .55; }
 .client-files__note { margin: 15px 0 0; color: #69736f; font-size: 10px; line-height: 1.5; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .client-skeleton { display: grid; gap: 11px; padding: 23px; }
@@ -1498,6 +1505,9 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
   .client-accept-dialog__actions { align-items: stretch; flex-direction: column-reverse; }
   .client-files__head { align-items: flex-start; flex-direction: column; }
   .client-files__add { width: 100%; }
+  .client-files__error { align-items: stretch; flex-direction: column; }
+  .client-files__error-actions { justify-content: stretch; }
+  .client-files__error-actions button { flex: 1 1 150px; }
   .client-file { grid-template-columns: 38px minmax(0, 1fr); }
   .client-file__status { grid-column: 2; justify-self: start; text-align: left; }
   .client-file__actions { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
@@ -1528,7 +1538,7 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
   .client-skeleton i, .client-detail-loading i { animation: none; }
   .client-messaging__loading i { animation: none; }
   .client-files__loading i { animation: none; }
-  .client-button, .client-request-row, .client-messaging__send, .client-messaging__more, .client-messaging__retry, .client-files__add, .client-files__error button, .client-file__action, .client-file__cancel { transition: none; }
+  .client-button, .client-request-row, .client-messaging__send, .client-messaging__more, .client-messaging__retry, .client-files__add, .client-files__more, .client-files__error button, .client-file__action, .client-file__cancel { transition: none; }
 }
 
 /* Light client surfaces keep the editorial copper, but meet WCAG AA contrast. */
