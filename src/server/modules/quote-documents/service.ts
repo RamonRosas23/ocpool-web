@@ -7,6 +7,7 @@ import { AppError } from '@/server/http/errors';
 import { canGenerateQuotePdf } from '@/server/modules/quote-documents/domain';
 import { renderQuotePdf, type QuotePdfSnapshot, type RenderedQuotePdf } from '@/server/modules/quote-documents/pdf-renderer';
 import { getPrivateStorage, type PrivateStorage } from '@/server/modules/private-files/storage';
+import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 
 const PDF_CONTENT_TYPE = 'application/pdf';
 const PDF_FAILURE_CODE = 'PDF_GENERATION_FAILED';
@@ -94,11 +95,13 @@ async function outbox(transaction: Prisma.TransactionClient, eventType: string, 
   });
 }
 
-async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<{ id: string; quoteId: string; status: string } | null> {
-  const rows = await transaction.$queryRaw<Array<{ id: string; quoteId: string; status: string }>>(Prisma.sql`
-    SELECT "id", "quoteId", "status"
-    FROM "quote_versions"
-    WHERE "id" = ${quoteVersionId}
+async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<{ id: string; quoteId: string; status: string; currentAssigneeId: string | null } | null> {
+  const rows = await transaction.$queryRaw<Array<{ id: string; quoteId: string; status: string; currentAssigneeId: string | null }>>(Prisma.sql`
+    SELECT qv."id", qv."quoteId", qv."status", qr."currentAssigneeId"
+    FROM "quote_versions" qv
+    INNER JOIN "quotes" q ON q."id" = qv."quoteId"
+    INNER JOIN "quote_requests" qr ON qr."id" = q."quoteRequestId"
+    WHERE qv."id" = ${quoteVersionId}
     FOR UPDATE
   `);
   return rows[0] ?? null;
@@ -169,6 +172,7 @@ export async function generateQuotePdf(actor: Actor | null, quoteVersionIdInput:
     const prepared = await prisma.$transaction(async (transaction) => {
       const lockedVersion = await lockQuoteVersion(transaction, quoteVersionId);
       if (!lockedVersion) throw new AppError('NOT_FOUND', 'La versión de cotización no existe.', 404);
+      requireStaffRequestReadScope(actor, lockedVersion.currentAssigneeId);
       if (!canGenerateQuotePdf(lockedVersion.status)) throw new AppError('CONFLICT', 'La versión todavía no puede convertirse en PDF comercial.', 409);
 
       const existing = await transaction.generatedDocument.findUnique({

@@ -280,7 +280,15 @@ describe('identity and RBAC foundation', () => {
     ];
     await prisma.authRateLimit.deleteMany({
       where: {
-        scope: { in: ['employee-login-email', 'employee-login-ip'] },
+        scope: {
+          in: [
+            'employee-login-email',
+            'employee-login-ip',
+            'password-recovery-email',
+            'password-recovery-ip',
+            'password-recovery-consume-ip',
+          ],
+        },
         keyHash: { in: [fingerprintToken(employeeEmail), fingerprintToken(adminEmail), ...authIpAddresses.map((ip) => fingerprintToken(ip))] },
       },
     });
@@ -363,7 +371,16 @@ describe('identity and RBAC foundation', () => {
     await prisma.client.delete({ where: { id: client.id } });
     await prisma.authRateLimit.deleteMany({
       where: {
-        scope: { in: ['auth-global', 'employee-login-email', 'employee-login-ip'] },
+        scope: {
+          in: [
+            'auth-global',
+            'employee-login-email',
+            'employee-login-ip',
+            'password-recovery-email',
+            'password-recovery-ip',
+            'password-recovery-consume-ip',
+          ],
+        },
         keyHash: { in: [fingerprintToken(employeeEmail), fingerprintToken(adminEmail), fingerprintToken(customerEmail), ...authIpAddresses.map((ip) => fingerprintToken(ip))] },
       },
     });

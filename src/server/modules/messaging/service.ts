@@ -6,6 +6,7 @@ import { checkAuthRateLimit } from '@/server/auth/rate-limit';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 import {
   assertConversationOpen,
   normalizeIdempotencyKey,
@@ -43,7 +44,10 @@ type LockedRequest = {
   id: string;
   folio: string;
   clientId: string;
+  currentAssigneeId: string | null;
 };
+
+export type StaffMessageTransactionRequest = LockedRequest;
 
 type SerializedSender = {
   id?: string;
@@ -149,7 +153,7 @@ async function lockQuoteRequest(
   clientId?: string,
 ): Promise<LockedRequest | null> {
   const rows = await transaction.$queryRaw<LockedRequest[]>(Prisma.sql`
-    SELECT "id", "folio", "clientId"
+    SELECT "id", "folio", "clientId", "currentAssigneeId"
     FROM "quote_requests"
     WHERE "id" = ${quoteRequestId}
       ${clientId ? Prisma.sql`AND "clientId" = ${clientId}` : Prisma.empty}
@@ -219,7 +223,7 @@ async function writeMessage(
     },
     include: { sender: { select: { id: true, displayName: true, type: true } } },
   });
-  if (existing) return { ...serializeMessage(existing, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE') };
+  if (existing) return { ...serializeMessage(existing, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE'), idempotent: true };
 
   const message = await transaction.conversationMessage.create({
     data: {
@@ -258,7 +262,7 @@ async function writeMessage(
       },
     },
   });
-  return { ...serializeMessage(message, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE') };
+  return { ...serializeMessage(message, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE'), idempotent: false };
 }
 
 function serializeMessage(message: {
@@ -301,7 +305,11 @@ async function sendMessage(
   return prisma.$transaction(async (transaction) => {
     const request = await lockQuoteRequest(transaction, requestId, scopeClientId);
     if (!request) genericNotFound();
-    return writeMessage(transaction, actor, request, visibility, input, now);
+    if (actor.type === 'EMPLOYEE') requireStaffRequestReadScope(actor, request.currentAssigneeId);
+    const result = await writeMessage(transaction, actor, request, visibility, input, now);
+    const publicResult = { ...result };
+    Reflect.deleteProperty(publicResult, 'idempotent');
+    return publicResult;
   });
 }
 
@@ -324,6 +332,19 @@ export async function sendStaffMessage(
   requireStaffPermission(actor, 'requests.read');
   requirePermission(actor, 'messaging.send');
   return sendMessage(actor, quoteRequestId, input, 'CUSTOMER', dependencies);
+}
+
+export async function sendStaffMessageInTransaction(
+  transaction: Prisma.TransactionClient,
+  actor: Actor,
+  request: StaffMessageTransactionRequest,
+  input: SendMessageInput,
+  now: Date,
+) {
+  requireStaffPermission(actor, 'requests.read');
+  requirePermission(actor, 'messaging.send');
+  requireStaffRequestReadScope(actor, request.currentAssigneeId);
+  return writeMessage(transaction, actor, request, 'CUSTOMER', input, now);
 }
 
 export async function createInternalNote(
@@ -354,6 +375,7 @@ export async function listConversationMessages(
   const cursor = decodeCursor(filters.cursor);
   const request = await lockQuoteRequestForRead(prisma, requestId, scopeClientId);
   if (!request) genericNotFound();
+  if (actor.type === 'EMPLOYEE') requireStaffRequestReadScope(actor, request.currentAssigneeId);
 
   const conversation = await prisma.conversation.findUnique({ where: { quoteRequestId: request.id } });
   if (!conversation) return { conversation: null, items: [] as SerializedMessage[], nextCursor: null };
@@ -385,7 +407,7 @@ export async function listConversationMessages(
 
 async function lockQuoteRequestForRead(prisma: DbClient, quoteRequestId: string, clientId?: string): Promise<LockedRequest | null> {
   const rows = await prisma.$queryRaw<LockedRequest[]>(Prisma.sql`
-    SELECT "id", "folio", "clientId"
+    SELECT "id", "folio", "clientId", "currentAssigneeId"
     FROM "quote_requests"
     WHERE "id" = ${quoteRequestId}
       ${clientId ? Prisma.sql`AND "clientId" = ${clientId}` : Prisma.empty}
@@ -406,6 +428,7 @@ export async function closeConversation(
   return prisma.$transaction(async (transaction) => {
     const request = await lockQuoteRequest(transaction, requestId);
     if (!request) genericNotFound();
+    requireStaffRequestReadScope(actor, request.currentAssigneeId);
     const conversation = await transaction.conversation.findUnique({ where: { quoteRequestId: request.id } });
     if (!conversation) genericNotFound();
     if (conversation.status === 'CLOSED') {
@@ -450,6 +473,7 @@ export async function reopenConversation(
   return prisma.$transaction(async (transaction) => {
     const request = await lockQuoteRequest(transaction, requestId);
     if (!request) genericNotFound();
+    requireStaffRequestReadScope(actor, request.currentAssigneeId);
     const conversation = await transaction.conversation.findUnique({ where: { quoteRequestId: request.id } });
     if (!conversation) genericNotFound();
     if (conversation.status === 'OPEN') {

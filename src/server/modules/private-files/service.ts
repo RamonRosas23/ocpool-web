@@ -6,6 +6,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 import { normalizeIdempotencyKey } from '@/server/modules/messaging/domain';
 import {
   assertUploadMetadata,
@@ -44,6 +45,7 @@ export type ReservePrivateFileInput = Readonly<{
 }>;
 
 export type PrivateFileListFilters = Readonly<{
+  cursor?: string;
   limit?: number;
 }>;
 
@@ -51,6 +53,7 @@ type LockedRequest = {
   id: string;
   folio: string;
   clientId: string;
+  currentAssigneeId: string | null;
 };
 
 type AttachmentWithObject = Prisma.FileAttachmentGetPayload<{ include: { storageObject: true } }>;
@@ -95,9 +98,26 @@ function normalizeLimit(value: number | undefined): number {
   return limit;
 }
 
+function encodeCursor(file: { createdAt: Date; id: string }): string {
+  return Buffer.from(JSON.stringify({ createdAt: file.createdAt.toISOString(), id: file.id }), 'utf8').toString('base64url');
+}
+
+function decodeCursor(value: string | undefined): { createdAt: Date; id: string } | undefined {
+  if (!value) return undefined;
+  try {
+    const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as { createdAt?: unknown; id?: unknown };
+    if (typeof decoded.createdAt !== 'string' || typeof decoded.id !== 'string' || !UUID_PATTERN.test(decoded.id)) throw new Error('Invalid cursor.');
+    const createdAt = new Date(decoded.createdAt);
+    if (Number.isNaN(createdAt.getTime())) throw new Error('Invalid cursor.');
+    return { createdAt, id: decoded.id };
+  } catch {
+    throw new AppError('VALIDATION_ERROR', 'El cursor no es válido.', 400);
+  }
+}
+
 async function lockQuoteRequest(transaction: Prisma.TransactionClient, quoteRequestId: string, clientId?: string): Promise<LockedRequest | null> {
   const rows = await transaction.$queryRaw<LockedRequest[]>(Prisma.sql`
-    SELECT "id", "folio", "clientId"
+    SELECT "id", "folio", "clientId", "currentAssigneeId"
     FROM "quote_requests"
     WHERE "id" = ${quoteRequestId}
       ${clientId ? Prisma.sql`AND "clientId" = ${clientId}` : Prisma.empty}
@@ -163,6 +183,7 @@ export async function reservePrivateFile(actor: Actor, input: ReservePrivateFile
   const attachment = await prisma.$transaction(async (transaction) => {
     const request = await lockQuoteRequest(transaction, input.quoteRequestId, clientId);
     if (!request) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
+    if (actor.type === 'EMPLOYEE') requireStaffRequestReadScope(actor, request.currentAssigneeId);
     const existing = await transaction.fileAttachment.findUnique({
       where: { uploadedById_reservationKeyHash: { uploadedById: actor.userId, reservationKeyHash: normalized.idempotencyKeyHash } },
       include: { storageObject: true },
@@ -228,6 +249,15 @@ export async function completePrivateFile(actor: Actor, quoteRequestId: string, 
   const prisma = dependencies.prisma ?? getPrisma();
   const storage = dependencies.storage ?? getPrivateStorage();
   const now = dependencies.now ?? new Date();
+  const scopedRequest = await prisma.quoteRequest.findFirst({
+    where: {
+      id: quoteRequestId,
+      ...(clientId ? { clientId } : {}),
+      ...(actor.type === 'EMPLOYEE' ? staffRequestReadScopeWhere(actor) : {}),
+    },
+    select: { id: true },
+  });
+  if (!scopedRequest) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
   const pending = await prisma.fileAttachment.findFirst({ where: { id: fileId, quoteRequestId, ...(clientId ? { clientId } : {}), deletedAt: null }, include: { storageObject: true } });
   if (!pending) throw new AppError('NOT_FOUND', 'El archivo no existe.', 404);
   if (pending.status === 'AVAILABLE') return { file: serializeFile(pending, actor.type === 'EMPLOYEE') };
@@ -256,6 +286,7 @@ export async function completePrivateFile(actor: Actor, quoteRequestId: string, 
   const result = await prisma.$transaction(async (transaction) => {
     const request = await lockQuoteRequest(transaction, quoteRequestId, clientId);
     if (!request) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
+    if (actor.type === 'EMPLOYEE') requireStaffRequestReadScope(actor, request.currentAssigneeId);
     const current = await transaction.fileAttachment.findUnique({ where: { id: pending.id }, include: { storageObject: true } });
     if (!current) throw new AppError('NOT_FOUND', 'El archivo no existe.', 404);
     if (current.status === 'AVAILABLE') return current;
@@ -273,20 +304,46 @@ export async function completePrivateFile(actor: Actor, quoteRequestId: string, 
   return { file: serializeFile(result, actor.type === 'EMPLOYEE') };
 }
 
-export async function listPrivateFiles(actor: Actor, quoteRequestId: string, filters: PrivateFileListFilters = {}, dependencies: PrivateFilesServiceDependencies = {}) {
+export async function listPrivateFilesPage(actor: Actor, quoteRequestId: string, filters: PrivateFileListFilters = {}, dependencies: PrivateFilesServiceDependencies = {}) {
   const clientId = requireActorScope(actor, 'files.read', quoteRequestId);
   const prisma = dependencies.prisma ?? getPrisma();
   const limit = normalizeLimit(filters.limit);
-  const request = await prisma.quoteRequest.findFirst({ where: { id: quoteRequestId, ...(clientId ? { clientId } : {}) }, select: { id: true } });
+  const cursor = decodeCursor(filters.cursor);
+  const request = await prisma.quoteRequest.findFirst({
+    where: {
+      id: quoteRequestId,
+      ...(clientId ? { clientId } : {}),
+      ...(actor.type === 'EMPLOYEE' ? staffRequestReadScopeWhere(actor) : {}),
+    },
+    select: { id: true },
+  });
   if (!request) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
   const includeInternal = actor.type === 'EMPLOYEE' && actor.permissionKeys.has('files.internal.read');
   const files = await prisma.fileAttachment.findMany({
-    where: { quoteRequestId, ...(clientId ? { clientId } : {}), status: { not: 'DELETED' }, ...(includeInternal ? {} : { visibility: 'CUSTOMER' }), },
+    where: {
+      quoteRequestId,
+      ...(clientId ? { clientId } : {}),
+      status: { not: 'DELETED' },
+      ...(includeInternal ? {} : { visibility: 'CUSTOMER' }),
+      ...(cursor ? {
+        OR: [
+          { createdAt: { gt: cursor.createdAt } },
+          { createdAt: cursor.createdAt, id: { gt: cursor.id } },
+        ],
+      } : {}),
+    },
     include: { storageObject: true },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    take: limit,
+    take: limit + 1,
   });
-  return files.map((file) => serializeFile(file, actor.type === 'EMPLOYEE'));
+  const hasNext = files.length > limit;
+  const items = (hasNext ? files.slice(0, limit) : files).map((file) => serializeFile(file, actor.type === 'EMPLOYEE'));
+  return { items, nextCursor: hasNext ? encodeCursor(files[limit - 1]) : null };
+}
+
+export async function listPrivateFiles(actor: Actor, quoteRequestId: string, filters: PrivateFileListFilters = {}, dependencies: PrivateFilesServiceDependencies = {}) {
+  const page = await listPrivateFilesPage(actor, quoteRequestId, filters, dependencies);
+  return page.items;
 }
 
 export async function getPrivateFileDownload(actor: Actor, quoteRequestId: string, fileId: string, dependencies: PrivateFilesServiceDependencies = {}) {
@@ -294,6 +351,15 @@ export async function getPrivateFileDownload(actor: Actor, quoteRequestId: strin
   requireUuid(fileId, 'El archivo no es válido.');
   const prisma = dependencies.prisma ?? getPrisma();
   const storage = dependencies.storage ?? getPrivateStorage();
+  const scopedRequest = await prisma.quoteRequest.findFirst({
+    where: {
+      id: quoteRequestId,
+      ...(clientId ? { clientId } : {}),
+      ...(actor.type === 'EMPLOYEE' ? staffRequestReadScopeWhere(actor) : {}),
+    },
+    select: { id: true },
+  });
+  if (!scopedRequest) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
   const file = await prisma.fileAttachment.findFirst({ where: { id: fileId, quoteRequestId, ...(clientId ? { clientId } : {}), status: 'AVAILABLE', deletedAt: null, storageObject: { is: { scanStatus: 'PASSED', deletedAt: null } }, ...(actor.type === 'EMPLOYEE' && actor.permissionKeys.has('files.internal.read') ? {} : { visibility: 'CUSTOMER' }) }, include: { storageObject: true } });
   if (!file) throw new AppError('NOT_FOUND', 'El archivo no existe.', 404);
   const downloadUrl = await storage.createDownloadUrl({ key: file.storageObject.storageKey, expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS });
@@ -310,6 +376,7 @@ export async function deletePrivateFile(actor: Actor, quoteRequestId: string, fi
   const deleted = await prisma.$transaction(async (transaction) => {
     const request = await lockQuoteRequest(transaction, quoteRequestId, clientId);
     if (!request) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
+    if (actor.type === 'EMPLOYEE') requireStaffRequestReadScope(actor, request.currentAssigneeId);
     const current = await transaction.fileAttachment.findFirst({ where: { id: fileId, quoteRequestId, ...(clientId ? { clientId } : {}), deletedAt: null }, include: { storageObject: true } });
     if (!current) throw new AppError('NOT_FOUND', 'El archivo no existe.', 404);
     const canManage = actor.type === 'EMPLOYEE' && actor.permissionKeys.has('files.manage');

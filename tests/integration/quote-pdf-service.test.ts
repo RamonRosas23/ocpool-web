@@ -39,6 +39,10 @@ function salesActor(userId: string): Actor {
   return { userId, type: 'EMPLOYEE', clientId: null, permissionKeys: permissionKeysForRoles(['sales']), mfaVerified: true };
 }
 
+function managerActor(userId: string): Actor {
+  return { userId, type: 'EMPLOYEE', clientId: null, permissionKeys: permissionKeysForRoles(['manager']), mfaVerified: true };
+}
+
 describe('quote PDF generation service', () => {
   it('renders from the immutable snapshot, verifies private storage and replays idempotently', async () => {
     if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
@@ -104,6 +108,64 @@ describe('quote PDF generation service', () => {
       await prisma.clientContact.delete({ where: { id: request.contactId } });
       await prisma.client.delete({ where: { id: request.clientId } });
       await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.delete({ where: { id: item.id } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
+
+  it('scopes PDF generation to the request\'s assigned responsible unless requests.read.global is granted', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+
+    const prisma = getPrisma();
+    const storage = new MemoryGeneratedStorage();
+    const suffix = `${Date.now()}-scope`;
+    const now = new Date('2026-09-08T14:10:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-pdf-scope-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `PDF scope ${suffix}`, email: `pdf-scope-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Chihuahua', description: 'PDF scope fixture', consentAt: now },
+    }, { prisma, now });
+    const [rivalUser, outsiderUser] = await Promise.all([
+      prisma.user.create({ data: { email: `pdf-scope-rival-${suffix}@example.test`, emailNormalized: `pdf-scope-rival-${suffix}@example.test`, displayName: 'PDF scope rival', type: 'EMPLOYEE', status: 'ACTIVE' } }),
+      prisma.user.create({ data: { email: `pdf-scope-outsider-${suffix}@example.test`, emailNormalized: `pdf-scope-outsider-${suffix}@example.test`, displayName: 'PDF scope outsider', type: 'EMPLOYEE', status: 'ACTIVE' } }),
+    ]);
+    const codeSuffix = Date.now().toString();
+    const category = await prisma.catalogCategory.create({ data: { code: `PDF-SCOPE-${codeSuffix}`, name: 'PDF scope fixture' } });
+    const item = await prisma.catalogItem.create({ data: { code: `PDF-SCOPE-ITEM-${codeSuffix}`, name: 'PDF scope item', unit: 'pieza', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `PDF-SCOPE-PRICE-${codeSuffix}`, name: 'PDF scope prices', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 100_000n, validFrom: now } });
+    const rival = salesActor(rivalUser.id);
+    const outsider = salesActor(outsiderUser.id);
+    const globalOutsider = managerActor(outsiderUser.id);
+    let quoteId: string | null = null;
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION', currentAssigneeId: rivalUser.id } });
+      const created = await createQuoteVersion(rival, { quoteRequestId: request.quoteRequestId, priceListId: priceList.id, lines: [{ catalogItemId: item.id, quantity: '1' }] }, { prisma, now });
+      quoteId = created.quoteId;
+      await transitionQuoteVersion(rival, created.versionId, 'EN_REVISION', { prisma, now });
+      await transitionQuoteVersion(rival, created.versionId, 'ENVIADA', { prisma, now });
+
+      await expect(generateQuotePdf(outsider, created.versionId, { prisma, storage, now })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+      const generated = await generateQuotePdf(globalOutsider, created.versionId, { prisma, storage, now });
+      expect(generated.status).toBe('READY');
+    } finally {
+      const versions = quoteId ? await prisma.quoteVersion.findMany({ where: { quoteId }, select: { id: true } }) : [];
+      const documentIds = versions.length ? (await prisma.generatedDocument.findMany({ where: { quoteVersionId: { in: versions.map(({ id }) => id) } }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } })) : [];
+      for (const document of documentIds) if (document.storageObject?.storageKey) await storage.delete(document.storageObject.storageKey);
+      if (quoteId) await prisma.quoteAcceptance.deleteMany({ where: { quoteId } });
+      await prisma.generatedDocument.deleteMany({ where: { id: { in: documentIds.map(({ id }) => id) } } });
+      await prisma.storageObject.deleteMany({ where: { id: { in: documentIds.flatMap(({ storageObjectId }) => storageObjectId ? [storageObjectId] : []) } } });
+      if (quoteId) await prisma.quote.delete({ where: { id: quoteId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [request.quoteRequestId, ...(quoteId ? [quoteId] : []), ...documentIds.map(({ id }) => id)] } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [request.quoteRequestId, ...(quoteId ? [quoteId] : []), ...documentIds.map(({ id }) => id)] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.deleteMany({ where: { id: { in: [rivalUser.id, outsiderUser.id] } } });
       await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
       await prisma.priceList.delete({ where: { id: priceList.id } });
       await prisma.catalogItem.delete({ where: { id: item.id } });

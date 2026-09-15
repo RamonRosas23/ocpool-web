@@ -5,6 +5,7 @@ import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { getPrivateStorage, type PrivateStorage } from '@/server/modules/private-files/storage';
 import { CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES, isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
+import { staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 
 const PDF_CONTENT_TYPE = 'application/pdf';
 const DOWNLOAD_URL_EXPIRES_SECONDS = 60;
@@ -109,7 +110,9 @@ async function getDownload(
     where: {
       quoteId: where.quoteId,
       id: where.quoteVersionId,
-      ...(where.clientId ? { quote: { clientId: where.clientId } } : {}),
+      ...(where.clientId
+        ? { quote: { clientId: where.clientId } }
+        : { quote: { quoteRequest: staffRequestReadScopeWhere(actor) } }),
     },
     select: {
       id: true,
@@ -159,7 +162,10 @@ export async function getQuotePdfDownloadForQuote(actor: Actor, quoteIdInput: st
   const clientId = actor.type === 'CUSTOMER' ? requireCustomerAccess(actor) : (requireStaffAccess(actor), undefined);
   const prisma = dependencies.prisma ?? getPrisma();
   const quote = await prisma.quote.findFirst({
-    where: { id: quoteId, ...(clientId ? { clientId } : {}) },
+    where: {
+      id: quoteId,
+      ...(clientId ? { clientId } : { quoteRequest: staffRequestReadScopeWhere(actor) }),
+    },
     select: {
       currentVersionId: true,
       publishedVersionId: true,
@@ -183,7 +189,10 @@ export async function getQuotePdfDownloadForQuote(actor: Actor, quoteIdInput: st
 export async function getQuotePdfDownloadForVersion(actor: Actor, quoteVersionIdInput: string, dependencies: QuotePdfDownloadDependencies = {}): Promise<QuotePdfDownloadResult> {
   const quoteVersionId = requireUuid(quoteVersionIdInput);
   const prisma = dependencies.prisma ?? getPrisma();
-  const quote = await prisma.quoteVersion.findUnique({ where: { id: quoteVersionId }, select: { quoteId: true } });
+  const quote = await prisma.quoteVersion.findFirst({
+    where: { id: quoteVersionId, quote: { quoteRequest: staffRequestReadScopeWhere(actor) } },
+    select: { quoteId: true },
+  });
   if (!quote) throw new AppError('NOT_FOUND', 'La versión de cotización no existe.', 404);
   const clientId = actor.type === 'CUSTOMER' ? requireCustomerAccess(actor) : (requireStaffAccess(actor), undefined);
   return getDownload(actor, { quoteId: quote.quoteId, quoteVersionId, ...(clientId ? { clientId } : {}) }, dependencies);
@@ -198,8 +207,8 @@ export async function getQuoteDocumentStatusForVersion(actor: Actor, quoteVersio
   requireStaffDocumentStatusAccess(actor);
   const quoteVersionId = requireUuid(quoteVersionIdInput);
   const prisma = dependencies.prisma ?? getPrisma();
-  const version = await prisma.quoteVersion.findUnique({
-    where: { id: quoteVersionId },
+  const version = await prisma.quoteVersion.findFirst({
+    where: { id: quoteVersionId, quote: { quoteRequest: staffRequestReadScopeWhere(actor) } },
     select: {
       id: true,
       quoteId: true,

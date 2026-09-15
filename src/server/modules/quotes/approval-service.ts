@@ -5,6 +5,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 
 export const QUOTE_APPROVAL_TYPES = ['DISCOUNT', 'PRICE_OVERRIDE'] as const;
 export type QuoteApprovalType = (typeof QUOTE_APPROVAL_TYPES)[number];
@@ -212,8 +213,8 @@ export async function requestQuoteApproval(
   }
 
   return prisma.$transaction(async (transaction) => {
-    const locked = await transaction.$queryRaw<Array<{ id: string; quoteId: string; status: string; discountTotalMinor: bigint; quoteRequestId: string; folio: string }>>(Prisma.sql`
-      SELECT qv."id", qv."quoteId", qv."status", qv."discountTotalMinor", q."quoteRequestId", qr."folio"
+    const locked = await transaction.$queryRaw<Array<{ id: string; quoteId: string; status: string; discountTotalMinor: bigint; quoteRequestId: string; folio: string; currentAssigneeId: string | null }>>(Prisma.sql`
+      SELECT qv."id", qv."quoteId", qv."status", qv."discountTotalMinor", q."quoteRequestId", qr."folio", qr."currentAssigneeId"
       FROM "quote_versions" qv
       INNER JOIN "quotes" q ON q."id" = qv."quoteId"
       INNER JOIN "quote_requests" qr ON qr."id" = q."quoteRequestId"
@@ -222,6 +223,7 @@ export async function requestQuoteApproval(
     `);
     const row = locked[0];
     if (!row) throw new AppError('NOT_FOUND', 'La versión no existe.', 404);
+    requireStaffRequestReadScope(actor, row.currentAssigneeId);
     if (row.status !== 'EN_REVISION') conflict('La cotización debe estar en revisión antes de solicitar una aprobación.');
     if (normalized.type === 'DISCOUNT' && row.discountTotalMinor <= 0n) {
       validation('La versión no contiene un descuento que requiera aprobación.');
@@ -297,14 +299,18 @@ export async function decideQuoteApproval(
   const now = dependencies.now ?? new Date();
 
   return prisma.$transaction(async (transaction) => {
-    const locked = await transaction.$queryRaw<Array<{ id: string; quoteId: string; quoteVersionId: string; status: string; requestedById: string; digest: string; type: string; expiresAt: Date | null }>>(Prisma.sql`
-      SELECT "id", "quoteId", "quoteVersionId", "status", "requestedById", "digest", "type", "expiresAt"
-      FROM "quote_approvals"
-      WHERE "id" = ${normalizedId}
+    const locked = await transaction.$queryRaw<Array<{ id: string; quoteId: string; quoteVersionId: string; status: string; requestedById: string; digest: string; type: string; expiresAt: Date | null; currentAssigneeId: string | null }>>(Prisma.sql`
+      SELECT qa."id", qa."quoteId", qa."quoteVersionId", qa."status", qa."requestedById", qa."digest", qa."type", qa."expiresAt", qr."currentAssigneeId"
+      FROM "quote_approvals" qa
+      INNER JOIN "quote_versions" qv ON qv."id" = qa."quoteVersionId"
+      INNER JOIN "quotes" q ON q."id" = qv."quoteId"
+      INNER JOIN "quote_requests" qr ON qr."id" = q."quoteRequestId"
+      WHERE qa."id" = ${normalizedId}
       FOR UPDATE
     `);
     const row = locked[0];
     if (!row) throw new AppError('NOT_FOUND', 'La aprobación no existe.', 404);
+    requireStaffRequestReadScope(actor, row.currentAssigneeId);
     if (row.status !== 'REQUESTED') conflict('La aprobación ya fue resuelta.');
     if (row.expiresAt && row.expiresAt <= now) conflict('La aprobación ya expiró.');
     if (row.requestedById === actor.userId) conflict('La aprobación debe resolverla otra persona.');
@@ -352,6 +358,11 @@ export async function listQuoteApprovals(
   requireEmployeePermission(actor, 'quotes.read');
   const versionId = requireUuid(quoteVersionId, 'La versión no es válida.');
   const prisma = dependencies.prisma ?? getPrisma();
+  const version = await prisma.quoteVersion.findFirst({
+    where: { id: versionId, quote: { quoteRequest: staffRequestReadScopeWhere(actor) } },
+    select: { id: true },
+  });
+  if (!version) throw new AppError('NOT_FOUND', 'La versión no existe.', 404);
   const rows = await prisma.quoteApproval.findMany({ where: { quoteVersionId: versionId }, orderBy: { requestedAt: 'desc' } });
   return rows as QuoteApprovalResult[];
 }

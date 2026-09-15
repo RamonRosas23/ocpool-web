@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@/generated/prisma/client';
+import { readCommercialV2Flags, type CommercialV2Flags } from '@/server/flags/commercial-v2';
 import type { NotificationCancellationReason } from '@/server/modules/notifications/dispatcher';
 import type { NotificationEventInput, NotificationMappingContext, NotificationRecipientContext } from '@/server/modules/notifications/templates';
 
@@ -43,12 +44,17 @@ function customerContext(recipient: NotificationRecipientContext, actionPath = '
     : { recipient, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' };
 }
 
-function staffContext(recipient: NotificationRecipientContext): NotificationMappingContext {
-  return { recipient, actionPath: '/staff/requests' };
+export function requestWorkspaceNotificationPath(requestId: string, tab: 'summary' | 'quote' | 'conversation' | 'files' | 'activity', flags: CommercialV2Flags = readCommercialV2Flags()): string {
+  if (flags.commercialWorkspaceV2 && flags.requestWorkspaceV2) return `/staff/requests/${encodeURIComponent(requestId)}?tab=${tab}`;
+  return '/staff/requests';
 }
 
-function staffApprovalContext(recipient: NotificationRecipientContext, quoteRequestId: string): NotificationMappingContext {
-  return { recipient, actionPath: `/staff/quotes?request=${encodeURIComponent(quoteRequestId)}` };
+function staffContext(recipient: NotificationRecipientContext, quoteRequestId: string, tab: 'summary' | 'quote' | 'conversation' | 'files' | 'activity' = 'summary', flags: CommercialV2Flags = readCommercialV2Flags()): NotificationMappingContext {
+  return { recipient, actionPath: requestWorkspaceNotificationPath(quoteRequestId, tab, flags) };
+}
+
+function staffApprovalContext(recipient: NotificationRecipientContext, quoteRequestId: string, flags: CommercialV2Flags = readCommercialV2Flags()): NotificationMappingContext {
+  return { recipient, actionPath: flags.commercialWorkspaceV2 && flags.requestWorkspaceV2 ? requestWorkspaceNotificationPath(quoteRequestId, 'quote', flags) : `/staff/quotes?request=${encodeURIComponent(quoteRequestId)}` };
 }
 
 function totalLabel(totalMinor: bigint, currencyCode: string): string {
@@ -79,7 +85,7 @@ async function resolveAuthRecipient(prisma: DbClient, event: NotificationEventIn
   return { kind: 'RECIPIENTS', contexts: [{ recipient }] };
 }
 
-export async function resolveNotificationEvent(prisma: DbClient, event: NotificationEventInput): Promise<NotificationEventResolution> {
+export async function resolveNotificationEvent(prisma: DbClient, event: NotificationEventInput, flags: CommercialV2Flags = readCommercialV2Flags()): Promise<NotificationEventResolution> {
   const payload = recordValue(event.payload);
   if (!payload) return cancellation('INVALID_PAYLOAD');
 
@@ -99,7 +105,7 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       const request = await prisma.quoteRequest.findUnique({ where: { id: event.aggregateId }, include: { currentAssignee: true } });
       if (!request || stringValue(payload, 'quoteRequestId') !== request.id || stringValue(payload, 'folio') !== request.folio || !isUuid(assignedToId) || request.currentAssigneeId !== assignedToId) return cancellation('INVALID_PAYLOAD');
       const recipient = activeStaff(request.currentAssignee);
-      return recipient ? { kind: 'RECIPIENTS', contexts: [staffContext(recipient)] } : cancellation('NO_RECIPIENT');
+      return recipient ? { kind: 'RECIPIENTS', contexts: [staffContext(recipient, request.id, 'summary', flags)] } : cancellation('NO_RECIPIENT');
     }
     case 'QUOTE.VERSION_STATUS_CHANGED': {
       if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
@@ -129,7 +135,7 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
         select: { id: true, email: true, displayName: true, type: true, status: true },
         orderBy: { id: 'asc' },
       });
-      const contexts = users.map(activeStaff).filter((recipient): recipient is NotificationRecipientContext => Boolean(recipient)).map((recipient) => staffApprovalContext(recipient, quote.quoteRequestId));
+      const contexts = users.map(activeStaff).filter((recipient): recipient is NotificationRecipientContext => Boolean(recipient)).map((recipient) => staffApprovalContext(recipient, quote.quoteRequestId, flags));
       return contexts.length ? { kind: 'RECIPIENTS', contexts } : cancellation('NO_RECIPIENT');
     }
     case 'QUOTE.APPROVAL_RESOLVED': {
@@ -142,7 +148,7 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       const quote = await prisma.quote.findUnique({ where: { id: event.aggregateId }, select: { id: true, quoteRequestId: true, quoteRequest: { select: { folio: true } } } });
       const recipient = activeStaff(approval?.requestedBy);
       if (!approval || !['APPROVED', 'REJECTED'].includes(approval.status) || approval.status !== status || approval.quoteId !== event.aggregateId || approval.quoteVersionId !== quoteVersionId || !quote || quote.quoteRequestId !== quoteRequestId || stringValue(payload, 'folio') !== quote.quoteRequest.folio || !recipient) return cancellation('INVALID_PAYLOAD');
-      return { kind: 'RECIPIENTS', contexts: [staffApprovalContext(recipient, quote.quoteRequestId)] };
+      return { kind: 'RECIPIENTS', contexts: [staffApprovalContext(recipient, quote.quoteRequestId, flags)] };
     }
     case 'QUOTE.ACCEPTED': {
       if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
@@ -154,7 +160,7 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       const recipient = activeStaff(quote.quoteRequest.currentAssignee);
       if (!recipient) return cancellation('NO_RECIPIENT');
       return { kind: 'RECIPIENTS', contexts: [
-        { recipient, actionPath: '/staff/requests', totalLabel: totalLabel(acceptance.quoteVersion.totalMinor, acceptance.quoteVersion.currencyCode) },
+        { recipient, actionPath: requestWorkspaceNotificationPath(quote.quoteRequestId, 'summary', flags), totalLabel: totalLabel(acceptance.quoteVersion.totalMinor, acceptance.quoteVersion.currencyCode) },
       ] };
     }
     case 'MESSAGE.CREATED': {
@@ -167,7 +173,7 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       if (message.visibility !== 'CUSTOMER' || stringValue(payload, 'visibility') !== 'CUSTOMER') return cancellation('INVALID_PAYLOAD');
       if (message.sender?.type === 'CUSTOMER') {
         const recipient = activeStaff(conversation.quoteRequest.currentAssignee);
-        return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...staffContext({ ...recipient }), senderName: message.sender.displayName, messagePreview: message.body }] } : cancellation('NO_RECIPIENT');
+        return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...staffContext({ ...recipient }, conversation.quoteRequestId, 'conversation', flags), senderName: message.sender.displayName, messagePreview: message.body }] } : cancellation('NO_RECIPIENT');
       }
       const recipient = conversation.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(conversation.quoteRequest.contact) : null;
       return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient), senderName: message.sender?.displayName ?? 'Tu equipo OCPOOL', messagePreview: message.body }] } : cancellation('NO_RECIPIENT');

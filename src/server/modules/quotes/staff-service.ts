@@ -4,6 +4,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 
 export type QuoteStaffServiceDependencies = Readonly<{ prisma?: PrismaClient; now?: Date }>;
 
@@ -142,14 +143,17 @@ export async function listQuoteWorkspaces(actor: Actor, filters: QuoteWorkspaceL
   const { page, pageSize } = normalizePagination(filters);
   const query = normalizeQuery(filters.query);
   const where: Prisma.QuoteRequestWhereInput = {
-    status: { in: [...BUILDABLE_REQUEST_STATUSES] },
-    ...(query ? {
-      OR: [
-        { folio: { contains: query, mode: 'insensitive' } },
-        { client: { displayName: { contains: query, mode: 'insensitive' } } },
-        { contact: { displayName: { contains: query, mode: 'insensitive' } } },
-      ],
-    } : {}),
+    AND: [
+      staffRequestReadScopeWhere(actor),
+      { status: { in: [...BUILDABLE_REQUEST_STATUSES] } },
+      ...(query ? [{
+        OR: [
+          { folio: { contains: query, mode: 'insensitive' as const } },
+          { client: { displayName: { contains: query, mode: 'insensitive' as const } } },
+          { contact: { displayName: { contains: query, mode: 'insensitive' as const } } },
+        ],
+      }] : []),
+    ],
   };
   const [total, requests] = await Promise.all([
     prisma.quoteRequest.count({ where }),
@@ -237,8 +241,8 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
   const id = requireUuid(quoteRequestId);
-  const request = await prisma.quoteRequest.findUnique({
-    where: { id },
+  const request = await prisma.quoteRequest.findFirst({
+    where: { id, ...staffRequestReadScopeWhere(actor) },
     select: {
       id: true,
       folio: true,
@@ -328,20 +332,45 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
   });
   if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
 
-  const priceLists = await prisma.priceList.findMany({
-    where: {
-      status: 'ACTIVE',
-      validFrom: { lte: now },
-      OR: [{ validUntil: null }, { validUntil: { gt: now } }],
-    },
-    orderBy: [{ currencyCode: 'asc' }, { name: 'asc' }, { id: 'asc' }],
-    select: { id: true, code: true, name: true, currencyCode: true },
-  });
-
   const quote = request.quotes[0] ?? null;
   const versions = quote?.versions ?? [];
   const displayedVersionId = quote?.workingVersionId ?? quote?.publishedVersionId ?? quote?.currentVersionId ?? null;
   const currentVersion = displayedVersionId ? versions.find((version) => version.id === displayedVersionId) ?? null : null;
+  const currentVersionItemIds = [...new Set(currentVersion?.lines.map((line) => line.catalogItemId) ?? [])];
+
+  const priceListCandidates = await prisma.priceList.findMany({
+    where: {
+      status: 'ACTIVE',
+      currencyCode: currentVersion?.currencyCode,
+      validFrom: { lte: now },
+      OR: [{ validUntil: null }, { validUntil: { gt: now } }],
+    },
+    orderBy: [{ currencyCode: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      currencyCode: true,
+      items: {
+        where: {
+          catalogItemId: { in: currentVersionItemIds },
+          validFrom: { lte: now },
+          OR: [{ validUntil: null }, { validUntil: { gt: now } }],
+          catalogItem: { status: 'ACTIVE' },
+        },
+        select: { catalogItemId: true },
+      },
+    },
+  });
+
+  const priceLists = priceListCandidates
+    .filter((priceList) => currentVersionItemIds.length === 0 || currentVersionItemIds.every((itemId) => priceList.items.some((item) => item.catalogItemId === itemId)))
+    .map((priceList) => ({
+      id: priceList.id,
+      code: priceList.code,
+      name: priceList.name,
+      currencyCode: priceList.currencyCode,
+    }));
   const history = serializeHistory(versions.flatMap((version) => version.statusHistory));
   return {
     request: {

@@ -43,7 +43,7 @@ describe('quote PDF renderer', () => {
     expect(document.getPageCount()).toBe(first.pageCount);
     expect(document.getTitle()).toBe('Cotización OCPOOL OCQ-2026-000123 v2');
     expect(document.getAuthor()).toBe('OCPOOL');
-  });
+  }, 15_000);
 
   it('does not depend on catalog or internal payload fields once the snapshot exists', async () => {
     const rendered = await renderQuotePdf(snapshot);

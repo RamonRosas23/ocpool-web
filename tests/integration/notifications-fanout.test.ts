@@ -5,6 +5,8 @@ import { readServerEnv } from '@/server/env';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { processNotificationFanoutBatch } from '@/server/modules/notifications/fanout';
 import { processNotificationBatch } from '@/server/modules/notifications/worker';
+import { resolveNotificationEvent } from '@/server/modules/notifications/event-resolver';
+import { DEFAULT_COMMERCIAL_V2_FLAGS } from '@/server/flags/commercial-v2';
 import type { EmailProvider } from '@/server/modules/notifications/email-provider';
 
 describe('transactional notification fan-out', () => {
@@ -50,6 +52,17 @@ describe('transactional notification fan-out', () => {
     const receivedEvent = await prisma.outboxEvent.findFirstOrThrow({ where: { id: { not: assignmentEvent.id }, aggregateId: request.quoteRequestId, eventType: 'REQUEST.RECEIVED' } });
     const eventIds = [receivedEvent.id, assignmentEvent.id, quoteSentEvent.id, acceptedEvent.id, messageEvent.id, fileEvent.id, internalEvent.id];
     await prisma.outboxEvent.updateMany({ where: { id: { in: eventIds } }, data: { availableAt: workerNow } });
+
+    await expect(resolveNotificationEvent(prisma, {
+      eventType: 'MESSAGE.CREATED',
+      aggregateType: 'CONVERSATION',
+      aggregateId: conversation.id,
+      payload: { conversationId: conversation.id, quoteRequestId: request.quoteRequestId, clientId: request.clientId, messageId: message.id, visibility: 'CUSTOMER', folio: request.folio },
+    }, {
+      ...DEFAULT_COMMERCIAL_V2_FLAGS,
+      commercialWorkspaceV2: true,
+      requestWorkspaceV2: true,
+    })).resolves.toMatchObject({ kind: 'RECIPIENTS', contexts: [{ actionPath: `/staff/requests/${request.quoteRequestId}?tab=conversation` }] });
 
     try {
       const result = await processNotificationFanoutBatch({ prisma, now: workerNow, batchSize: 50, leaseSeconds: 60 });

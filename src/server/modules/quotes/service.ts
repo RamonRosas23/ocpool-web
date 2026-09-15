@@ -17,6 +17,7 @@ import {
 import { canTransitionQuoteRequest, type QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
 import { hasValidApprovedQuoteApproval } from '@/server/modules/quotes/approval-service';
 import { generateQuotePdf } from '@/server/modules/quote-documents/service';
+import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 
 export type QuotePricingLineInput = Readonly<{
   catalogItemId: string;
@@ -79,6 +80,7 @@ type LockedQuoteRequest = {
   clientId: string;
   status: QuoteRequestStatus;
   currencyCode: string;
+  currentAssigneeId: string | null;
 };
 
 type LockedQuote = {
@@ -102,6 +104,7 @@ type LockedQuoteVersion = {
   folio: string;
   requestStatus: QuoteRequestStatus;
   requestCurrencyCode: string;
+  currentAssigneeId: string | null;
 };
 
 function requireEmployeePermission(actor: Actor, permission: string): void {
@@ -148,7 +151,7 @@ function normalizePricingLine(line: QuotePricingLineInput): QuotePricingLineInpu
 
 async function lockQuoteRequest(transaction: Prisma.TransactionClient, quoteRequestId: string): Promise<LockedQuoteRequest | null> {
   const rows = await transaction.$queryRaw<LockedQuoteRequest[]>(Prisma.sql`
-    SELECT qr."id", qr."folio", qr."clientId", qr."status", qrd."currencyCode"
+    SELECT qr."id", qr."folio", qr."clientId", qr."status", qr."currentAssigneeId", qrd."currencyCode"
     FROM "quote_requests" qr
     INNER JOIN "quote_request_details" qrd ON qrd."quoteRequestId" = qr."id"
     WHERE qr."id" = ${quoteRequestId}
@@ -170,7 +173,7 @@ async function lockQuote(transaction: Prisma.TransactionClient, quoteId: string)
 async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<LockedQuoteVersion | null> {
   const rows = await transaction.$queryRaw<LockedQuoteVersion[]>(Prisma.sql`
     SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."discountTotalMinor", q."currentVersionId", q."workingVersionId", q."publishedVersionId",
-           q."quoteRequestId", qr."folio", qr."status" AS "requestStatus", qrd."currencyCode" AS "requestCurrencyCode"
+           q."quoteRequestId", qr."folio", qr."status" AS "requestStatus", qr."currentAssigneeId", qrd."currencyCode" AS "requestCurrencyCode"
     FROM "quote_versions" qv
     INNER JOIN "quotes" q ON q."id" = qv."quoteId"
     INNER JOIN "quote_requests" qr ON qr."id" = q."quoteRequestId"
@@ -341,6 +344,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
   return prisma.$transaction(async (transaction) => {
     const request = await lockQuoteRequest(transaction, quoteRequestId);
     if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
+    requireStaffRequestReadScope(actor, request.currentAssigneeId);
     assertBuildableRequest(request);
     const snapshot = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now);
     assertSameCurrency(request.currencyCode, snapshot.currency);
@@ -412,6 +416,7 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
   return prisma.$transaction(async (transaction) => {
     const version = await lockQuoteVersion(transaction, versionId);
     if (!version) throw new AppError('NOT_FOUND', 'La versión no existe.', 404);
+    requireStaffRequestReadScope(actor, version.currentAssigneeId);
     if (version.workingVersionId !== version.id || version.status !== 'BORRADOR') conflict('La versión ya no es editable.');
     const request: LockedQuoteRequest = {
       id: version.quoteRequestId,
@@ -419,6 +424,7 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       clientId: '',
       status: version.requestStatus,
       currencyCode: version.requestCurrencyCode,
+      currentAssigneeId: version.currentAssigneeId,
     };
     assertBuildableRequest(request);
     const snapshot = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now);
@@ -490,6 +496,7 @@ export async function transitionQuoteVersion(actor: Actor, quoteVersionId: strin
   return prisma.$transaction(async (transaction) => {
     const version = await lockQuoteVersion(transaction, versionId);
     if (!version) throw new AppError('NOT_FOUND', 'La versión no existe.', 404);
+    requireStaffRequestReadScope(actor, version.currentAssigneeId);
     if (version.workingVersionId !== version.id && !(version.publishedVersionId === version.id && version.status !== 'BORRADOR' && version.status !== 'EN_REVISION')) conflict('Sólo la versión vigente puede cambiar de estado.');
     if (!canTransitionQuoteVersion(version.status, toStatus)) conflict('La transición de cotización no está permitida.');
     if (toStatus === 'ENVIADA' && version.discountTotalMinor > 0n) {

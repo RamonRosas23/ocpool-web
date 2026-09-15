@@ -1,14 +1,10 @@
 import { z } from 'zod';
-import { MAX_IDEMPOTENCY_KEY_LENGTH, MAX_MESSAGE_LENGTH, MIN_IDEMPOTENCY_KEY_LENGTH } from '@/server/modules/messaging/domain';
-
-const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u;
+import { idempotencyKeySchema } from '@/server/http/idempotency';
+import { MAX_MESSAGE_LENGTH } from '@/server/modules/messaging/domain';
 
 export const messageBodySchema = z.object({
   body: z.string().min(1).max(MAX_MESSAGE_LENGTH),
-  idempotencyKey: z.string()
-    .min(MIN_IDEMPOTENCY_KEY_LENGTH)
-    .max(MAX_IDEMPOTENCY_KEY_LENGTH)
-    .regex(IDEMPOTENCY_KEY_PATTERN),
+  idempotencyKey: idempotencyKeySchema,
 }).strict();
 
 export const messageQuerySchema = z.object({

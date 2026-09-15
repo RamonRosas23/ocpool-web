@@ -5,7 +5,7 @@ import { requireCustomerActor } from '@/server/auth/customer';
 import { readServerEnv } from '@/server/env';
 import { AppError, toErrorResponse } from '@/server/http/errors';
 import { fileListQuerySchema, fileReserveSchema } from '@/server/modules/private-files/http';
-import { listPrivateFiles, reservePrivateFile } from '@/server/modules/private-files/service';
+import { listPrivateFilesPage, reservePrivateFile } from '@/server/modules/private-files/service';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const actor = await requireCustomerActor(request);
     const { id: quoteRequestId } = await context.params;
-    return NextResponse.json({ items: await listPrivateFiles(actor, quoteRequestId, parseQuery(request)) }, { headers: { 'cache-control': 'no-store' } });
+    return NextResponse.json(await listPrivateFilesPage(actor, quoteRequestId, parseQuery(request)), { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);
   }
