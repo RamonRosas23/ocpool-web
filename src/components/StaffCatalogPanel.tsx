@@ -53,6 +53,7 @@ type PriceList = { id: string; code: string; name: string; currencyCode: string;
 type PriceListDetail = PriceList & { items: Array<{ id: string; catalogItemId: string; unitPriceMinor: string; validFrom: string; validUntil: string | null; catalogItem: { code: string; name: string; unit: string; status: string } }> };
 type ListResponse = { items: CatalogItem[]; page: number; pageSize: number; total: number; totalPages: number };
 type Capabilities = { catalogRead: boolean; catalogManage: boolean; pricesRead: boolean; pricesManage: boolean };
+type SpecialConceptGroup = { normalizedName: string; unit: string; name: string; occurrences: number; recentFolios: string[]; status: 'PENDING' | 'MATCHES_EXISTING' | 'PROMOTED'; matchingCatalogItem: { id: string; code: string; name: string } | null };
 type ErrorResponse = { error?: { message?: string } };
 
 async function readResponse<T>(response: Response): Promise<T> {
@@ -105,6 +106,10 @@ export default function StaffCatalogPanel() {
   const [categoryEditForm, setCategoryEditForm] = useState({ name: '', description: '', sortOrder: '0', parentId: '' });
   const [editingPriceList, setEditingPriceList] = useState(false);
   const [priceListEditForm, setPriceListEditForm] = useState({ name: '' });
+  const [showSpecialConcepts, setShowSpecialConcepts] = useState(false);
+  const [specialConcepts, setSpecialConcepts] = useState<SpecialConceptGroup[] | null>(null);
+  const [loadingSpecialConcepts, setLoadingSpecialConcepts] = useState(false);
+  const [specialConceptCategoryId, setSpecialConceptCategoryId] = useState<Record<string, string>>({});
 
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId]);
   const previewItem = useMemo(() => priceListDetail?.items.find((price) => price.catalogItemId === priceForm.catalogItemId && price.validUntil === null) ?? null, [priceListDetail, priceForm.catalogItemId]);
@@ -332,6 +337,35 @@ export default function StaffCatalogPanel() {
     finally { setSaving(false); }
   };
 
+  const loadSpecialConcepts = async () => {
+    setLoadingSpecialConcepts(true); setError(null);
+    try {
+      const response = await fetch('/api/staff/catalog/special-concepts', { credentials: 'include', cache: 'no-store' });
+      setSpecialConcepts(await readResponse<SpecialConceptGroup[]>(response));
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible cargar los conceptos especiales.'); }
+    finally { setLoadingSpecialConcepts(false); }
+  };
+
+  const toggleSpecialConcepts = () => {
+    const next = !showSpecialConcepts;
+    setShowSpecialConcepts(next);
+    if (next && specialConcepts === null) void loadSpecialConcepts();
+  };
+
+  const promoteGroup = async (group: SpecialConceptGroup) => {
+    setSaving(true); setError(null); setNotice(null);
+    try {
+      const key = `${group.normalizedName}::${group.unit}`;
+      const categoryId = specialConceptCategoryId[key];
+      const response = await fetch('/api/staff/catalog/special-concepts/promote', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: group.name, unit: group.unit, categoryId: categoryId || undefined }) });
+      const result = await readResponse<{ catalogItem: { id: string; code: string; name: string }; alreadyPromoted: boolean }>(response);
+      setNotice(`Concepto ${result.catalogItem.code} · ${result.catalogItem.name} vinculado.`);
+      await loadSpecialConcepts();
+      await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible promover el concepto.'); }
+    finally { setSaving(false); }
+  };
+
   if (accessDenied) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar el catálogo.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
 
   return <PrivateSurfaceRoot className="staff-shell">
@@ -380,6 +414,21 @@ export default function StaffCatalogPanel() {
                 : <><span><strong>{category.name}</strong><small>{category.code} · orden {category.sortOrder}{category.status === 'ARCHIVED' ? ' · Archivada' : ''}{parent ? ` · en ${parent.name}` : ''}</small></span>{capabilities.catalogManage && <div className="catalog-category-row__actions"><button className="staff-button" type="button" disabled={saving} onClick={() => startEditCategory(category)}>Editar</button><button className="staff-button" type="button" disabled={saving} onClick={() => void toggleCategoryStatus(category)}>{category.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'}</button></div>}</>}
             </div>; })}</div>
           </section>
+          {capabilities.catalogManage && <section className="catalog-special-panel" aria-label="Conceptos especiales pendientes de promoción"><div className="catalog-price-panel__head"><div><p className="staff-section-label">Conceptos especiales</p><h3>Texto libre usado en cotizaciones</h3></div><button className="staff-button" type="button" onClick={toggleSpecialConcepts}>{showSpecialConcepts ? 'Ocultar' : 'Ver conceptos especiales'}</button></div>
+            {showSpecialConcepts && <>
+              {loadingSpecialConcepts && <div className="catalog-detail-loading"><span /><span /></div>}
+              {!loadingSpecialConcepts && specialConcepts && specialConcepts.length === 0 && <p className="catalog-form__note">No hay conceptos especiales pendientes de revisión.</p>}
+              {!loadingSpecialConcepts && specialConcepts && specialConcepts.length > 0 && <div className="catalog-category-list">{specialConcepts.map((group) => {
+                const key = `${group.normalizedName}::${group.unit}`;
+                return <div className="catalog-category-row" key={key}>
+                  <span><strong>{group.name}</strong><small>{group.unit} · {group.occurrences} {group.occurrences === 1 ? 'cotización' : 'cotizaciones'} · {group.recentFolios.join(', ')}</small></span>
+                  {group.status === 'PROMOTED' && <small className="catalog-special-status catalog-special-status--done">Promovido a {group.matchingCatalogItem!.code} · {group.matchingCatalogItem!.name}</small>}
+                  {group.status === 'MATCHES_EXISTING' && <div className="catalog-category-row__actions"><small className="catalog-special-status">Ya existe {group.matchingCatalogItem!.code} · {group.matchingCatalogItem!.name}</small><button className="staff-button" type="button" disabled={saving} onClick={() => void promoteGroup(group)}>Vincular</button></div>}
+                  {group.status === 'PENDING' && <div className="catalog-category-row__actions"><SelectField ariaLabel={`Categoría para ${group.name}`} value={specialConceptCategoryId[key] ?? ''} onValueChange={(value) => setSpecialConceptCategoryId({ ...specialConceptCategoryId, [key]: value })} options={categories.filter((category) => category.status === 'ACTIVE').map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} /><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void promoteGroup(group)}>Promover a catálogo</button></div>}
+                </div>;
+              })}</div>}
+            </>}
+          </section>}
         </section>
       </section>
     </div>

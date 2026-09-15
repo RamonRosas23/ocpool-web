@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test';
 import { seedIdentityCatalog } from '../prisma/seed';
 import { getPrisma } from '@/server/db/client';
 import { createSession } from '@/server/auth/sessions';
+import { createQuoteRequest } from '@/server/modules/quote-requests/service';
+import { createQuoteVersion } from '@/server/modules/quotes/service';
 import { expectNoSeriousA11yViolations } from './a11y';
 
 test.describe('staff catalog operations', () => {
@@ -24,6 +26,11 @@ test.describe('staff catalog operations', () => {
   let createdItemId = '';
   let newCategoryId = '';
   let childCategoryId = '';
+  const specialConceptName = `Concepto especial E2E ${suffix}`;
+  let specialQuoteRequestId = '';
+  let specialClientId = '';
+  let specialQuoteId = '';
+  let promotedItemId = '';
 
   test.beforeAll(async () => {
     await seedIdentityCatalog(prisma);
@@ -47,14 +54,50 @@ test.describe('staff catalog operations', () => {
     });
     userId = user.id;
     ({ sessionId } = await createSession({ userId, ipAddress: '127.0.0.1', userAgent: 'playwright-catalog-test' }, { prisma, tokenGenerator: () => sessionToken }));
+
+    // K1-05 parte 2 fixture: a quote with a special (non-catalog) line, so the E2E flow
+    // can exercise "Ver conceptos especiales" -> "Promover a catálogo".
+    const now = new Date('2026-04-04T12:00:00.000Z');
+    const specialRequest = await createQuoteRequest({
+      idempotencyKey: `catalog-e2e-special-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Concepto especial ${suffix}`, email: `catalog-e2e-special-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Mazatlán', description: 'Special concept promotion fixture', consentAt: now },
+    }, { prisma, now });
+    specialQuoteRequestId = specialRequest.quoteRequestId;
+    specialClientId = specialRequest.clientId;
+    await prisma.quoteRequest.update({ where: { id: specialQuoteRequestId }, data: { status: 'EN_ELABORACION' } });
+    const specialActor = { userId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.create']), mfaVerified: true };
+    const specialVersion = await createQuoteVersion(specialActor, {
+      quoteRequestId: specialQuoteRequestId,
+      priceListId,
+      lines: [{ special: true, name: specialConceptName, unit: 'servicio', quantity: '1', unitPriceMinor: '4500', reason: 'Fixture E2E de concepto especial' }],
+    }, { prisma, now });
+    specialQuoteId = specialVersion.quoteId;
   });
 
   test.afterAll(async () => {
-    const aggregateIds = [categoryId, itemId, priceListId, createdItemId, newCategoryId, childCategoryId].filter(Boolean);
+    const aggregateIds = [categoryId, itemId, priceListId, createdItemId, newCategoryId, childCategoryId, promotedItemId].filter(Boolean);
     if (aggregateIds.length) {
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
       await prisma.auditLog.deleteMany({ where: { entityId: { in: aggregateIds } } });
     }
+    if (promotedItemId) await prisma.specialConceptPromotion.deleteMany({ where: { catalogItemId: promotedItemId } });
+    if (specialQuoteId) {
+      const specialVersionIds = (await prisma.quoteVersion.findMany({ where: { quoteId: specialQuoteId }, select: { id: true } })).map(({ id }) => id);
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: specialQuoteId } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [specialQuoteId, ...specialVersionIds] } } });
+    }
+    if (specialQuoteId) await prisma.quote.delete({ where: { id: specialQuoteId } });
+    if (specialQuoteRequestId) {
+      const specialContactId = (await prisma.quoteRequest.findUnique({ where: { id: specialQuoteRequestId }, select: { contactId: true } }))?.contactId;
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: specialQuoteRequestId } });
+      await prisma.auditLog.deleteMany({ where: { entityId: specialQuoteRequestId } });
+      await prisma.quoteRequest.delete({ where: { id: specialQuoteRequestId } });
+      if (specialContactId) await prisma.clientContact.delete({ where: { id: specialContactId } });
+    }
+    if (specialClientId) await prisma.client.delete({ where: { id: specialClientId } });
+    if (promotedItemId) await prisma.catalogItem.delete({ where: { id: promotedItemId } });
     if (priceListId) await prisma.priceListItem.deleteMany({ where: { priceListId } });
     if (priceListId) await prisma.priceList.delete({ where: { id: priceListId } });
     if (createdItemId) await prisma.catalogItem.delete({ where: { id: createdItemId } });
@@ -197,6 +240,22 @@ test.describe('staff catalog operations', () => {
     await priceListActions.getByRole('button', { name: 'Reactivar' }).click();
     await expect(page.getByRole('status')).toContainText('Lista reactivada.');
     await page.getByRole('checkbox', { name: 'Mostrar archivados' }).uncheck();
+
+    // K1-05 parte 2: promote a special quote-line concept (no catalogItemId) into a real
+    // catalog item, linking it to the category created earlier in this same test.
+    await page.getByRole('button', { name: 'Ver conceptos especiales' }).click();
+    const specialRow = page.locator('.catalog-category-row', { hasText: specialConceptName });
+    await expect(specialRow).toBeVisible();
+    await specialRow.getByRole('combobox').click();
+    await page.getByRole('option', { name: `Categoría nueva ${suffix}`, exact: true }).click();
+    await specialRow.getByRole('button', { name: 'Promover a catálogo' }).click();
+    await expect(page.getByRole('status')).toContainText('vinculado.');
+    await expect(specialRow).toContainText('Promovido a');
+
+    await page.getByLabel('Buscar concepto', { exact: true }).fill(specialConceptName);
+    await page.getByRole('button', { name: 'Buscar', exact: true }).click();
+    await expect(page.getByRole('button', { name: new RegExp(specialConceptName) })).toBeVisible();
+    promotedItemId = (await prisma.catalogItem.findFirstOrThrow({ where: { name: specialConceptName }, select: { id: true } })).id;
 
     for (const width of [390, 768, 1440]) {
       await page.setViewportSize({ width, height: 844 });

@@ -333,6 +333,7 @@ model User {
   notificationDeliveries     NotificationDelivery[] @relation("NotificationRecipient")
   quoteApprovalsRequested    QuoteApproval[]        @relation("QuoteApprovalRequester")
   quoteApprovalsDecided      QuoteApproval[]        @relation("QuoteApprovalDecider")
+  specialConceptPromotions   SpecialConceptPromotion[]
   createdAt                  DateTime               @default(now()) @db.Timestamptz(3)
   updatedAt                  DateTime               @updatedAt @db.Timestamptz(3)
 
@@ -582,6 +583,7 @@ model CatalogItem {
   category    CatalogCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   prices      PriceListItem[]
   quoteLines  QuoteLineSnapshot[]
+  promotions  SpecialConceptPromotion[]
   createdAt   DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -705,6 +707,26 @@ model QuoteLineSnapshot {
   @@index([quoteVersionId])
   @@index([catalogItemId, quoteVersionId])
   @@map("quote_line_snapshots")
+}
+
+/// K1-05 parte 2: sólo-inserción, nunca se actualiza. Registra qué texto de
+/// concepto especial (nombre+unidad normalizados) ya fue promovido a un
+/// CatalogItem real, para deduplicar promociones repetidas del mismo texto.
+model SpecialConceptPromotion {
+  id             String      @id @default(uuid()) @db.Uuid
+  normalizedName String      @db.VarChar(180)
+  /// Normalized (NFC + trim + collapsed whitespace + lowercase) unit, same
+  /// normalization as normalizedName — never a raw display unit.
+  unit           String      @db.VarChar(40)
+  catalogItemId  String      @db.Uuid
+  promotedById   String      @db.Uuid
+  promotedAt     DateTime    @default(now()) @db.Timestamptz(3)
+  catalogItem    CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  promotedBy     User        @relation(fields: [promotedById], references: [id], onDelete: Restrict)
+
+  @@unique([normalizedName, unit])
+  @@index([catalogItemId])
+  @@map("special_concept_promotions")
 }
 
 model QuoteStatusHistory {
