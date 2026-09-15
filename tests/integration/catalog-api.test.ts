@@ -10,6 +10,7 @@ import { POST as createCategoryRoute } from '@/app/api/staff/catalog/categories/
 import { GET as priceListRoute } from '@/app/api/staff/catalog/price-lists/[id]/route';
 import { POST as createPriceListRoute } from '@/app/api/staff/catalog/price-lists/route';
 import { POST as priceItemRoute } from '@/app/api/staff/catalog/price-lists/[id]/items/route';
+import { GET as searchRoute } from '@/app/api/staff/catalog/price-lists/[id]/search/route';
 
 describe('staff catalog API', () => {
   const prisma = getPrisma();
@@ -90,6 +91,16 @@ describe('staff catalog API', () => {
     const salesRead = await priceListRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}`, salesToken), { params: Promise.resolve({ id: priceList.id }) });
     expect(salesRead.status).toBe(200);
     await expect(salesRead.json()).resolves.toMatchObject({ id: priceList.id, items: [{ catalogItemId: item.id, unitPriceMinor: '1000' }] });
+
+    const unauthenticatedSearch = await searchRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/search`), { params: Promise.resolve({ id: priceList.id }) });
+    expect(unauthenticatedSearch.status).toBe(401);
+    const customerSearch = await searchRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/search`, customerToken), { params: Promise.resolve({ id: priceList.id }) });
+    expect(customerSearch.status).toBe(403);
+    const invalidLimit = await searchRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/search?limit=0`, salesToken), { params: Promise.resolve({ id: priceList.id }) });
+    expect(invalidLimit.status).toBe(400);
+    const search = await searchRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/search?query=${encodeURIComponent('API item')}`, salesToken), { params: Promise.resolve({ id: priceList.id }) });
+    expect(search.status).toBe(200);
+    await expect(search.json()).resolves.toMatchObject({ items: [{ id: item.id, price: { unitPriceMinor: '1000' }, blocker: null }], nextCursor: null });
   });
 
   afterAll(async () => {

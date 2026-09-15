@@ -260,6 +260,123 @@ export async function getPriceList(actor: Actor, priceListId: string, dependenci
   return { ...priceList, items: priceList.items.map((item) => ({ ...item, unitPriceMinor: item.unitPriceMinor.toString() })) };
 }
 
+export type CatalogSearchFilters = Readonly<{
+  query?: string;
+  categoryId?: string;
+  cursor?: string;
+  limit?: number;
+}>;
+
+export type CatalogSearchBlocker = 'NO_PRICE_IN_LIST';
+
+export type CatalogSearchItem = Readonly<{
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  category: { id: string; code: string; name: string } | null;
+  price: { priceListItemId: string; unitPriceMinor: string } | null;
+  blocker: CatalogSearchBlocker | null;
+}>;
+
+const CATALOG_SEARCH_DEFAULT_LIMIT = 25;
+const CATALOG_SEARCH_MAX_LIMIT = 50;
+
+function encodeCatalogSearchCursor(item: { name: string; id: string }): string {
+  return Buffer.from(JSON.stringify({ name: item.name, id: item.id }), 'utf8').toString('base64url');
+}
+
+function decodeCatalogSearchCursor(value: string | undefined): { name: string; id: string } | undefined {
+  if (!value) return undefined;
+  try {
+    const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as { name?: unknown; id?: unknown };
+    if (typeof decoded.name !== 'string' || typeof decoded.id !== 'string') throw new Error('Invalid cursor.');
+    return { name: decoded.name, id: decoded.id };
+  } catch {
+    throw new AppError('VALIDATION_ERROR', 'El cursor no es válido.', 400);
+  }
+}
+
+/**
+ * Contextual catalog search used by the quote builder (K1-01): paginated by
+ * cursor so a large catalog never truncates silently, and resolves each
+ * item's currently-effective price within the given price list instead of
+ * requiring the caller to preload the whole list.
+ */
+export async function searchQuoteCatalogItems(actor: Actor, priceListId: string, filters: CatalogSearchFilters = {}, dependencies: CatalogServiceDependencies = {}): Promise<{ items: CatalogSearchItem[]; nextCursor: string | null }> {
+  requireStaffPermission(actor, 'catalog.read');
+  requireStaffPermission(actor, 'prices.read');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const now = dependencies.now ?? new Date();
+  const listId = requireUuid(priceListId, 'La lista de precios no es válida.');
+  const priceList = await prisma.priceList.findUnique({ where: { id: listId }, select: { id: true } });
+  if (!priceList) throw new AppError('NOT_FOUND', 'La lista de precios no existe.', 404);
+
+  const query = filters.query?.trim() || undefined;
+  if (query && query.length > 100) throw new AppError('VALIDATION_ERROR', 'La búsqueda no es válida.', 400);
+  const categoryId = filters.categoryId ? requireUuid(filters.categoryId, 'La categoría no es válida.') : undefined;
+  const limit = filters.limit ?? CATALOG_SEARCH_DEFAULT_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1 || limit > CATALOG_SEARCH_MAX_LIMIT) throw new AppError('VALIDATION_ERROR', 'El límite no es válido.', 400);
+  const cursor = decodeCatalogSearchCursor(filters.cursor);
+
+  const conditions: Prisma.CatalogItemWhereInput[] = [{ status: 'ACTIVE' }];
+  if (categoryId) conditions.push({ categoryId });
+  if (query) {
+    conditions.push({
+      OR: [
+        { code: { contains: query.toUpperCase(), mode: 'insensitive' } },
+        { name: { contains: query, mode: 'insensitive' } },
+        { description: { contains: query, mode: 'insensitive' } },
+      ],
+    });
+  }
+  if (cursor) {
+    conditions.push({
+      OR: [
+        { name: { gt: cursor.name } },
+        { AND: [{ name: cursor.name }, { id: { gt: cursor.id } }] },
+      ],
+    });
+  }
+
+  const items = await prisma.catalogItem.findMany({
+    where: { AND: conditions },
+    orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    take: limit + 1,
+    select: { id: true, code: true, name: true, unit: true, category: { select: { id: true, code: true, name: true } } },
+  });
+  const hasNext = items.length > limit;
+  const page = hasNext ? items.slice(0, limit) : items;
+
+  const itemIds = page.map((item) => item.id);
+  const prices = itemIds.length ? await prisma.priceListItem.findMany({
+    where: {
+      priceListId: listId,
+      catalogItemId: { in: itemIds },
+      validFrom: { lte: now },
+      OR: [{ validUntil: null }, { validUntil: { gt: now } }],
+    },
+    select: { id: true, catalogItemId: true, unitPriceMinor: true },
+  }) : [];
+  const priceByItemId = new Map(prices.map((price) => [price.catalogItemId, price]));
+
+  return {
+    items: page.map((item) => {
+      const price = priceByItemId.get(item.id);
+      return {
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        unit: item.unit,
+        category: item.category,
+        price: price ? { priceListItemId: price.id, unitPriceMinor: price.unitPriceMinor.toString() } : null,
+        blocker: price ? null : 'NO_PRICE_IN_LIST',
+      };
+    }),
+    nextCursor: hasNext ? encodeCatalogSearchCursor(page[page.length - 1]) : null,
+  };
+}
+
 export async function upsertPriceListItem(actor: Actor, priceListId: string, input: { catalogItemId: string; unitPriceMinor: string | bigint; validFrom: Date; validUntil?: Date | null }, dependencies: CatalogServiceDependencies = {}) {
   requireStaffPermission(actor, 'prices.manage');
   const prisma = dependencies.prisma ?? getPrisma();

@@ -57,6 +57,12 @@ test.describe('staff quote builder opt-in flow', () => {
       data: { code: `000-E2E-ITEM-${suffix}-${String(index + 2).padStart(2, '0')}`, name: `000 E2E concept ${String(index + 2).padStart(2, '0')}`, unit: 'pieza', categoryId },
     })));
     itemIds = [itemId, ...additionalItems.map(({ id }) => id)];
+    // Extra concepts (sorted well after "000 E2E concept*") prove the K1-01 search reaches past the old 50-item cap.
+    const fillerItems = await Promise.all(Array.from({ length: 44 }, (_, index) => prisma.catalogItem.create({
+      data: { code: `E2E-FILL-${suffix}-${String(index + 1).padStart(2, '0')}`, name: `999 E2E filler ${String(index + 1).padStart(2, '0')}`, unit: 'pieza', categoryId },
+    })));
+    const lateItem = await prisma.catalogItem.create({ data: { code: `E2E-LATE-${suffix}`, name: '999 E2E late concept', unit: 'pieza', categoryId } });
+    itemIds = [...itemIds, ...fillerItems.map(({ id }) => id), lateItem.id];
     const priceList = await prisma.priceList.create({ data: { code: `E2E-PRICE-${suffix}`, name: 'E2E prices', currencyCode: 'MXN', validFrom: now } });
     priceListId = priceList.id;
     await prisma.priceListItem.createMany({ data: itemIds.map((catalogItemId) => ({ priceListId, catalogItemId, unitPriceMinor: 15000n, validFrom: now })) });
@@ -117,14 +123,20 @@ test.describe('staff quote builder opt-in flow', () => {
     const tenConceptsStartedAt = new Date();
     await page.getByRole('combobox', { name: 'Agregar concepto a la cotización' }).click();
     await page.getByRole('option', { name: '000 E2E concept · pieza', exact: true }).click();
-    await page.getByRole('button', { name: 'Agregar línea' }).click();
     for (let index = 2; index <= 10; index += 1) {
       const label = `000 E2E concept ${String(index).padStart(2, '0')} · pieza`;
       await page.getByRole('combobox', { name: 'Agregar concepto a la cotización' }).click();
       await page.getByRole('option', { name: label, exact: true }).click();
-      await page.getByRole('button', { name: 'Agregar línea' }).click();
     }
     await expect(page.locator('.quotes-line')).toHaveCount(10);
+
+    // K1-01 acceptance: a concept beyond the old 50-item cap (position 56 of 56) is reachable by search text.
+    await page.getByRole('combobox', { name: 'Agregar concepto a la cotización' }).fill('late concept');
+    await page.getByRole('option', { name: '999 E2E late concept · pieza', exact: true }).click();
+    await expect(page.locator('.quotes-line')).toHaveCount(11);
+    await page.getByRole('button', { name: 'Quitar 999 E2E late concept' }).click();
+    await expect(page.locator('.quotes-line')).toHaveCount(10);
+
     await recordBaselineMeasurement({
       schemaVersion: 1,
       metricId: 'add_ten_concepts',

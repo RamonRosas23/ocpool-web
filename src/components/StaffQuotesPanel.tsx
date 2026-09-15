@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import StaffQuoteDocumentPanel from '@/components/StaffQuoteDocumentPanel';
+import CatalogItemSearchCombobox, { type CatalogSearchResultItem } from '@/components/CatalogItemSearchCombobox';
 import DateField from '@/components/DateField';
 import SelectField from '@/components/SelectField';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
@@ -113,12 +114,14 @@ type Workspace = {
   priceLists: Array<{ id: string; code: string; name: string; currencyCode: string }>;
 };
 
-type CatalogItem = { id: string; code: string; name: string; unit: string; status: string };
 type PriceList = { id: string; code: string; name: string; currencyCode: string; status: string };
 type PriceListDetail = PriceList & { items: Array<{ id: string; catalogItemId: string; unitPriceMinor: string; validFrom: string; validUntil: string | null; catalogItem: { code: string; name: string; unit: string; status: string } }> };
 type DraftLine = {
   id: string;
   catalogItemId: string;
+  catalogItemName: string;
+  catalogItemCode: string;
+  unit: string;
   quantity: string;
   unitPriceMinorOverride: string;
   unitPriceInput: string;
@@ -213,13 +216,11 @@ export default function StaffQuotesPanel() {
   const [requests, setRequests] = useState<QuoteListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [priceListDetail, setPriceListDetail] = useState<PriceListDetail | null>(null);
   const [selectedPriceListId, setSelectedPriceListId] = useState('');
   const [draftLines, setDraftLines] = useState<DraftLine[]>([]);
   const [validUntil, setValidUntil] = useState('');
-  const [newItemId, setNewItemId] = useState('');
   const [search, setSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -238,24 +239,21 @@ export default function StaffQuotesPanel() {
     try {
       const params = new URLSearchParams({ page: String(currentPage), pageSize: '20' });
       if (query) params.set('query', query);
-      const [capabilitiesResponse, requestsResponse, itemsResponse, listsResponse] = await Promise.all([
+      const [capabilitiesResponse, requestsResponse, listsResponse] = await Promise.all([
         fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store' }),
         fetch(`/api/staff/quotes?${params.toString()}`, { credentials: 'include', cache: 'no-store' }),
-        fetch('/api/staff/catalog/items?status=ACTIVE&page=1&pageSize=50', { credentials: 'include', cache: 'no-store' }),
         fetch('/api/staff/catalog/price-lists?status=ACTIVE', { credentials: 'include', cache: 'no-store' }),
       ]);
       const currentCapabilities = await readResponse<Capabilities>(capabilitiesResponse);
       if (!currentCapabilities.quotesRead) throw new Error('No tienes permisos para consultar el constructor de cotizaciones.');
-      const [requestData, itemData, listData] = await Promise.all([
+      const [requestData, listData] = await Promise.all([
         readResponse<{ items: QuoteListItem[]; page: number; total: number; totalPages: number }>(requestsResponse),
-        readResponse<{ items: CatalogItem[] }>(itemsResponse),
         readResponse<PriceList[]>(listsResponse),
       ]);
       setCapabilities(currentCapabilities);
       setRequests(requestData.items);
       setTotal(requestData.total);
       setTotalPages(Math.max(1, requestData.totalPages));
-      setCatalogItems(itemData.items);
       setPriceLists(listData);
       setRestricted(false);
       setSelectedId((current) => current && requestData.items.some((item) => item.id === current) ? current : requestData.items[0]?.id ?? null);
@@ -283,6 +281,9 @@ export default function StaffQuotesPanel() {
       setDraftLines((currentVersion?.lines ?? []).map((line) => ({
         id: line.id,
         catalogItemId: line.catalogItemId,
+        catalogItemName: line.name,
+        catalogItemCode: line.catalogItemCode,
+        unit: line.unit,
         quantity: quantityLabel(line.quantityMilliunits),
         unitPriceMinorOverride: line.unitPriceMinor,
         unitPriceInput: moneyInputLabel(line.unitPriceMinor),
@@ -337,11 +338,14 @@ export default function StaffQuotesPanel() {
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setPage(1); setAppliedSearch(search.trim()); };
 
-  const addLine = () => {
-    if (!newItemId || draftLines.some((line) => line.catalogItemId === newItemId)) return;
+  const addLineFromSearch = (item: CatalogSearchResultItem) => {
+    if (draftLines.some((line) => line.catalogItemId === item.id)) return;
     setDraftLines((lines) => [...lines, {
-      id: `${newItemId}-${Date.now()}`,
-      catalogItemId: newItemId,
+      id: `${item.id}-${Date.now()}`,
+      catalogItemId: item.id,
+      catalogItemName: item.name,
+      catalogItemCode: item.code,
+      unit: item.unit,
       quantity: '1',
       unitPriceMinorOverride: '',
       unitPriceInput: '',
@@ -350,7 +354,6 @@ export default function StaffQuotesPanel() {
       discountBasisPoints: '0',
       taxBasisPoints: '0',
     }]);
-    setNewItemId('');
   };
 
   const updateLine = (id: string, field: keyof Omit<DraftLine, 'id' | 'catalogItemId'>, value: string) => setDraftLines((lines) => lines.map((line) => line.id === id ? { ...line, [field]: value } : line));
@@ -458,10 +461,10 @@ export default function StaffQuotesPanel() {
             <section className="quotes-builder"><div className="quotes-builder__head"><div><p className="staff-section-label">Composición</p><h3>{currentVersion ? `Versión ${currentVersion.versionNumber} · ${statusLabel(currentVersion.status)}` : 'Primera versión'}</h3></div><label className="quotes-list-select"><span>Lista de precios</span><SelectField ariaLabel="Lista de precios" value={selectedPriceListId} onValueChange={setSelectedPriceListId} options={priceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currencyCode}` }))} placeholder="Selecciona una lista" disabled={!canEdit && !canStartVersion} /></label></div>
               <div className="quotes-lines-head"><span>Concepto</span><span>Cantidad</span><span>Precio</span><span>Descuento</span><span>Impuesto</span><span>Total</span><span className="sr-only">Acción</span></div>
               <div className="quotes-lines">
-                {draftLines.map((line) => { const item = catalogItems.find((candidate) => candidate.id === line.catalogItemId); const price = pricesByItem.get(line.catalogItemId)?.unitPriceMinor; const linePreview = calculatePreview(line, price); const displayedPrice = line.unitPriceDirty ? line.unitPriceInput : line.snapshotUnitPriceMinor ? moneyInputLabel(line.snapshotUnitPriceMinor) : price ? moneyInputLabel(price) : ''; return <div className="quotes-line" key={line.id}><div className="quotes-line__item"><strong>{item?.name ?? 'Concepto no disponible'}</strong><small>{item?.code ?? line.catalogItemId} · {item?.unit ?? 'unidad'}</small></div><label><span className="quotes-mobile-label">Cantidad</span><input aria-label={`Cantidad de ${item?.name ?? 'concepto'}`} value={line.quantity} onChange={(event) => updateLine(line.id, 'quantity', event.target.value)} disabled={!canEdit} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Precio</span><input aria-label={`Precio de ${item?.name ?? 'concepto'}`} value={displayedPrice} onChange={(event) => setDraftLines((lines) => lines.map((candidate) => candidate.id === line.id ? { ...candidate, unitPriceInput: event.target.value, unitPriceMinorOverride: parseMoneyInput(event.target.value) ?? '', unitPriceDirty: true } : candidate))} disabled={!canEdit || !capabilities?.quotesEditPrices} placeholder={price ? moneyInputLabel(price) : 'Sin precio'} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Desc. %</span><input aria-label={`Descuento de ${item?.name ?? 'concepto'}`} value={line.discountBasisPoints === '0' ? '' : (Number(line.discountBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'discountBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit || !capabilities?.quotesApplyDiscount} inputMode="decimal" placeholder="0" /></label><label><span className="quotes-mobile-label">IVA pb</span><input aria-label={`Impuesto de ${item?.name ?? 'concepto'}`} value={line.taxBasisPoints === '0' ? '' : (Number(line.taxBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'taxBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit} inputMode="decimal" placeholder="0" /></label><strong className="quotes-line__total">{linePreview ? moneyLabel(linePreview.total, selectedCurrency) : '—'}</strong><button className="quotes-line__remove" type="button" aria-label={`Quitar ${item?.name ?? 'concepto'}`} onClick={() => setDraftLines((lines) => lines.filter((candidate) => candidate.id !== line.id))} disabled={!canEdit}>×</button></div>; })}
+                {draftLines.map((line) => { const price = pricesByItem.get(line.catalogItemId)?.unitPriceMinor; const linePreview = calculatePreview(line, price); const displayedPrice = line.unitPriceDirty ? line.unitPriceInput : line.snapshotUnitPriceMinor ? moneyInputLabel(line.snapshotUnitPriceMinor) : price ? moneyInputLabel(price) : ''; return <div className="quotes-line" key={line.id}><div className="quotes-line__item"><strong>{line.catalogItemName}</strong><small>{line.catalogItemCode} · {line.unit}</small></div><label><span className="quotes-mobile-label">Cantidad</span><input aria-label={`Cantidad de ${line.catalogItemName}`} value={line.quantity} onChange={(event) => updateLine(line.id, 'quantity', event.target.value)} disabled={!canEdit} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Precio</span><input aria-label={`Precio de ${line.catalogItemName}`} value={displayedPrice} onChange={(event) => setDraftLines((lines) => lines.map((candidate) => candidate.id === line.id ? { ...candidate, unitPriceInput: event.target.value, unitPriceMinorOverride: parseMoneyInput(event.target.value) ?? '', unitPriceDirty: true } : candidate))} disabled={!canEdit || !capabilities?.quotesEditPrices} placeholder={price ? moneyInputLabel(price) : 'Sin precio'} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Desc. %</span><input aria-label={`Descuento de ${line.catalogItemName}`} value={line.discountBasisPoints === '0' ? '' : (Number(line.discountBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'discountBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit || !capabilities?.quotesApplyDiscount} inputMode="decimal" placeholder="0" /></label><label><span className="quotes-mobile-label">IVA pb</span><input aria-label={`Impuesto de ${line.catalogItemName}`} value={line.taxBasisPoints === '0' ? '' : (Number(line.taxBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'taxBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit} inputMode="decimal" placeholder="0" /></label><strong className="quotes-line__total">{linePreview ? moneyLabel(linePreview.total, selectedCurrency) : '—'}</strong><button className="quotes-line__remove" type="button" aria-label={`Quitar ${line.catalogItemName}`} onClick={() => setDraftLines((lines) => lines.filter((candidate) => candidate.id !== line.id))} disabled={!canEdit}>×</button></div>; })}
                 {draftLines.length === 0 && <div className="quotes-lines__empty"><strong>Aún no hay conceptos.</strong><span>Agrega los servicios que componen esta propuesta.</span></div>}
               </div>
-              {(canEdit || canStartVersion) && <div className="quotes-add-line"><SelectField ariaLabel="Agregar concepto a la cotización" value={newItemId} onValueChange={setNewItemId} options={catalogItems.filter((item) => !draftLines.some((line) => line.catalogItemId === item.id) && pricesByItem.has(item.id)).map((item) => ({ value: item.id, label: `${item.name} · ${item.unit}` }))} placeholder="Agregar un concepto…" /><button className="staff-button" type="button" onClick={addLine} disabled={!newItemId}>Agregar línea</button></div>}
+              {(canEdit || canStartVersion) && <div className="quotes-add-line"><CatalogItemSearchCombobox priceListId={selectedPriceListId} currencyCode={selectedCurrency} excludeIds={draftLines.map((line) => line.catalogItemId)} disabled={!selectedPriceListId} onSelect={addLineFromSearch} /></div>}
               <div className="quotes-summary"><div><span>Subtotal</span><strong>{moneyLabel(preview.subtotal, selectedCurrency)}</strong></div><div><span>Descuentos</span><strong>− {moneyLabel(preview.discount, selectedCurrency)}</strong></div><div><span>Impuestos</span><strong>{moneyLabel(preview.tax, selectedCurrency)}</strong></div><div className="quotes-summary__total"><span>Total de propuesta</span><strong>{preview.valid ? moneyLabel(preview.total, selectedCurrency) : 'Revisa las líneas'}</strong></div></div>
               <div className="quotes-actions"><label><span>Vigencia hasta</span><DateField ariaLabel="Vigencia hasta" value={validUntil} onValueChange={setValidUntil} disabled={!canEdit && !canStartVersion} /></label>{canEdit || canStartVersion ? <button className="staff-button staff-button--dark" type="button" disabled={saving || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void saveDraft()}>{saving ? 'Guardando…' : currentVersion?.status === 'BORRADOR' ? 'Guardar borrador' : currentVersion ? 'Crear nueva versión' : 'Crear borrador'}</button> : null}{currentVersion?.status === 'BORRADOR' && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || draftLines.length === 0} onClick={() => void transition('EN_REVISION')}>Pasar a revisión</button> : null}{currentVersion?.status === 'EN_REVISION' && hasDiscount && !hasApprovedDiscount && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeDiscountApproval)} onClick={() => void requestDiscountApproval()}>{activeDiscountApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasDiscount && activeDiscountApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideDiscountApproval(activeDiscountApproval.id, 'APPROVED')}>Aprobar descuento</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => void decideDiscountApproval(activeDiscountApproval.id, 'REJECTED')}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && canPublish && (!hasDiscount || hasApprovedDiscount) ? <button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void transition('ENVIADA')}>Enviar cotización</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesSend && !capabilities.quotesPdfGenerate ? <p className="quotes-action-note">Tu perfil puede enviar, pero necesita permiso para preparar el PDF comercial.</p> : null}{currentVersion?.status === 'EN_REVISION' && hasDiscount ? <p className="quotes-action-note">{discountApproval ? `${approvalStatusLabel(discountApproval.status)}. ` : ''}{hasApprovedDiscount ? 'La versión tiene una aprobación vigente.' : 'Esta versión no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}</div>
               {hasDiscount && currentVersion?.approvals.length ? <div className="quotes-approval-summary" aria-label="Historial de aprobación"><strong>Control de descuento</strong>{currentVersion.approvals.filter((approval) => approval.type === 'DISCOUNT').slice(0, 3).map((approval) => <span key={approval.id}>{approvalStatusLabel(approval.status)} · {formatDate(approval.requestedAt)}</span>)}</div> : null}
