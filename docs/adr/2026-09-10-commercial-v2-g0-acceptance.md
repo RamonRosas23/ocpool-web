@@ -50,7 +50,7 @@ Este artefacto registra el gate del [plan maestro V2](../ocpool-commercial-v2/pl
 | Control | Resultado técnico | Evidencia | Aprobación ingeniería/producto |
 | --- | --- | --- | --- |
 | Flags server-side fail-closed | `PASS` — aprobación global + flags individuales explícitas | [módulo](../../src/server/flags/commercial-v2.ts) / [pruebas](../../tests/unit/commercial-v2-flags.test.ts) | `APPROVED` — autorización explícita 2026-09-11 |
-| Gate técnico reproducible | `PASS_WITH_BLOCKED_EXIT` — typecheck, lint, 139 unitarias, contenido y baseline HTTP 10/10 verdes; bloquea cierre si faltan gates de producto | [script](../../scripts/quality-gate-v2.mjs) / `APP_URL=http://127.0.0.1:3188 npm run test:v2:gate` | `APPROVED_LOCAL` |
+| Gate técnico reproducible | `PASS_WITH_BLOCKED_EXIT` — typecheck, lint, 185 unitarias, contenido y baseline HTTP 10/10 verdes; bloquea cierre si faltan gates de producto | [script](../../scripts/quality-gate-v2.mjs) / `APP_URL=http://127.0.0.1:3010 npm run test:v2:gate` | `APPROVED_LOCAL` |
 | Browser baseline, hash y kill switch de landing | `VERIFIED_LOCAL` — browser baseline 24/24, manifiesto de hashes en tres breakpoints y rollback fail-closed documentado; la landing conserva `lang="es"` | [manifiesto](../ocpool-commercial-v2/landing-freeze.json) / [procedimiento](../ocpool-commercial-v2/landing-freeze.md) | `APPROVED` — autorización explícita 2026-09-11 |
 
 ## Excepción S0-01 — Contención de visibilidad legacy
@@ -76,16 +76,16 @@ Estos resultados son evidencia local y no autorizan flags, rollout ni publicaci�
 
 - `npm run typecheck` — `PASS`.
 - `npm run lint` — `PASS`.
-- `npm run test:unit` — `PASS`, 34 archivos / 139 pruebas.
+- `npm run test:unit` — `PASS`, 40 archivos / 185 pruebas.
 - `npm run test:content` — `PASS`.
 - `npm run spike:private-primitives` — `PASS`, baseline estático reproducible de Radix/react-day-picker y wrappers privados; React Aria/Lucide sólo se evalúan en el prototipo aislado y permanecen sin adoptar.
 - `npm run --prefix spikes/private-primitives-react-aria build` — `PASS`, bundle aislado 569.93 kB JavaScript/175.31 kB gzip y 4.10 kB CSS/1.36 kB gzip.
 - `PLAYWRIGHT_EXECUTABLE_PATH=... SPIKE_URL=http://127.0.0.1:4174 npm run --prefix spikes/private-primitives-react-aria check` — `PASS`, 3/3 viewports (360/768/1440), sin overflow, errores de consola/página, peticiones fallidas ni Axe serio/crítico.
 - `PLAYWRIGHT_EXECUTABLE_PATH=... npm run --prefix spikes/private-primitives-react-aria check:ssr` — `PASS`, HTML SSR de 9,862 bytes e hidratación en Chromium con `renderMode: "hydration"`, formato MXN `es-MX`, sin warnings/errors ni peticiones fallidas; aún es un smoke aislado, no una ruta Next.js.
 - `APP_URL=http://127.0.0.1:3008 PLAYWRIGHT_EXECUTABLE_PATH=... npm run --prefix spikes/private-primitives-react-aria check:next` — `PASS`, 12/12 rutas Next.js anónimas en 390/1440 px, HTML 200, sin overflow, errores de página, peticiones fallidas ni warnings inesperados; `401` privados esperados; registra `lang="es"` como gap de locale pendiente.
-- `APP_URL=http://127.0.0.1:3008 npm run test:v2:gate` — `BLOCKED` intencional (exit 2); typecheck, lint, 34 archivos/137 unitarias, contenido y baseline HTTP 10/10 pasan antes del bloqueo de signoffs, revisión final de primitives/locale y gates de diseño.
+- `APP_URL=http://127.0.0.1:3008 npm run test:v2:gate` — `BLOCKED` intencional (exit 2); typecheck, lint, 40 archivos/185 unitarias, contenido y baseline HTTP 10/10 pasan antes del bloqueo de signoffs, revisión final de primitives/locale y gates de diseño.
 - `npx vitest run tests/unit/commercial-baseline-contract.test.ts tests/unit/commercial-workflow-contract.test.ts` — `PASS`, 2 archivos / 13 pruebas.
-- `RUN_DB_TESTS=1 npx vitest run tests/integration --maxWorkers=1 --testTimeout=60000 --hookTimeout=60000 --reporter=dot` — `PASS`, 42 archivos / 88 pruebas serializadas; los logs 401/403/404/409/429 son negativos esperados y los avisos de Node 20/AWS SDK y pg no son fallos.
+- `RUN_DB_TESTS=1 npx vitest run tests/integration --maxWorkers=1 --testTimeout=60000 --hookTimeout=60000 --reporter=dot` — `PASS`, 42 archivos / 95 pruebas serializadas; los logs 401/403/404/409/429 son negativos esperados y los avisos de Node 20/AWS SDK y pg no son fallos.
 - `npx vitest run tests/unit/client-portal-service.test.ts tests/unit/quote-documents-domain.test.ts` — `PASS`, 2 archivos / 6 pruebas.
 - `npx vitest run tests/integration/quote-documents-api.test.ts tests/integration/quote-acceptance-service.test.ts tests/integration/client-portal-service.test.ts --maxWorkers=1 --testTimeout=30000 --hookTimeout=30000` — `PASS`, 3 archivos / 4 pruebas.
 - `git diff --check` — `PASS` antes del commit de esta tarea.

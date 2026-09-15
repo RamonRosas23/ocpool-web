@@ -118,6 +118,7 @@ npm run build
 npm run test:e2e
 npm run test:e2e:foundation
 npm run test:e2e:auth
+npm run test:e2e:private-shell
 npx playwright test tests/quality.spec.ts --grep "public form|first step"
 npx cross-env PORTAL_E2E=1 npx playwright test tests/client-portal.spec.ts
 npx cross-env QUOTES_E2E=1 npx playwright test tests/quotes.spec.ts
@@ -131,6 +132,7 @@ La suite E2E pública conserva el contrato visual, responsive, de interacción, 
 La suite de identidad también es opt-in: crea un empleado desechable en PostgreSQL, valida login/sesión/logout/CSRF y elimina el fixture al terminar. Requiere Docker y se ejecuta con `npm run test:e2e:auth`. La suite de superficies de acceso crea empleados, administrador MFA, cliente y tokens desechables; se ejecuta con `AUTH_SURFACES_E2E=1` y nunca depende de credenciales fijas.
 Si el puerto 3100 está ocupado, las suites pueden aislarse con `E2E_PORT=3110 APP_URL=http://127.0.0.1:3110`; el servidor E2E, el `baseURL` y los headers same-origin usan el mismo valor.
 La suite de onboarding de cliente es opt-in: crea una solicitud, un manager y un rol de sólo lectura, valida habilitación, deduplicación, visibilidad por permiso, responsive y Axe, y elimina todos los fixtures al terminar. Ejecuta `CUSTOMER_ONBOARDING_E2E=1` sólo contra una base local desechable.
+El harness sintético del shell privado es exclusivamente de desarrollo: `npm run test:e2e:private-shell` levanta `next dev`, no usa Prisma ni datos reales y valida staff/portal en los anchos soportados, teclado, foco, touch targets, reduced motion, Axe y zoom equivalente. El runner E2E normal usa `next start` y lo omite intencionalmente; la ruta devuelve 404 en producción.
 El gate V2 ejecuta typecheck, lint, unitarias, contrato de contenido y baseline HTTP. Puede terminar con código `2` y estado `BLOCKED` de forma intencional cuando faltan signoffs, baseline autenticado, spike de primitives o hash de la landing; ese resultado no debe interpretarse como una suite omitida ni como autorización de despliegue. Las flags V2 permanecen apagadas por defecto y no están conectadas a ninguna pantalla.
 El baseline de navegador recorre las superficies privadas anónimas en 390, 768 y 1440 px sin guardar contenido ni PII. Si el runner no puede iniciar Chromium (por ejemplo, filesystem `noexec`), termina con código `2` y estado `BLOCKED` para evitar un falso positivo.
 El baseline HTTP comprueba disponibilidad, status, tipos de respuesta y headers de seguridad de las entradas privadas, health/readiness, robots y sitemap; no reemplaza la validación de UI ni de permisos autenticados.
@@ -165,7 +167,8 @@ Endpoints disponibles:
 - `POST /api/auth/recovery/request` y `POST /api/auth/recovery/consume` — recovery de empleados.
 - `GET /login`, `GET /login/recovery`, `GET /portal/access`, `GET /auth/recovery` y `GET /auth/customer/consume-link` — superficies navegables que consumen los contratos de autenticación anteriores; las rutas son privadas/noindex y no sustituyen los controles backend.
 - `POST /api/quote-requests` — crea un expediente público con consentimiento, datos de calificación opcionales, folio y respuesta idempotente mediante el header `Idempotency-Key`; rechaza el honeypot sin revelar la lógica anti-abuso.
-- `GET /api/staff/quote-requests` y `GET /api/staff/quote-requests/:id` — inbox y detalle para empleados autorizados.
+- `GET /api/staff/quote-requests` y `GET /api/staff/quote-requests/:id` — inbox y detalle para empleados autorizados; el expediente V2 mantiene tabs profundas, drafts de conversación y acciones disponibles calculadas en servidor.
+- `GET /api/staff/quote-requests/:id/activity?cursor=...&limit=...` — historial combinado de estados y responsables con cursor estable, límite acotado y autorización `requests.read`.
 - `GET /api/staff/quote-requests/assignees`, `POST .../:id/assign` y `POST .../:id/status` — operaciones internas RBAC con auditoría e historial.
 - `POST /api/staff/quote-requests/:id/customer-access` — habilita el portal del contacto desde el expediente para `manager`/`admin`; acepta `{}`, exige same-origin y devuelve sólo estado seguro (`INVITED`, `ALREADY_PENDING` o `ALREADY_ACTIVE`).
 - `GET|POST /api/portal/requests/:id/files` y `POST|GET|DELETE .../:fileId` — archivos privados del cliente con reserva, finalización y descarga efímera.
@@ -207,6 +210,7 @@ Con `.env.example` el resultado esperado es `BLOCKED`; no se deben reutilizar se
 - `tests/integration/` — pruebas contra PostgreSQL local.
 - `tests/*.spec.ts` — pruebas E2E de Playwright.
 - `docs/ocpool-commercial-v2/` — especificación, auditoría y plan maestro activos de la rearquitectura comercial.
+- `docs/ocpool-commercial-v2/request-workspace-idor-matrix.md` — matriz formal local de alcance e IDOR del workspace staff.
 - `docs/historicos/` — planes, especificaciones y revisiones de fases anteriores.
 - `docs/runbooks/` — procedimientos operativos locales.
 - `PROJECT_STATUS.md` — fuente única del avance, decisiones, riesgos y evidencia.

@@ -28,17 +28,20 @@ const requiredArtifacts = [
   'scripts/commercial-baseline-http.mjs',
 ];
 
+const npmCommand = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : 'npm';
+const npmPrefixArgs = process.platform === 'win32' ? ['/d', '/s', '/c', 'npm'] : [];
+
 const checks = [
-  ['typecheck', 'npm', ['run', 'typecheck']],
-  ['lint', 'npm', ['run', 'lint']],
-  ['unit', 'npm', ['run', 'test:unit']],
-  ['content', 'npm', ['run', 'test:content']],
-  ['http-baseline', 'npm', ['run', 'baseline:v2:http']],
+  ['typecheck', ['run', 'typecheck']],
+  ['lint', ['run', 'lint']],
+  ['unit', ['run', 'test:unit']],
+  ['content', ['run', 'test:content']],
+  ['http-baseline', ['run', 'baseline:v2:http']],
 ];
 
-function runCheck(label, command, args) {
+function runCheck(label, args) {
   process.stdout.write(`\n[G0-05] ${label}\n`);
-  const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', env: process.env });
+  const result = spawnSync(npmCommand, [...npmPrefixArgs, ...args], { cwd: root, stdio: 'inherit', env: process.env });
   if (result.error) {
     process.stderr.write(`${result.error.message}\n`);
     return false;
@@ -53,7 +56,7 @@ if (missing.length > 0) {
 }
 
 let technicalPass = true;
-for (const [label, command, args] of checks) technicalPass = runCheck(label, command, args) && technicalPass;
+for (const [label, args] of checks) technicalPass = runCheck(label, args) && technicalPass;
 
 if (!technicalPass) {
   process.stderr.write('\nG0-05: FAIL — una verificación técnica falló.\n');

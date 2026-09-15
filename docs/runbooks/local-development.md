@@ -50,6 +50,8 @@ No copies credenciales reales a `.env.example`. El valor local esperado apunta a
 
 No ejecutes `npm run build` escribiendo `.next` mientras un proceso `next start`, PM2 o un proxy local está sirviendo ese mismo directorio. El proceso puede conservar HTML del build anterior mientras los chunks ya fueron reemplazados y producir `404` en recursos estáticos. Para E2E usa el directorio aislado que configura `scripts/start-e2e-server.mjs`; para una verificación manual, detén/reinicia el proceso después del build o configura un `NEXT_DIST_DIR` separado.
 
+El contrato visual del shell privado se verifica con `npm run test:e2e:private-shell`. Ese comando selecciona `E2E_NEXT_MODE=dev` para que `/private-shell-harness` exista sólo durante `next dev`; no cambies el guard de producción ni intentes usar esa ruta como fixture productivo.
+
 ## Cliente Prisma no generado
 
 Regenera el cliente a partir del schema:

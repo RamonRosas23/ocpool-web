@@ -3,11 +3,12 @@
 > **Versión del plan:** 2.0
 > **Estado:** plan revisado; G0 sigue abierto y se permite implementar verticales de integridad local cuando reducen un bloqueo P0 sin activar flags ni tocar la landing.
 > **Fase activa:** G0 — Gobierno, decisiones y baseline.
-> **Tarea actual (`EN_PROGRESO`):** G0-03/G0-05 — baseline HTTP y navegador anónimo PASS; auth surfaces 5/5, calidad pública 35/35 y matriz comercial autenticada ampliada 17/17 en runner aislado (incluye catálogo/precios); G0-04 quedó aprobado localmente con `lang="es-MX"` SSR y primitives por patrón. La muestra mínima local de G0-03 ya reúne 65 registros PII-safe (`13 métricas × n=5`) y sus objetivos de §29 quedaron aprobados localmente; falta el piloto real y las decisiones fiscales/legales. Bajo la excepción de integridad local quedaron implementados y verificados los verticales P0 de punteros working/published, snapshot financiero (S0-02), aprobación de descuentos (A1-01/A1-02), acciones server-owned (S0-03), publicación con preflight PDF (P0-05 parcial) y términos controlados por servidor (D1-04 parcial), sin activación productiva. La congelación de landing y rollback fail-closed ya tienen manifiesto reproducible.
-> **Último gate superado:** contrato canónico G0-01 verificado localmente, matriz de baseline validada, 143 unitarias verdes, integración serial completa 42/42 archivos y 88/88 pruebas, vertical de aprobación dirigido 3/3, portal/términos dirigido 3/3, E2E del constructor 1/1, E2E de solicitudes 1/1 con responsive 390/768/1440, build aislado PASS, schema/migraciones al día y auditoría de dependencias sin vulnerabilidades altas.
+> **Tarea actual (`EN_PROGRESO`):** G0-03/G0-05 — baseline HTTP y navegador anónimo PASS; auth surfaces 5/5, calidad pública 35/35 y matriz comercial autenticada ampliada 17/17 en runner aislado (incluye catálogo/precios); G0-04 quedó aprobado localmente con `lang="es-MX"` SSR y primitives por patrón. La muestra mínima local de G0-03 ya reúne 65 registros PII-safe (`13 métricas × n=5`) y sus objetivos de §29 quedaron aprobados localmente; falta el piloto real y las decisiones fiscales/legales. Bajo la excepción de integridad local quedaron implementados y verificados los verticales P0 de punteros working/published, snapshot financiero (S0-02), aprobación de descuentos (A1-01/A1-02), acciones server-owned (S0-03), publicación con preflight PDF (P0-05 parcial) y términos controlados por servidor (D1-04 parcial), sin activación productiva. La preparación local U1-01/U1-03/U1-06 ya tiene namespace, layouts, shell verificable y harness sintético, sin activar flags ni tocar la landing. La congelación de landing y rollback fail-closed ya tienen manifiesto reproducible.
+> **Último gate técnico local:** contrato canónico G0-01 verificado, matriz de baseline validada, `40/40` archivos y `185/185` unitarias, `42/42` archivos y `95/95` integraciones, E2E pública `35/35` ejecutables con `29` omitidas por opt-in, E2E V2 `5/5` (incluye dedupe visible, decisión explícita y reutilización de contacto), portal autenticado `4/4`, staff de mensajería/archivos `2/2`, foundation `2/2`, typecheck, lint, build, schema/migraciones y audit PASS. El gate formal de G0 y el gate de entrada R1 siguen abiertos por sus aprobaciones no técnicas.
 > **Bloqueo actual:** G0-03 tiene muestra mínima y objetivos aprobados localmente, pero conserva pendiente el piloto real y el cierre formal del gate; además siguen los signoffs externos de fiscal/jurídico para BIZ-03, BIZ-04, BIZ-09 y BIZ-10. Los verticales locales no se activan por flag hasta cerrar G0. La contención S0-01 sigue aplicada por seguridad.
-> **Siguiente paso exacto:** la preparación técnica U1/R1 quedó registrada en [`ADR de entrada U1/R1`](../../adr/2026-09-11-u1-r1-entry-readiness.md); ahora corresponde revisar G0-05, ejecutar el piloto T1 cuando exista la cohorte autorizada y mantener bloqueadas las slices fiscales/legales.
-> **Última actualización:** 2026-09-11.
+> **Siguiente paso exacto:** ejecutar el gate R1 completo con flags apagadas y conservar la compatibilidad legacy; la cobertura técnica local de R1-07 ya incluye conversación/archivos autenticados, deep links, fallos/reintentos, preservación de drafts y actividad paginada, pero R1 no se cierra hasta completar su checklist y aprobaciones. En paralelo siguen pendientes el cierre formal de G0-05, piloto T1 y signoffs fiscales/jurídicos.
+> **Última actualización:** 2026-09-13.
+> **Slices locales vigentes:** R1-03/R1-04/R1-05/R1-06/R1-08 están implementadas bajo flags fail-closed; R1-07 tiene paginación de conversación, archivos y actividad, progreso/scan/reintento para staff y portal, drafts preservados, semántica accesible de intención y deep links gated. El expediente V2 incorpora cabecera contextual, acción primaria server-authorized y menú accesible de acciones secundarias, con foco conservado en formularios. No se marca R1 `DONE` hasta cerrar su checklist formal.
 > **Responsables:** producto OCPOOL (decisiones de negocio/legal) + Codex (arquitectura, implementación y evidencia).
 > **Commit/evidencia:** `8217c5c` + `2f3cc16` + `ee24879` + `5247674` + `f787468` + `499bfd4` + `1d408f7` + `6611299` + `0cc3683`; S0-01 está aplicada como excepción de seguridad y documentada en su ADR, sin activar V2 ni cerrar G0.
 
@@ -494,7 +495,7 @@ Detener activación ante cualquiera de estos hechos:
 
 ### G0-01 — Contrato canónico de ciclo comercial
 
-**Estado:** `VERIFICADO_LOCAL`; aprobación de producto pendiente.
+**Estado:** `APPROVED_LOCAL_PRODUCT`; el cierre formal queda registrado en el artefacto de aceptación de G0.
 **Propósito:** fijar ownership, estados alcanzables y efectos por evento antes de diseñar acciones.
 
 **Archivos previstos:**
@@ -1183,14 +1184,14 @@ No se permite cambiar a `INFORMACION_REQUERIDA` sin mensaje/evento. Si delivery 
 
 ### Gate R1
 
-- [ ] crear solicitud manual, dedupe y negativas E2E;
-- [ ] abrir/tomar/reasignar/revisar/solicitar información completos;
-- [ ] una sola ruta conserva tabs/filtros/back/scroll;
-- [ ] móvil no apila master/detail;
-- [ ] scope/RBAC/IDOR completos;
-- [ ] conversación/archivos/actividad paginados;
-- [ ] primera task de usuario cumple baseline/meta;
-- [ ] fallback y landing verdes.
+- [x] crear solicitud manual, dedupe y negativas E2E — verificado localmente con `5/5` V2 y negativas de servicio/API;
+- [x] abrir/tomar/reasignar/revisar/solicitar información completos — verificado localmente en el recorrido V2 y servicios protegidos;
+- [x] una sola ruta conserva tabs/filtros/back/scroll — tabs, filtros, deep links, regreso y restauración del valor exacto de scroll están verificados localmente;
+- [x] móvil no apila master/detail — verificado en viewports móviles y ausencia de overflow horizontal; la revisión humana de densidad/jerarquía queda para la aprobación formal del gate;
+- [x] scope/RBAC/IDOR completos — la matriz formal [`request-workspace-idor-matrix.md`](../request-workspace-idor-matrix.md) documenta las superficies, respuestas 404/403 y evidencia; el backend aplica `requests.read.global` para distinguir solicitudes propias/sin asignar de la vista global y protege detalle, actividad, mensajes, archivos, cotizaciones, aprobaciones, PDF, onboarding, filtros y destinos de asignación. La aprobación final de gate permanece separada;
+- [x] conversación/archivos/actividad paginados — verificado localmente con cursores, carga progresiva, drafts y estados de carga/reintento;
+- [ ] primera task de usuario cumple baseline/meta — pendiente de piloto T1 con usuarios representativos;
+- [x] fallback y landing verdes — regresión legacy `35/35` con flags apagadas y landing sin cambios.
 
 ## 16. K1 — Catálogo, precios y política comercial
 
@@ -2365,6 +2366,83 @@ Siguiente paso exacto
 - El gate técnico ejecutado contra un build fresco en `3188` pasó typecheck, lint,
   `139/139` unitarias, contenido y baseline HTTP `10/10`; termina `BLOCKED` sólo
   por la matriz G0-03, objetivos y signoffs fiscales/jurídicos restantes.
+
+### 2026-09-12 — U1-01/U1-03/U1-06 preparados localmente
+
+- Con autorización explícita para continuar sólo en la computadora local, el
+  namespace privado quedó conectado por layouts route-local de `/auth`, `/login`,
+  `/portal`, `/staff` y el harness de desarrollo, manteniendo el layout raíz
+  público libre de `private-ui.css`.
+- `PrivateShell` ya ofrece un único `main#contenido`, retorno contextual de
+  marca (`/staff` o `/portal`), breadcrumb para rutas anidadas, navegación
+  móvil, identidad sintética y logout preparado; los paneles legacy conservan
+  su `<main>` cuando se renderizan fuera del shell mediante `PrivateSurfaceRoot`.
+- U1-06 quedó cubierto por `/private-shell-harness`, que se niega en producción,
+  no consulta Prisma ni APIs y sólo usa contextos sintéticos. La E2E opt-in pasó
+  `2/2` para staff y portal con reduced motion, teclado, objetivos táctiles,
+  Axe sin violaciones críticas/serias, consola limpia y cero overflow en
+  360/390/768/1024/1440 px más la anchura efectiva de 180 px para zoom 200%.
+- La suite actual es `37` archivos/`149` pruebas unitarias; typecheck, lint,
+  contenido y diff-check pasan. Con el `.env` local ignorado, Docker saludable,
+  migraciones al día y seed idempotente, integración pasó `42/42` archivos y
+  `88/88` pruebas. Las flags V2 permanecen apagadas, la landing no cambió y no
+  hubo push, deploy ni mutación de producción. El trabajo no cierra G0 ni
+  convierte U1/R1 en `DONE`; la siguiente decisión sigue siendo el cierre formal
+  de G0-05 y la cohorte del piloto.
+- La regresión E2E opt-in completa sobre build aislado pasó `57/57` casos
+  ejecutables; los 2 casos restantes se omiten porque `/private-shell-harness`
+  sólo existe con `next dev`. El comando dedicado `npm run test:e2e:private-shell`
+  pasó staff/portal `2/2`, con responsive, teclado, foco, Axe, reduced motion,
+  touch targets y zoom equivalente. El constructor también quedó protegido
+  contra seleccionar una lista de precios incompatible tras recargar una versión
+  publicada. No se crean secretos productivos ni se ejecuta push/deploy.
+
+### 2026-09-12 — R1-01/R1-02 implementados localmente bajo flags
+
+- La cola V2 usa [`request-workspace-query.ts`](../../src/lib/request-workspace-query.ts)
+  como contrato único para `view`, `query`, `stage`, `assignee`, `age`, `sort`,
+  `page` y `tab`; el servidor aplica rangos de fecha no solapados y orden
+  determinista. El selector de responsable consume sólo el directorio staff
+  protegido por `requests.assign` y permanece ausente para perfiles sin ese
+  permiso.
+- `/staff/requests/[requestId]` conserva el contexto de la cola y expone
+  `summary`, `quote`, `conversation`, `files` y `activity` mediante enlaces
+  URL-driven. Las dos superficies reutilizadas se montan al activar su tab;
+  cotización consulta `/api/staff/quotes/:id` sólo al abrirse; actividad usa la
+  proyección server-owned de historial y asignaciones.
+- La prueba opt-in `npm run test:e2e:request-workspace` pasó `2/2`, con filtros,
+  deep link, retorno, tabs, selector de responsable, normalización de URLs,
+  Axe serio y cero overflow en 360/390/768/1024/1440 px. La regresión general
+  `npm run test:e2e` pasó `35/35` escenarios ejecutables y omitió `26` por
+  flags opt-in; `npm run test:e2e:foundation` pasó `2/2`.
+- La regresión local completa pasó `159` pruebas unitarias y `89` de
+  integración; typecheck, lint, contenido, build y `git diff --check` pasan.
+  Se ajustó `package.json` para fijar el host E2E local en `127.0.0.1:3100`,
+  evitando que el `.env` de desarrollo dirija Playwright a un puerto apagado.
+  No se activaron flags por defecto, no se modificó la landing y no hubo push,
+  deploy ni mutación de producción.
+
+### 2026-09-13 — R1-03/R1-04/R1-05/R1-06/R1-08 y base R1-07 local
+
+- La admisión manual, edición auditada, toma/reasignación y redirect compatible quedaron conectados a servicios server-owned con dedupe explícito, bloqueo transaccional, permisos separados, motivos y metadatos PII-safe.
+- `Solicitar información` es una intención única: valida etapa, mensaje y campos faltantes, crea/reutiliza acceso de portal opcional, publica mensaje, cambia estado, registra historial/auditoría y emite Outbox dentro de una transacción; la clave reutilizada con otro cuerpo se rechaza.
+- La conversación conserva el draft al cambiar de tab, usa paginación por cursor y no inventa badges de no leído; archivos ahora tienen cursor seguro, carga incremental, progreso de bytes, scan visible y reintento con reserva idempotente. Los avisos staff pueden usar el expediente y tab exactos sólo cuando las flags V2 están activas; flags apagadas conservan la cola legacy.
+- Evidencia fresca en local: `40/40` archivos y `185/185` pruebas unitarias, `42/42` archivos y `95/95` integraciones, E2E V2 `5/5` (incluye dedupe visible, decisión explícita y reutilización de contacto), portal autenticado `4/4`, staff de mensajería/archivos `2/2`, E2E pública `35/35` ejecutables con `29` omitidas por opt-in, foundation `2/2`, typecheck, lint, build, audit y diff-check PASS.
+- La prueba V2 también verifica en móvil que el detalle no apila la cola maestra ni genera overflow, y conserva el valor exacto de scroll al regresar con la misma consulta; la API niega con `403` la lectura directa del detalle staff a una sesión cliente. Los fixtures E2E se limpian sin dejar contactos ni usuarios temporales.
+- R1-07 tiene su cobertura técnica local ampliada: conversación, archivos y actividad paginados; carga de cliente y staff con progreso, scan, fallo y retry; drafts entre tabs; deep links condicionados por flags; y pruebas autenticadas de portal/staff. Permanece abierta la ejecución y aprobación del gate R1 completo; no se activaron flags, no se modificó la landing y no hubo push/deploy.
+
+### 2026-09-13 — Pulido de experiencia y resiliencia V2
+
+- La idempotencia de mensajes se conserva durante un reintento explícito y se invalida al cambiar el contenido o el modo de visibilidad; los errores de API V2 conservan la referencia de solicitud para recuperación operativa.
+- Las acciones heredadas de conversación/archivos quedan dentro de un contrato táctil privado de `44px`, sin cambiar rutas públicas ni introducir una segunda hoja global; en tabs distintas de Resumen, las acciones operativas se contraen y se expanden bajo demanda para evitar scroll y decisiones duplicadas.
+- La cola guarda y restaura la posición de scroll por consulta al volver del expediente, después de que la lista queda cargada; si el navegador no ofrece `sessionStorage`, conserva el flujo sin bloquearlo.
+- Evidencia local actualizada: `40/40` archivos y `185/185` unitarias, `42/42` archivos y `95/95` integraciones, typecheck, lint, build y contratos V2 PASS; E2E V2 `5/5` PASS. La cobertura autenticada de portal/staff permanece `4/4` y `2/2`; R1 y G0 continúan abiertos formalmente por las tareas restantes, el piloto T1 y signoffs externos.
+
+### 2026-09-13 — Alcance de solicitudes BIZ-08 consolidado localmente
+
+- Se añadió el permiso explícito `requests.read.global`: Ventas queda limitada a solicitudes propias y sin asignar; Gerencia/Administración conservan la vista global. El backend aplica la misma regla a cola, detalle, actividad, toma/reasignación, mensajería, archivos, cotizaciones, aprobaciones, PDF y habilitación del portal; los filtros y destinos de responsable también se validan en servidor.
+- La UI V2 y el fallback legacy reflejan el permiso sin usar la ocultación como seguridad: Ventas no recibe el selector global ni el directorio completo; Gerencia puede filtrar y reasignar globalmente. La prueba unitaria cubre propia/sin asignar, extranjera y filtro/target; la integración cubre lectura directa extranjera y el recorrido global.
+- Evidencia fresca: `npm run test:unit` `40/40` archivos / `185/185` pruebas y `npm run test:integration` `42/42` archivos / `95/95` pruebas, ambas PASS. La matriz formal completa de IDOR del workspace quedó documentada en [`request-workspace-idor-matrix.md`](../request-workspace-idor-matrix.md); continúan pendientes la aprobación del gate R1, el piloto T1 y los signoffs externos. No se activaron flags, no se modificó la landing y no hubo push/deploy.
 
 ### 2026-09-10 — Auditoría y plan V2
 

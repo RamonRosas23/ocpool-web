@@ -16,11 +16,13 @@ actual seguirá siendo el fallback hasta contar con el gate correspondiente.
 
 La preparación se limita a un mapa verificable de la superficie actual, sus
 contratos reutilizables, las brechas que deben cerrarse y una secuencia de
-implementación reversible. No se crea todavía un layout nuevo, no se cambia la
-URL pública, no se conecta ningún consumidor al módulo de flags y no se
-instrumenta telemetría productiva. El único cambio de contrato es aditivo: se
-exponen tres capacidades booleanas seguras para que el futuro shell filtre su
-navegación.
+implementación reversible. En la habilitación local posterior se crearon
+layouts route-local para cargar el namespace privado y un harness de desarrollo
+sin datos reales; no se cambia la URL pública, no se conecta ningún consumidor
+al módulo de flags y no se instrumenta telemetría productiva. El único cambio
+de contrato de backend es aditivo: se exponen capacidades booleanas seguras
+para que el shell filtre navegación y acciones sin sustituir la autorización
+del servidor.
 
 ## Precondiciones que siguen bloqueando la implementación visible
 
@@ -35,19 +37,23 @@ Estas condiciones no se consideran aprobadas por este ADR:
 La autorización local para preparar el trabajo no sustituye ninguna de esas
 condiciones.
 
-### Actualización 2026-09-11 — fundamento privado inerte
+### Actualización 2026-09-11 — fundamento privado conectado sólo por rutas autorizadas
 
 Como preparación reversible de Entrada 1 se creó el namespace
 `src/components/private/ui/` con tokens semánticos, relaciones de accesibilidad
 para campos, Button/IconButton/LinkButton, campos de texto y área, wrappers
 numéricos, Select sobre Radix y estados de status, skeleton, empty y bloqueo.
-Sus estilos viven en `private-ui.css` bajo `.private-ui-scope` y todavía no son
-importados por layouts ni pantallas. La búsqueda de consumidores confirma que
-ninguna ruta de producto los ha activado y las flags continúan fail-closed.
+Sus estilos viven en `private-ui.css` bajo `.private-ui-scope` y, tras la
+autorización local explícita posterior a este ADR, se importan únicamente desde
+los layouts de `/auth`, `/login`, `/portal`, `/staff` y el harness privado de
+desarrollo; nunca desde el layout público raíz. La flag
+`commercialWorkspaceV2` continúa apagada por defecto, por lo que ninguna ruta
+de producto cambia su fallback ni se activa en producción.
 
 La prueba contractual nueva cubre la separación de tokens y la asociación
-label/description/error. Después de este slice, la suite local queda en
-36 archivos y 143 pruebas verdes.
+label/description/error. La prueba de aislamiento de este slice cubre además
+la carga por layout y el destino contextual de marca; la suite local queda en
+37 archivos y 148 pruebas verdes.
 
 Como contrato adicional de U1-03 se preparó el mapa declarativo de navegación
 staff en `src/components/private/navigation.ts`. Cada destino exige una
@@ -60,17 +66,108 @@ de capabilities pasó 3/3 con negativo de sesión, separación de roles y
 respuesta sin datos sensibles. El cambio es aditivo y no modifica los guards
 de las rutas.
 
+### Actualización 2026-09-11 — slice local de aislamiento y marca
+
+Con autorización explícita para continuar en la computadora local, se retiró
+la importación de `private-ui.css` del layout raíz y se añadió a los layouts de
+las superficies privadas/auth. `PrivateShellChrome` ahora entrega `/staff` o
+`/portal` según la superficie y expone un nombre accesible coherente. El
+contrato dirigido pasó 2/2; typecheck, lint, contenido y build pasaron. El
+baseline anónimo de Chromium pasó 24/24 en 390/768/1440 px, sin overflow,
+errores de página ni respuestas inesperadas. No se activó ninguna flag, no se
+modificó la landing y no se hizo push, deploy ni cambio en producción.
+
+### Actualización 2026-09-12 — harness local U1-06 y verificación responsive
+
+Se añadió `/private-shell-harness` como ruta sólo de desarrollo: usa contextos
+sintéticos constantes, no consulta Prisma ni APIs, y ejecuta `notFound()` cuando
+`NODE_ENV` es `production`. Su stylesheet se carga desde un layout route-local,
+conservando el contrato de aislamiento y evitando que el harness dependa de la
+landing.
+
+La prueba opt-in `tests/private-shell-harness.spec.ts` pasó `2/2` para staff y
+portal con reduced motion, menú móvil, foco por teclado, objetivos táctiles y
+Axe sin violaciones `critical`/`serious`. La matriz comprobó cero overflow en
+360/390/768/1024/1440 px y en una anchura efectiva de 180 px para el caso de
+zoom 200%. La suite unitaria completa quedó en 37 archivos/148 pruebas. La
+regresión pública/fallback pasó `32/32` al excluir los tres casos que requieren
+persistir datos; la corrida E2E completa se intentó, pero su runner no pudo
+sembrar por la ausencia de `.env`, `DATABASE_URL` y las claves requeridas. No
+se activaron flags, no se usaron datos reales, no se modificó la landing y no
+hubo push, deploy ni cambio en producción.
+
+### Actualización 2026-09-12 — R1-01/R1-02 local bajo autorización explícita
+
+Con la autorización explícita de continuar en la computadora local, se
+implementó una primera slice reversible de la cola y el expediente sin cambiar
+el fallback ni activar flags por defecto. `request-workspace-query.ts` es el
+contrato único para vistas, búsqueda, etapa, responsable, antigüedad, orden,
+paginación y tab; el servicio aplica rangos de fecha no solapados y orden
+determinista. La nueva ruta `/staff/requests/[requestId]` conserva el contexto
+de la cola y ofrece `summary`, `quote`, `conversation`, `files` y `activity`.
+
+Conversación y archivos reutilizan sus paneles server-protected y sólo se
+montan al activar la sección; cotización consulta su endpoint protegido bajo
+demanda; actividad usa historial y asignaciones ya proyectados por el servidor.
+El directorio de responsables se consulta únicamente mediante la ruta
+existente protegida por `requests.assign`, por lo que no se amplía el alcance
+RBAC de sólo lectura. El fallback legacy, la landing y las flags siguen sin
+cambio. Contratos `5/5`, integración `42/42` archivos/`89/89` pruebas, E2E de
+la slice `2/2`, regresión E2E general `35/35` ejecutables, foundation `2/2`,
+typecheck, lint, contenido, build y diff-check pasan. Esto no equivale a
+`DONE`, cierre formal de G0 ni autorización productiva.
+
+### Actualización 2026-09-13 — R1-03/R1-04/R1-05/R1-06/R1-08 y base R1-07 local
+
+La implementación local avanzó con flags fail-closed: admisión manual con dedupe
+explícito, edición comercial auditada, toma/reasignación con concurrencia segura,
+redirect compatible y la intención transaccional `Solicitar información`. Esta
+última enlaza mensaje, campos faltantes, acceso opcional al portal, estado,
+historial, auditoría y Outbox; una clave idempotente con otro cuerpo se rechaza.
+
+La base de R1-07 conserva drafts al cambiar de tab, pagina conversación, archivos y
+actividad por cursor, muestra progreso/scan/reintento de cargas en staff y portal y
+sólo agrega deep links al expediente cuando ambas flags V2 están activas. El detalle
+V2 incorpora una cabecera contextual única, una acción primaria derivada de las
+capacidades/transiciones server-owned y un menú accesible para acciones secundarias;
+los comandos con formulario expanden el bloque operativo y conservan el foco. No se
+inventan indicadores unread: esa señal queda pendiente de un modelo de lectura
+explícito. La evidencia fresca es `40/40` archivos y `182/182` unitarias, `42/42`
+archivos y `94/94` integraciones, E2E V2 `5/5` (incluye dedupe visible, decisión
+explícita y reutilización de contacto), portal autenticado `4/4`, staff de
+mensajería/archivos `2/2`, E2E general `35/35` ejecutables con `28` omitidas por
+opt-in, foundation `2/2`, typecheck, lint, build, audit y
+diff-check PASS. R1-07 tiene cobertura técnica local ampliada, pero R1 no se
+considera cerrado hasta completar su gate integral y sus aprobaciones.
+
+### Actualización 2026-09-13 — alcance de lectura y anti-IDOR BIZ-08
+
+Se consolidó el alcance de solicitudes en una regla server-owned: el permiso
+`requests.read.global` habilita la vista global para Gerencia/Administración;
+Ventas sólo puede leer solicitudes propias o sin asignar. La regla se aplica a
+cola, filtros, detalle, actividad, toma/reasignación, mensajería, archivos,
+cotizaciones, aprobaciones, PDF y habilitación del portal. La UI V2 y el
+fallback legacy reflejan la misma capacidad, pero las rutas siguen protegidas
+aunque se invoquen directamente.
+
+La cobertura local actual es `40/40` archivos y `185/185` unitarias, `42/42`
+archivos y `95/95` integraciones, con typecheck, lint y build PASS. La matriz
+formal de IDOR del workspace quedó incorporada en
+[`request-workspace-idor-matrix.md`](../ocpool-commercial-v2/request-workspace-idor-matrix.md);
+siguen pendientes la aprobación del gate R1, el piloto T1 y los signoffs
+externos. No se activan flags ni se autoriza producción.
+
 ## Auditoría de entrada
 
 | Superficie | Estado actual comprobado | Brecha de U1/R1 | Tratamiento aprobado |
 | --- | --- | --- | --- |
 | `/login`, `/login/recovery`, `/portal/access` y enlaces de consumo | Componentes de autenticación separados, respuestas no enumerativas y sesión en servidor | Falta un contrato visual compartido de estados, foco, busy y recuperación | U1-04 con wrappers privados; conservar endpoints y allowlist existente |
-| `/staff` | Dashboard autónomo con navegación propia y datos protegidos por API | No hay `staff/layout.tsx`, usuario/logout/capabilities en un shell único | U1-03 como shell server-first; no duplicar navegación por página |
+| `/staff` | Dashboard autónomo con navegación propia y datos protegidos por API; layout local ya preparado para estilos | Aún no hay usuario/logout/capabilities en un shell único de producto | U1-03 como shell server-first; no duplicar navegación por página |
 | `/staff/requests` | Lista y detalle en una sola pantalla; selección, filtros y paginación viven en estado cliente | No hay URL como fuente de selección, tabs ni ruta profunda | R1-01/R1-02; mantener el panel actual como fallback durante la migración |
 | `/staff/quotes` | Módulo separado del expediente | Duplica contexto y no cumple el destino canónico de cotización | R1-08 redirect compatible a `/staff/requests/:id?tab=quote` |
 | `/portal` | Lista limitada a `page=1&pageSize=25`; selección y detalle viven en estado cliente | No hay deep link, timeline/tab URL ni carga por expediente desde la ruta | U1-04 y la slice posterior de portal; no mezclarla con R1 staff |
 | `/staff/catalog`, `/staff/notifications`, `/staff/audit` | Rutas existentes con APIs protegidas | La visibilidad del menú no está centralizada en capabilities | U1-03: filtrar navegación en servidor y mantener protección backend |
-| estilos privados | Selectores `staff-*`, `analytics-*`, `client-*` y `auth-*` están en `src/app/globals.css` | No existe namespace/tokens privados aislados ni fecha de retiro | U1-01: tokens y estilos privados separados; prueba de regresión de landing |
+| estilos privados | Los selectores legacy siguen en `src/app/globals.css`; el namespace nuevo vive en `src/components/private/ui/private-ui.css` y se carga por layouts privados | Falta migrar consumidores de producto y definir retiro del legacy | U1-01/U1-03: tokens y estilos privados separados; prueba de regresión de landing |
 
 ## Contratos que se reutilizan
 
@@ -172,15 +269,24 @@ Verificaciones ejecutadas antes de registrar esta preparación:
 
 - `npm run typecheck` — PASS;
 - `npm run lint` — PASS;
-- `npm run test:unit` — 36 archivos / 143 pruebas — PASS;
+- `npm run test:unit` — 37 archivos / 149 pruebas — PASS;
+- `npm run test:integration` — 42 archivos / 88 pruebas — PASS;
+- `npm run test:e2e:private-shell` — 2/2 — PASS;
+- regresión E2E opt-in con build aislado — 57/57 ejecutables PASS y 2 omitidas por ser harness dev-only;
+- `npm run build` con `NEXT_DIST_DIR` aislado — PASS;
 - `git diff --check` — PASS;
 - gate técnico G0-05 aislado — verificaciones técnicas PASS, salida
   `BLOCKED` deliberada por T1 y signoffs externos.
 
 ## Siguiente acción exacta
 
-Después del cierre formal de G0, iniciar Entrada 1 con un diff aislado de
-`src/components/private/ui/`, layouts privados y estilos del namespace
-privado. Ejecutar primero el harness accesible y la regresión de landing; sólo
-después conectar `commercialWorkspaceV2`. Hasta entonces, este ADR y el
-fallback existente son la preparación aprobada.
+La cobertura técnica local de R1-07 ya quedó verificada con conversación/archivos,
+deep links, fallos/reintentos, drafts, actividad paginada y reasignación; el
+harness sigue siendo una prueba de contrato y el fallback legacy y las flags
+permanecen fail-closed. El siguiente entregable es ejecutar el gate R1 completo
+con flags apagadas, revisar cada criterio de la checklist y obtener las
+aprobaciones formales de entrada; el cierre de G0, el piloto T1 y los signoffs
+externos siguen siendo independientes.
+Después del cierre formal de G0 deberán repetirse las revisiones de entrada,
+la regresión de landing y la aprobación de cohorte. Este ADR no equivale a
+U1/R1 `DONE` ni autoriza producción.
