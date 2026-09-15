@@ -11,6 +11,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       metricsRead: hasPermission(actor, 'metrics.read'),
       requestsRead: hasPermission(actor, 'requests.read'),
+      requestsReadGlobal: hasPermission(actor, 'requests.read.global'),
+      requestsCreate: hasPermission(actor, 'requests.create'),
+      requestsAssign: hasPermission(actor, 'requests.assign'),
+      requestsEdit: hasPermission(actor, 'requests.edit'),
+      requestsReassign: hasPermission(actor, 'requests.reassign'),
+      requestsStatusUpdate: hasPermission(actor, 'requests.status.update'),
       catalogRead: hasPermission(actor, 'catalog.read'),
       catalogManage: hasPermission(actor, 'catalog.manage'),
       pricesRead: hasPermission(actor, 'prices.read'),

@@ -37,6 +37,18 @@ export const QUOTE_REQUEST_BUDGET_RANGES = [
   'UNSURE',
 ] as const;
 
+export const QUOTE_REQUEST_INFORMATION_FIELDS = [
+  'contact.email',
+  'contact.phone',
+  'detail.projectType',
+  'detail.location',
+  'detail.dimensions',
+  'detail.projectStage',
+  'detail.timeline',
+  'detail.budgetRange',
+  'detail.description',
+] as const;
+
 export const QUOTE_REQUEST_PROJECT_STAGE_LABELS: Record<(typeof QUOTE_REQUEST_PROJECT_STAGES)[number], string> = {
   IDEA: 'Idea o planeación',
   SITE_READY: 'Terreno listo',

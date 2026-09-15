@@ -33,6 +33,7 @@ export type CreateQuoteRequestInput = {
     description: string;
     consentAt: Date;
   };
+  contactResolution?: { type: 'automatic' } | { type: 'existing'; contactId: string } | { type: 'new' };
 };
 
 export type QuoteRequestResult = {
@@ -99,18 +100,23 @@ async function allocateFolio(transaction: Prisma.TransactionClient, now: Date): 
   return formatQuoteRequestFolio(now.getUTCFullYear(), sequence);
 }
 
-async function resolveClientAndContact(transaction: Prisma.TransactionClient, input: CreateQuoteRequestInput['contact']) {
+async function resolveClientAndContact(transaction: Prisma.TransactionClient, input: CreateQuoteRequestInput['contact'], resolution: CreateQuoteRequestInput['contactResolution'] = { type: 'automatic' }) {
   const emailNormalized = normalizeQuoteRequestEmail(input.email);
   const displayName = normalizeQuoteRequestText(input.displayName, 180);
   const phone = normalizedOptionalText(input.phone, 40);
   const roleTitle = normalizedOptionalText(input.roleTitle, 120);
+  if (resolution.type === 'existing') {
+    const existing = await transaction.clientContact.findUnique({ where: { id: resolution.contactId }, select: { id: true, clientId: true, emailNormalized: true, status: true, client: { select: { status: true } } } });
+    if (!existing || existing.status !== 'ACTIVE' || existing.client.status !== 'ACTIVE' || existing.emailNormalized !== emailNormalized) throw new Error('Selected quote request contact is no longer available.');
+    return { clientId: existing.clientId, contactId: existing.id };
+  }
   const matches = await transaction.clientContact.findMany({
     where: { emailNormalized, status: 'ACTIVE', client: { status: 'ACTIVE' } },
     orderBy: { createdAt: 'asc' },
     include: { client: true },
   });
 
-  if (matches.length === 1) {
+  if (resolution.type !== 'new' && matches.length === 1) {
     return { clientId: matches[0].clientId, contactId: matches[0].id };
   }
 
@@ -159,7 +165,7 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput, depende
       const existing = await findByIdempotencyKey(transaction, idempotencyKeyHash);
       if (existing) return existing;
 
-      const { clientId, contactId } = await resolveClientAndContact(transaction, input.contact);
+      const { clientId, contactId } = await resolveClientAndContact(transaction, input.contact, input.contactResolution);
       const folio = await allocateFolio(transaction, now);
       const request = await transaction.quoteRequest.create({
         data: {
