@@ -72,24 +72,26 @@ test.describe('staff catalog operations', () => {
 
     await expect(page.getByRole('heading', { name: 'Catálogo' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Volver al dashboard' })).toHaveAttribute('href', '/staff');
-    await expect(page.getByRole('button', { name: new RegExp(itemCode) })).toBeVisible();
+    const fixtureItemRow = page.getByRole('button', { name: new RegExp(itemCode) });
+    await expect(fixtureItemRow).toBeVisible();
+    await fixtureItemRow.click();
     const fixturePriceList = page.getByRole('button', { name: new RegExp(priceListCode) });
     await expect(fixturePriceList).toBeVisible();
     await fixturePriceList.click();
     await expect(page.getByRole('table', { name: 'Precios de la lista seleccionada' })).toContainText('MXN 1,250.00');
     await expectNoSeriousA11yViolations(page);
 
-    const validFrom = page.getByRole('textbox', { name: 'Desde', exact: true });
-    const validUntil = page.getByRole('textbox', { name: 'Hasta opcional', exact: true });
-    await page.getByRole('textbox', { name: 'Importe en centavos', exact: true }).fill('99000');
-    await validFrom.fill('2026-09-20');
-    await validUntil.fill('2026-09-10');
-    await page.getByRole('button', { name: 'Guardar precio' }).click();
-    await expect(page.locator('p[role="alert"]')).toContainText('La fecha hasta debe ser posterior o igual');
+    const effectiveFrom = page.getByRole('textbox', { name: 'Vigente desde', exact: true });
+    await page.getByRole('combobox', { name: 'Concepto' }).click();
+    await page.getByRole('option', { name: new RegExp(`^${itemCode} ·`) }).click();
+    await expect(page.locator('.catalog-form__preview')).toContainText('Se cerrará el precio vigente de MXN 1,250.00');
+    await page.getByRole('textbox', { name: 'Importe', exact: true }).fill('990.00');
+    await page.getByRole('button', { name: 'Programar precio' }).click();
+    await expect(page.locator('p[role="alert"]')).toContainText('Selecciona la fecha desde la que aplica el precio.');
 
-    await validUntil.fill('2026-09-30');
-    await page.getByRole('button', { name: 'Guardar precio' }).click();
-    await expect(page.getByRole('status')).toContainText('Precio guardado.');
+    await effectiveFrom.fill('2026-09-20');
+    await page.getByRole('button', { name: 'Programar precio' }).click();
+    await expect(page.getByRole('status')).toContainText('Precio programado.');
 
     await page.getByRole('button', { name: 'Agregar concepto' }).click();
     await page.getByLabel('Clave', { exact: true }).fill(createdItemCode);

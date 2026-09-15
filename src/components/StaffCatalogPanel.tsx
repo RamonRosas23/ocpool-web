@@ -7,6 +7,7 @@ import WorkspaceLogo from '@/components/WorkspaceLogo';
 import DateField from '@/components/DateField';
 import SelectField from '@/components/SelectField';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
+import { parseMoneyInput } from '@/lib/money-input';
 
 type Category = { id: string; code: string; name: string; status: string };
 type CatalogItem = { id: string; code: string; name: string; description: string | null; unit: string; status: string; category: { id: string; code: string; name: string } | null; createdAt: string; updatedAt: string };
@@ -56,9 +57,11 @@ export default function StaffCatalogPanel() {
   const [showPriceListForm, setShowPriceListForm] = useState(false);
   const [itemForm, setItemForm] = useState({ code: '', name: '', unit: 'pieza', description: '', categoryId: '' });
   const [priceListForm, setPriceListForm] = useState({ code: '', name: '', currencyCode: 'MXN' });
-  const [priceForm, setPriceForm] = useState({ catalogItemId: '', unitPriceMinor: '', validFrom: '', validUntil: '' });
+  const [priceForm, setPriceForm] = useState({ catalogItemId: '', amountInput: '', effectiveFrom: '', reason: '' });
 
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId]);
+  const previewItem = useMemo(() => priceListDetail?.items.find((price) => price.catalogItemId === priceForm.catalogItemId && price.validUntil === null) ?? null, [priceListDetail, priceForm.catalogItemId]);
+  const previewText = !priceForm.catalogItemId ? '' : previewItem ? `Se cerrará el precio vigente de ${moneyLabel(previewItem.unitPriceMinor, priceListDetail!.currencyCode)} (desde ${formatDate(previewItem.validFrom)}) el día que elijas abajo.` : 'Este concepto no tiene un precio vigente en esta lista; se creará el primero.';
 
   const loadCatalog = useCallback(async (currentPage: number, query: string) => {
     setLoading(true);
@@ -151,16 +154,29 @@ export default function StaffCatalogPanel() {
     finally { setSaving(false); }
   };
 
-  const savePrice = async (event: FormEvent<HTMLFormElement>) => {
+  const schedulePriceForItem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedPriceListId) return;
-    if (!priceForm.validFrom) { setError('Selecciona la fecha desde la que aplica el precio.'); return; }
-    if (priceForm.validUntil && priceForm.validUntil < priceForm.validFrom) { setError('La fecha hasta debe ser posterior o igual a la fecha desde.'); return; }
+    if (!priceForm.effectiveFrom) { setError('Selecciona la fecha desde la que aplica el precio.'); return; }
+    const unitPriceMinor = parseMoneyInput(priceForm.amountInput);
+    if (!unitPriceMinor) { setError('Escribe un importe válido, por ejemplo 1250.00.'); return; }
     setSaving(true); setError(null); setNotice(null);
     try {
-      await readResponse(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}/items`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ catalogItemId: priceForm.catalogItemId, unitPriceMinor: priceForm.unitPriceMinor, validFrom: new Date(`${priceForm.validFrom}T00:00:00.000Z`).toISOString(), validUntil: priceForm.validUntil ? new Date(`${priceForm.validUntil}T00:00:00.000Z`).toISOString() : null }) }));
-      setNotice('Precio guardado.'); setPriceForm((current) => ({ ...current, unitPriceMinor: '', validUntil: '' })); await refresh();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible guardar el precio.'); }
+      await readResponse(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}/schedule`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          catalogItemId: priceForm.catalogItemId,
+          unitPriceMinor,
+          effectiveFrom: new Date(`${priceForm.effectiveFrom}T00:00:00.000Z`).toISOString(),
+          ...(priceForm.reason.trim() ? { reason: priceForm.reason.trim() } : {}),
+        }),
+      }));
+      setNotice('Precio programado.');
+      setPriceForm((current) => ({ ...current, amountInput: '', reason: '' }));
+      await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible programar el precio.'); }
     finally { setSaving(false); }
   };
 
@@ -187,7 +203,7 @@ export default function StaffCatalogPanel() {
             <div className="catalog-list-picker">{priceLists.map((list) => <button className={`catalog-list-row${selectedPriceListId === list.id ? ' is-selected' : ''}`} type="button" key={list.id} onClick={() => setSelectedPriceListId(list.id)}><span><strong>{list.name}</strong><small>{list.code} · {list.currencyCode} · {list._count.items} conceptos</small></span><b>{formatDate(list.validFrom)}</b></button>)}</div>
             {loadingDetail && <div className="catalog-detail-loading"><span /><span /></div>}
             {!loadingDetail && priceListDetail && <><div className="catalog-price-summary"><span>{priceListDetail.name}</span><strong>{priceListDetail.items.length} precios</strong></div><div className="catalog-price-table" role="table" aria-label="Precios de la lista seleccionada"><div className="catalog-price-table__head" role="row"><span role="columnheader">Concepto</span><span role="columnheader">Importe</span><span role="columnheader">Vigencia</span></div>{priceListDetail.items.map((price) => <div className="catalog-price-table__row" role="row" key={price.id}><span role="cell"><strong>{price.catalogItem.name}</strong><small>{price.catalogItem.code} · {price.catalogItem.unit}</small></span><b role="cell">{moneyLabel(price.unitPriceMinor, priceListDetail.currencyCode)}</b><small role="cell">{formatDate(price.validFrom)}{price.validUntil ? ` — ${formatDate(price.validUntil)}` : ' — abierta'}</small></div>)}</div></>}
-            {capabilities.pricesManage && selectedPriceListId && <form className="catalog-form catalog-form--price" onSubmit={savePrice}><p className="staff-section-label">Actualizar precio</p><label><span>Concepto</span><SelectField ariaLabel="Concepto" value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={items.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder="Selecciona un concepto" disabled={saving} /></label><label><span>Importe en centavos</span><input required inputMode="numeric" pattern="[0-9]+" value={priceForm.unitPriceMinor} onChange={(event) => setPriceForm({ ...priceForm, unitPriceMinor: event.target.value })} placeholder="125000" /></label><div className="catalog-form__pair"><label><span>Desde</span><DateField ariaLabel="Desde" value={priceForm.validFrom} onValueChange={(value) => setPriceForm({ ...priceForm, validFrom: value })} disabled={saving} /></label><label><span>Hasta opcional</span><DateField ariaLabel="Hasta opcional" value={priceForm.validUntil} onValueChange={(value) => setPriceForm({ ...priceForm, validUntil: value })} disabled={saving} placeholder="Sin vencimiento" /></label></div><button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar precio</button></form>}
+            {capabilities.pricesManage && selectedPriceListId && <form className="catalog-form catalog-form--price" onSubmit={schedulePriceForItem}><p className="staff-section-label">Programar precio</p><label><span>Concepto</span><SelectField ariaLabel="Concepto" value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={items.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder="Selecciona un concepto" disabled={saving} /></label><label><span>Importe</span><input required inputMode="decimal" value={priceForm.amountInput} onChange={(event) => setPriceForm({ ...priceForm, amountInput: event.target.value })} placeholder="1,250.00" /></label><label><span>Vigente desde</span><DateField ariaLabel="Vigente desde" value={priceForm.effectiveFrom} onValueChange={(value) => setPriceForm({ ...priceForm, effectiveFrom: value })} disabled={saving} /></label><label><span>Motivo opcional</span><input value={priceForm.reason} onChange={(event) => setPriceForm({ ...priceForm, reason: event.target.value })} placeholder="Ajuste de proveedor" maxLength={300} /></label>{previewText && <p className="catalog-form__preview" aria-live="polite">{previewText}</p>}<button className="staff-button staff-button--dark" type="submit" disabled={saving}>Programar precio</button></form>}
           </section>
           {capabilities.catalogManage && <section className="catalog-add"><button className="staff-button staff-button--outline" type="button" onClick={() => setShowItemForm((current) => !current)}>{showItemForm ? 'Cerrar alta' : 'Agregar concepto'}</button>{showItemForm && <form className="catalog-form" onSubmit={createItem}><label><span>Clave</span><input required value={itemForm.code} onChange={(event) => setItemForm({ ...itemForm, code: event.target.value })} placeholder="EQUIPO-001" maxLength={64} /></label><label><span>Nombre</span><input required value={itemForm.name} onChange={(event) => setItemForm({ ...itemForm, name: event.target.value })} placeholder="Bomba de filtrado" maxLength={180} /></label><label><span>Unidad</span><input required value={itemForm.unit} onChange={(event) => setItemForm({ ...itemForm, unit: event.target.value })} placeholder="pieza" maxLength={40} /></label><label><span>Categoría</span><SelectField ariaLabel="Categoría" value={itemForm.categoryId} onValueChange={(value) => setItemForm({ ...itemForm, categoryId: value })} options={categories.map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} /></label><label><span>Descripción</span><textarea rows={3} value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} maxLength={2000} /></label><button className="staff-button staff-button--copper" type="submit" disabled={saving}>Guardar concepto</button></form>}</section>}
         </section>

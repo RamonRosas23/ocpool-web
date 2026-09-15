@@ -11,6 +11,7 @@ import { GET as priceListRoute } from '@/app/api/staff/catalog/price-lists/[id]/
 import { POST as createPriceListRoute } from '@/app/api/staff/catalog/price-lists/route';
 import { POST as priceItemRoute } from '@/app/api/staff/catalog/price-lists/[id]/items/route';
 import { GET as searchRoute } from '@/app/api/staff/catalog/price-lists/[id]/search/route';
+import { POST as schedulePriceRoute } from '@/app/api/staff/catalog/price-lists/[id]/schedule/route';
 
 describe('staff catalog API', () => {
   const prisma = getPrisma();
@@ -101,6 +102,16 @@ describe('staff catalog API', () => {
     const search = await searchRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/search?query=${encodeURIComponent('API item')}`, salesToken), { params: Promise.resolve({ id: priceList.id }) });
     expect(search.status).toBe(200);
     await expect(search.json()).resolves.toMatchObject({ items: [{ id: item.id, price: { unitPriceMinor: '1000' }, blocker: null }], nextCursor: null });
+
+    const unauthenticatedSchedule = await schedulePriceRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/schedule`, undefined, 'POST', { catalogItemId: item.id, unitPriceMinor: '2000', effectiveFrom: '2026-04-01T00:00:00.000Z' }), { params: Promise.resolve({ id: priceList.id }) });
+    expect(unauthenticatedSchedule.status).toBe(401);
+    const salesSchedule = await schedulePriceRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/schedule`, salesToken, 'POST', { catalogItemId: item.id, unitPriceMinor: '2000', effectiveFrom: '2026-04-01T00:00:00.000Z' }), { params: Promise.resolve({ id: priceList.id }) });
+    expect(salesSchedule.status).toBe(403);
+    const invalidSchedule = await schedulePriceRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/schedule`, managerToken, 'POST', { catalogItemId: item.id, unitPriceMinor: 'not-a-number', effectiveFrom: '2026-04-01T00:00:00.000Z' }), { params: Promise.resolve({ id: priceList.id }) });
+    expect(invalidSchedule.status).toBe(400);
+    const scheduled = await schedulePriceRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}/schedule`, managerToken, 'POST', { catalogItemId: item.id, unitPriceMinor: '2000', effectiveFrom: '2026-04-01T00:00:00.000Z', reason: 'Ajuste API' }), { params: Promise.resolve({ id: priceList.id }) });
+    expect(scheduled.status).toBe(201);
+    await expect(scheduled.json()).resolves.toMatchObject({ unitPriceMinor: '2000', closedPreviousPriceId: expect.any(String) });
   });
 
   afterAll(async () => {

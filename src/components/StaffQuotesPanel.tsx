@@ -6,6 +6,7 @@ import StaffQuoteDocumentPanel from '@/components/StaffQuoteDocumentPanel';
 import CatalogItemSearchCombobox, { type CatalogSearchResultItem } from '@/components/CatalogItemSearchCombobox';
 import DateField from '@/components/DateField';
 import SelectField from '@/components/SelectField';
+import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
@@ -153,19 +154,6 @@ function moneyLabel(value: string | bigint, currency = 'MXN'): string {
   const whole = amount / 100n;
   const decimals = (amount % 100n).toString().padStart(2, '0');
   return `${currency} ${whole.toLocaleString('es-MX')}.${decimals}`;
-}
-
-function moneyInputLabel(value: string): string {
-  if (!/^\d+$/u.test(value)) return '';
-  const amount = BigInt(value);
-  return `${(amount / 100n).toString()}.${(amount % 100n).toString().padStart(2, '0')}`;
-}
-
-function parseMoneyInput(value: string): string | null {
-  const normalized = value.trim().replace(/,/gu, '');
-  const match = /^(\d+)(?:\.(\d{0,2}))?$/u.exec(normalized);
-  if (!match) return null;
-  return (BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0')).toString();
 }
 
 function quantityLabel(milliunits: string): string {

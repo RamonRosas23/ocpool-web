@@ -260,6 +260,118 @@ export async function getPriceList(actor: Actor, priceListId: string, dependenci
   return { ...priceList, items: priceList.items.map((item) => ({ ...item, unitPriceMinor: item.unitPriceMinor.toString() })) };
 }
 
+export type SchedulePriceInput = Readonly<{
+  catalogItemId: string;
+  unitPriceMinor: string | bigint;
+  effectiveFrom: Date;
+  reason?: string | null;
+}>;
+
+export type SchedulePriceResult = Readonly<{
+  priceListItemId: string;
+  unitPriceMinor: string;
+  effectiveFrom: string;
+  closedPreviousPriceId: string | null;
+  closedPreviousValidUntil: string | null;
+}>;
+
+/**
+ * Atomic "change the price going forward" command (K1-02): locks the price
+ * list so two concurrent schedules for the same concept can't both leave an
+ * open-ended row behind, closes whatever price would still be in effect at
+ * `effectiveFrom`, and opens the new one. Repeating the exact same schedule
+ * is a no-op; correcting a not-yet-effective schedule updates it in place.
+ */
+export async function schedulePrice(actor: Actor, priceListId: string, input: SchedulePriceInput, dependencies: CatalogServiceDependencies = {}): Promise<SchedulePriceResult> {
+  requireStaffPermission(actor, 'prices.manage');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const listId = requireUuid(priceListId, 'La lista de precios no es válida.');
+  const catalogItemId = requireUuid(input.catalogItemId, 'El concepto no es válido.');
+  const effectiveFrom = normalizeDate(input.effectiveFrom, 'La fecha de vigencia no es válida.');
+  const reason = input.reason === undefined || input.reason === null ? null : normalizeText(input.reason, 300, 'El motivo no es válido.');
+
+  try {
+    return await prisma.$transaction(async (transaction) => {
+      const [lockedList] = await transaction.$queryRaw<Array<{ id: string; status: PriceListStatus; currencyCode: string; validFrom: Date; validUntil: Date | null }>>(
+        Prisma.sql`SELECT "id", "status", "currencyCode", "validFrom", "validUntil" FROM "price_lists" WHERE "id" = ${listId} FOR UPDATE`,
+      );
+      if (!lockedList) throw new AppError('NOT_FOUND', 'La lista de precios no existe.', 404);
+      if (lockedList.status !== 'ACTIVE') conflict('La lista de precios está archivada.');
+      if (effectiveFrom < lockedList.validFrom || (lockedList.validUntil !== null && effectiveFrom >= lockedList.validUntil)) {
+        throw new AppError('VALIDATION_ERROR', 'La fecha de vigencia debe estar dentro de la lista.', 400);
+      }
+      const item = await transaction.catalogItem.findUnique({ where: { id: catalogItemId }, select: { id: true, status: true } });
+      if (!item || item.status !== 'ACTIVE') throw new AppError('VALIDATION_ERROR', 'El concepto no está disponible.', 400);
+      const unitPriceMinor = normalizeMoney(input.unitPriceMinor, lockedList.currencyCode);
+
+      const existingExact = await transaction.priceListItem.findUnique({
+        where: { priceListId_catalogItemId_validFrom: { priceListId: listId, catalogItemId, validFrom: effectiveFrom } },
+      });
+      if (existingExact && existingExact.unitPriceMinor === unitPriceMinor) {
+        return {
+          priceListItemId: existingExact.id,
+          unitPriceMinor: existingExact.unitPriceMinor.toString(),
+          effectiveFrom: existingExact.validFrom.toISOString(),
+          closedPreviousPriceId: null,
+          closedPreviousValidUntil: null,
+        };
+      }
+
+      const futureConflict = await transaction.priceListItem.findFirst({
+        where: {
+          priceListId: listId,
+          catalogItemId,
+          validFrom: { gte: effectiveFrom },
+          id: existingExact ? { not: existingExact.id } : undefined,
+        },
+      });
+      if (futureConflict) conflict('Ya existe un precio programado en o después de esa fecha; ajusta esa vigencia primero.');
+
+      const overlapping = await transaction.priceListItem.findFirst({
+        where: {
+          priceListId: listId,
+          catalogItemId,
+          validFrom: { lt: effectiveFrom },
+          OR: [{ validUntil: null }, { validUntil: { gt: effectiveFrom } }],
+        },
+        orderBy: { validFrom: 'desc' },
+      });
+
+      let closedPreviousPriceId: string | null = null;
+      if (overlapping) {
+        await transaction.priceListItem.update({ where: { id: overlapping.id }, data: { validUntil: effectiveFrom } });
+        closedPreviousPriceId = overlapping.id;
+      }
+
+      const scheduled = existingExact
+        ? await transaction.priceListItem.update({ where: { id: existingExact.id }, data: { unitPriceMinor } })
+        : await transaction.priceListItem.create({ data: { priceListId: listId, catalogItemId, unitPriceMinor, validFrom: effectiveFrom, validUntil: null } });
+
+      await audit(transaction, actor, 'prices.item.scheduled', 'price_list_item', scheduled.id, {
+        priceListId: listId,
+        catalogItemId,
+        unitPriceMinor: unitPriceMinor.toString(),
+        effectiveFrom: effectiveFrom.toISOString(),
+        closedPreviousPriceId,
+        reason,
+      });
+      await outbox(transaction, 'PRICES.ITEM_SCHEDULED', 'PRICE_LIST', listId, { priceListId: listId, priceListItemId: scheduled.id, catalogItemId, closedPreviousPriceId });
+
+      return {
+        priceListItemId: scheduled.id,
+        unitPriceMinor: scheduled.unitPriceMinor.toString(),
+        effectiveFrom: scheduled.validFrom.toISOString(),
+        closedPreviousPriceId,
+        closedPreviousValidUntil: closedPreviousPriceId ? effectiveFrom.toISOString() : null,
+      };
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (isPersistenceConflict(error)) conflict('No fue posible programar el precio.');
+    throw error;
+  }
+}
+
 export type CatalogSearchFilters = Readonly<{
   query?: string;
   categoryId?: string;
