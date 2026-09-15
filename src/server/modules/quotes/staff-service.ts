@@ -48,11 +48,12 @@ function serializeBigInt(value: bigint): string {
 
 function serializeLine(line: {
   id: string;
-  catalogItemId: string;
-  catalogItemCode: string;
+  catalogItemId: string | null;
+  catalogItemCode: string | null;
   name: string;
   description: string | null;
   unit: string;
+  specialReason: string | null;
   quantityMilliunits: bigint;
   currencyCode: string;
   unitPriceMinor: bigint;
@@ -284,6 +285,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
                   name: true,
                   description: true,
                   unit: true,
+                  specialReason: true,
                   quantityMilliunits: true,
                   currencyCode: true,
                   unitPriceMinor: true,
@@ -336,7 +338,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
   const versions = quote?.versions ?? [];
   const displayedVersionId = quote?.workingVersionId ?? quote?.publishedVersionId ?? quote?.currentVersionId ?? null;
   const currentVersion = displayedVersionId ? versions.find((version) => version.id === displayedVersionId) ?? null : null;
-  const currentVersionItemIds = [...new Set(currentVersion?.lines.map((line) => line.catalogItemId) ?? [])];
+  const currentVersionItemIds = [...new Set(currentVersion?.lines.map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
 
   const priceListCandidates = await prisma.priceList.findMany({
     where: {

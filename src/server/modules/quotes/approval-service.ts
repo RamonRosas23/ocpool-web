@@ -7,7 +7,7 @@ import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 
-export const QUOTE_APPROVAL_TYPES = ['DISCOUNT', 'PRICE_OVERRIDE'] as const;
+export const QUOTE_APPROVAL_TYPES = ['DISCOUNT', 'PRICE_OVERRIDE', 'SPECIAL_CONCEPT'] as const;
 export type QuoteApprovalType = (typeof QUOTE_APPROVAL_TYPES)[number];
 export const QUOTE_APPROVAL_STATUSES = ['REQUESTED', 'APPROVED', 'REJECTED', 'CANCELLED', 'SUPERSEDED'] as const;
 export type QuoteApprovalStatus = (typeof QUOTE_APPROVAL_STATUSES)[number];
@@ -64,11 +64,12 @@ type QuoteVersionDigestRecord = Readonly<{
   totalMinor: bigint;
   lines: ReadonlyArray<Readonly<{
     id: string;
-    catalogItemId: string;
-    catalogItemCode: string;
+    catalogItemId: string | null;
+    catalogItemCode: string | null;
     name: string;
     description: string | null;
     unit: string;
+    specialReason: string | null;
     quantityMilliunits: bigint;
     currencyCode: string;
     unitPriceMinor: bigint;
@@ -165,6 +166,7 @@ export function calculateQuoteVersionDigest(version: QuoteVersionDigestRecord): 
         name: line.name,
         description: line.description,
         unit: line.unit,
+        specialReason: line.specialReason,
         quantityMilliunits: canonicalBigInt(line.quantityMilliunits),
         currencyCode: line.currencyCode,
         unitPriceMinor: canonicalBigInt(line.unitPriceMinor),
@@ -213,8 +215,10 @@ export async function requestQuoteApproval(
   }
 
   return prisma.$transaction(async (transaction) => {
-    const locked = await transaction.$queryRaw<Array<{ id: string; quoteId: string; status: string; discountTotalMinor: bigint; quoteRequestId: string; folio: string; currentAssigneeId: string | null }>>(Prisma.sql`
-      SELECT qv."id", qv."quoteId", qv."status", qv."discountTotalMinor", q."quoteRequestId", qr."folio", qr."currentAssigneeId"
+    const locked = await transaction.$queryRaw<Array<{ id: string; quoteId: string; status: string; discountTotalMinor: bigint; hasSpecialLine: boolean; quoteRequestId: string; folio: string; currentAssigneeId: string | null }>>(Prisma.sql`
+      SELECT qv."id", qv."quoteId", qv."status", qv."discountTotalMinor",
+        EXISTS (SELECT 1 FROM "quote_line_snapshots" qls WHERE qls."quoteVersionId" = qv."id" AND qls."catalogItemId" IS NULL) AS "hasSpecialLine",
+        q."quoteRequestId", qr."folio", qr."currentAssigneeId"
       FROM "quote_versions" qv
       INNER JOIN "quotes" q ON q."id" = qv."quoteId"
       INNER JOIN "quote_requests" qr ON qr."id" = q."quoteRequestId"
@@ -227,6 +231,9 @@ export async function requestQuoteApproval(
     if (row.status !== 'EN_REVISION') conflict('La cotización debe estar en revisión antes de solicitar una aprobación.');
     if (normalized.type === 'DISCOUNT' && row.discountTotalMinor <= 0n) {
       validation('La versión no contiene un descuento que requiera aprobación.');
+    }
+    if (normalized.type === 'SPECIAL_CONCEPT' && !row.hasSpecialLine) {
+      validation('La versión no contiene conceptos especiales que requieran aprobación.');
     }
 
     const version = await loadVersionForDigest(transaction, versionId);

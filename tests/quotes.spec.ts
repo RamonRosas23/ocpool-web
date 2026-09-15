@@ -265,11 +265,26 @@ test.describe('staff quote builder opt-in flow', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const approvalStartedAt = new Date();
     await page.getByRole('textbox', { name: 'Descuento de 000 E2E concept', exact: true }).fill('5');
+
+    // K1-05: a special concept line (no catalogItemId) recalculates the total and needs its
+    // own SPECIAL_CONCEPT approval, alongside the discount approval, before the version can send.
+    await page.getByRole('button', { name: 'Agregar concepto especial' }).click();
+    await page.getByLabel('Nombre', { exact: true }).fill('Ajuste especial E2E');
+    await page.getByLabel('Unidad', { exact: true }).fill('servicio');
+    await page.getByRole('textbox', { name: 'Importe del concepto especial', exact: true }).fill('500.00');
+    await page.getByLabel('Motivo', { exact: true }).fill('Condición de sitio no catalogada');
+    await page.getByRole('button', { name: 'Agregar a la propuesta' }).click();
+    await expect(page.getByLabel('Nombre del concepto especial')).toHaveValue('Ajuste especial E2E');
+    await expect(page.locator('.quotes-line--special')).toContainText('Condición de sitio no catalogada');
+    await expect(page.locator('.quotes-summary__total')).not.toContainText('Revisa las líneas');
+
     await page.getByRole('button', { name: 'Guardar borrador' }).click();
     await expect(page.locator('p.staff-notice')).toContainText('Borrador actualizado.', { timeout: 10_000 });
     await page.getByRole('button', { name: 'Pasar a revisión' }).click();
     await expect(page.locator('p.staff-notice')).toContainText('revisión', { timeout: 10_000 });
-    await page.getByRole('button', { name: 'Solicitar aprobación' }).click();
+    await page.getByRole('button', { name: 'Solicitar aprobación', exact: true }).click();
+    await expect(page.locator('p.staff-notice')).toContainText('Aprobación solicitada', { timeout: 10_000 });
+    await page.getByRole('button', { name: 'Solicitar aprobación de concepto especial' }).click();
     await expect(page.locator('p.staff-notice')).toContainText('Aprobación solicitada', { timeout: 10_000 });
 
     const browser = page.context().browser();
@@ -287,6 +302,11 @@ test.describe('staff quote builder opt-in flow', () => {
       await expect(approverPage.getByRole('button', { name: 'Aprobar descuento' })).toBeVisible({ timeout: 10_000 });
       await approverPage.getByRole('button', { name: 'Aprobar descuento' }).click();
       await expect(approverPage.locator('p.staff-notice')).toContainText('Descuento aprobado', { timeout: 10_000 });
+      await expect(approverPage.getByRole('button', { name: 'Aprobar concepto especial' })).toBeVisible({ timeout: 10_000 });
+      await approverPage.getByRole('button', { name: 'Aprobar concepto especial' }).click();
+      await expect(approverPage.locator('p.staff-notice')).toContainText('Concepto especial aprobado', { timeout: 10_000 });
+      await approverPage.getByRole('button', { name: 'Enviar cotización' }).click();
+      await expect(approverPage.locator('p.staff-notice')).toContainText('enviada', { timeout: 10_000 });
       await recordBaselineMeasurement({
         schemaVersion: 1,
         metricId: 'draft_to_approval_resolution',

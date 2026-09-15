@@ -158,4 +158,49 @@ describe('staff quote workspace service', () => {
       await prisma.catalogCategory.delete({ where: { id: category.id } });
     }
   }, 30_000);
+
+  it('still lists candidate price lists for a version made only of special concept lines (K1-05)', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-03-15T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-staff-special-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Workspace special ${suffix}`, email: `workspace-special-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Mazatlán', description: 'Special-only workspace fixture', consentAt: now },
+    }, { prisma, now });
+    const employee = await prisma.user.create({
+      data: { email: `quote-staff-special-employee-${suffix}@example.test`, emailNormalized: `quote-staff-special-employee-${suffix}@example.test`, displayName: 'Quote staff special employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    const priceList = await prisma.priceList.create({ data: { code: `STAFF-SPECIAL-PRICE-${suffix}`, name: 'Staff special-only prices', currencyCode: 'MXN', validFrom: now } });
+    let quoteId: string | null = null;
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const employeeActor = actor(employee.id, ['quotes.read', 'quotes.create', 'prices.read']);
+      const created = await createQuoteVersion(employeeActor, {
+        quoteRequestId: request.quoteRequestId,
+        priceListId: priceList.id,
+        lines: [{ special: true, name: 'Concepto especial único', unit: 'servicio', quantity: '1', unitPriceMinor: '10000', reason: 'Sin equivalente en catálogo' }],
+      }, { prisma, now });
+      quoteId = created.quoteId;
+
+      const workspace = await getQuoteWorkspace(employeeActor, request.quoteRequestId, { prisma });
+      expect(workspace.quote?.currentVersion?.lines[0]).toMatchObject({ catalogItemId: null, catalogItemCode: null, specialReason: 'Sin equivalente en catálogo' });
+      expect(workspace.priceLists).toContainEqual({ id: priceList.id, code: priceList.code, name: priceList.name, currencyCode: 'MXN' });
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+    }
+  }, 30_000);
 });

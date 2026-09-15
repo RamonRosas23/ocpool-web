@@ -19,13 +19,27 @@ import { hasValidApprovedQuoteApproval } from '@/server/modules/quotes/approval-
 import { generateQuotePdf } from '@/server/modules/quote-documents/service';
 import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 
-export type QuotePricingLineInput = Readonly<{
+export type CatalogPricingLineInput = Readonly<{
   catalogItemId: string;
   quantity: string;
   unitPriceMinorOverride?: string | bigint;
   discountBasisPoints?: string | number | bigint;
   taxBasisPoints?: string | number | bigint;
 }>;
+
+export type SpecialPricingLineInput = Readonly<{
+  special: true;
+  name: string;
+  description?: string | null;
+  unit: string;
+  quantity: string;
+  unitPriceMinor: string | bigint;
+  reason: string;
+  discountBasisPoints?: string | number | bigint;
+  taxBasisPoints?: string | number | bigint;
+}>;
+
+export type QuotePricingLineInput = CatalogPricingLineInput | SpecialPricingLineInput;
 
 export type CreateQuoteVersionInput = Readonly<{
   quoteRequestId: string;
@@ -132,7 +146,6 @@ function normalizeDate(value: Date | null | undefined, now: Date): Date | null {
 }
 
 function normalizePricingLine(line: QuotePricingLineInput): QuotePricingLineInput {
-  const catalogItemId = requireUuid(line.catalogItemId, 'El concepto no es válido.');
   try {
     parseQuantity(line.quantity);
     normalizeBasisPoints(line.discountBasisPoints ?? 0);
@@ -140,6 +153,13 @@ function normalizePricingLine(line: QuotePricingLineInput): QuotePricingLineInpu
   } catch {
     validation('La línea de cotización no es válida.');
   }
+  if ('special' in line) {
+    if (typeof line.unitPriceMinor === 'bigint' ? line.unitPriceMinor < 0n : typeof line.unitPriceMinor !== 'string' || !/^\d+$/u.test(line.unitPriceMinor.trim())) {
+      validation('El precio de la línea no es válido.');
+    }
+    return line;
+  }
+  const catalogItemId = requireUuid(line.catalogItemId, 'El concepto no es válido.');
   if (line.unitPriceMinorOverride !== undefined
     && (typeof line.unitPriceMinorOverride === 'bigint'
       ? line.unitPriceMinorOverride < 0n
@@ -212,7 +232,8 @@ async function resolvePricingSnapshot(
   const normalizedPriceListId = requireUuid(priceListId, 'La lista de precios no es válida.');
   if (lines.length < 1 || lines.length > 100) validation('La cotización debe contener entre 1 y 100 conceptos.');
   const normalizedLines = lines.map(normalizePricingLine);
-  const itemIds = normalizedLines.map(({ catalogItemId }) => catalogItemId);
+  const catalogLines = normalizedLines.filter((line): line is CatalogPricingLineInput => !('special' in line));
+  const itemIds = catalogLines.map(({ catalogItemId }) => catalogItemId);
   if (new Set(itemIds).size !== itemIds.length) validation('No se puede repetir un concepto dentro de la misma versión.');
 
   const priceList = await transaction.priceList.findUnique({
@@ -243,11 +264,34 @@ async function resolvePricingSnapshot(
   if (pricesByItem.size !== itemIds.length) conflict('Uno o más conceptos no tienen precio vigente.');
 
   const snapshotLines: QuoteLineSnapshotInput[] = normalizedLines.map((line) => {
+    const discountBasisPoints = normalizeBasisPoints(line.discountBasisPoints ?? 0);
+    if (discountBasisPoints > 0) requireEmployeePermission(actor, 'quotes.apply_discount');
+    const taxBasisPoints = normalizeBasisPoints(line.taxBasisPoints ?? 0);
+
+    if ('special' in line) {
+      let unitPrice;
+      try {
+        unitPrice = createMoney(line.unitPriceMinor, currencyCode);
+      } catch {
+        validation('El precio de la línea no es válido.');
+      }
+      return {
+        catalogItemId: null,
+        catalogItemCode: null,
+        name: line.name,
+        description: line.description,
+        unit: line.unit,
+        specialReason: line.reason,
+        quantity: parseQuantity(line.quantity),
+        unitPrice,
+        discountBasisPoints,
+        taxBasisPoints,
+      };
+    }
+
     const price = pricesByItem.get(line.catalogItemId);
     if (!price) conflict('Uno o más conceptos no tienen precio vigente.');
     if (line.unitPriceMinorOverride !== undefined) requireEmployeePermission(actor, 'quotes.edit_prices');
-    const discountBasisPoints = normalizeBasisPoints(line.discountBasisPoints ?? 0);
-    if (discountBasisPoints > 0) requireEmployeePermission(actor, 'quotes.apply_discount');
     let unitPrice;
     try {
       unitPrice = createMoney(line.unitPriceMinorOverride ?? price.unitPriceMinor, currencyCode);
@@ -263,7 +307,7 @@ async function resolvePricingSnapshot(
       quantity: parseQuantity(line.quantity),
       unitPrice,
       discountBasisPoints,
-      taxBasisPoints: normalizeBasisPoints(line.taxBasisPoints ?? 0),
+      taxBasisPoints,
     };
   });
 
@@ -296,6 +340,7 @@ function versionCreateData(snapshot: ReturnType<typeof buildQuoteVersionSnapshot
         name: line.name,
         description: line.description,
         unit: line.unit,
+        specialReason: line.specialReason,
         quantityMilliunits: line.quantity.milliunits,
         currencyCode: line.unitPrice.currency,
         unitPriceMinor: line.unitPrice.amountMinor,
@@ -444,6 +489,7 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       name: line.name,
       description: line.description,
       unit: line.unit,
+      specialReason: line.specialReason,
       quantityMilliunits: line.quantity.milliunits,
       currencyCode: line.unitPrice.currency,
       unitPriceMinor: line.unitPrice.amountMinor,
@@ -502,6 +548,11 @@ export async function transitionQuoteVersion(actor: Actor, quoteVersionId: strin
     if (toStatus === 'ENVIADA' && version.discountTotalMinor > 0n) {
       if (!(await hasValidApprovedQuoteApproval(transaction, version.id, 'DISCOUNT', now))) {
         conflict('La cotización requiere una aprobación vigente antes de enviarse.');
+      }
+    }
+    if (toStatus === 'ENVIADA' && await transaction.quoteLineSnapshot.count({ where: { quoteVersionId: version.id, catalogItemId: null } }) > 0) {
+      if (!(await hasValidApprovedQuoteApproval(transaction, version.id, 'SPECIAL_CONCEPT', now))) {
+        conflict('La cotización tiene conceptos especiales y requiere una aprobación vigente antes de enviarse.');
       }
     }
     if (toStatus === 'ENVIADA' && await transaction.quoteLineSnapshot.count({ where: { quoteVersionId: version.id } }) === 0) {

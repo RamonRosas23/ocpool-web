@@ -8,7 +8,7 @@ import { toErrorResponse } from '@/server/http/errors';
 import { listQuoteApprovals, requestQuoteApproval } from '@/server/modules/quotes/approval-service';
 
 const bodySchema = z.object({
-  type: z.enum(['DISCOUNT', 'PRICE_OVERRIDE']),
+  type: z.enum(['DISCOUNT', 'PRICE_OVERRIDE', 'SPECIAL_CONCEPT']),
   policyVersion: z.string().trim().min(2).max(64),
   thresholdBps: z.number().int().min(0).max(10_000).nullable().optional(),
   reason: z.string().trim().max(500).nullable().optional(),

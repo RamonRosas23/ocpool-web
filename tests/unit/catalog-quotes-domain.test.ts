@@ -107,6 +107,59 @@ describe('catalog and quote domain contracts', () => {
     ])).toThrow();
   });
 
+  it('builds a mixed catalog/special-concept snapshot and enforces the special-line invariants (K1-05)', () => {
+    const mixed = buildQuoteVersionSnapshot([
+      {
+        catalogItemId: 'item-1',
+        catalogItemCode: 'BOMBA-01',
+        name: 'Bomba de filtrado',
+        unit: 'pieza',
+        quantity: parseQuantity('1'),
+        unitPrice: createMoney('100000', 'MXN'),
+      },
+      {
+        catalogItemId: null,
+        catalogItemCode: null,
+        name: 'Trabajo especial fuera de catálogo',
+        unit: 'servicio',
+        specialReason: 'Cliente pidió un ajuste no catalogado',
+        quantity: parseQuantity('1'),
+        unitPrice: createMoney('50000', 'MXN'),
+      },
+    ]);
+    expect(mixed.total.amountMinor).toBe(150000n);
+    expect(mixed.lines[1]).toMatchObject({ catalogItemId: null, catalogItemCode: null, specialReason: 'Cliente pidió un ajuste no catalogado' });
+
+    expect(() => buildQuoteVersionSnapshot([{
+      catalogItemId: null,
+      catalogItemCode: null,
+      name: 'Sin motivo',
+      unit: 'servicio',
+      quantity: parseQuantity('1'),
+      unitPrice: createMoney('100', 'MXN'),
+    }])).toThrow();
+
+    expect(() => buildQuoteVersionSnapshot([{
+      catalogItemId: 'item-1',
+      catalogItemCode: 'BOMBA-01',
+      name: 'No debería llevar motivo',
+      unit: 'pieza',
+      specialReason: 'Esto no debería estar aquí',
+      quantity: parseQuantity('1'),
+      unitPrice: createMoney('100', 'MXN'),
+    }])).toThrow();
+
+    expect(() => buildQuoteVersionSnapshot([{
+      catalogItemId: null,
+      catalogItemCode: 'NO-DEBERIA-EXISTIR',
+      name: 'Código inconsistente',
+      unit: 'pieza',
+      specialReason: 'Motivo',
+      quantity: parseQuantity('1'),
+      unitPrice: createMoney('100', 'MXN'),
+    }])).toThrow();
+  });
+
   it('keeps acceptance unavailable until explicit acceptance evidence exists', () => {
     expect(QUOTE_VERSION_STATUSES).toEqual([
       'BORRADOR',

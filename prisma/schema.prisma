@@ -172,6 +172,7 @@ enum QuoteVersionStatus {
 enum QuoteApprovalType {
   DISCOUNT
   PRICE_OVERRIDE
+  SPECIAL_CONCEPT
 }
 
 enum QuoteApprovalStatus {
@@ -682,11 +683,12 @@ model QuoteVersion {
 model QuoteLineSnapshot {
   id                  String       @id @default(uuid()) @db.Uuid
   quoteVersionId      String       @db.Uuid
-  catalogItemId       String       @db.Uuid
-  catalogItemCode     String       @db.VarChar(64)
+  catalogItemId       String?      @db.Uuid
+  catalogItemCode     String?      @db.VarChar(64)
   name                String       @db.VarChar(180)
   description         String?      @db.Text
   unit                String       @db.VarChar(40)
+  specialReason       String?      @db.VarChar(300)
   quantityMilliunits  BigInt
   currencyCode        String       @db.Char(3)
   unitPriceMinor      BigInt
@@ -698,7 +700,7 @@ model QuoteLineSnapshot {
   subtotalMinor       BigInt       @default(0)
   totalMinor          BigInt       @default(0)
   quoteVersion        QuoteVersion @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
-  catalogItem         CatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  catalogItem         CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
 
   @@index([quoteVersionId])
   @@index([catalogItemId, quoteVersionId])

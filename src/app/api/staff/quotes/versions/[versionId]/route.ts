@@ -8,15 +8,27 @@ import { toErrorResponse } from '@/server/http/errors';
 import { replaceQuoteDraft, serializeQuoteVersionResult } from '@/server/modules/quotes/service';
 
 const rateSchema = z.union([z.string().regex(/^\d+$/u), z.number().int().min(0).max(10_000)]);
+const catalogLineSchema = z.object({
+  catalogItemId: z.string().uuid(),
+  quantity: z.string().regex(/^\d+(?:\.\d{1,3})?$/u),
+  unitPriceMinorOverride: z.string().regex(/^\d+$/u).optional(),
+  discountBasisPoints: rateSchema.optional(),
+  taxBasisPoints: rateSchema.optional(),
+}).strict();
+const specialLineSchema = z.object({
+  special: z.literal(true),
+  name: z.string().trim().min(1).max(180),
+  description: z.string().trim().max(2000).nullable().optional(),
+  unit: z.string().trim().min(1).max(40),
+  quantity: z.string().regex(/^\d+(?:\.\d{1,3})?$/u),
+  unitPriceMinor: z.string().regex(/^\d+$/u),
+  reason: z.string().trim().min(1).max(300),
+  discountBasisPoints: rateSchema.optional(),
+  taxBasisPoints: rateSchema.optional(),
+}).strict();
 const bodySchema = z.object({
   priceListId: z.string().uuid(),
-  lines: z.array(z.object({
-    catalogItemId: z.string().uuid(),
-    quantity: z.string().regex(/^\d+(?:\.\d{1,3})?$/u),
-    unitPriceMinorOverride: z.string().regex(/^\d+$/u).optional(),
-    discountBasisPoints: rateSchema.optional(),
-    taxBasisPoints: rateSchema.optional(),
-  }).strict()).min(1).max(100),
+  lines: z.array(z.union([catalogLineSchema, specialLineSchema])).min(1).max(100),
   validUntil: z.coerce.date().nullable().optional(),
 }).strict();
 

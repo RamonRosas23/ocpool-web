@@ -62,7 +62,7 @@ function publicQuoteStatus(status: string): string {
 }
 
 function serializeLine(line: {
-  catalogItemCode: string;
+  catalogItemCode: string | null;
   name: string;
   description: string | null;
   unit: string;

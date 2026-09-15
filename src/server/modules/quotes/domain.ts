@@ -185,11 +185,12 @@ function assertQuantity(quantity: Quantity): Quantity {
 }
 
 export type QuoteLineSnapshotInput = Readonly<{
-  catalogItemId: string;
-  catalogItemCode: string;
+  catalogItemId: string | null;
+  catalogItemCode: string | null;
   name: string;
   description?: string | null;
   unit: string;
+  specialReason?: string | null;
   quantity: Quantity;
   unitPrice: Money;
   discountBasisPoints?: string | number | bigint;
@@ -197,11 +198,12 @@ export type QuoteLineSnapshotInput = Readonly<{
 }>;
 
 export type QuoteLineSnapshot = Readonly<{
-  catalogItemId: string;
-  catalogItemCode: string;
+  catalogItemId: string | null;
+  catalogItemCode: string | null;
   name: string;
   description: string | null;
   unit: string;
+  specialReason: string | null;
   quantity: Quantity;
   unitPrice: Money;
   discountBasisPoints: BasisPoints;
@@ -228,8 +230,12 @@ export function buildQuoteVersionSnapshot(lines: readonly QuoteLineSnapshotInput
   if (lines.length === 0) throw new Error('A quote version requires at least one line.');
 
   const snapshots = lines.map((line) => {
-    const catalogItemId = normalizeRequiredText(line.catalogItemId, 100, 'catalog item id');
-    const catalogItemCode = normalizeCatalogCode(line.catalogItemCode);
+    const isSpecial = line.catalogItemId === null;
+    if (isSpecial && line.catalogItemCode !== null) throw new Error('A special concept line cannot have a catalog item code.');
+    if (!isSpecial && line.specialReason != null) throw new Error('Only a special concept line can carry a reason.');
+    const catalogItemId = isSpecial ? null : normalizeRequiredText(line.catalogItemId!, 100, 'catalog item id');
+    const catalogItemCode = isSpecial ? null : normalizeCatalogCode(line.catalogItemCode!);
+    const specialReason = isSpecial ? normalizeRequiredText(line.specialReason ?? '', 300, 'special concept reason') : null;
     const name = normalizeRequiredText(line.name, 180, 'catalog item name');
     const description = line.description == null ? null : normalizeOptionalText(line.description, 2_000);
     const unit = normalizeRequiredText(line.unit, 40, 'catalog item unit');
@@ -244,6 +250,7 @@ export function buildQuoteVersionSnapshot(lines: readonly QuoteLineSnapshotInput
       name,
       description,
       unit,
+      specialReason,
       quantity: assertQuantity(line.quantity),
       unitPrice,
       discountBasisPoints,
