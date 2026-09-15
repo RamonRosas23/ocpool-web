@@ -8,7 +8,7 @@ import { AppError, toErrorResponse } from '@/server/http/errors';
 import { createCatalogItem, listCatalogItems } from '@/server/modules/catalog/service';
 
 const querySchema = z.object({ query: z.string().trim().max(100).optional(), status: z.enum(['ACTIVE', 'ARCHIVED']).optional(), categoryId: z.string().uuid().optional(), page: z.coerce.number().int().min(1).optional(), pageSize: z.coerce.number().int().min(1).max(50).optional() }).strict();
-const bodySchema = z.object({ code: z.string().trim().min(1).max(64), name: z.string().trim().min(1).max(180), description: z.string().trim().max(2000).nullable().optional(), unit: z.string().trim().min(1).max(40), categoryId: z.string().uuid().nullable().optional() }).strict();
+const bodySchema = z.object({ code: z.string().trim().min(1).max(64).optional(), name: z.string().trim().min(1).max(180), description: z.string().trim().max(2000).nullable().optional(), unit: z.string().trim().min(1).max(40), categoryId: z.string().uuid().nullable().optional() }).strict();
 
 function parseQuery(request: NextRequest) {
   const parsed = querySchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));

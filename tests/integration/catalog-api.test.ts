@@ -131,6 +131,24 @@ describe('staff catalog API', () => {
     expect(priceListArchive.status).toBe(200);
     const salesPriceListUpdate = await updatePriceListRoute(endpoint(`/api/staff/catalog/price-lists/${priceList.id}`, salesToken, 'PATCH', { name: 'X' }), { params: Promise.resolve({ id: priceList.id }) });
     expect(salesPriceListUpdate.status).toBe(403);
+
+    const autoCategoryResponse = await createCategoryRoute(endpoint('/api/staff/catalog/categories', managerToken, 'POST', { name: 'Categoría autogenerada API' }));
+    expect(autoCategoryResponse.status).toBe(201);
+    const autoCategory = await autoCategoryResponse.json() as { id: string; code: string };
+    categoryIds.push(autoCategory.id);
+    expect(autoCategory.code).toMatch(/^CAT-\d{6}$/);
+
+    const autoItemResponse = await createItemRoute(endpoint('/api/staff/catalog/items', managerToken, 'POST', { name: 'Concepto autogenerado API', unit: 'pieza' }));
+    expect(autoItemResponse.status).toBe(201);
+    const autoItem = await autoItemResponse.json() as { id: string; code: string };
+    itemIds.push(autoItem.id);
+    expect(autoItem.code).toMatch(/^ITEM-\d{6}$/);
+
+    const parentAssign = await updateCategoryRoute(endpoint(`/api/staff/catalog/categories/${autoCategory.id}`, managerToken, 'PATCH', { parentId: category.id }), { params: Promise.resolve({ id: autoCategory.id }) });
+    expect(parentAssign.status).toBe(200);
+    await expect(parentAssign.json()).resolves.toMatchObject({ parentId: category.id });
+    const cycleRejected = await updateCategoryRoute(endpoint(`/api/staff/catalog/categories/${category.id}`, managerToken, 'PATCH', { parentId: autoCategory.id }), { params: Promise.resolve({ id: category.id }) });
+    expect(cycleRejected.status).toBe(400);
   });
 
   afterAll(async () => {

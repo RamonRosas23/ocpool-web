@@ -12,6 +12,7 @@ const bodySchema = z.object({
   description: z.string().trim().max(500).nullable().optional(),
   sortOrder: z.number().int().min(0).max(100_000).optional(),
   status: z.enum(['ACTIVE', 'ARCHIVED']).optional(),
+  parentId: z.string().uuid().nullable().optional(),
 }).strict();
 type RouteContext = { params: Promise<{ id: string }> };
 

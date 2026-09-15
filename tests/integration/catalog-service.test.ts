@@ -161,4 +161,101 @@ describe('catalog and price list service', () => {
       await prisma.user.delete({ where: { id: user.id } });
     }
   }, 30_000);
+
+  it('autogenerates sequential codes for categories and concepts, and still honors an explicit code (K1-03 parte 2)', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const manager = actor(`00000000-0000-4000-8000-${suffix.slice(-12).padStart(12, '0')}`, ['catalog.read', 'catalog.manage']);
+    const user = await prisma.user.create({
+      data: { email: `catalog-autocode-${suffix}@example.test`, emailNormalized: `catalog-autocode-${suffix}@example.test`, displayName: 'Catalog autocode employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    manager.userId = user.id;
+    let categoryId1 = '';
+    let categoryId2 = '';
+    let itemId1 = '';
+    let itemId2 = '';
+    let manualCategoryId = '';
+
+    try {
+      const category1 = await createCatalogCategory(manager, { name: 'Auto categoría uno' }, { prisma });
+      categoryId1 = category1.id;
+      expect(category1.code).toMatch(/^CAT-\d{6}$/);
+      const category2 = await createCatalogCategory(manager, { name: 'Auto categoría dos' }, { prisma });
+      categoryId2 = category2.id;
+      expect(category2.code).toMatch(/^CAT-\d{6}$/);
+      expect(Number(category2.code.slice(4))).toBe(Number(category1.code.slice(4)) + 1);
+
+      const item1 = await createCatalogItem(manager, { name: 'Auto concepto uno', unit: 'pieza' }, { prisma });
+      itemId1 = item1.id;
+      expect(item1.code).toMatch(/^ITEM-\d{6}$/);
+      const item2 = await createCatalogItem(manager, { name: 'Auto concepto dos', unit: 'pieza' }, { prisma });
+      itemId2 = item2.id;
+      expect(Number(item2.code.slice(5))).toBe(Number(item1.code.slice(5)) + 1);
+
+      const manualCategory = await createCatalogCategory(manager, { code: `MANUAL-${suffix}`, name: 'Categoría manual' }, { prisma });
+      manualCategoryId = manualCategory.id;
+      expect(manualCategory.code).toBe(`MANUAL-${suffix}`);
+    } finally {
+      if (itemId1) await prisma.catalogItem.delete({ where: { id: itemId1 } });
+      if (itemId2) await prisma.catalogItem.delete({ where: { id: itemId2 } });
+      if (categoryId1) await prisma.catalogCategory.delete({ where: { id: categoryId1 } });
+      if (categoryId2) await prisma.catalogCategory.delete({ where: { id: categoryId2 } });
+      if (manualCategoryId) await prisma.catalogCategory.delete({ where: { id: manualCategoryId } });
+      await prisma.user.delete({ where: { id: user.id } });
+    }
+  }, 30_000);
+
+  it('builds category hierarchy and rejects cycles when reassigning a parent (K1-03 parte 2)', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const manager = actor(`00000000-0000-4000-8000-${suffix.slice(-12).padStart(12, '0')}`, ['catalog.read', 'catalog.manage']);
+    const user = await prisma.user.create({
+      data: { email: `catalog-hierarchy-${suffix}@example.test`, emailNormalized: `catalog-hierarchy-${suffix}@example.test`, displayName: 'Catalog hierarchy employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    manager.userId = user.id;
+    let categoryAId = '';
+    let categoryBId = '';
+    let categoryCId = '';
+
+    try {
+      const categoryA = await createCatalogCategory(manager, { code: `HIER-A-${suffix}`, name: 'Categoría A' }, { prisma });
+      categoryAId = categoryA.id;
+      const categoryB = await createCatalogCategory(manager, { code: `HIER-B-${suffix}`, name: 'Categoría B', parentId: categoryA.id }, { prisma });
+      categoryBId = categoryB.id;
+      expect(categoryB.parentId).toBe(categoryA.id);
+
+      await prisma.catalogCategory.update({ where: { id: categoryA.id }, data: { status: 'ARCHIVED' } });
+      await expect(createCatalogCategory(manager, { code: `HIER-X-${suffix}`, name: 'Categoría X', parentId: categoryA.id }, { prisma })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+      await prisma.catalogCategory.update({ where: { id: categoryA.id }, data: { status: 'ACTIVE' } });
+
+      const categoryC = await createCatalogCategory(manager, { code: `HIER-C-${suffix}`, name: 'Categoría C', parentId: categoryB.id }, { prisma });
+      categoryCId = categoryC.id;
+
+      await expect(updateCatalogCategory(manager, categoryA.id, { parentId: categoryA.id }, { prisma })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+      await expect(updateCatalogCategory(manager, categoryA.id, { parentId: categoryC.id }, { prisma })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+
+      await prisma.catalogCategory.update({ where: { id: categoryB.id }, data: { status: 'ARCHIVED' } });
+      await expect(updateCatalogCategory(manager, categoryC.id, { parentId: categoryB.id }, { prisma })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+      await prisma.catalogCategory.update({ where: { id: categoryB.id }, data: { status: 'ACTIVE' } });
+
+      const reassigned = await updateCatalogCategory(manager, categoryC.id, { parentId: categoryA.id }, { prisma });
+      expect(reassigned.parentId).toBe(categoryA.id);
+
+      const rootAgain = await updateCatalogCategory(manager, categoryC.id, { parentId: null }, { prisma });
+      expect(rootAgain.parentId).toBeNull();
+    } finally {
+      if (categoryCId) await prisma.catalogCategory.delete({ where: { id: categoryCId } });
+      if (categoryBId) await prisma.catalogCategory.delete({ where: { id: categoryBId } });
+      if (categoryAId) await prisma.catalogCategory.delete({ where: { id: categoryAId } });
+      await prisma.user.delete({ where: { id: user.id } });
+    }
+  }, 30_000);
 });
