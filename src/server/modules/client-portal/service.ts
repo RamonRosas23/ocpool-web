@@ -4,7 +4,7 @@ import type { Actor } from '@/server/auth/types';
 import { requirePermission } from '@/server/auth/permissions';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
-import { getCurrentQuoteTermsLabel, getCurrentQuoteTermsVersion } from '@/server/modules/quote-documents/domain';
+import { getCurrentQuoteTermsLabel, getCurrentQuoteTermsVersion, isGeneratedQuotePdfReady } from '@/server/modules/quote-documents/domain';
 import { CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES, isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
 
 export type ClientPortalServiceDependencies = Readonly<{ prisma?: PrismaClient; now?: Date }>;
@@ -129,39 +129,6 @@ function serializeVersion(version: {
     pdfReady: version.pdfReady,
     lines: version.lines.map(serializeLine),
   };
-}
-
-function isQuotePdfReady(document: {
-  status: string;
-  contentType: string;
-  byteSize: bigint | null;
-  sha256: string | null;
-  readyAt: Date | null;
-  deletedAt: Date | null;
-  storageObject: {
-    contentType: string;
-    byteSize: bigint;
-    sha256: string | null;
-    scanStatus: string;
-    deletedAt: Date | null;
-  } | null;
-} | undefined): boolean {
-  return Boolean(
-    document
-      && document.status === 'READY'
-      && document.contentType === 'application/pdf'
-      && document.byteSize
-      && document.byteSize > 0n
-      && document.sha256
-      && document.readyAt
-      && !document.deletedAt
-      && document.storageObject
-      && document.storageObject.contentType === 'application/pdf'
-      && document.storageObject.byteSize === document.byteSize
-      && document.storageObject.sha256 === document.sha256
-      && document.storageObject.scanStatus === 'PASSED'
-      && !document.storageObject.deletedAt,
-  );
 }
 
 function visibleVersions<T extends { status: string }>(versions: readonly T[]): T[] {
@@ -366,8 +333,8 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
   const quote = request.quotes[0] ?? null;
   const versions = quote ? visibleVersions(quote.versions) : [];
   const currentVersion = quote ? selectVisibleVersion(versions, quote.publishedVersionId ?? quote.currentVersionId) : null;
-  const serializedVersions = versions.map((version) => serializeVersion({ ...version, pdfReady: isQuotePdfReady(version.generatedDocuments[0]) }));
-  const serializedCurrentVersion = currentVersion ? serializeVersion({ ...currentVersion, pdfReady: isQuotePdfReady(currentVersion.generatedDocuments[0]) }) : null;
+  const serializedVersions = versions.map((version) => serializeVersion({ ...version, pdfReady: isGeneratedQuotePdfReady(version.generatedDocuments[0]) }));
+  const serializedCurrentVersion = currentVersion ? serializeVersion({ ...currentVersion, pdfReady: isGeneratedQuotePdfReady(currentVersion.generatedDocuments[0]) }) : null;
   return {
     request: {
       id: request.id,

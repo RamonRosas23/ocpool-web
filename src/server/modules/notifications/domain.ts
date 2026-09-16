@@ -21,6 +21,13 @@ export function canTransitionNotificationDelivery(from: NotificationDeliveryStat
   return DELIVERY_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
+export const RECOVERABLE_NOTIFICATION_ERROR_CODES = ['TEMPORARY_PROVIDER', 'RATE_LIMIT'] as const;
+export type RecoverableNotificationErrorCode = (typeof RECOVERABLE_NOTIFICATION_ERROR_CODES)[number];
+
+export function isRecoverableNotificationErrorCode(value: string | null): value is RecoverableNotificationErrorCode {
+  return value !== null && (RECOVERABLE_NOTIFICATION_ERROR_CODES as readonly string[]).includes(value);
+}
+
 export function normalizeNotificationEmail(value: string): string {
   if (typeof value !== 'string') throw new Error('Invalid notification recipient.');
   const normalized = value.normalize('NFC').trim().toLowerCase();

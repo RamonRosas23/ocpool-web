@@ -73,3 +73,49 @@ export function normalizeAcceptanceTermsVersion(value: string): string {
 export function isCurrentQuoteTermsVersion(value: string): boolean {
   return value === CURRENT_QUOTE_TERMS_VERSION;
 }
+
+export type GeneratedDocumentInvariantInput = Readonly<{
+  status: string;
+  contentType: string;
+  byteSize: bigint | null;
+  sha256: string | null;
+  readyAt: Date | null;
+  deletedAt: Date | null;
+  storageObject: Readonly<{
+    contentType: string;
+    byteSize: bigint;
+    sha256: string | null;
+    scanStatus: string;
+    deletedAt: Date | null;
+  }> | null;
+}>;
+
+export function isGeneratedQuotePdfReady(document: GeneratedDocumentInvariantInput | null | undefined): boolean {
+  return Boolean(
+    document
+      && document.status === 'READY'
+      && document.contentType === 'application/pdf'
+      && document.byteSize
+      && document.byteSize > 0n
+      && document.sha256
+      && document.readyAt
+      && !document.deletedAt
+      && document.storageObject
+      && document.storageObject.contentType === 'application/pdf'
+      && document.storageObject.byteSize === document.byteSize
+      && document.storageObject.sha256 === document.sha256
+      && document.storageObject.scanStatus === 'PASSED'
+      && !document.storageObject.deletedAt,
+  );
+}
+
+/**
+ * Presentation-level document state for a workspace projection. A READY document that fails the
+ * integrity checks in isGeneratedQuotePdfReady degrades to FAILED rather than a silent "ready".
+ */
+export function deriveGeneratedDocumentState(document: GeneratedDocumentInvariantInput | null | undefined): 'NOT_CREATED' | 'PENDING' | 'READY' | 'FAILED' {
+  if (!document || document.deletedAt) return 'NOT_CREATED';
+  if (document.status === 'READY') return isGeneratedQuotePdfReady(document) ? 'READY' : 'FAILED';
+  if (document.status === 'PENDING') return 'PENDING';
+  return 'FAILED';
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { assignQuoteRequest } from '@/server/modules/quote-requests/staff-service';
-import { createQuoteVersion } from '@/server/modules/quotes/service';
+import { createQuoteVersion, transitionQuoteVersion } from '@/server/modules/quotes/service';
 import { getQuoteWorkspace, listQuoteWorkspaces } from '@/server/modules/quotes/staff-service';
 import { getPrisma } from '@/server/db/client';
 import type { Actor } from '@/server/auth/types';
@@ -77,6 +77,16 @@ describe('staff quote workspace service', () => {
       expect(workspace.quote?.currentVersion).toMatchObject({ id: created.versionId, versionNumber: 1, status: 'BORRADOR', totalMinor: '29000' });
       expect(workspace.quote?.currentVersion?.lines[0]).toMatchObject({ catalogItemId: item.id, quantityMilliunits: '2000', unitPriceMinor: '12500', taxMinor: '4000', totalMinor: '29000' });
       expect(workspace.quote?.history).toHaveLength(1);
+      expect(workspace.quote?.workingVersion).toMatchObject({ id: created.versionId, versionNumber: 1, status: 'BORRADOR' });
+      expect(workspace.quote?.publishedVersion).toBeNull();
+      expect(workspace.projection).toMatchObject({
+        stage: 'BORRADOR_GUARDADO',
+        actorExpected: 'STAFF',
+        primaryAction: 'QUOTE_SUBMIT_FOR_REVIEW',
+        blockers: [],
+        documentStatus: 'NOT_CREATED',
+        deliveryStatus: 'NONE',
+      });
       expect(workspace.priceLists).toContainEqual({ id: priceList.id, code: priceList.code, name: priceList.name, currencyCode: 'MXN' });
       expect(workspace.priceLists).not.toContainEqual({ id: incompatiblePriceList.id, code: incompatiblePriceList.code, name: incompatiblePriceList.name, currencyCode: 'MXN' });
     } finally {
@@ -201,6 +211,73 @@ describe('staff quote workspace service', () => {
       await prisma.client.delete({ where: { id: request.clientId } });
       await prisma.user.delete({ where: { id: employee.id } });
       await prisma.priceList.delete({ where: { id: priceList.id } });
+    }
+  }, 30_000);
+
+  it('keeps the published version visible and projects REVISANDO_CAMBIOS once a new working draft starts (D2-01 bridge)', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-03-20T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-staff-projection-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Workspace projection ${suffix}`, email: `workspace-projection-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Culiacán', description: 'Workspace projection fixture', consentAt: now },
+    }, { prisma, now });
+    const employee = await prisma.user.create({
+      data: { email: `quote-staff-projection-employee-${suffix}@example.test`, emailNormalized: `quote-staff-projection-employee-${suffix}@example.test`, displayName: 'Quote staff projection employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    const category = await prisma.catalogCategory.create({ data: { code: `STAFF-PROJ-${suffix}`, name: 'Staff projection workspace' } });
+    const item = await prisma.catalogItem.create({ data: { code: `STAFF-PROJ-ITEM-${suffix}`, name: 'Staff projection item', unit: 'pieza', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `STAFF-PROJ-PRICE-${suffix}`, name: 'Staff projection prices', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 5000n, validFrom: now } });
+    let quoteId: string | null = null;
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const employeeActor = actor(employee.id, ['quotes.read', 'quotes.create', 'quotes.send', 'prices.read']);
+      const firstVersion = await createQuoteVersion(employeeActor, {
+        quoteRequestId: request.quoteRequestId,
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '1' }],
+      }, { prisma, now });
+      quoteId = firstVersion.quoteId;
+
+      await transitionQuoteVersion(employeeActor, firstVersion.versionId, 'EN_REVISION', { prisma, now });
+      await transitionQuoteVersion(employeeActor, firstVersion.versionId, 'ENVIADA', { prisma, now });
+
+      const publishedWorkspace = await getQuoteWorkspace(employeeActor, request.quoteRequestId, { prisma });
+      expect(publishedWorkspace.quote?.publishedVersion).toMatchObject({ id: firstVersion.versionId, status: 'ENVIADA' });
+      expect(publishedWorkspace.quote?.workingVersion).toBeNull();
+      expect(publishedWorkspace.projection).toMatchObject({ stage: 'PROPUESTA_PUBLICADA', actorExpected: 'SYSTEM', primaryAction: null });
+
+      const secondVersion = await createQuoteVersion(employeeActor, {
+        quoteRequestId: request.quoteRequestId,
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '2' }],
+      }, { prisma, now });
+
+      const revisingWorkspace = await getQuoteWorkspace(employeeActor, request.quoteRequestId, { prisma });
+      expect(revisingWorkspace.quote?.publishedVersion).toMatchObject({ id: firstVersion.versionId, status: 'ENVIADA' });
+      expect(revisingWorkspace.quote?.workingVersion).toMatchObject({ id: secondVersion.versionId, versionNumber: 2, status: 'BORRADOR' });
+      expect(revisingWorkspace.projection).toMatchObject({ stage: 'REVISANDO_CAMBIOS', actorExpected: 'STAFF', primaryAction: 'QUOTE_SUBMIT_FOR_REVIEW' });
+      expect(revisingWorkspace.projection.publishedVersion).toMatchObject({ id: firstVersion.versionId });
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.delete({ where: { id: item.id } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
     }
   }, 30_000);
 });

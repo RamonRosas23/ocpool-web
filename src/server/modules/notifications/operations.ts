@@ -1,4 +1,20 @@
 import type { PrismaClient } from '@/generated/prisma/client';
+import type { NotificationDeliveryStatus } from '@/server/modules/notifications/domain';
+
+export type LatestAggregateDelivery = {
+  status: NotificationDeliveryStatus;
+  lastErrorCode: string | null;
+  updatedAt: Date;
+} | null;
+
+export async function getLatestAggregateNotificationDelivery(prisma: PrismaClient, aggregateType: string, aggregateId: string): Promise<LatestAggregateDelivery> {
+  const delivery = await prisma.notificationDelivery.findFirst({
+    where: { outboxEvent: { aggregateType, aggregateId } },
+    orderBy: [{ createdAt: 'desc' }],
+    select: { status: true, lastErrorCode: true, updatedAt: true },
+  });
+  return delivery ?? null;
+}
 
 export type NotificationOperationalHealth = {
   pending: number;

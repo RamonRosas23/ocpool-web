@@ -5,6 +5,11 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { staffRequestReadScopeWhere } from '@/server/auth/request-scope';
+import { deriveGeneratedDocumentState } from '@/server/modules/quote-documents/domain';
+import { isRecoverableNotificationErrorCode } from '@/server/modules/notifications/domain';
+import { getLatestAggregateNotificationDelivery } from '@/server/modules/notifications/operations';
+import { resolveQuoteWorkspaceProjection, type WorkspaceApprovalStatus, type WorkspaceVersionInput } from '@/server/modules/quotes/workspace-projection';
+import type { QuoteVersionStatus } from '@/server/modules/quotes/domain';
 
 export type QuoteStaffServiceDependencies = Readonly<{ prisma?: PrismaClient; now?: Date }>;
 
@@ -249,6 +254,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       folio: true,
       origin: true,
       status: true,
+      currentAssigneeId: true,
       createdAt: true,
       updatedAt: true,
       client: { select: { id: true, displayName: true, status: true } },
@@ -325,6 +331,20 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
                   expiresAt: true,
                 },
               },
+              generatedDocuments: {
+                where: { documentType: 'QUOTE_PDF' },
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+                select: {
+                  status: true,
+                  contentType: true,
+                  byteSize: true,
+                  sha256: true,
+                  readyAt: true,
+                  deletedAt: true,
+                  storageObject: { select: { contentType: true, byteSize: true, sha256: true, scanStatus: true, deletedAt: true } },
+                },
+              },
             },
           },
         },
@@ -339,6 +359,8 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
   const displayedVersionId = quote?.workingVersionId ?? quote?.publishedVersionId ?? quote?.currentVersionId ?? null;
   const currentVersion = displayedVersionId ? versions.find((version) => version.id === displayedVersionId) ?? null : null;
   const currentVersionItemIds = [...new Set(currentVersion?.lines.map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
+  const workingVersionRaw = quote?.workingVersionId ? versions.find((version) => version.id === quote.workingVersionId) ?? null : null;
+  const publishedVersionRaw = quote?.publishedVersionId ? versions.find((version) => version.id === quote.publishedVersionId) ?? null : null;
 
   const priceListCandidates = await prisma.priceList.findMany({
     where: {
@@ -374,6 +396,32 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       currencyCode: priceList.currencyCode,
     }));
   const history = serializeHistory(versions.flatMap((version) => version.statusHistory));
+
+  const [latestDelivery, lastCustomerVisibleMessage] = await Promise.all([
+    quote ? getLatestAggregateNotificationDelivery(prisma, 'QUOTE', quote.id) : Promise.resolve(null),
+    prisma.conversationMessage.findFirst({
+      where: { conversation: { quoteRequestId: request.id }, visibility: 'CUSTOMER' },
+      orderBy: { createdAt: 'desc' },
+      select: { sender: { select: { type: true } } },
+    }),
+  ]);
+
+  const projection = resolveQuoteWorkspaceProjection({
+    request: { status: request.status, currentAssigneeId: request.currentAssigneeId, updatedAt: request.updatedAt },
+    workingVersion: workingVersionRaw ? toProjectionVersion(workingVersionRaw) : null,
+    publishedVersion: publishedVersionRaw ? toProjectionVersion(publishedVersionRaw) : null,
+    document: workingVersionRaw ? { state: deriveGeneratedDocumentState(workingVersionRaw.generatedDocuments[0]) } : null,
+    delivery: latestDelivery ? {
+      state: latestDelivery.status,
+      retryable: latestDelivery.status === 'FAILED' && isRecoverableNotificationErrorCode(latestDelivery.lastErrorCode),
+      updatedAt: latestDelivery.updatedAt,
+    } : null,
+    conversation: { lastMessageFromCustomer: lastCustomerVisibleMessage?.sender?.type === 'CUSTOMER' },
+    project: null,
+    actor: { userId: actor.userId, permissionKeys: actor.permissionKeys },
+    now,
+  });
+
   return {
     request: {
       id: request.id,
@@ -390,9 +438,34 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       id: quote.id,
       currentVersionId: displayedVersionId,
       currentVersion: currentVersion ? serializeVersion(currentVersion as WorkspaceVersion) : null,
+      workingVersion: workingVersionRaw ? serializeVersion(workingVersionRaw as WorkspaceVersion) : null,
+      publishedVersion: publishedVersionRaw ? serializeVersion(publishedVersionRaw as WorkspaceVersion) : null,
       versions: versions.map((version) => serializeVersion(version as WorkspaceVersion)),
       history,
     } : null,
     priceLists,
+    projection,
+  };
+}
+
+function toProjectionVersion(version: {
+  id: string;
+  versionNumber: number;
+  status: string;
+  validUntil: Date | null;
+  updatedAt: Date;
+  approvals: ReadonlyArray<{ status: string; requestedById: string; requestedAt: Date }>;
+}): WorkspaceVersionInput {
+  return {
+    id: version.id,
+    versionNumber: version.versionNumber,
+    status: version.status as QuoteVersionStatus,
+    validUntil: version.validUntil,
+    updatedAt: version.updatedAt,
+    approvals: version.approvals.map((approval) => ({
+      status: approval.status as WorkspaceApprovalStatus,
+      requestedById: approval.requestedById,
+      requestedAt: approval.requestedAt,
+    })),
   };
 }

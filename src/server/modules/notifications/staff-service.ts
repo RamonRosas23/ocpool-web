@@ -4,12 +4,10 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { getNotificationOperationalHealth } from '@/server/modules/notifications/operations';
-import { NOTIFICATION_DELIVERY_STATUSES, type NotificationDeliveryStatus } from '@/server/modules/notifications/domain';
+import { NOTIFICATION_DELIVERY_STATUSES, RECOVERABLE_NOTIFICATION_ERROR_CODES, isRecoverableNotificationErrorCode, type NotificationDeliveryStatus } from '@/server/modules/notifications/domain';
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
-const RECOVERABLE_ERROR_CODES = ['TEMPORARY_PROVIDER', 'RATE_LIMIT'] as const;
-type RecoverableNotificationErrorCode = (typeof RECOVERABLE_ERROR_CODES)[number];
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -80,13 +78,9 @@ function normalizeFilters(filters: StaffNotificationListFilters): { status?: Not
   return { status: filters.status, page, pageSize };
 }
 
-function isRecoverableErrorCode(value: string | null): value is RecoverableNotificationErrorCode {
-  return value !== null && (RECOVERABLE_ERROR_CODES as readonly string[]).includes(value);
-}
-
 function safeErrorCategory(value: string | null): string | null {
   if (!value) return null;
-  if (isRecoverableErrorCode(value)) return value;
+  if (isRecoverableNotificationErrorCode(value)) return value;
   if (value === 'INVALID_RECIPIENT' || value === 'TEMPLATE_ERROR' || value === 'CONFIGURATION') return value;
   return 'OTHER';
 }
@@ -124,7 +118,7 @@ function toProjection(row: StaffNotificationRow, now: Date): StaffNotificationPr
     errorCategory: safeErrorCategory(row.lastErrorCode),
     cancelReason: row.cancelReason,
     ageSeconds: Math.max(0, Math.floor((now.getTime() - row.createdAt.getTime()) / 1000)),
-    retryable: row.status === 'FAILED' && isRecoverableErrorCode(row.lastErrorCode),
+    retryable: row.status === 'FAILED' && isRecoverableNotificationErrorCode(row.lastErrorCode),
     eventType: row.outboxEvent.eventType,
     aggregateType: row.outboxEvent.aggregateType,
   };
@@ -200,12 +194,12 @@ export async function retryStaffNotificationDelivery(
     if (current.status !== 'FAILED') {
       throw new AppError('CONFLICT', 'Sólo se pueden reintentar entregas fallidas.', 409);
     }
-    if (!isRecoverableErrorCode(current.lastErrorCode)) {
+    if (!isRecoverableNotificationErrorCode(current.lastErrorCode)) {
       throw new AppError('CONFLICT', 'La entrega falló por una causa que no admite reintento manual.', 409);
     }
 
     const changed = await transaction.notificationDelivery.updateMany({
-      where: { id, status: 'FAILED', lastErrorCode: { in: [...RECOVERABLE_ERROR_CODES] } },
+      where: { id, status: 'FAILED', lastErrorCode: { in: [...RECOVERABLE_NOTIFICATION_ERROR_CODES] } },
       data: {
         status: 'PENDING',
         attempts: 0,
