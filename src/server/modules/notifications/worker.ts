@@ -50,7 +50,7 @@ function defaultNotificationPath(delivery: ClaimedNotificationDelivery): string 
   return '/portal';
 }
 
-async function defaultRenderNotification(delivery: ClaimedNotificationDelivery): Promise<EmailMessage> {
+export async function defaultRenderNotification(delivery: ClaimedNotificationDelivery): Promise<EmailMessage> {
   const env = readServerEnv();
   if (!delivery.recipientAddressCiphertext) throw Object.assign(new Error('Notification recipient is unavailable.'), { code: 'INVALID_RECIPIENT' });
   const recipient = decryptSecret(delivery.recipientAddressCiphertext, env.NOTIFICATION_RECIPIENT_ENCRYPTION_KEY);
@@ -60,9 +60,12 @@ async function defaultRenderNotification(delivery: ClaimedNotificationDelivery):
     const tokenCiphertext = stringValue(delivery.outboxEvent.payload, 'tokenCiphertext');
     if (!tokenCiphertext) throw Object.assign(new Error('Authentication delivery material is unavailable.'), { code: 'TEMPLATE_ERROR' });
     const rawToken = decryptSecret(tokenCiphertext, env.AUTH_DELIVERY_ENCRYPTION_KEY);
-    actionPath = delivery.templateKey === 'auth.customer.magic_link'
-      ? `/auth/customer/consume-link?token=${encodeURIComponent(rawToken)}`
-      : `/auth/recovery?token=${encodeURIComponent(rawToken)}`;
+    if (delivery.templateKey === 'auth.customer.magic_link') {
+      const redirectRequestId = stringValue(delivery.outboxEvent.payload, 'redirectRequestId');
+      actionPath = `/auth/customer/consume-link?token=${encodeURIComponent(rawToken)}${redirectRequestId ? `&request=${encodeURIComponent(redirectRequestId)}` : ''}`;
+    } else {
+      actionPath = `/auth/recovery?token=${encodeURIComponent(rawToken)}`;
+    }
   }
   const actionUrl = buildNotificationUrl(env.APP_URL, actionPath);
   const templateData: NotificationTemplateData = {

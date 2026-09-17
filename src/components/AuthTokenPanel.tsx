@@ -13,9 +13,9 @@ async function publicError(response: Response): Promise<string> {
   return body.error?.message ? 'El enlace no es válido o ya expiró.' : 'El enlace no es válido o ya expiró.';
 }
 
-function removeTokenFromAddress() {
+function removeParamsFromAddress(params: readonly string[]) {
   const current = new URL(window.location.href);
-  current.searchParams.delete('token');
+  for (const param of params) current.searchParams.delete(param);
   window.history.replaceState({}, '', `${current.pathname}${current.search}${current.hash}`);
 }
 
@@ -29,8 +29,10 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const rawToken = new URL(window.location.href).searchParams.get('token');
-    removeTokenFromAddress();
+    const url = new URL(window.location.href);
+    const rawToken = url.searchParams.get('token');
+    const redirectRequestId = url.searchParams.get('request');
+    removeParamsFromAddress(['token', 'request']);
     if (!rawToken) {
       setState('missing');
       return;
@@ -49,7 +51,7 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
     }).then(async (response) => {
       if (!response.ok) throw new Error(await publicError(response));
       setState('success');
-      window.location.replace('/portal');
+      window.location.replace(redirectRequestId ? `/portal?request=${encodeURIComponent(redirectRequestId)}` : '/portal');
     }).catch((caught: unknown) => {
       setError(caught instanceof Error ? caught.message : 'El enlace no es válido o ya expiró.');
       setState('invalid');

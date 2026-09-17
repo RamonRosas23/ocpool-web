@@ -157,11 +157,13 @@ export default function ClientPortalPanel() {
     }
   }, []);
 
+  const [requestFromUrl, setRequestFromUrl] = useState<string | null>(null);
+
   useEffect(() => { void loadRequests(); }, [loadRequests]);
   useEffect(() => { if (selectedId) void loadDetail(selectedId); else setWorkspace(null); }, [loadDetail, selectedId]);
   useEffect(() => {
-    const requestFromUrl = new URLSearchParams(window.location.search).get('request');
-    if (requestFromUrl) setSelectedId(requestFromUrl);
+    const requestId = new URLSearchParams(window.location.search).get('request');
+    if (requestId) { setSelectedId(requestId); setRequestFromUrl(requestId); }
   }, []);
 
   const logout = async () => {
@@ -171,7 +173,7 @@ export default function ClientPortalPanel() {
     setRequests([]);
   };
 
-  if (restricted) return <PrivateSurfaceRoot className="client-portal client-portal--restricted"><section className="client-restricted"><WorkspaceLogo tone="light" className="client-restricted__logo" /><p className="client-eyebrow">Portal privado</p><h1>Acceso privado.</h1><p>Necesitas un enlace de acceso válido para consultar tus expedientes.</p><div className="client-restricted__actions"><Link className="client-button client-button--dark" href="/portal/access">Solicitar acceso</Link><Link className="client-restricted__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
+  if (restricted) return <PrivateSurfaceRoot className="client-portal client-portal--restricted"><section className="client-restricted"><WorkspaceLogo tone="light" className="client-restricted__logo" /><p className="client-eyebrow">Portal privado</p><h1>Acceso privado.</h1><p>Necesitas un enlace de acceso válido para consultar tus expedientes.</p><div className="client-restricted__actions"><Link className="client-button client-button--dark" href={requestFromUrl ? `/portal/access?request=${encodeURIComponent(requestFromUrl)}` : '/portal/access'}>Solicitar acceso</Link><Link className="client-restricted__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
 
   const validity = workspace?.quote?.currentVersion ? quoteValidityLabel(workspace.quote.currentVersion.validUntil) : null;
 

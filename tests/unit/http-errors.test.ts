@@ -29,6 +29,7 @@ describe('toErrorResponse', () => {
     ['VALIDATION_ERROR', 'Datos inválidos.', 400],
     ['FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403],
     ['NOT_FOUND', 'No encontramos el recurso solicitado.', 404],
+    ['MFA_REQUIRED', 'Ingresa el código de tu app de autenticación.', 401],
   ] as const)('preserves the public contract for %s', async (code, message, status) => {
     const response = toErrorResponse(new AppError(code, message, status), 'request-456');
     expect(response.status).toBe(status);

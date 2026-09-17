@@ -324,7 +324,10 @@ describe('identity and RBAC foundation', () => {
         roles: { create: { roleId: adminRole.id } },
       },
     });
-    expect((await loginEmployee({ email: adminEmail, password, context: { ...context, ipAddress: `10.0.1.${hostOctet}` } }, { prisma, now, sessionTokenGenerator: () => `admin-no-mfa-${suffix}-abcdefghijklmnopqrstuvwxyz` })).ok).toBe(false);
+    expect(await loginEmployee({ email: adminEmail, password, context: { ...context, ipAddress: `10.0.1.${hostOctet}` } }, { prisma, now, sessionTokenGenerator: () => `admin-no-mfa-${suffix}-abcdefghijklmnopqrstuvwxyz` })).toMatchObject({ ok: false, mfaRequired: true });
+    const wrongPasswordAttempt = await loginEmployee({ email: adminEmail, password: 'WrongPassword123!', context: { ...context, ipAddress: `10.0.1.${(hostOctet % 199) + 2}` } }, { prisma, now, sessionTokenGenerator: () => `admin-wrong-password-${suffix}-abcdefghijklmnopqrstuvwxyz` });
+    expect(wrongPasswordAttempt.ok).toBe(false);
+    expect(wrongPasswordAttempt).not.toHaveProperty('mfaRequired');
     const adminContext = { ...context, ipAddress: `10.0.1.${(hostOctet % 200) + 1}` };
     const adminCode = generateTotpCode(enrollment.secret, now.getTime());
     const adminLogin = await loginEmployee({ email: adminEmail, password, mfaCode: adminCode, context: adminContext }, { prisma, now, sessionTokenGenerator: () => `admin-session-${suffix}-abcdefghijklmnopqrstuvwxyz` });
@@ -337,8 +340,10 @@ describe('identity and RBAC foundation', () => {
     const customer = await prisma.user.create({
       data: { email: customerEmail, emailNormalized: customerEmail, displayName: 'Customer Auth Test', type: 'CUSTOMER', status: 'ACTIVE', clientId: client.id },
     });
-    await requestCustomerMagicLink({ email: customerEmail, context: { ...context, ipAddress: `10.0.2.${hostOctet}` } }, { prisma, now, tokenGenerator: () => `customer-link-${suffix}-abcdefghijklmnopqrstuvwxyz` });
+    const redirectRequestId = '00000000-0000-4000-8000-000000000099';
+    await requestCustomerMagicLink({ email: customerEmail, redirectRequestId, context: { ...context, ipAddress: `10.0.2.${hostOctet}` } }, { prisma, now, tokenGenerator: () => `customer-link-${suffix}-abcdefghijklmnopqrstuvwxyz` });
     const customerOutbox = await prisma.outboxEvent.findFirstOrThrow({ where: { aggregateId: customer.id, eventType: 'AUTH.CUSTOMER_MAGIC_LINK' }, orderBy: { createdAt: 'desc' } });
+    expect(customerOutbox.payload).toMatchObject({ redirectRequestId });
     const customerPayload = customerOutbox.payload as { tokenCiphertext: string };
     const customerToken = decryptSecret(customerPayload.tokenCiphertext, readServerEnv().AUTH_DELIVERY_ENCRYPTION_KEY);
     expect(JSON.stringify(customerOutbox.payload)).not.toContain(customerToken);

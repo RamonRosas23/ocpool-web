@@ -5,10 +5,13 @@ import Link from 'next/link';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 
 type SessionResponse = { type?: 'EMPLOYEE' | 'CUSTOMER' };
-type ErrorResponse = { error?: { message?: string } };
+type ErrorResponse = { error?: { code?: string; message?: string } };
 
-async function readError(response: Response): Promise<string> {
-  const body = await response.json().catch(() => ({})) as ErrorResponse;
+async function readErrorBody(response: Response): Promise<ErrorResponse> {
+  return await response.json().catch(() => ({})) as ErrorResponse;
+}
+
+function errorMessage(response: Response, body: ErrorResponse): string {
   if (response.status === 429) return 'El acceso está temporalmente limitado. Espera unos minutos y vuelve a intentarlo.';
   return body.error?.message ? 'No fue posible iniciar sesión. Verifica tus datos.' : 'No fue posible iniciar sesión. Verifica tus datos.';
 }
@@ -17,6 +20,7 @@ export default function EmployeeLoginPanel() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,7 +51,15 @@ export default function EmployeeLoginPanel() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password, ...(mfaCode ? { mfaCode } : {}) }),
       });
-      if (!response.ok) throw new Error(await readError(response));
+      if (!response.ok) {
+        const body = await readErrorBody(response);
+        if (body.error?.code === 'MFA_REQUIRED') {
+          setMfaRequired(true);
+          setError(null);
+          return;
+        }
+        throw new Error(errorMessage(response, body));
+      }
       window.location.assign('/staff');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible iniciar sesión. Verifica tus datos.');
@@ -67,13 +79,13 @@ export default function EmployeeLoginPanel() {
       <div className="auth-panel__top"><p className="auth-kicker">Área interna</p><Link href="/" className="auth-panel__back">Volver al sitio</Link></div>
       <div className="auth-panel__body">
         <h2 id="employee-login-title">Acceso interno</h2>
-        <p className="auth-panel__intro">Ingresa con tu cuenta de empleado para continuar.</p>
+        <p className="auth-panel__intro">{mfaRequired ? 'Ingresa el código de tu app de autenticación para continuar.' : 'Ingresa con tu cuenta de empleado para continuar.'}</p>
         <form className="auth-form" onSubmit={submit} noValidate>
-          <label><span>Correo</span><input type="email" name="email" autoComplete="username" inputMode="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-          <label><span>Contraseña</span><input type="password" name="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-          <label><span>Código de autenticación <small>si tu cuenta lo solicita</small></span><input type="text" name="mfaCode" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/gu, '').slice(0, 6))} /></label>
+          <label><span>Correo</span><input type="email" name="email" autoComplete="username" inputMode="email" required disabled={mfaRequired} value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label><span>Contraseña</span><input type="password" name="password" autoComplete="current-password" required disabled={mfaRequired} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          {mfaRequired && <label><span>Código de autenticación</span><input type="text" name="mfaCode" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoFocus required value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/gu, '').slice(0, 6))} /></label>}
           {error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}
-          <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Verificando…' : 'Entrar'}</button>
+          <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Verificando…' : mfaRequired ? 'Verificar código' : 'Entrar'}</button>
         </form>
         <Link className="auth-panel__recovery" href="/login/recovery">¿Olvidaste tu contraseña?</Link>
       </div>

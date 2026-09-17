@@ -8,6 +8,7 @@ export type PublicErrorCode =
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'RATE_LIMITED'
+  | 'MFA_REQUIRED'
   | 'INTERNAL_ERROR';
 
 export class AppError extends Error {

@@ -12,7 +12,10 @@ export async function POST(request: NextRequest) {
     assertSameOrigin(request, readServerEnv().APP_URL);
     const body = await parseBody(request, employeeLoginSchema);
     const result = await loginEmployee({ ...body, context: requestContext(request) });
-    if (!result.ok) throw new AppError('UNAUTHORIZED', 'Correo o contraseña inválidos.', 401);
+    if (!result.ok) {
+      if (result.mfaRequired) throw new AppError('MFA_REQUIRED', 'Ingresa el código de tu app de autenticación.', 401);
+      throw new AppError('UNAUTHORIZED', 'Correo o contraseña inválidos.', 401);
+    }
 
     const response = NextResponse.json({ authenticated: true }, { status: 200, headers: { 'cache-control': 'no-store' } });
     response.cookies.set(createSessionCookie(result.rawToken, result.expiresAt));

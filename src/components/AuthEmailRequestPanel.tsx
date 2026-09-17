@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 
@@ -19,6 +19,12 @@ export default function AuthEmailRequestPanel({ kind }: { kind: RequestKind }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [redirectRequestId, setRedirectRequestId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!customer) return;
+    setRedirectRequestId(new URLSearchParams(window.location.search).get('request'));
+  }, [customer]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -31,7 +37,7 @@ export default function AuthEmailRequestPanel({ kind }: { kind: RequestKind }) {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, ...(customer && redirectRequestId ? { redirectRequestId } : {}) }),
       });
       if (!response.ok) throw new Error(await publicError(response));
       setNotice(customer

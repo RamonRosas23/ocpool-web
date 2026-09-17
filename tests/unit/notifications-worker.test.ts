@@ -1,7 +1,36 @@
 import { describe, expect, it } from 'vitest';
+import { encryptSecret } from '@/server/auth/crypto';
+import { readServerEnv } from '@/server/env';
 import { calculateNotificationRetryAt } from '@/server/modules/notifications/domain';
-import { classifyNotificationError, runNotificationWorker } from '@/server/modules/notifications/worker';
+import { classifyNotificationError, defaultRenderNotification, runNotificationWorker } from '@/server/modules/notifications/worker';
+import type { ClaimedNotificationDelivery } from '@/server/modules/notifications/dispatcher';
 import type { PrismaClient } from '@/generated/prisma/client';
+
+function fakeMagicLinkDelivery(outboxPayload: Record<string, unknown>): ClaimedNotificationDelivery {
+  const now = new Date('2026-09-17T12:00:00.000Z');
+  return {
+    id: 'delivery-1',
+    outboxEventId: 'outbox-1',
+    recipientUserId: null,
+    recipientAddressCiphertext: encryptSecret('customer@example.test', readServerEnv().NOTIFICATION_RECIPIENT_ENCRYPTION_KEY),
+    recipientAddressHash: null,
+    templateKey: 'auth.customer.magic_link',
+    templateVersion: 'v1',
+    subjectSnapshot: null,
+    payload: { recipientName: 'Cliente' },
+    status: 'PROCESSING',
+    attempts: 0,
+    availableAt: now,
+    processingStartedAt: now,
+    processedAt: null,
+    lastErrorCode: null,
+    cancelReason: null,
+    providerMessageId: null,
+    createdAt: now,
+    updatedAt: now,
+    outboxEvent: { eventType: 'AUTH.CUSTOMER_MAGIC_LINK', aggregateType: 'USER', aggregateId: 'user-1', payload: outboxPayload },
+  };
+}
 
 describe('notification worker policies', () => {
   it('classifies provider failures without retaining raw error text', () => {
@@ -37,5 +66,20 @@ describe('notification worker policies', () => {
       },
     });
     expect(calls).toBe(1);
+  });
+
+  it('deep-links a customer magic link to the exact request when the outbox carries one (D2-06/U1)', async () => {
+    const env = readServerEnv();
+    const rawToken = 'magic-link-token-fixture';
+    const tokenCiphertext = encryptSecret(rawToken, env.AUTH_DELIVERY_ENCRYPTION_KEY);
+    const requestId = '00000000-0000-4000-8000-000000000042';
+
+    const withRequest = await defaultRenderNotification(fakeMagicLinkDelivery({ tokenCiphertext, tokenType: 'MAGIC_LINK', redirectRequestId: requestId }));
+    expect(withRequest.text).toContain(`/auth/customer/consume-link?token=${encodeURIComponent(rawToken)}&request=${encodeURIComponent(requestId)}`);
+    expect(withRequest.html).toContain(`/auth/customer/consume-link?token=${encodeURIComponent(rawToken)}&amp;request=${encodeURIComponent(requestId)}`);
+
+    const withoutRequest = await defaultRenderNotification(fakeMagicLinkDelivery({ tokenCiphertext, tokenType: 'MAGIC_LINK' }));
+    expect(withoutRequest.text).toContain(`/auth/customer/consume-link?token=${encodeURIComponent(rawToken)}`);
+    expect(withoutRequest.text).not.toContain('request=');
   });
 });

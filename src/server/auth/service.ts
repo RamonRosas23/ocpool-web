@@ -86,6 +86,7 @@ async function createDeliveryToken(client: Prisma.TransactionClient, input: {
   context: AuthRequestContext;
   now: Date;
   rawToken: string;
+  redirectRequestId?: string;
 }): Promise<{ tokenId: string; expiresAt: Date }> {
   const expiresAt = new Date(input.now.getTime() + readServerEnv().AUTH_TOKEN_TTL_MINUTES * 60_000);
   const token = await client.authToken.create({
@@ -108,6 +109,7 @@ async function createDeliveryToken(client: Prisma.TransactionClient, input: {
         tokenId: token.id,
         tokenCiphertext: encryptSecret(input.rawToken, readServerEnv().AUTH_DELIVERY_ENCRYPTION_KEY),
         tokenType: input.type,
+        ...(input.redirectRequestId ? { redirectRequestId: input.redirectRequestId } : {}),
       },
     },
   });
@@ -121,6 +123,7 @@ export async function issueCustomerMagicLinkInTransaction(client: Prisma.Transac
   context: AuthRequestContext;
   now: Date;
   rawToken: string;
+  redirectRequestId?: string;
 }): Promise<{ tokenId: string; expiresAt: Date }> {
   const delivery = await createDeliveryToken(client, {
     userId: input.userId,
@@ -129,6 +132,7 @@ export async function issueCustomerMagicLinkInTransaction(client: Prisma.Transac
     context: input.context,
     now: input.now,
     rawToken: input.rawToken,
+    redirectRequestId: input.redirectRequestId,
   });
   await recordAuthEvent(client, {
     eventType: 'MAGIC_LINK_REQUEST',
@@ -185,7 +189,7 @@ export async function loginEmployee(input: {
   context: AuthRequestContext;
 }, dependencies: AuthServiceDependencies = {}): Promise<
   | { ok: true; userId: string; sessionId: string; rawToken: string; expiresAt: Date }
-  | { ok: false }
+  | { ok: false; mfaRequired?: boolean }
 > {
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
@@ -208,6 +212,7 @@ export async function loginEmployee(input: {
   if (eligible && requiresMfa) {
     if (!input.mfaCode || !user?.mfaSecretCiphertext) {
       await recordAuthEvent(prisma, { eventType: 'MFA_CHALLENGE', outcome: 'DENIED', userId: user?.id, identifier: email, context: input.context });
+      if (user?.mfaSecretCiphertext && !input.mfaCode) return { ok: false, mfaRequired: true };
       return { ok: false };
     }
     try {
@@ -264,7 +269,7 @@ export async function loginEmployee(input: {
   return { ok: true, userId: user.id, ...result };
 }
 
-export async function requestCustomerMagicLink(input: { email: string; context: AuthRequestContext }, dependencies: AuthServiceDependencies = {}): Promise<void> {
+export async function requestCustomerMagicLink(input: { email: string; context: AuthRequestContext; redirectRequestId?: string }, dependencies: AuthServiceDependencies = {}): Promise<void> {
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
   if (!(await isAllowedByGlobalCircuitBreaker(input.context.ipAddress, now))) return;
@@ -287,6 +292,7 @@ export async function requestCustomerMagicLink(input: { email: string; context: 
       context: input.context,
       now,
       rawToken,
+      redirectRequestId: input.redirectRequestId,
     });
   });
 }

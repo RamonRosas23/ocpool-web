@@ -14,6 +14,7 @@ export const employeeLoginSchema = z.object({
 }).strict();
 
 export const emailBodySchema = z.object({ email: emailSchema }).strict();
+export const customerMagicLinkRequestSchema = z.object({ email: emailSchema, redirectRequestId: z.string().uuid().optional() }).strict();
 export const consumeLinkSchema = z.object({ token: tokenSchema }).strict();
 export const recoveryConsumeSchema = z.object({ token: tokenSchema, newPassword: passwordSchema }).strict();
 
