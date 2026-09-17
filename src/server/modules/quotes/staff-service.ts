@@ -4,6 +4,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { readServerEnv } from '@/server/env';
 import { staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 import { deriveGeneratedDocumentState } from '@/server/modules/quote-documents/domain';
 import { isRecoverableNotificationErrorCode } from '@/server/modules/notifications/domain';
@@ -132,15 +133,102 @@ function serializeVersion(version: {
 
 type WorkspaceVersion = Parameters<typeof serializeVersion>[0];
 
-function serializeHistory(history: Array<{
+function serializeVersionSummary(version: {
   id: string;
+  versionNumber: number;
+  status: string;
+  currencyCode: string;
+  validUntil: Date | null;
+  subtotalMinor: bigint;
+  discountTotalMinor: bigint;
+  taxableTotalMinor: bigint;
+  taxTotalMinor: bigint;
+  totalMinor: bigint;
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy: { id: string; displayName: string };
+}) {
+  return {
+    id: version.id,
+    versionNumber: version.versionNumber,
+    status: version.status,
+    currencyCode: version.currencyCode,
+    validUntil: version.validUntil,
+    subtotalMinor: serializeBigInt(version.subtotalMinor),
+    discountTotalMinor: serializeBigInt(version.discountTotalMinor),
+    taxableTotalMinor: serializeBigInt(version.taxableTotalMinor),
+    taxTotalMinor: serializeBigInt(version.taxTotalMinor),
+    totalMinor: serializeBigInt(version.totalMinor),
+    createdAt: version.createdAt,
+    updatedAt: version.updatedAt,
+    createdBy: version.createdBy,
+  };
+}
+
+const DEFAULT_QUOTE_HISTORY_PAGE_SIZE = 30;
+const MAX_QUOTE_HISTORY_PAGE_SIZE = 50;
+
+type QuoteHistoryCursor = { createdAt: string; id: string };
+type QuoteHistoryEntry = {
+  id: string;
+  quoteVersionId: string;
   fromStatus: string | null;
   toStatus: string;
   reason: string | null;
   createdAt: Date;
   changedBy: { id: string; displayName: string } | null;
-}>) {
-  return history.map((entry) => ({ ...entry })).sort((first, second) => second.createdAt.getTime() - first.createdAt.getTime());
+};
+
+function encodeQuoteHistoryCursor(entry: { id: string; createdAt: Date }): string {
+  return Buffer.from(JSON.stringify({ createdAt: entry.createdAt.toISOString(), id: entry.id }), 'utf8').toString('base64url');
+}
+
+function decodeQuoteHistoryCursor(value: string | undefined): QuoteHistoryCursor | undefined {
+  if (!value) return undefined;
+  try {
+    const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Partial<QuoteHistoryCursor>;
+    if (typeof decoded.id !== 'string' || !UUID_PATTERN.test(decoded.id) || typeof decoded.createdAt !== 'string' || Number.isNaN(new Date(decoded.createdAt).getTime())) {
+      throw new Error('invalid cursor');
+    }
+    return { id: decoded.id, createdAt: decoded.createdAt };
+  } catch {
+    throw new AppError('VALIDATION_ERROR', 'El cursor de historial no es válido.', 400);
+  }
+}
+
+function normalizeQuoteHistoryLimit(value: number | undefined): number {
+  const limit = value ?? DEFAULT_QUOTE_HISTORY_PAGE_SIZE;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_QUOTE_HISTORY_PAGE_SIZE) throw new AppError('VALIDATION_ERROR', 'El límite de historial no es válido.', 400);
+  return limit;
+}
+
+async function loadQuoteHistoryPage(prisma: PrismaClient, versionIds: readonly string[], cursor: QuoteHistoryCursor | undefined, limit: number): Promise<{ items: QuoteHistoryEntry[]; nextCursor: string | null }> {
+  if (versionIds.length === 0) return { items: [], nextCursor: null };
+  const rows = await prisma.quoteStatusHistory.findMany({
+    where: {
+      quoteVersionId: { in: [...versionIds] },
+      ...(cursor ? {
+        OR: [
+          { createdAt: { lt: new Date(cursor.createdAt) } },
+          { createdAt: new Date(cursor.createdAt), id: { lt: cursor.id } },
+        ],
+      } : {}),
+    },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    select: {
+      id: true,
+      quoteVersionId: true,
+      fromStatus: true,
+      toStatus: true,
+      reason: true,
+      createdAt: true,
+      changedBy: { select: { id: true, displayName: true } },
+    },
+  });
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  return { items: page, nextCursor: rows.length > limit && last ? encodeQuoteHistoryCursor(last) : null };
 }
 
 export async function listQuoteWorkspaces(actor: Actor, filters: QuoteWorkspaceListFilters = {}, dependencies: QuoteStaffServiceDependencies = {}) {
@@ -263,6 +351,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       quotes: {
         select: {
           id: true,
+          updatedAt: true,
           currentVersionId: true,
           workingVersionId: true,
           publishedVersionId: true,
@@ -282,69 +371,6 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
               createdAt: true,
               updatedAt: true,
               createdBy: { select: { id: true, displayName: true } },
-              lines: {
-                orderBy: { id: 'asc' },
-                select: {
-                  id: true,
-                  catalogItemId: true,
-                  catalogItemCode: true,
-                  name: true,
-                  description: true,
-                  unit: true,
-                  specialReason: true,
-                  quantityMilliunits: true,
-                  currencyCode: true,
-                  unitPriceMinor: true,
-                  discountBasisPoints: true,
-                  discountMinor: true,
-                  taxableMinor: true,
-                  taxBasisPoints: true,
-                  taxMinor: true,
-                  subtotalMinor: true,
-                  totalMinor: true,
-                },
-              },
-              statusHistory: {
-                orderBy: { createdAt: 'desc' },
-                select: {
-                  id: true,
-                  fromStatus: true,
-                  toStatus: true,
-                  reason: true,
-                  createdAt: true,
-                  changedBy: { select: { id: true, displayName: true } },
-                },
-              },
-              approvals: {
-                orderBy: { requestedAt: 'desc' },
-                select: {
-                  id: true,
-                  type: true,
-                  status: true,
-                  policyVersion: true,
-                  thresholdBps: true,
-                  reason: true,
-                  requestedById: true,
-                  decidedById: true,
-                  requestedAt: true,
-                  decidedAt: true,
-                  expiresAt: true,
-                },
-              },
-              generatedDocuments: {
-                where: { documentType: 'QUOTE_PDF' },
-                orderBy: { createdAt: 'desc' },
-                take: 1,
-                select: {
-                  status: true,
-                  contentType: true,
-                  byteSize: true,
-                  sha256: true,
-                  readyAt: true,
-                  deletedAt: true,
-                  storageObject: { select: { contentType: true, byteSize: true, sha256: true, scanStatus: true, deletedAt: true } },
-                },
-              },
             },
           },
         },
@@ -355,12 +381,85 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
   if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
 
   const quote = request.quotes[0] ?? null;
-  const versions = quote?.versions ?? [];
+  const versionSummaries = quote?.versions ?? [];
   const displayedVersionId = quote?.workingVersionId ?? quote?.publishedVersionId ?? quote?.currentVersionId ?? null;
-  const currentVersion = displayedVersionId ? versions.find((version) => version.id === displayedVersionId) ?? null : null;
+  const detailVersionIds = [...new Set([quote?.workingVersionId, quote?.publishedVersionId].filter((value): value is string => Boolean(value)))];
+  if (detailVersionIds.length === 0 && displayedVersionId) detailVersionIds.push(displayedVersionId);
+  const detailVersions = detailVersionIds.length > 0 ? await prisma.quoteVersion.findMany({
+    where: { id: { in: detailVersionIds } },
+    select: {
+      id: true,
+      versionNumber: true,
+      status: true,
+      currencyCode: true,
+      validUntil: true,
+      subtotalMinor: true,
+      discountTotalMinor: true,
+      taxableTotalMinor: true,
+      taxTotalMinor: true,
+      totalMinor: true,
+      createdAt: true,
+      updatedAt: true,
+      createdBy: { select: { id: true, displayName: true } },
+      lines: {
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          catalogItemId: true,
+          catalogItemCode: true,
+          name: true,
+          description: true,
+          unit: true,
+          specialReason: true,
+          quantityMilliunits: true,
+          currencyCode: true,
+          unitPriceMinor: true,
+          discountBasisPoints: true,
+          discountMinor: true,
+          taxableMinor: true,
+          taxBasisPoints: true,
+          taxMinor: true,
+          subtotalMinor: true,
+          totalMinor: true,
+        },
+      },
+      approvals: {
+        orderBy: { requestedAt: 'desc' },
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          policyVersion: true,
+          thresholdBps: true,
+          reason: true,
+          requestedById: true,
+          decidedById: true,
+          requestedAt: true,
+          decidedAt: true,
+          expiresAt: true,
+        },
+      },
+      generatedDocuments: {
+        where: { documentType: 'QUOTE_PDF' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: {
+          status: true,
+          contentType: true,
+          byteSize: true,
+          sha256: true,
+          readyAt: true,
+          deletedAt: true,
+          storageObject: { select: { contentType: true, byteSize: true, sha256: true, scanStatus: true, deletedAt: true } },
+        },
+      },
+    },
+  }) : [];
+  const detailVersionById = new Map(detailVersions.map((version) => [version.id, version]));
+  const currentVersion = displayedVersionId ? detailVersionById.get(displayedVersionId) ?? null : null;
   const currentVersionItemIds = [...new Set(currentVersion?.lines.map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
-  const workingVersionRaw = quote?.workingVersionId ? versions.find((version) => version.id === quote.workingVersionId) ?? null : null;
-  const publishedVersionRaw = quote?.publishedVersionId ? versions.find((version) => version.id === quote.publishedVersionId) ?? null : null;
+  const workingVersionRaw = quote?.workingVersionId ? detailVersionById.get(quote.workingVersionId) ?? null : null;
+  const publishedVersionRaw = quote?.publishedVersionId ? detailVersionById.get(quote.publishedVersionId) ?? null : null;
 
   const priceListCandidates = await prisma.priceList.findMany({
     where: {
@@ -395,9 +494,8 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       name: priceList.name,
       currencyCode: priceList.currencyCode,
     }));
-  const history = serializeHistory(versions.flatMap((version) => version.statusHistory));
-
-  const [latestDelivery, lastCustomerVisibleMessage] = await Promise.all([
+  const [historyPage, latestDelivery, lastCustomerVisibleMessage] = await Promise.all([
+    loadQuoteHistoryPage(prisma, versionSummaries.map((version) => version.id), undefined, DEFAULT_QUOTE_HISTORY_PAGE_SIZE),
     quote ? getLatestAggregateNotificationDelivery(prisma, 'QUOTE', quote.id) : Promise.resolve(null),
     prisma.conversationMessage.findFirst({
       where: { conversation: { quoteRequestId: request.id }, visibility: 'CUSTOMER' },
@@ -440,12 +538,38 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       currentVersion: currentVersion ? serializeVersion(currentVersion as WorkspaceVersion) : null,
       workingVersion: workingVersionRaw ? serializeVersion(workingVersionRaw as WorkspaceVersion) : null,
       publishedVersion: publishedVersionRaw ? serializeVersion(publishedVersionRaw as WorkspaceVersion) : null,
-      versions: versions.map((version) => serializeVersion(version as WorkspaceVersion)),
-      history,
+      versions: versionSummaries.map(serializeVersionSummary),
+      history: historyPage.items,
+      historyNextCursor: historyPage.nextCursor,
     } : null,
     priceLists,
     projection,
+    meta: {
+      timezone: readServerEnv().APP_TIMEZONE,
+      revision: new Date(Math.max(
+        request.updatedAt.getTime(),
+        quote?.updatedAt.getTime() ?? 0,
+        currentVersion?.updatedAt.getTime() ?? 0,
+      )).toISOString(),
+    },
   };
+}
+
+export type ListQuoteVersionHistoryFilters = Readonly<{ cursor?: string; limit?: number }>;
+
+export async function listQuoteVersionHistory(actor: Actor, quoteRequestId: string, filters: ListQuoteVersionHistoryFilters = {}, dependencies: QuoteStaffServiceDependencies = {}) {
+  requireQuoteRead(actor);
+  const prisma = dependencies.prisma ?? getPrisma();
+  const id = requireUuid(quoteRequestId);
+  const limit = normalizeQuoteHistoryLimit(filters.limit);
+  const cursor = decodeQuoteHistoryCursor(filters.cursor);
+  const request = await prisma.quoteRequest.findFirst({
+    where: { id, ...staffRequestReadScopeWhere(actor) },
+    select: { id: true, quotes: { select: { versions: { select: { id: true } } }, take: 1 } },
+  });
+  if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
+  const versionIds = request.quotes[0]?.versions.map((version) => version.id) ?? [];
+  return loadQuoteHistoryPage(prisma, versionIds, cursor, limit);
 }
 
 function toProjectionVersion(version: {

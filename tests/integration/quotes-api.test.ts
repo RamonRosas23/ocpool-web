@@ -12,6 +12,7 @@ import { POST as transitionQuoteRoute } from '@/app/api/staff/quotes/versions/[v
 import { POST as requestApprovalRoute } from '@/app/api/staff/quotes/versions/[versionId]/approvals/route';
 import { POST as decideApprovalRoute } from '@/app/api/staff/quotes/approvals/[approvalId]/decision/route';
 import { POST as cloneRoute } from '@/app/api/staff/quotes/[quoteRequestId]/clone/route';
+import { GET as historyRoute } from '@/app/api/staff/quotes/[quoteRequestId]/history/route';
 
 describe('staff quotes API', () => {
   const prisma = getPrisma();
@@ -111,6 +112,21 @@ describe('staff quotes API', () => {
     expect(await prisma.generatedDocument.findUnique({ where: { quoteVersionId_documentType: { quoteVersionId: versionId, documentType: 'QUOTE_PDF' } }, select: { status: true, readyAt: true } })).toMatchObject({ status: 'READY', readyAt: expect.any(Date) });
     expect((await replaceDraftRoute(endpoint(`/api/staff/quotes/versions/${versionId}`, salesToken, 'PATCH', { priceListId, lines: [{ catalogItemId: itemId, quantity: '3' }] }), { params: Promise.resolve({ versionId }) })).status).toBe(409);
     expect(await prisma.quoteRequest.findUnique({ where: { id: requestId }, select: { status: true } })).toMatchObject({ status: 'COTIZACION_DISPONIBLE' });
+  });
+
+  it('paginates quote version history through a real route handler (D2-05)', async () => {
+    const params = { params: Promise.resolve({ quoteRequestId: requestId }) };
+    const unauthenticated = await historyRoute(endpoint(`/api/staff/quotes/${requestId}/history`), params);
+    expect(unauthenticated.status).toBe(401);
+
+    const invalidCursor = await historyRoute(endpoint(`/api/staff/quotes/${requestId}/history?cursor=not-a-cursor`, salesToken), params);
+    expect(invalidCursor.status).toBe(400);
+
+    const firstPage = await historyRoute(endpoint(`/api/staff/quotes/${requestId}/history?limit=2`, salesToken), params);
+    expect(firstPage.status).toBe(200);
+    const firstPageBody = await firstPage.json() as { items: Array<{ id: string }>; nextCursor: string | null };
+    expect(firstPageBody.items.length).toBeGreaterThan(0);
+    expect(firstPageBody.items.length).toBeLessThanOrEqual(2);
   });
 
   it('accepts a special concept line through the API and gates sending behind a SPECIAL_CONCEPT approval (K1-05)', async () => {
