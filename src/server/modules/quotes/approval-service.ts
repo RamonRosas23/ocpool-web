@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
-import { requirePermission } from '@/server/auth/permissions';
+import { hasPermission, requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
@@ -320,7 +320,7 @@ export async function decideQuoteApproval(
     requireStaffRequestReadScope(actor, row.currentAssigneeId);
     if (row.status !== 'REQUESTED') conflict('La aprobación ya fue resuelta.');
     if (row.expiresAt && row.expiresAt <= now) conflict('La aprobación ya expiró.');
-    if (row.requestedById === actor.userId) conflict('La aprobación debe resolverla otra persona.');
+    if (row.requestedById === actor.userId && !hasPermission(actor, 'quotes.approval.override')) conflict('La aprobación debe resolverla otra persona.');
     const currentDigest = await getQuoteVersionDigest(transaction, row.quoteVersionId);
     if (currentDigest !== row.digest) conflict('La cotización cambió; solicita una nueva aprobación.');
     const quoteContext = await transaction.quote.findUnique({

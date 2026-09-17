@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
       requestsReadGlobal: hasPermission(actor, 'requests.read.global'),
       requestsCreate: hasPermission(actor, 'requests.create'),
       requestsAssign: hasPermission(actor, 'requests.assign'),
+      requestsClaim: hasPermission(actor, 'requests.claim'),
       requestsEdit: hasPermission(actor, 'requests.edit'),
       requestsReassign: hasPermission(actor, 'requests.reassign'),
       requestsStatusUpdate: hasPermission(actor, 'requests.status.update'),
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
       auditRead: hasPermission(actor, 'audit.read'),
       auditSecurityRead: hasPermission(actor, 'audit.security.read'),
       identityUsersManage: hasPermission(actor, 'identity.users.manage'),
+      customerPortalInvite: hasPermission(actor, 'customer.portal.invite'),
     }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);

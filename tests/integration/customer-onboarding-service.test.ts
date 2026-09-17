@@ -51,7 +51,7 @@ describe('customer onboarding service', () => {
     userIds.push(manager.id);
     const request = await createRequest(suffix);
 
-    const result = await inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), request.quoteRequestId, {
+    const result = await inviteCustomerPortalAccess(actor(manager.id, ['customer.portal.invite']), request.quoteRequestId, {
       prisma,
       now: new Date('2026-09-08T12:10:00.000Z'),
       tokenGenerator: () => `invite-token-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`,
@@ -80,12 +80,13 @@ describe('customer onboarding service', () => {
     const request = await createRequest(suffix);
 
     await expect(inviteCustomerPortalAccess(actor(sales.id, ['requests.read']), request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
-    const first = await inviteCustomerPortalAccess(actor(sales.id, ['identity.users.manage']), request.quoteRequestId, {
+    await expect(inviteCustomerPortalAccess(actor(sales.id, ['identity.users.manage']), request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    const first = await inviteCustomerPortalAccess(actor(sales.id, ['customer.portal.invite']), request.quoteRequestId, {
       prisma,
       now: new Date('2026-09-08T12:20:00.000Z'),
       tokenGenerator: () => `pending-token-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`,
     });
-    const second = await inviteCustomerPortalAccess(actor(sales.id, ['identity.users.manage']), request.quoteRequestId, {
+    const second = await inviteCustomerPortalAccess(actor(sales.id, ['customer.portal.invite']), request.quoteRequestId, {
       prisma,
       now: new Date('2026-09-08T12:21:00.000Z'),
       tokenGenerator: () => `pending-token-2-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`,
@@ -115,8 +116,8 @@ describe('customer onboarding service', () => {
     userIds.push(employee.id);
     const employeeRequest = await createRequest(`${suffix}-employee`, employee.email);
 
-    await expect(inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
-    await expect(inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), employeeRequest.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+    await expect(inviteCustomerPortalAccess(actor(manager.id, ['customer.portal.invite']), request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+    await expect(inviteCustomerPortalAccess(actor(manager.id, ['customer.portal.invite']), employeeRequest.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
     expect((await prisma.clientContact.findUnique({ where: { id: request.contactId } }))?.userId).toBeNull();
     expect((await prisma.clientContact.findUnique({ where: { id: employeeRequest.contactId } }))?.userId).toBeNull();
     expect((await prisma.user.findUnique({ where: { id: foreignCustomer.id } }))?.clientId).toBe(foreignClient.id);
@@ -136,7 +137,7 @@ describe('customer onboarding service', () => {
     userIds.push(activeCustomer.id);
     await prisma.clientContact.update({ where: { id: activeRequest.contactId }, data: { email: activeCustomer.email, emailNormalized: activeCustomer.emailNormalized } });
 
-    const activeResult = await inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), activeRequest.quoteRequestId, {
+    const activeResult = await inviteCustomerPortalAccess(actor(manager.id, ['customer.portal.invite']), activeRequest.quoteRequestId, {
       prisma,
       now: new Date('2026-09-08T12:30:00.000Z'),
       tokenGenerator: () => `active-token-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`,
@@ -146,8 +147,8 @@ describe('customer onboarding service', () => {
 
     const archivedRequest = await createRequest(`${suffix}-archived`);
     await prisma.clientContact.update({ where: { id: archivedRequest.contactId }, data: { status: 'ARCHIVED' } });
-    await expect(inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), archivedRequest.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
-    await expect(inviteCustomerPortalAccess(actor(manager.id, ['identity.users.manage']), 'not-a-uuid', { prisma })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    await expect(inviteCustomerPortalAccess(actor(manager.id, ['customer.portal.invite']), archivedRequest.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+    await expect(inviteCustomerPortalAccess(actor(manager.id, ['customer.portal.invite']), 'not-a-uuid', { prisma })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
   });
 
   afterAll(async () => {

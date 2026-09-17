@@ -299,6 +299,74 @@ describe('quote pricing and versioning service', () => {
     }
   }, 30_000);
 
+  it('lets only quotes.approval.override bypass the separation-of-duties block on a self-requested approval (D2-02)', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-09-17T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-service-${suffix}-override`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quote override ${suffix}`, email: `quote-override-${suffix}@example.test` },
+      detail: { projectType: 'Industrial', location: 'Mazatlán', description: 'Override fixture', consentAt: now },
+    }, { prisma, now });
+    const requester = await prisma.user.create({
+      data: {
+        email: `quote-override-requester-${suffix}@example.test`,
+        emailNormalized: `quote-override-requester-${suffix}@example.test`,
+        displayName: 'Quote override requester',
+        type: 'EMPLOYEE',
+        status: 'ACTIVE',
+      },
+    });
+    const category = await prisma.catalogCategory.create({ data: { code: `OVERRIDE-${suffix}`, name: 'Override service' } });
+    const item = await prisma.catalogItem.create({ data: { code: `OVERRIDE-ITEM-${suffix}`, name: 'Override service item', unit: 'servicio', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `OVERRIDE-PRICE-${suffix}`, name: 'Override service prices', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 10_000n, validFrom: now } });
+    let quoteId: string | null = null;
+    const requesterActor = salesActor(requester.id, ['quotes.create', 'quotes.send', 'quotes.apply_discount', 'prices.read']);
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const created = await createQuoteVersion(requesterActor, {
+        quoteRequestId: request.quoteRequestId,
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 500 }],
+      }, { prisma, now });
+      quoteId = created.quoteId;
+      await transitionQuoteVersion(requesterActor, created.versionId, 'EN_REVISION', { prisma, now });
+      const approval = await requestQuoteApproval(requesterActor, created.versionId, {
+        type: 'DISCOUNT',
+        policyVersion: 'discount-v1',
+        thresholdBps: 500,
+        reason: 'Condición comercial autorizada para el cliente.',
+      }, { prisma, now });
+
+      await expect(decideQuoteApproval({ ...requesterActor, permissionKeys: new Set([...requesterActor.permissionKeys, 'quotes.approve_discount']) }, approval.id, { decision: 'APPROVED' }, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      const approved = await decideQuoteApproval({ ...requesterActor, permissionKeys: new Set([...requesterActor.permissionKeys, 'quotes.approve_discount', 'quotes.approval.override']) }, approval.id, { decision: 'APPROVED' }, { prisma, now });
+      expect(approved.status).toBe('APPROVED');
+      expect(approved.decidedById).toBe(requester.id);
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      const approvalIds = (await prisma.quoteApproval.findMany({ where: { quoteVersionId: { in: versionIds } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds, ...approvalIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.delete({ where: { id: requester.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.delete({ where: { id: item.id } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
+
   it('scopes approval requests, decisions and listings to the request\'s assigned responsible', async () => {
     if (process.env.RUN_DB_TESTS !== '1') {
       throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');

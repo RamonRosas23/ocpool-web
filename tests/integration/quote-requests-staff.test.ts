@@ -275,14 +275,15 @@ describe('staff quote request operations', () => {
     const actor = await createStaffUser(`take-actor-${Date.now()}`);
     const rival = await createStaffUser(`take-rival-${Date.now()}`);
     const request = await createRequest(`take-${Date.now()}`);
-    const actorPermissions = staffActor(actor.id, ['requests.read', 'requests.assign']);
+    const actorPermissions = staffActor(actor.id, ['requests.read', 'requests.assign', 'requests.claim']);
 
+    await expect(takeQuoteRequest(staffActor(actor.id, ['requests.read', 'requests.assign']), request.quoteRequestId, {}, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
     await expect(takeQuoteRequest(actorPermissions, request.quoteRequestId, {}, { prisma, now: new Date('2026-01-05T12:00:00.000Z') })).resolves.toMatchObject({
       quoteRequestId: request.quoteRequestId,
       currentAssigneeId: actor.id,
       status: 'TAKEN',
     });
-    await expect(takeQuoteRequest(staffActor(rival.id, ['requests.assign']), request.quoteRequestId, {}, { prisma })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    await expect(takeQuoteRequest(staffActor(rival.id, ['requests.claim']), request.quoteRequestId, {}, { prisma })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
     await expect(assignQuoteRequest(actorPermissions, request.quoteRequestId, { assignedToId: rival.id }, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
 
     const globalOperator = staffActor(actor.id, ['requests.assign', 'requests.reassign', 'requests.read.global']);
@@ -319,7 +320,7 @@ describe('staff quote request operations', () => {
     const actor = await createStaffUser(`information-actor-${Date.now()}`);
     const informationSuffix = `information-${Date.now()}`;
     const request = await createRequest(informationSuffix);
-    const operator = staffActor(actor.id, ['requests.read', 'requests.status.update', 'messaging.send', 'identity.users.manage']);
+    const operator = staffActor(actor.id, ['requests.read', 'requests.status.update', 'messaging.send', 'customer.portal.invite']);
     await transitionQuoteRequest(operator, request.quoteRequestId, { toStatus: 'EN_REVISION', reason: 'Revisión inicial' }, { prisma });
 
     const input = {

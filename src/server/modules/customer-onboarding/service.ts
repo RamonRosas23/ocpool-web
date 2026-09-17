@@ -59,7 +59,7 @@ export async function inviteCustomerPortalAccessInTransaction(
   dependencies: CustomerOnboardingDependencies = {},
 ): Promise<CustomerAccessResult> {
   if (actor.type !== 'EMPLOYEE') throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
-  requirePermission(actor, 'identity.users.manage');
+  requirePermission(actor, 'customer.portal.invite');
 
   const requestId = requireQuoteRequestId(quoteRequestId);
   const now = dependencies.now ?? new Date();

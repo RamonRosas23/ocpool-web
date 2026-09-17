@@ -17,7 +17,7 @@ import {
 
 describe('authorization policy', () => {
   it('defines the approved least-privilege role catalog', () => {
-    expect(ALL_PERMISSION_KEYS).toHaveLength(44);
+    expect(ALL_PERMISSION_KEYS).toHaveLength(47);
     expect(permissionKeysForRoles(['customer'])).toEqual(new Set([
       'portal.self.read',
       'portal.self.authenticate',
@@ -39,6 +39,7 @@ describe('authorization policy', () => {
       'requests.read',
       'requests.create',
       'requests.assign',
+      'requests.claim',
       'requests.edit',
       'requests.status.update',
       'catalog.read',
@@ -68,10 +69,15 @@ describe('authorization policy', () => {
     expect(permissionKeysForRoles(['manager'])).toContain('requests.read.global');
     expect(permissionKeysForRoles(['manager'])).toContain('audit.read');
     expect(permissionKeysForRoles(['manager'])).toContain('identity.users.manage');
+    expect(permissionKeysForRoles(['manager'])).toContain('requests.claim');
+    expect(permissionKeysForRoles(['manager'])).toContain('customer.portal.invite');
     expect(permissionKeysForRoles(['manager'])).not.toContain('audit.security.read');
+    expect(permissionKeysForRoles(['manager'])).not.toContain('quotes.approval.override');
     expect(permissionKeysForRoles(['sales'])).not.toContain('audit.read');
     expect(permissionKeysForRoles(['sales'])).not.toContain('requests.read.global');
     expect(permissionKeysForRoles(['sales'])).not.toContain('identity.users.manage');
+    expect(permissionKeysForRoles(['sales'])).not.toContain('customer.portal.invite');
+    expect(permissionKeysForRoles(['sales'])).not.toContain('quotes.approval.override');
     expect(permissionKeysForRoles(['customer'])).not.toContain('audit.read');
     expect(permissionKeysForRoles(['customer'])).not.toContain('identity.users.manage');
     expect(permissionKeysForRoles(['customer'])).not.toContain('audit.security.read');

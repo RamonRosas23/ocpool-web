@@ -321,7 +321,7 @@ function projectAvailableActions(actor: Actor, status: QuoteRequestStatus, curre
   if (hasPermission(actor, 'requests.status.update') && hasPermission(actor, 'messaging.send') && ['EN_REVISION', 'EN_ELABORACION'].includes(status)) {
     availableActions.push('request.information');
   }
-  if (currentAssigneeId === null && hasPermission(actor, 'requests.assign')) availableActions.push('request.take');
+  if (currentAssigneeId === null && hasPermission(actor, 'requests.claim')) availableActions.push('request.take');
   if (currentAssigneeId === actor.userId) availableActions.push('request.taken');
   if (currentAssigneeId !== null && currentAssigneeId !== actor.userId && hasPermission(actor, 'requests.reassign')) availableActions.push('request.reassign');
   if (hasPermission(actor, 'quotes.create') && QUOTE_BUILDER_REQUEST_STATUSES.includes(status)) {
@@ -673,7 +673,7 @@ export async function requestInformationQuoteRequest(actor: Actor, quoteRequestI
   requireStaffPermission(actor, 'requests.status.update');
   requirePermission(actor, 'messaging.send');
   const normalized = normalizeInformationInput(input);
-  if (normalized.enablePortalAccess) requireStaffPermission(actor, 'identity.users.manage');
+  if (normalized.enablePortalAccess) requireStaffPermission(actor, 'customer.portal.invite');
   const prisma = dependencies.prisma ?? getPrisma();
   const requestId = requireUuid(quoteRequestId, 'La solicitud no es válida.');
   const now = dependencies.now ?? new Date();
@@ -807,7 +807,7 @@ export async function assignQuoteRequest(actor: Actor, quoteRequestId: string, i
 }
 
 export async function takeQuoteRequest(actor: Actor, quoteRequestId: string, input: { reason?: string } = {}, dependencies: StaffServiceDependencies = {}) {
-  requireStaffPermission(actor, 'requests.assign');
+  requireStaffPermission(actor, 'requests.claim');
   const prisma = dependencies.prisma ?? getPrisma();
   const requestId = requireUuid(quoteRequestId, 'La solicitud no es válida.');
   const reason = normalizeReason(input.reason);
