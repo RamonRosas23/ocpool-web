@@ -14,7 +14,7 @@ import type { StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import type { StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
 import { normalizeRequestWorkspaceQuery, QUOTE_REQUEST_STATUS_LABELS, REQUEST_WORKSPACE_TABS, serializeRequestWorkspaceQuery } from '@/lib/request-workspace-query';
 import type { RequestWorkspaceTab } from '@/lib/request-workspace-query';
-import { readRequestWorkspaceResponse, readRequestWorkspaceResponseOrThrow, type RequestWorkspaceErrorKind } from '@/lib/request-workspace-error';
+import { readApiResponse, readApiResponseOrThrow, type ApiResponseErrorKind } from '@/lib/api-response-error';
 import { getRequestWorkspacePrimaryAction, requestWorkspaceStatusActionLabel } from '@/lib/request-workspace-primary-action';
 import type { QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
 
@@ -180,7 +180,7 @@ function ActivityTab({ detail }: { detail: RequestDetail }) {
     setLoadingMore(true);
     setLoadMoreError(null);
     void fetch(`/api/staff/quote-requests/${encodeURIComponent(detail.id)}/activity?cursor=${encodeURIComponent(nextCursor)}&limit=30`, { credentials: 'include', cache: 'no-store' })
-      .then((response) => readRequestWorkspaceResponseOrThrow<RequestActivityResponse>(response, 'No fue posible cargar la actividad anterior.'))
+      .then((response) => readApiResponseOrThrow<RequestActivityResponse>(response, 'No fue posible cargar la actividad anterior.'))
       .then((data) => {
         setOlderItems((current) => {
           const known = new Set(current.map((item) => item.id));
@@ -211,7 +211,7 @@ function QuoteTab({ requestId, detail }: { requestId: string; detail: RequestDet
     setLoading(true);
     setError(null);
     fetch(`/api/staff/quotes/${encodeURIComponent(requestId)}`, { credentials: 'include', cache: 'no-store', signal: controller.signal })
-      .then((response) => readRequestWorkspaceResponseOrThrow<QuoteWorkspace>(response, 'No fue posible cargar la cotización.'))
+      .then((response) => readApiResponseOrThrow<QuoteWorkspace>(response, 'No fue posible cargar la cotización.'))
       .then(setWorkspace)
       .catch((caught: unknown) => {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
@@ -244,7 +244,7 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
   const backParams = serializeRequestWorkspaceQuery({ ...query, tab: 'summary' }).toString();
   const [detail, setDetail] = useState<RequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<{ kind: RequestWorkspaceErrorKind; message: string } | null>(null);
+  const [error, setError] = useState<{ kind: ApiResponseErrorKind; message: string } | null>(null);
   const [capabilities, setCapabilities] = useState<WorkspaceCapabilities | null>(null);
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
   const [capabilitiesRetryToken, setCapabilitiesRetryToken] = useState(0);
@@ -257,7 +257,7 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
     setError(null);
     try {
       const response = await fetch(`/api/staff/quote-requests/${encodeURIComponent(requestId)}`, { credentials: 'include', cache: 'no-store', signal });
-      const result = await readRequestWorkspaceResponse<RequestDetail>(response, 'No fue posible cargar el expediente.');
+      const result = await readApiResponse<RequestDetail>(response, 'No fue posible cargar el expediente.');
       if (result.ok) {
         setDetail(result.data);
       } else {
@@ -286,7 +286,7 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
     const controller = new AbortController();
     setCapabilitiesError(null);
     fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store', signal: controller.signal })
-      .then((response) => readRequestWorkspaceResponseOrThrow<WorkspaceCapabilities>(response, 'No fue posible validar los permisos del expediente.'))
+      .then((response) => readApiResponseOrThrow<WorkspaceCapabilities>(response, 'No fue posible validar los permisos del expediente.'))
       .then(setCapabilities)
       .catch((caught: unknown) => {
         if (!controller.signal.aborted) setCapabilitiesError(caught instanceof Error ? caught.message : 'No fue posible validar los permisos del expediente.');

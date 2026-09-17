@@ -8,12 +8,14 @@ import SelectField from '@/components/SelectField';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
+import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
 import {
   QUOTE_REQUEST_BUDGET_RANGE_LABELS,
   QUOTE_REQUEST_PROJECT_STAGE_LABELS,
   QUOTE_REQUEST_TIMELINE_LABELS,
 } from '@/server/modules/quote-requests/domain';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
+import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
 const STATUS_LABELS: Record<string, string> = QUOTE_REQUEST_STATUS_LABELS;
 const STATUS_OPTIONS = Object.keys(STATUS_LABELS);
@@ -69,7 +71,6 @@ type RequestDetail = RequestSummary & {
 type Assignee = { id: string; displayName: string; email: string };
 type StaffRequestCapabilities = StaffMessagingCapabilities & StaffFilesCapabilities & { identityUsersManage: boolean; requestsAssign: boolean; requestsReadGlobal: boolean };
 type ListResponse = { items: RequestSummary[]; page: number; pageSize: number; total: number; totalPages: number };
-type ErrorResponse = { error?: { message?: string } };
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
@@ -81,14 +82,6 @@ function statusLabel(status: string): string {
 
 function qualificationLabel(value: string | null | undefined, labels: Record<string, string>): string {
   return value ? labels[value] ?? value : 'No indicado';
-}
-
-async function readResponse<T>(response: Response): Promise<T> {
-  const data = await response.json().catch(() => ({})) as T & ErrorResponse;
-  if (!response.ok) {
-    throw new Error(data.error?.message ?? 'No fue posible completar la operación.');
-  }
-  return data as T;
 }
 
 export default function StaffRequestsPanel() {
@@ -139,16 +132,23 @@ export default function StaffRequestsPanel() {
       if (currentStatus) params.set('status', currentStatus);
       if (query) params.set('query', query);
       const response = await fetch(`/api/staff/quote-requests?${params.toString()}`, { credentials: 'include', cache: 'no-store' });
-      const data = await readResponse<ListResponse>(response);
+      const result = await readApiResponse<ListResponse>(response, 'No fue posible cargar el inbox.');
+      if (!result.ok) {
+        setAccessDenied(result.kind === 'forbidden');
+        setError(result.message);
+        setItems([]);
+        setSelected(null);
+        return;
+      }
+      const data = result.data;
       setItems(data.items);
       setTotal(data.total);
       setTotalPages(Math.max(data.totalPages, 1));
       setAccessDenied(false);
       setSelectedId((current) => current && data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No fue posible cargar el inbox.';
-      setAccessDenied(message.includes('autenticada') || message.includes('permisos'));
-      setError(message);
+      setAccessDenied(false);
+      setError(caught instanceof Error ? caught.message : 'No fue posible cargar el inbox.');
       setItems([]);
       setSelected(null);
     } finally {
@@ -161,7 +161,7 @@ export default function StaffRequestsPanel() {
     setError(null);
     try {
       const response = await fetch(`/api/staff/quote-requests/${id}`, { credentials: 'include', cache: 'no-store' });
-      const data = await readResponse<RequestDetail>(response);
+      const data = await readApiResponseOrThrow<RequestDetail>(response, 'No fue posible cargar el expediente.');
       setSelected(data);
       setAssignmentId(data.currentAssignee?.id ?? '');
       setNextStatus(data.availableStatusTransitions[0] ?? '');
@@ -189,7 +189,7 @@ export default function StaffRequestsPanel() {
       }
       try {
         const response = await fetch('/api/staff/quote-requests/assignees', { credentials: 'include', cache: 'no-store' });
-        const data = await readResponse<{ items: Assignee[] }>(response);
+        const data = await readApiResponseOrThrow<{ items: Assignee[] }>(response, 'No fue posible cargar responsables disponibles.');
         setAssignees(data.items);
       } catch {
         // The inbox remains useful in read-only mode when assignment is not permitted.
@@ -202,7 +202,7 @@ export default function StaffRequestsPanel() {
     const loadCapabilities = async () => {
       try {
         const response = await fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store' });
-        const data = await readResponse<StaffRequestCapabilities>(response);
+        const data = await readApiResponseOrThrow<StaffRequestCapabilities>(response, 'No fue posible validar los permisos.');
         setMessagingCapabilities(data);
       } catch {
         // The conversation remains inaccessible in the UI if capabilities cannot be resolved.
@@ -238,7 +238,7 @@ export default function StaffRequestsPanel() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ assignedToId: targetId, reason: assignmentReason || undefined }),
       });
-      await readResponse(response);
+      await readApiResponseOrThrow(response, 'No fue posible asignar la solicitud.');
       setNotice('Responsable actualizado.');
       setAssignmentReason('');
       await refreshCurrent();
@@ -261,7 +261,7 @@ export default function StaffRequestsPanel() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ toStatus: nextStatus, reason: statusReason || undefined }),
       });
-      await readResponse(response);
+      await readApiResponseOrThrow(response, 'No fue posible actualizar el estado.');
       setNotice('Estado actualizado.');
       setStatusReason('');
       await refreshCurrent();
@@ -284,7 +284,7 @@ export default function StaffRequestsPanel() {
         headers: { 'content-type': 'application/json' },
         body: '{}',
       });
-      const result = await readResponse<{ status: 'INVITED' | 'ALREADY_PENDING' | 'ALREADY_ACTIVE' }>(response);
+      const result = await readApiResponseOrThrow<{ status: 'INVITED' | 'ALREADY_PENDING' | 'ALREADY_ACTIVE' }>(response, 'No fue posible habilitar el portal del cliente.');
       setNotice(result.status === 'INVITED' ? 'Portal habilitado. Se envió un enlace de un solo uso al correo del cliente.' : result.status === 'ALREADY_PENDING' ? 'Ya existe una invitación vigente. El cliente debe revisar su correo.' : 'La cuenta ya estaba activa. Se envió un nuevo enlace de un solo uso al cliente.');
       await loadDetail(selected.id);
     } catch (caught) {
@@ -295,7 +295,7 @@ export default function StaffRequestsPanel() {
   };
 
   if (accessDenied) {
-    return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
+    return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</PrivateBlockingState></PrivateSurfaceRoot>;
   }
 
   return (

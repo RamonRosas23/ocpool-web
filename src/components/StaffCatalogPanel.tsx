@@ -8,7 +8,9 @@ import DateField from '@/components/DateField';
 import SelectField from '@/components/SelectField';
 import MoneyField from '@/components/MoneyField';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
+import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
 import { parseMoneyInput } from '@/lib/money-input';
+import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
 const CATALOG_UNIT_OPTIONS = ['pieza', 'servicio', 'hora', 'visita', 'm²', 'm³', 'lote', 'kit', 'mes'] as const;
 const CATALOG_UNIT_CUSTOM = '__otra__';
@@ -54,13 +56,6 @@ type PriceListDetail = PriceList & { items: Array<{ id: string; catalogItemId: s
 type ListResponse = { items: CatalogItem[]; page: number; pageSize: number; total: number; totalPages: number };
 type Capabilities = { catalogRead: boolean; catalogManage: boolean; pricesRead: boolean; pricesManage: boolean };
 type SpecialConceptGroup = { normalizedName: string; unit: string; name: string; occurrences: number; recentFolios: string[]; status: 'PENDING' | 'MATCHES_EXISTING' | 'PROMOTED'; matchingCatalogItem: { id: string; code: string; name: string } | null };
-type ErrorResponse = { error?: { message?: string } };
-
-async function readResponse<T>(response: Response): Promise<T> {
-  const data = await response.json().catch(() => ({})) as T & ErrorResponse;
-  if (!response.ok) throw new Error(data.error?.message ?? 'No fue posible completar la operación.');
-  return data as T;
-}
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
@@ -144,11 +139,19 @@ export default function StaffCatalogPanel() {
         fetch(`/api/staff/catalog/price-lists${statusSuffix}`, { credentials: 'include', cache: 'no-store' }),
         fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store' }),
       ]);
-      const [itemsData, categoriesData, listsData, capabilitiesData] = await Promise.all([
-        readResponse<ListResponse>(itemsResponse),
-        readResponse<Category[]>(categoriesResponse),
-        readResponse<PriceList[]>(listsResponse),
-        readResponse<Capabilities>(capabilitiesResponse),
+      const itemsResult = await readApiResponse<ListResponse>(itemsResponse, 'No fue posible cargar el catálogo.');
+      if (!itemsResult.ok) {
+        setAccessDenied(itemsResult.kind === 'forbidden');
+        setError(itemsResult.message);
+        setItems([]);
+        setPriceLists([]);
+        return;
+      }
+      const itemsData = itemsResult.data;
+      const [categoriesData, listsData, capabilitiesData] = await Promise.all([
+        readApiResponseOrThrow<Category[]>(categoriesResponse, 'No fue posible cargar las categorías.'),
+        readApiResponseOrThrow<PriceList[]>(listsResponse, 'No fue posible cargar las listas de precios.'),
+        readApiResponseOrThrow<Capabilities>(capabilitiesResponse, 'No fue posible validar los permisos.'),
       ]);
       setItems(itemsData.items);
       setCategories(categoriesData);
@@ -160,9 +163,8 @@ export default function StaffCatalogPanel() {
       setSelectedItemId((current) => current ?? itemsData.items[0]?.id ?? null);
       setSelectedPriceListId((current) => current ?? listsData[0]?.id ?? null);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No fue posible cargar el catálogo.';
-      setAccessDenied(message.includes('autenticada') || message.includes('permisos'));
-      setError(message);
+      setAccessDenied(false);
+      setError(caught instanceof Error ? caught.message : 'No fue posible cargar el catálogo.');
       setItems([]);
       setPriceLists([]);
     } finally {
@@ -174,7 +176,7 @@ export default function StaffCatalogPanel() {
     setLoadingDetail(true);
     try {
       const response = await fetch(`/api/staff/catalog/price-lists/${priceListId}`, { credentials: 'include', cache: 'no-store' });
-      setPriceListDetail(await readResponse<PriceListDetail>(response));
+      setPriceListDetail(await readApiResponseOrThrow<PriceListDetail>(response, 'No fue posible completar la operación.'));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar la lista de precios.');
       setPriceListDetail(null);
@@ -199,7 +201,7 @@ export default function StaffCatalogPanel() {
     try {
       const unit = itemForm.unitPreset === CATALOG_UNIT_CUSTOM ? itemForm.unitCustom.trim() : itemForm.unitPreset;
       const response = await fetch('/api/staff/catalog/items', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: itemForm.useManualCode ? itemForm.code : undefined, name: itemForm.name, unit, description: itemForm.description || undefined, categoryId: itemForm.categoryId || undefined }) });
-      const created = await readResponse<CatalogItem>(response);
+      const created = await readApiResponseOrThrow<CatalogItem>(response, 'No fue posible completar la operación.');
       setNotice(`Concepto ${created.code} creado.`); setItemForm({ code: '', useManualCode: false, name: '', unitPreset: 'pieza', unitCustom: '', description: '', categoryId: '' }); setShowItemForm(false); await refresh(); setSelectedItemId(created.id);
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible crear el concepto.'); }
     finally { setSaving(false); }
@@ -218,7 +220,7 @@ export default function StaffCatalogPanel() {
     setSaving(true); setError(null); setNotice(null);
     try {
       const unit = itemEditForm.unitPreset === CATALOG_UNIT_CUSTOM ? itemEditForm.unitCustom.trim() : itemEditForm.unitPreset;
-      await readResponse(await fetch(`/api/staff/catalog/items/${selectedItem.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: itemEditForm.name, description: itemEditForm.description || null, unit, categoryId: itemEditForm.categoryId || null }) }));
+      await readApiResponseOrThrow(await fetch(`/api/staff/catalog/items/${selectedItem.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: itemEditForm.name, description: itemEditForm.description || null, unit, categoryId: itemEditForm.categoryId || null }) }), 'No fue posible completar la operación.');
       setNotice('Concepto actualizado.'); setEditingItem(false); await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar el concepto.'); }
     finally { setSaving(false); }
@@ -228,7 +230,7 @@ export default function StaffCatalogPanel() {
     if (!selectedItem) return; setSaving(true); setError(null); setNotice(null);
     const nextStatus = selectedItem.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE';
     try {
-      await readResponse(await fetch(`/api/staff/catalog/items/${selectedItem.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }));
+      await readApiResponseOrThrow(await fetch(`/api/staff/catalog/items/${selectedItem.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }), 'No fue posible completar la operación.');
       setNotice(nextStatus === 'ARCHIVED' ? 'Concepto archivado.' : 'Concepto reactivado.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar el concepto.'); }
@@ -239,7 +241,7 @@ export default function StaffCatalogPanel() {
     event.preventDefault(); setSaving(true); setError(null); setNotice(null);
     try {
       const response = await fetch('/api/staff/catalog/categories', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: categoryForm.useManualCode ? categoryForm.code : undefined, name: categoryForm.name, description: categoryForm.description || undefined, sortOrder: Number(categoryForm.sortOrder) || 0, parentId: categoryForm.parentId || undefined }) });
-      const created = await readResponse<Category>(response);
+      const created = await readApiResponseOrThrow<Category>(response, 'No fue posible completar la operación.');
       setNotice(`Categoría ${created.code} creada.`); setCategoryForm({ code: '', useManualCode: false, name: '', description: '', sortOrder: '0', parentId: '' }); setShowCategoryForm(false); await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible crear la categoría.'); }
     finally { setSaving(false); }
@@ -255,7 +257,7 @@ export default function StaffCatalogPanel() {
     if (!editingCategoryId) return;
     setSaving(true); setError(null); setNotice(null);
     try {
-      await readResponse(await fetch(`/api/staff/catalog/categories/${editingCategoryId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: categoryEditForm.name, description: categoryEditForm.description || null, sortOrder: Number(categoryEditForm.sortOrder) || 0, parentId: categoryEditForm.parentId || null }) }));
+      await readApiResponseOrThrow(await fetch(`/api/staff/catalog/categories/${editingCategoryId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: categoryEditForm.name, description: categoryEditForm.description || null, sortOrder: Number(categoryEditForm.sortOrder) || 0, parentId: categoryEditForm.parentId || null }) }), 'No fue posible completar la operación.');
       setNotice('Categoría actualizada.'); setEditingCategoryId(null); await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar la categoría.'); }
     finally { setSaving(false); }
@@ -265,7 +267,7 @@ export default function StaffCatalogPanel() {
     setSaving(true); setError(null); setNotice(null);
     const nextStatus = category.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE';
     try {
-      await readResponse(await fetch(`/api/staff/catalog/categories/${category.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }));
+      await readApiResponseOrThrow(await fetch(`/api/staff/catalog/categories/${category.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }), 'No fue posible completar la operación.');
       setNotice(nextStatus === 'ARCHIVED' ? 'Categoría archivada.' : 'Categoría reactivada.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar la categoría.'); }
@@ -283,7 +285,7 @@ export default function StaffCatalogPanel() {
     if (!selectedPriceListId) return;
     setSaving(true); setError(null); setNotice(null);
     try {
-      await readResponse(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: priceListEditForm.name }) }));
+      await readApiResponseOrThrow(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: priceListEditForm.name }) }), 'No fue posible completar la operación.');
       setNotice('Lista actualizada.'); setEditingPriceList(false); await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar la lista.'); }
     finally { setSaving(false); }
@@ -294,7 +296,7 @@ export default function StaffCatalogPanel() {
     setSaving(true); setError(null); setNotice(null);
     const nextStatus = priceListDetail.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE';
     try {
-      await readResponse(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }));
+      await readApiResponseOrThrow(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }), 'No fue posible completar la operación.');
       setNotice(nextStatus === 'ARCHIVED' ? 'Lista archivada.' : 'Lista reactivada.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar la lista.'); }
@@ -305,7 +307,7 @@ export default function StaffCatalogPanel() {
     event.preventDefault(); setSaving(true); setError(null); setNotice(null);
     try {
       const response = await fetch('/api/staff/catalog/price-lists', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...priceListForm, validFrom: new Date().toISOString() }) });
-      const created = await readResponse<PriceList>(response);
+      const created = await readApiResponseOrThrow<PriceList>(response, 'No fue posible completar la operación.');
       setNotice(`Lista ${created.code} creada.`); setPriceListForm({ code: '', name: '', currencyCode: 'MXN' }); setShowPriceListForm(false); await refresh(); setSelectedPriceListId(created.id);
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible crear la lista.'); }
     finally { setSaving(false); }
@@ -319,7 +321,7 @@ export default function StaffCatalogPanel() {
     if (!unitPriceMinor) { setError('Escribe un importe válido, por ejemplo 1250.00.'); return; }
     setSaving(true); setError(null); setNotice(null);
     try {
-      await readResponse(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}/schedule`, {
+      await readApiResponseOrThrow(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}/schedule`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
@@ -329,7 +331,7 @@ export default function StaffCatalogPanel() {
           effectiveFrom: new Date(`${priceForm.effectiveFrom}T00:00:00.000Z`).toISOString(),
           ...(priceForm.reason.trim() ? { reason: priceForm.reason.trim() } : {}),
         }),
-      }));
+      }), 'No fue posible completar la operación.');
       setNotice('Precio programado.');
       setPriceForm((current) => ({ ...current, amountInput: '', reason: '' }));
       await refresh();
@@ -341,7 +343,7 @@ export default function StaffCatalogPanel() {
     setLoadingSpecialConcepts(true); setError(null);
     try {
       const response = await fetch('/api/staff/catalog/special-concepts', { credentials: 'include', cache: 'no-store' });
-      setSpecialConcepts(await readResponse<SpecialConceptGroup[]>(response));
+      setSpecialConcepts(await readApiResponseOrThrow<SpecialConceptGroup[]>(response, 'No fue posible completar la operación.'));
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible cargar los conceptos especiales.'); }
     finally { setLoadingSpecialConcepts(false); }
   };
@@ -358,7 +360,7 @@ export default function StaffCatalogPanel() {
       const key = `${group.normalizedName}::${group.unit}`;
       const categoryId = specialConceptCategoryId[key];
       const response = await fetch('/api/staff/catalog/special-concepts/promote', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: group.name, unit: group.unit, categoryId: categoryId || undefined }) });
-      const result = await readResponse<{ catalogItem: { id: string; code: string; name: string }; alreadyPromoted: boolean }>(response);
+      const result = await readApiResponseOrThrow<{ catalogItem: { id: string; code: string; name: string }; alreadyPromoted: boolean }>(response, 'No fue posible completar la operación.');
       setNotice(`Concepto ${result.catalogItem.code} · ${result.catalogItem.name} vinculado.`);
       await loadSpecialConcepts();
       await refresh();
@@ -366,7 +368,7 @@ export default function StaffCatalogPanel() {
     finally { setSaving(false); }
   };
 
-  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado autorizada para consultar el catálogo.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
+  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado autorizada para consultar el catálogo.</PrivateBlockingState></PrivateSurfaceRoot>;
 
   return <PrivateSurfaceRoot className="staff-shell">
     <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Catálogo y precios</div></div></header>

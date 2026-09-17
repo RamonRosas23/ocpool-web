@@ -11,11 +11,13 @@ import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
+import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
 import {
   QUOTE_REQUEST_BUDGET_RANGE_LABELS,
   QUOTE_REQUEST_PROJECT_STAGE_LABELS,
   QUOTE_REQUEST_TIMELINE_LABELS,
 } from '@/server/modules/quote-requests/domain';
+import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
 const STATUS_LABELS: Record<string, string> = {
   EN_ELABORACION: 'En elaboración',
@@ -136,7 +138,6 @@ type DraftLine = {
   discountBasisPoints: string;
   taxBasisPoints: string;
 };
-type ErrorResponse = { error?: { message?: string } };
 
 function statusLabel(status: string): string { return STATUS_LABELS[status] ?? status; }
 
@@ -200,12 +201,6 @@ function calculatePreview(line: DraftLine, priceMinor: string | undefined) {
   return { subtotal, discount: discountMinor, taxable, tax: taxMinor, total: taxable + taxMinor, unitPrice };
 }
 
-async function readResponse<T>(response: Response): Promise<T> {
-  const data = await response.json().catch(() => ({})) as T & ErrorResponse;
-  if (!response.ok) throw new Error(data.error?.message ?? 'No fue posible completar la operación.');
-  return data as T;
-}
-
 export default function StaffQuotesPanel() {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [requests, setRequests] = useState<QuoteListItem[]>([]);
@@ -241,11 +236,23 @@ export default function StaffQuotesPanel() {
         fetch(`/api/staff/quotes?${params.toString()}`, { credentials: 'include', cache: 'no-store' }),
         fetch('/api/staff/catalog/price-lists?status=ACTIVE', { credentials: 'include', cache: 'no-store' }),
       ]);
-      const currentCapabilities = await readResponse<Capabilities>(capabilitiesResponse);
-      if (!currentCapabilities.quotesRead) throw new Error('No tienes permisos para consultar el constructor de cotizaciones.');
+      const capabilitiesResult = await readApiResponse<Capabilities>(capabilitiesResponse, 'No fue posible cargar el constructor.');
+      if (!capabilitiesResult.ok) {
+        setRestricted(capabilitiesResult.kind === 'forbidden');
+        setError(capabilitiesResult.message);
+        setRequests([]);
+        return;
+      }
+      if (!capabilitiesResult.data.quotesRead) {
+        setRestricted(true);
+        setError('No tienes permisos para consultar el constructor de cotizaciones.');
+        setRequests([]);
+        return;
+      }
+      const currentCapabilities = capabilitiesResult.data;
       const [requestData, listData] = await Promise.all([
-        readResponse<{ items: QuoteListItem[]; page: number; total: number; totalPages: number }>(requestsResponse),
-        readResponse<PriceList[]>(listsResponse),
+        readApiResponseOrThrow<{ items: QuoteListItem[]; page: number; total: number; totalPages: number }>(requestsResponse, 'No fue posible cargar el constructor.'),
+        readApiResponseOrThrow<PriceList[]>(listsResponse, 'No fue posible cargar el constructor.'),
       ]);
       setCapabilities(currentCapabilities);
       setRequests(requestData.items);
@@ -255,9 +262,8 @@ export default function StaffQuotesPanel() {
       setRestricted(false);
       setSelectedId((current) => current && requestData.items.some((item) => item.id === current) ? current : requestData.items[0]?.id ?? null);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No fue posible cargar el constructor.';
-      setRestricted(message.includes('autenticada') || message.includes('permisos'));
-      setError(message);
+      setRestricted(false);
+      setError(caught instanceof Error ? caught.message : 'No fue posible cargar el constructor.');
       setRequests([]);
     } finally {
       setLoading(false);
@@ -269,7 +275,7 @@ export default function StaffQuotesPanel() {
     setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/${requestId}`, { credentials: 'include', cache: 'no-store' });
-      const data = await readResponse<Workspace>(response);
+      const data = await readApiResponseOrThrow<Workspace>(response, 'No fue posible cargar el expediente de cotización.');
       setWorkspace(data);
       const currentVersion = data.quote?.currentVersion;
       const preferredList = data.priceLists.find((list) => list.currencyCode === (currentVersion?.currencyCode ?? data.request.detail?.currencyCode)) ?? data.priceLists[0];
@@ -310,7 +316,7 @@ export default function StaffQuotesPanel() {
   useEffect(() => {
     if (!selectedPriceListId) { setPriceListDetail(null); return; }
     let cancelled = false;
-    void fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { credentials: 'include', cache: 'no-store' }).then((response) => readResponse<PriceListDetail>(response)).then((data) => { if (!cancelled) setPriceListDetail(data); }).catch((caught) => { if (!cancelled) setError(caught instanceof Error ? caught.message : 'No fue posible cargar los precios.'); });
+    void fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { credentials: 'include', cache: 'no-store' }).then((response) => readApiResponseOrThrow<PriceListDetail>(response, 'No fue posible cargar los precios.')).then((data) => { if (!cancelled) setPriceListDetail(data); }).catch((caught) => { if (!cancelled) setError(caught instanceof Error ? caught.message : 'No fue posible cargar los precios.'); });
     return () => { cancelled = true; };
   }, [selectedPriceListId]);
 
@@ -425,7 +431,7 @@ export default function StaffQuotesPanel() {
       };
       const isDraftUpdate = currentVersion?.status === 'BORRADOR';
       const response = await fetch(isDraftUpdate ? `/api/staff/quotes/versions/${currentVersion.id}` : `/api/staff/quotes/${workspace.request.id}`, { method: isDraftUpdate ? 'PATCH' : 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-      await readResponse(response);
+      await readApiResponseOrThrow(response, 'No fue posible guardar la cotización.');
       setNotice(isDraftUpdate ? 'Borrador actualizado.' : 'Nueva versión creada como borrador.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible guardar la cotización.'); }
@@ -437,7 +443,7 @@ export default function StaffQuotesPanel() {
     setSaving(true); setError(null); setNotice(null);
     try {
       const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/status`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: toStatus === 'ENVIADA' ? 'publish' : 'submit_for_review' }) });
-      await readResponse(response);
+      await readApiResponseOrThrow(response, 'No fue posible cambiar el estado.');
       setNotice(`Cotización movida a ${statusLabel(toStatus).toLowerCase()}.`);
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible cambiar el estado.'); }
@@ -454,7 +460,7 @@ export default function StaffQuotesPanel() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ type: 'DISCOUNT', policyVersion: 'discount-v1', thresholdBps: Math.max(...currentVersion.lines.map((line) => line.discountBasisPoints), 0) }),
       });
-      await readResponse(response);
+      await readApiResponseOrThrow(response, 'No fue posible solicitar la aprobación.');
       setNotice('Aprobación solicitada. Una persona autorizada debe resolverla antes de enviar la cotización.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible solicitar la aprobación.'); }
@@ -470,7 +476,7 @@ export default function StaffQuotesPanel() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ decision, ...(decision === 'REJECTED' ? { reason: 'No se autoriza el descuento en esta versión.' } : {}) }),
       });
-      await readResponse(response);
+      await readApiResponseOrThrow(response, 'No fue posible resolver la aprobación.');
       setNotice(decision === 'APPROVED' ? 'Descuento aprobado. Ya puedes enviar la cotización.' : 'Aprobación rechazada; revisa la propuesta antes de continuar.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible resolver la aprobación.'); }
@@ -487,7 +493,7 @@ export default function StaffQuotesPanel() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ type: 'SPECIAL_CONCEPT', policyVersion: 'special-concept-v1' }),
       });
-      await readResponse(response);
+      await readApiResponseOrThrow(response, 'No fue posible solicitar la aprobación.');
       setNotice('Aprobación solicitada. Una persona autorizada debe resolverla antes de enviar la cotización.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible solicitar la aprobación.'); }
@@ -503,14 +509,14 @@ export default function StaffQuotesPanel() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ decision, ...(decision === 'REJECTED' ? { reason: 'No se autorizan los conceptos especiales de esta versión.' } : {}) }),
       });
-      await readResponse(response);
+      await readApiResponseOrThrow(response, 'No fue posible resolver la aprobación.');
       setNotice(decision === 'APPROVED' ? 'Concepto especial aprobado. Ya puedes enviar la cotización.' : 'Aprobación rechazada; revisa la propuesta antes de continuar.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible resolver la aprobación.'); }
     finally { setSaving(false); }
   };
 
-  if (restricted) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Inicia sesión con una cuenta de empleado con permiso comercial para usar el constructor.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/staff/requests">Volver a solicitudes</Link></div></section></PrivateSurfaceRoot>;
+  if (restricted) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/staff/requests" variant="quiet">Volver a solicitudes</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado con permiso comercial para usar el constructor.</PrivateBlockingState></PrivateSurfaceRoot>;
 
   return <PrivateSurfaceRoot className="staff-shell">
     <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Constructor de cotizaciones</div></div></header>

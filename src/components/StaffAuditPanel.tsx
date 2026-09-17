@@ -4,9 +4,10 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import DateField from '@/components/DateField';
 import SelectField from '@/components/SelectField';
-import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
+import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
+import { readApiResponse } from '@/lib/api-response-error';
 
 const CATEGORY_OPTIONS = ['', 'commercial', 'communication', 'documents', 'notifications', 'security'] as const;
 const OUTCOME_OPTIONS = ['', 'SUCCESS', 'DENIED', 'FAILURE'] as const;
@@ -32,7 +33,6 @@ type AuditResponse = {
 };
 
 type CapabilitiesResponse = { auditRead?: boolean; auditSecurityRead?: boolean };
-type ApiError = { error?: { code?: string; message?: string } };
 
 const CATEGORY_LABELS: Record<Exclude<Category, ''>, string> = {
   commercial: 'Comercial',
@@ -58,15 +58,6 @@ function dateInputValue(value: string, timezone: string): string {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-async function responseError(response: Response): Promise<{ code?: string; message: string }> {
-  try {
-    const body = await response.json() as ApiError;
-    return { code: body.error?.code, message: body.error?.message ?? 'No fue posible cargar la auditoría.' };
-  } catch {
-    return { message: 'No fue posible cargar la auditoría.' };
-  }
-}
-
 function queryString(query: { from: string; to: string; category: Category; outcome: Outcome; cursor: string | null }): string {
   const params = new URLSearchParams({ limit: '25' });
   if (query.from && query.to) { params.set('from', query.from); params.set('to', query.to); }
@@ -81,7 +72,7 @@ function outcomeClass(outcome: AuditEntry['outcome']): string {
 }
 
 function RestrictedAudit() {
-  return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado con permiso de auditoría para consultar esta operación.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
+  return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Necesitas una cuenta de empleado con permiso de auditoría para consultar esta operación.</PrivateBlockingState></PrivateSurfaceRoot>;
 }
 
 export default function StaffAuditPanel() {
@@ -109,12 +100,12 @@ export default function StaffAuditPanel() {
         fetch(`/api/staff/audit?${queryString(query)}`, { credentials: 'include', cache: 'no-store', signal }),
         fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store', signal }),
       ]);
-      if (!auditResponse.ok) {
-        const failure = await responseError(auditResponse);
-        if (failure.code === 'UNAUTHORIZED' || failure.code === 'FORBIDDEN') setAccessDenied(true);
-        throw new Error(failure.message);
+      const auditResult = await readApiResponse<AuditResponse>(auditResponse, 'No fue posible cargar la auditoría.');
+      if (!auditResult.ok) {
+        if (auditResult.kind === 'forbidden') setAccessDenied(true);
+        throw new Error(auditResult.message);
       }
-      const next = await auditResponse.json() as AuditResponse;
+      const next = auditResult.data;
       const nextCapabilities = capabilitiesResponse.ok ? await capabilitiesResponse.json() as CapabilitiesResponse : {};
       if (requestNumber.current !== currentRequest) return;
       setCapabilities(nextCapabilities);
@@ -150,7 +141,7 @@ export default function StaffAuditPanel() {
   };
 
   if (accessDenied) return <RestrictedAudit />;
-  if (error && !data) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">!</span><p className="staff-kicker">Auditoría operativa</p><h1>No fue posible cargar la auditoría.</h1><p role="alert">{error}</p><button className="staff-button staff-button--dark" type="button" onClick={() => { setError(null); setReloadToken((current) => current + 1); }}>Reintentar</button></section></PrivateSurfaceRoot>;
+  if (error && !data) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="No fue posible cargar la auditoría." onRetry={() => { setError(null); setReloadToken((current) => current + 1); }}>{error}</PrivateBlockingState></PrivateSurfaceRoot>;
 
   const isSecurity = query.category === 'security';
   const items = data?.items ?? [];

@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DateField from '@/components/DateField';
-import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
+import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
+import { readApiResponse } from '@/lib/api-response-error';
 
 type MetricSummary = {
   sampleSize: number | null;
@@ -36,7 +37,6 @@ type DashboardResponse = {
   notifications: { byStatus: Array<{ status: string; count: number }>; oldestPendingAt: string | null; failedInPeriod: number };
 };
 
-type ApiError = { error?: { code?: string; message?: string } };
 type DashboardQuery = { from?: string; to?: string };
 
 const STATUS_LABELS: Record<string, string> = QUOTE_REQUEST_STATUS_LABELS;
@@ -85,15 +85,6 @@ function formatMinor(minor: string, currencyCode: string): string {
   return `${negative ? '-' : ''}${currencyCode} ${whole}.${fraction}`;
 }
 
-async function responseError(response: Response): Promise<{ code?: string; message: string }> {
-  try {
-    const body = await response.json() as ApiError;
-    return { code: body.error?.code, message: body.error?.message ?? 'No fue posible actualizar el dashboard.' };
-  } catch {
-    return { message: 'No fue posible actualizar el dashboard.' };
-  }
-}
-
 function BarList({ items, label, empty }: { items: Array<{ label: string; count: number }>; label: string; empty: string }) {
   const max = Math.max(...items.map((item) => item.count), 1);
   if (items.length === 0) return <div className="analytics-empty"><strong>{empty}</strong><p>Cuando existan movimientos dentro del periodo aparecerán aquí.</p></div>;
@@ -124,12 +115,12 @@ export default function StaffDashboardPanel() {
       const params = new URLSearchParams();
       if (query.from && query.to) { params.set('from', query.from); params.set('to', query.to); }
       const response = await fetch(`/api/staff/dashboard${params.size ? `?${params.toString()}` : ''}`, { credentials: 'include', cache: 'no-store', signal });
-      if (!response.ok) {
-        const failure = await responseError(response);
-        if (failure.code === 'UNAUTHORIZED' || failure.code === 'FORBIDDEN') setAccessDenied(true);
-        throw new Error(failure.message);
+      const result = await readApiResponse<DashboardResponse>(response, 'No fue posible actualizar el dashboard.');
+      if (!result.ok) {
+        if (result.kind === 'forbidden') setAccessDenied(true);
+        throw new Error(result.message);
       }
-      const next = await response.json() as DashboardResponse;
+      const next = result.data;
       setData(next);
       setAccessDenied(false);
       if (!rangeInitialized.current && !rangeEdited.current) {
@@ -168,9 +159,9 @@ export default function StaffDashboardPanel() {
 
   const displayRange = useMemo(() => data ? `${formatDate(data.meta.from, data.meta.timezone)} — ${formatDate(data.meta.to, data.meta.timezone)}` : 'Preparando periodo', [data]);
 
-  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado autorizada para consultar las métricas operativas.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
+  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Necesitas una cuenta de empleado autorizada para consultar las métricas operativas.</PrivateBlockingState></PrivateSurfaceRoot>;
 
-  if (error && !data) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><span className="staff-empty__mark">!</span><p className="staff-kicker">Dashboard operativo</p><h1>No fue posible cargarlo.</h1><p role="alert">{error}</p><button className="staff-button staff-button--dark" type="button" onClick={() => { setError(null); setReloadToken((current) => current + 1); }}>Reintentar</button></section></PrivateSurfaceRoot>;
+  if (error && !data) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="No fue posible cargarlo." onRetry={() => { setError(null); setReloadToken((current) => current + 1); }}>{error}</PrivateBlockingState></PrivateSurfaceRoot>;
 
   const dashboard = data;
   const pipeline = dashboard?.requests.byStatus.map((item) => ({ label: labelForStatus(item.status), count: item.count })) ?? [];

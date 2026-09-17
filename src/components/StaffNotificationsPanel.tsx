@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import SelectField from '@/components/SelectField';
-import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
+import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
+import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
 const STATUS_OPTIONS = ['', 'PENDING', 'PROCESSING', 'SENT', 'FAILED', 'CANCELLED'] as const;
 type NotificationStatus = (typeof STATUS_OPTIONS)[number];
@@ -50,8 +51,6 @@ type ListResponse = {
   health: Health;
 };
 
-type ApiError = { error?: { code?: string; message?: string } };
-
 const STATUS_LABELS: Record<Exclude<NotificationStatus, ''>, string> = {
   PENDING: 'Pendiente',
   PROCESSING: 'En proceso',
@@ -90,15 +89,6 @@ function formatAge(seconds: number): string {
   return `Hace ${Math.floor(hours / 24)} d`;
 }
 
-async function responseError(response: Response): Promise<{ code?: string; message: string }> {
-  try {
-    const body = await response.json() as ApiError;
-    return { code: body.error?.code, message: body.error?.message ?? 'No fue posible completar la operación.' };
-  } catch {
-    return { message: 'No fue posible completar la operación.' };
-  }
-}
-
 export default function StaffNotificationsPanel() {
   const [statusFilter, setStatusFilter] = useState<NotificationStatus>('');
   const [data, setData] = useState<ListResponse | null>(null);
@@ -117,13 +107,13 @@ export default function StaffNotificationsPanel() {
       try {
         const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '';
         const response = await fetch(`/api/staff/notifications${query}`, { credentials: 'include', cache: 'no-store', signal: controller.signal });
-        if (!response.ok) {
-          const failure = await responseError(response);
-          if (failure.code === 'UNAUTHORIZED' || failure.code === 'FORBIDDEN') setAccessDenied(true);
-          throw new Error(failure.message);
+        const result = await readApiResponse<ListResponse>(response, 'No fue posible actualizar las notificaciones.');
+        if (!result.ok) {
+          if (result.kind === 'forbidden') setAccessDenied(true);
+          throw new Error(result.message);
         }
         setAccessDenied(false);
-        setData(await response.json() as ListResponse);
+        setData(result.data);
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
         setError(caught instanceof Error ? caught.message : 'No fue posible actualizar las notificaciones.');
@@ -148,12 +138,8 @@ export default function StaffNotificationsPanel() {
         headers: { 'content-type': 'application/json' },
         body: '{}',
       });
-      if (!response.ok) {
-        const failure = await responseError(response);
-        throw new Error(failure.message);
-      }
-      const result = await response.json() as { outcome: 'REQUEUED' | 'ALREADY_PENDING' };
-      setNotice(result.outcome === 'REQUEUED' ? 'La entrega fue devuelta a la cola.' : 'La entrega ya estaba pendiente y no se duplicó.');
+      const retryResult = await readApiResponseOrThrow<{ outcome: 'REQUEUED' | 'ALREADY_PENDING' }>(response, 'No fue posible reintentar la entrega.');
+      setNotice(retryResult.outcome === 'REQUEUED' ? 'La entrega fue devuelta a la cola.' : 'La entrega ya estaba pendiente y no se duplicó.');
       setData(null);
       refresh();
     } catch (caught) {
@@ -164,7 +150,7 @@ export default function StaffNotificationsPanel() {
   };
 
   if (accessDenied) {
-    return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><section className="staff-empty"><WorkspaceLogo className="staff-empty__logo" /><p className="staff-kicker">Área interna</p><h1>Acceso restringido.</h1><p>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</p><div className="staff-empty__actions"><Link className="staff-button staff-button--dark" href="/login">Iniciar sesión</Link><Link className="staff-empty__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
+    return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</PrivateBlockingState></PrivateSurfaceRoot>;
   }
 
   const health = data?.health;

@@ -13,7 +13,7 @@ import {
   PrivateTextField,
 } from '@/components/private/ui';
 import { QUOTE_REQUEST_STATUSES, type QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
-import { readRequestWorkspaceResponse, readRequestWorkspaceResponseOrThrow } from '@/lib/request-workspace-error';
+import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import {
   normalizeRequestWorkspaceQuery,
   QUOTE_REQUEST_STATUS_LABELS,
@@ -106,7 +106,7 @@ export default function RequestWorkspaceV2Panel() {
     }
     const controller = new AbortController();
     fetch('/api/staff/quote-requests/assignees', { credentials: 'include', cache: 'no-store', signal: controller.signal })
-      .then((response) => readRequestWorkspaceResponseOrThrow<AssigneeResponse>(response, 'No fue posible cargar responsables disponibles.'))
+      .then((response) => readApiResponseOrThrow<AssigneeResponse>(response, 'No fue posible cargar responsables disponibles.'))
       .then((data) => setAssignees(data.items))
       .catch(() => { if (!controller.signal.aborted) setAssignees([]); });
     return () => controller.abort();
@@ -143,7 +143,7 @@ export default function RequestWorkspaceV2Panel() {
   useEffect(() => {
     const controller = new AbortController();
     fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store', signal: controller.signal })
-      .then((response) => readRequestWorkspaceResponseOrThrow<WorkspaceCapabilitiesResponse>(response, 'No fue posible validar los permisos disponibles.'))
+      .then((response) => readApiResponseOrThrow<WorkspaceCapabilitiesResponse>(response, 'No fue posible validar los permisos disponibles.'))
       .then((data) => {
         setCanCreate(data.requestsCreate);
         setCanAssign(data.requestsAssign);
@@ -177,7 +177,7 @@ export default function RequestWorkspaceV2Panel() {
     setAccessDenied(false);
     const requestUrl = serializedQuery ? `/api/staff/quote-requests?${serializedQuery}` : '/api/staff/quote-requests';
     fetch(requestUrl, { credentials: 'include', cache: 'no-store', signal: controller.signal })
-      .then((response) => readRequestWorkspaceResponse<ListResponse>(response, 'No fue posible cargar las solicitudes.'))
+      .then((response) => readApiResponse<ListResponse>(response, 'No fue posible cargar las solicitudes.'))
       .then((result) => {
         if (controller.signal.aborted) return;
         if (result.ok) {

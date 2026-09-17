@@ -8,7 +8,7 @@ import { getApiErrorMessage } from '@/lib/api-error-message';
 import { requestWorkspaceScrollStorageKey } from '@/lib/request-workspace-scroll';
 import { getRequestWorkspacePrimaryAction } from '@/lib/request-workspace-primary-action';
 import { nextRovingTabIndex } from '@/components/private/ui/a11y';
-import { readRequestWorkspaceResponse, readRequestWorkspaceResponseOrThrow } from '@/lib/request-workspace-error';
+import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -377,28 +377,28 @@ describe('request workspace V2 route contract', () => {
   });
 
   it('classifies workspace fetch failures as forbidden, not-found or transient by HTTP status', async () => {
-    const forbidden = await readRequestWorkspaceResponse(jsonResponse(403, { error: { message: 'Sin permisos.' } }), 'fallback');
+    const forbidden = await readApiResponse(jsonResponse(403, { error: { message: 'Sin permisos.' } }), 'fallback');
     expect(forbidden).toMatchObject({ ok: false, kind: 'forbidden', message: 'Sin permisos.' });
 
-    const unauthenticated = await readRequestWorkspaceResponse(jsonResponse(401, { error: { message: 'No autenticado.' } }), 'fallback');
+    const unauthenticated = await readApiResponse(jsonResponse(401, { error: { message: 'No autenticado.' } }), 'fallback');
     expect(unauthenticated).toMatchObject({ ok: false, kind: 'forbidden' });
 
-    const notFound = await readRequestWorkspaceResponse(jsonResponse(404, {}), 'No encontrado.');
+    const notFound = await readApiResponse(jsonResponse(404, {}), 'No encontrado.');
     expect(notFound).toMatchObject({ ok: false, kind: 'not_found', message: 'No encontrado.' });
 
-    const serverError = await readRequestWorkspaceResponse(jsonResponse(500, {}), 'fallback');
+    const serverError = await readApiResponse(jsonResponse(500, {}), 'fallback');
     expect(serverError).toMatchObject({ ok: false, kind: 'transient' });
 
-    const success = await readRequestWorkspaceResponse<{ items: unknown[] }>(jsonResponse(200, { items: [] }), 'fallback');
+    const success = await readApiResponse<{ items: unknown[] }>(jsonResponse(200, { items: [] }), 'fallback');
     expect(success).toEqual({ ok: true, data: { items: [] } });
 
-    await expect(readRequestWorkspaceResponseOrThrow(jsonResponse(404, {}), 'No encontrado.')).rejects.toThrow('No encontrado.');
+    await expect(readApiResponseOrThrow(jsonResponse(404, {}), 'No encontrado.')).rejects.toThrow('No encontrado.');
 
     for (const file of [
       readProjectFile('src/components/RequestWorkspaceDetailV2.tsx'),
       readProjectFile('src/components/RequestWorkspaceV2Panel.tsx'),
     ]) {
-      expect(file).toContain('readRequestWorkspaceResponse');
+      expect(file).toContain('readApiResponse');
     }
   });
 

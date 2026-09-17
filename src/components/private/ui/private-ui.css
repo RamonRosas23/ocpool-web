@@ -142,6 +142,8 @@
 .private-empty__mark, .private-blocking__mark { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid currentColor; font-size: 18px; }
 .private-empty h2, .private-blocking h2 { margin: 0; color: var(--private-color-brand); font-size: 22px; }
 .private-empty p, .private-blocking p { max-width: 460px; margin: 0; color: var(--private-color-ink-muted); font-size: 12px; line-height: 1.6; }
+.private-blocking__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--private-space-3); }
+.private-blocking__actions .private-button { justify-self: start; }
 .private-select__trigger { display: flex; align-items: center; justify-content: space-between; cursor: pointer; text-align: left; }
 .private-select__content { z-index: var(--private-z-popover); min-width: var(--radix-select-trigger-width); overflow: hidden; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-popover); }
 .private-select__viewport { max-height: min(320px, var(--radix-select-content-available-height, 45vh)); overflow-y: auto; overscroll-behavior: contain; padding: var(--private-space-1); }
