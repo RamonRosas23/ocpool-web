@@ -53,6 +53,7 @@ export type ReplaceQuoteDraftInput = Readonly<{
   priceListId: string;
   lines: readonly QuotePricingLineInput[];
   validUntil?: Date | null;
+  expectedUpdatedAt?: Date;
 }>;
 
 export type QuoteServiceDependencies = Readonly<{
@@ -111,6 +112,7 @@ type LockedQuoteVersion = {
   status: QuoteVersionStatus;
   currencyCode: string;
   discountTotalMinor: bigint;
+  updatedAt: Date;
   currentVersionId: string | null;
   workingVersionId: string | null;
   publishedVersionId: string | null;
@@ -192,7 +194,7 @@ async function lockQuote(transaction: Prisma.TransactionClient, quoteId: string)
 
 async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<LockedQuoteVersion | null> {
   const rows = await transaction.$queryRaw<LockedQuoteVersion[]>(Prisma.sql`
-    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."discountTotalMinor", q."currentVersionId", q."workingVersionId", q."publishedVersionId",
+    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."discountTotalMinor", qv."updatedAt", q."currentVersionId", q."workingVersionId", q."publishedVersionId",
            q."quoteRequestId", qr."folio", qr."status" AS "requestStatus", qr."currentAssigneeId", qrd."currencyCode" AS "requestCurrencyCode"
     FROM "quote_versions" qv
     INNER JOIN "quotes" q ON q."id" = qv."quoteId"
@@ -463,6 +465,9 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
     if (!version) throw new AppError('NOT_FOUND', 'La versión no existe.', 404);
     requireStaffRequestReadScope(actor, version.currentAssigneeId);
     if (version.workingVersionId !== version.id || version.status !== 'BORRADOR') conflict('La versión ya no es editable.');
+    if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt.getTime() !== version.updatedAt.getTime()) {
+      conflict('La versión cambió desde la última lectura. Recarga el borrador antes de guardar.');
+    }
     const request: LockedQuoteRequest = {
       id: version.quoteRequestId,
       folio: version.folio,
@@ -532,12 +537,16 @@ function requiredPermissionForTransition(status: QuoteVersionStatus): string {
   return 'quotes.send';
 }
 
-export async function transitionQuoteVersion(actor: Actor, quoteVersionId: string, toStatus: QuoteVersionStatus, dependencies: QuoteServiceDependencies = {}): Promise<{ versionId: string; quoteId: string; fromStatus: QuoteVersionStatus; toStatus: QuoteVersionStatus }> {
+type PerformTransitionOptions = Readonly<{ reason?: string | null; auditAction?: string; outboxEventType?: string }>;
+
+async function performQuoteVersionTransition(actor: Actor, quoteVersionId: string, toStatus: QuoteVersionStatus, options: PerformTransitionOptions, dependencies: QuoteServiceDependencies): Promise<{ versionId: string; quoteId: string; fromStatus: QuoteVersionStatus; toStatus: QuoteVersionStatus }> {
   if (toStatus === 'ACEPTADA') conflict('La aceptación digital todavía no está habilitada.');
   requireEmployeePermission(actor, requiredPermissionForTransition(toStatus));
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
   const versionId = requireUuid(quoteVersionId, 'La versión no es válida.');
+  const auditAction = options.auditAction ?? 'quote.version.status_changed';
+  const outboxEventType = options.outboxEventType ?? 'QUOTE.VERSION_STATUS_CHANGED';
 
   return prisma.$transaction(async (transaction) => {
     const version = await lockQuoteVersion(transaction, versionId);
@@ -574,20 +583,20 @@ export async function transitionQuoteVersion(actor: Actor, quoteVersionId: strin
         data: { status: 'SUPERSEDED', decidedAt: null, decidedById: null },
       });
     }
-    await transaction.quoteStatusHistory.create({ data: { quoteVersionId: version.id, fromStatus: version.status, toStatus, changedById: actor.userId, createdAt: now } });
+    await transaction.quoteStatusHistory.create({ data: { quoteVersionId: version.id, fromStatus: version.status, toStatus, reason: options.reason ?? null, changedById: actor.userId, createdAt: now } });
     await transaction.auditLog.create({
       data: {
         actorUserId: actor.userId,
-        action: 'quote.version.status_changed',
+        action: auditAction,
         entityType: 'quote_version',
         entityId: version.id,
         outcome: 'SUCCESS',
-        metadata: { quoteId: version.quoteId, quoteRequestId: version.quoteRequestId, folio: version.folio, fromStatus: version.status, toStatus },
+        metadata: { quoteId: version.quoteId, quoteRequestId: version.quoteRequestId, folio: version.folio, fromStatus: version.status, toStatus, reason: options.reason ?? null },
       },
     });
     await transaction.outboxEvent.create({
       data: {
-        eventType: 'QUOTE.VERSION_STATUS_CHANGED',
+        eventType: outboxEventType,
         aggregateType: 'QUOTE',
         aggregateId: version.quoteId,
         payload: { quoteId: version.quoteId, quoteVersionId: version.id, quoteRequestId: version.quoteRequestId, folio: version.folio, fromStatus: version.status, toStatus },
@@ -602,6 +611,87 @@ export async function transitionQuoteVersion(actor: Actor, quoteVersionId: strin
     }
     return { versionId: version.id, quoteId: version.quoteId, fromStatus: version.status, toStatus };
   });
+}
+
+export async function transitionQuoteVersion(actor: Actor, quoteVersionId: string, toStatus: QuoteVersionStatus, dependencies: QuoteServiceDependencies = {}): Promise<{ versionId: string; quoteId: string; fromStatus: QuoteVersionStatus; toStatus: QuoteVersionStatus }> {
+  return performQuoteVersionTransition(actor, quoteVersionId, toStatus, {}, dependencies);
+}
+
+function requireTransitionReason(value: string): string {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized || normalized.length > 500) validation('Indica un motivo válido para este cambio.');
+  return normalized;
+}
+
+export async function submitQuoteForReview(actor: Actor, quoteVersionId: string, dependencies: QuoteServiceDependencies = {}) {
+  return performQuoteVersionTransition(actor, quoteVersionId, 'EN_REVISION', {
+    auditAction: 'quote.version.submitted',
+    outboxEventType: 'QUOTE.VERSION_SUBMITTED',
+  }, dependencies);
+}
+
+export async function returnQuoteToDraft(actor: Actor, quoteVersionId: string, input: Readonly<{ reason: string }>, dependencies: QuoteServiceDependencies = {}) {
+  return performQuoteVersionTransition(actor, quoteVersionId, 'BORRADOR', {
+    reason: requireTransitionReason(input.reason),
+    auditAction: 'quote.version.returned_to_draft',
+    outboxEventType: 'QUOTE.VERSION_REOPENED',
+  }, dependencies);
+}
+
+export async function rejectQuoteVersion(actor: Actor, quoteVersionId: string, input: Readonly<{ reason: string }>, dependencies: QuoteServiceDependencies = {}) {
+  return performQuoteVersionTransition(actor, quoteVersionId, 'RECHAZADA', {
+    reason: requireTransitionReason(input.reason),
+    auditAction: 'quote.version.rejected',
+    outboxEventType: 'QUOTE.VERSION_REJECTED',
+  }, dependencies);
+}
+
+function quantityMilliunitsToDecimalString(quantityMilliunits: bigint): string {
+  const whole = quantityMilliunits / 1_000n;
+  const fraction = (quantityMilliunits % 1_000n).toString().padStart(3, '0').replace(/0+$/u, '');
+  return fraction ? `${whole.toString()}.${fraction}` : whole.toString();
+}
+
+export async function clonePublishedVersion(actor: Actor, quoteRequestId: string, input: Readonly<{ priceListId: string }>, dependencies: QuoteServiceDependencies = {}): Promise<QuoteVersionResult> {
+  requireEmployeePermission(actor, 'quotes.create');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const requestId = requireUuid(quoteRequestId, 'La solicitud no es válida.');
+  const priceListId = requireUuid(input.priceListId, 'La lista de precios no es válida.');
+
+  const request = await prisma.quoteRequest.findUnique({ where: { id: requestId }, select: { currentAssigneeId: true } });
+  if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
+  requireStaffRequestReadScope(actor, request.currentAssigneeId);
+
+  const quote = await prisma.quote.findUnique({ where: { quoteRequestId: requestId }, select: { workingVersionId: true, publishedVersionId: true } });
+  if (!quote || !quote.publishedVersionId) conflict('No hay una versión publicada para clonar.');
+  if (quote.workingVersionId) conflict('Ya existe una versión de trabajo pendiente; resuélvela antes de clonar.');
+
+  const publishedLines = await prisma.quoteLineSnapshot.findMany({
+    where: { quoteVersionId: quote.publishedVersionId },
+    orderBy: { id: 'asc' },
+    select: { catalogItemId: true, name: true, description: true, unit: true, specialReason: true, quantityMilliunits: true, unitPriceMinor: true, discountBasisPoints: true, taxBasisPoints: true },
+  });
+
+  const lines: QuotePricingLineInput[] = publishedLines.map((line) => (line.catalogItemId === null
+    ? {
+      special: true as const,
+      name: line.name,
+      description: line.description,
+      unit: line.unit,
+      quantity: quantityMilliunitsToDecimalString(line.quantityMilliunits),
+      unitPriceMinor: line.unitPriceMinor,
+      reason: line.specialReason ?? '',
+      discountBasisPoints: line.discountBasisPoints,
+      taxBasisPoints: line.taxBasisPoints,
+    }
+    : {
+      catalogItemId: line.catalogItemId,
+      quantity: quantityMilliunitsToDecimalString(line.quantityMilliunits),
+      discountBasisPoints: line.discountBasisPoints,
+      taxBasisPoints: line.taxBasisPoints,
+    }));
+
+  return createQuoteVersion(actor, { quoteRequestId: requestId, priceListId, lines }, dependencies);
 }
 
 /**

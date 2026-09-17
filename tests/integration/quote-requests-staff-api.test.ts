@@ -13,6 +13,7 @@ import { POST as assignRoute } from '@/app/api/staff/quote-requests/[id]/assign/
 import { POST as takeRoute } from '@/app/api/staff/quote-requests/[id]/take/route';
 import { POST as statusRoute } from '@/app/api/staff/quote-requests/[id]/status/route';
 import { POST as requestInformationRoute } from '@/app/api/staff/quote-requests/[id]/request-information/route';
+import { POST as markInformationReviewedRoute } from '@/app/api/staff/quote-requests/[id]/mark-information-reviewed/route';
 
 describe('staff quote request API', () => {
   const prisma = getPrisma();
@@ -175,6 +176,31 @@ describe('staff quote request API', () => {
 
     const customerMutation = await statusRoute(endpoint(`/api/staff/quote-requests/${requestId}/status`, customerToken, 'POST', { toStatus: 'EN_ELABORACION' }), { params: Promise.resolve({ id: requestId }) });
     expect(customerMutation.status).toBe(403);
+  });
+
+  it('marks information reviewed through a real route handler only after a customer reply exists (D2-03)', async () => {
+    const unauthenticated = await markInformationReviewedRoute(endpoint(`/api/staff/quote-requests/${requestId}/mark-information-reviewed`, undefined, 'POST', {}), { params: Promise.resolve({ id: requestId }) });
+    expect(unauthenticated.status).toBe(401);
+
+    const foreign = await markInformationReviewedRoute(endpoint(`/api/staff/quote-requests/${requestId}/mark-information-reviewed`, salesToken, 'POST', {}, 'https://attacker.example'), { params: Promise.resolve({ id: requestId }) });
+    expect(foreign.status).toBe(403);
+
+    const tooEarly = await markInformationReviewedRoute(endpoint(`/api/staff/quote-requests/${requestId}/mark-information-reviewed`, salesToken, 'POST', {}), { params: Promise.resolve({ id: requestId }) });
+    expect(tooEarly.status).toBe(409);
+
+    const conversation = await prisma.conversation.findUniqueOrThrow({ where: { quoteRequestId_clientId: { quoteRequestId: requestId, clientId: clientIds[0] } }, select: { id: true } });
+    const replyCustomer = await prisma.user.create({
+      data: { email: `api-mark-reviewed-${Date.now()}@example.test`, emailNormalized: `api-mark-reviewed-${Date.now()}@example.test`, displayName: 'API mark-reviewed customer', type: 'CUSTOMER', status: 'ACTIVE', clientId: clientIds[0] },
+    });
+    await prisma.conversationMessage.create({
+      data: { conversationId: conversation.id, senderUserId: replyCustomer.id, visibility: 'CUSTOMER', body: 'Las dimensiones son 12x6m.' },
+    });
+
+    const reviewed = await markInformationReviewedRoute(endpoint(`/api/staff/quote-requests/${requestId}/mark-information-reviewed`, salesToken, 'POST', {}), { params: Promise.resolve({ id: requestId }) });
+    expect(reviewed.status).toBe(200);
+    await expect(reviewed.json()).resolves.toMatchObject({ quoteRequestId: requestId, fromStatus: 'INFORMACION_REQUERIDA', toStatus: 'EN_REVISION' });
+
+    await prisma.user.delete({ where: { id: replyCustomer.id } });
   });
 
   it('exposes request activity through a real route handler, gated the same way as the rest of the workspace', async () => {

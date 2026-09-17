@@ -846,6 +846,54 @@ export async function takeQuoteRequest(actor: Actor, quoteRequestId: string, inp
   });
 }
 
+export async function markInformationReviewedQuoteRequest(actor: Actor, quoteRequestId: string, dependencies: StaffServiceDependencies = {}) {
+  requireStaffPermission(actor, 'requests.status.update');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const requestId = requireUuid(quoteRequestId, 'La solicitud no es válida.');
+  const now = dependencies.now ?? new Date();
+
+  return prisma.$transaction(async (transaction) => {
+    const request = await lockQuoteRequest(transaction, requestId);
+    if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
+    requireStaffRequestReadScope(actor, request.currentAssigneeId);
+    if (request.status !== 'INFORMACION_REQUERIDA') {
+      throw new AppError('CONFLICT', 'La solicitud no está esperando información del cliente.', 409);
+    }
+    const lastCustomerVisibleMessage = await transaction.conversationMessage.findFirst({
+      where: { conversation: { quoteRequestId: request.id }, visibility: 'CUSTOMER' },
+      orderBy: { createdAt: 'desc' },
+      select: { sender: { select: { type: true } } },
+    });
+    if (lastCustomerVisibleMessage?.sender?.type !== 'CUSTOMER') {
+      throw new AppError('CONFLICT', 'Todavía no hay una respuesta del cliente para revisar.', 409);
+    }
+
+    await transaction.quoteRequest.update({ where: { id: request.id }, data: { status: 'EN_REVISION' } });
+    await transaction.requestStatusHistory.create({
+      data: { quoteRequestId: request.id, fromStatus: 'INFORMACION_REQUERIDA', toStatus: 'EN_REVISION', changedById: actor.userId, reason: 'Se revisó la respuesta del cliente.', createdAt: now },
+    });
+    await transaction.auditLog.create({
+      data: {
+        actorUserId: actor.userId,
+        action: 'quote_request.customer_response_reviewed',
+        entityType: 'quote_request',
+        entityId: request.id,
+        outcome: 'SUCCESS',
+        metadata: { folio: request.folio, fromStatus: 'INFORMACION_REQUERIDA', toStatus: 'EN_REVISION' },
+      },
+    });
+    await transaction.outboxEvent.create({
+      data: {
+        eventType: 'REQUEST.CUSTOMER_RESPONSE',
+        aggregateType: 'QUOTE_REQUEST',
+        aggregateId: request.id,
+        payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: 'INFORMACION_REQUERIDA', toStatus: 'EN_REVISION' },
+      },
+    });
+    return { quoteRequestId: request.id, folio: request.folio, fromStatus: 'INFORMACION_REQUERIDA' as const, toStatus: 'EN_REVISION' as const, changedAt: now };
+  });
+}
+
 export async function transitionQuoteRequest(actor: Actor, quoteRequestId: string, input: { toStatus: QuoteRequestStatus; reason?: string }, dependencies: StaffServiceDependencies = {}) {
   requireStaffPermission(actor, 'requests.status.update');
   const prisma = dependencies.prisma ?? getPrisma();

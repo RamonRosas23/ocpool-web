@@ -30,6 +30,7 @@ const bodySchema = z.object({
   priceListId: z.string().uuid(),
   lines: z.array(z.union([catalogLineSchema, specialLineSchema])).min(1).max(100),
   validUntil: z.coerce.date().nullable().optional(),
+  expectedUpdatedAt: z.coerce.date().optional(),
 }).strict();
 
 type RouteContext = { params: Promise<{ versionId: string }> };

@@ -11,6 +11,7 @@ import { PATCH as replaceDraftRoute } from '@/app/api/staff/quotes/versions/[ver
 import { POST as transitionQuoteRoute } from '@/app/api/staff/quotes/versions/[versionId]/status/route';
 import { POST as requestApprovalRoute } from '@/app/api/staff/quotes/versions/[versionId]/approvals/route';
 import { POST as decideApprovalRoute } from '@/app/api/staff/quotes/approvals/[approvalId]/decision/route';
+import { POST as cloneRoute } from '@/app/api/staff/quotes/[quoteRequestId]/clone/route';
 
 describe('staff quotes API', () => {
   const prisma = getPrisma();
@@ -104,8 +105,9 @@ describe('staff quotes API', () => {
     const replaced = await replaceDraftRoute(endpoint(`/api/staff/quotes/versions/${versionId}`, salesToken, 'PATCH', { priceListId, lines: [{ catalogItemId: itemId, quantity: '2' }] }), { params: Promise.resolve({ versionId }) });
     expect(replaced.status).toBe(200);
     await expect(replaced.json()).resolves.toMatchObject({ versionId, totalMinor: '20000' });
-    expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${versionId}/status`, salesToken, 'POST', { toStatus: 'EN_REVISION' }), { params: Promise.resolve({ versionId }) })).status).toBe(200);
-    expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${versionId}/status`, salesToken, 'POST', { toStatus: 'ENVIADA' }), { params: Promise.resolve({ versionId }) })).status).toBe(200);
+    expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${versionId}/status`, salesToken, 'POST', { toStatus: 'EN_REVISION' }), { params: Promise.resolve({ versionId }) })).status).toBe(400);
+    expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${versionId}/status`, salesToken, 'POST', { action: 'submit_for_review' }), { params: Promise.resolve({ versionId }) })).status).toBe(200);
+    expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${versionId}/status`, salesToken, 'POST', { action: 'publish' }), { params: Promise.resolve({ versionId }) })).status).toBe(200);
     expect(await prisma.generatedDocument.findUnique({ where: { quoteVersionId_documentType: { quoteVersionId: versionId, documentType: 'QUOTE_PDF' } }, select: { status: true, readyAt: true } })).toMatchObject({ status: 'READY', readyAt: expect.any(Date) });
     expect((await replaceDraftRoute(endpoint(`/api/staff/quotes/versions/${versionId}`, salesToken, 'PATCH', { priceListId, lines: [{ catalogItemId: itemId, quantity: '3' }] }), { params: Promise.resolve({ versionId }) })).status).toBe(409);
     expect(await prisma.quoteRequest.findUnique({ where: { id: requestId }, select: { status: true } })).toMatchObject({ status: 'COTIZACION_DISPONIBLE' });
@@ -133,8 +135,8 @@ describe('staff quotes API', () => {
       const specialVersionId = createdBody.versionId;
       expect(createdBody.totalMinor).toBe('7500');
 
-      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${specialVersionId}/status`, salesToken, 'POST', { toStatus: 'EN_REVISION' }), { params: Promise.resolve({ versionId: specialVersionId }) })).status).toBe(200);
-      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${specialVersionId}/status`, salesToken, 'POST', { toStatus: 'ENVIADA' }), { params: Promise.resolve({ versionId: specialVersionId }) })).status).toBe(409);
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${specialVersionId}/status`, salesToken, 'POST', { action: 'submit_for_review' }), { params: Promise.resolve({ versionId: specialVersionId }) })).status).toBe(200);
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${specialVersionId}/status`, salesToken, 'POST', { action: 'publish' }), { params: Promise.resolve({ versionId: specialVersionId }) })).status).toBe(409);
 
       const approvalResponse = await requestApprovalRoute(endpoint(`/api/staff/quotes/versions/${specialVersionId}/approvals`, salesToken, 'POST', { type: 'SPECIAL_CONCEPT', policyVersion: 'special-concept-v1' }), { params: Promise.resolve({ versionId: specialVersionId }) });
       expect(approvalResponse.status).toBe(201);
@@ -144,13 +146,99 @@ describe('staff quotes API', () => {
       const decided = await decideApprovalRoute(endpoint(`/api/staff/quotes/approvals/${approval.id}/decision`, managerToken, 'POST', { decision: 'APPROVED' }), { params: Promise.resolve({ approvalId: approval.id }) });
       expect(decided.status).toBe(200);
 
-      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${specialVersionId}/status`, salesToken, 'POST', { toStatus: 'ENVIADA' }), { params: Promise.resolve({ versionId: specialVersionId }) })).status).toBe(200);
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${specialVersionId}/status`, salesToken, 'POST', { action: 'publish' }), { params: Promise.resolve({ versionId: specialVersionId }) })).status).toBe(200);
     } finally {
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
       const approvalIds = (await prisma.quoteApproval.findMany({ where: { quoteVersionId: { in: versionIds } }, select: { id: true } })).map(({ id }) => id);
       await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [request.quoteRequestId] } } });
       await prisma.auditLog.deleteMany({ where: { entityId: { in: [request.quoteRequestId, ...versionIds, ...approvalIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+    }
+  });
+
+  it('names return-to-draft and reject as closed actions requiring a reason (D2-04)', async () => {
+    const suffix = Date.now().toString();
+    const now = new Date('2026-03-18T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quotes-api-named-actions-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quotes API named actions ${suffix}`, email: `quotes-api-named-actions-${suffix}@example.test` },
+      detail: { projectType: 'Comercial', location: 'Culiacán', description: 'Named actions fixture', consentAt: now },
+    }, { prisma, now });
+    await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+    const params = { params: Promise.resolve({ quoteRequestId: request.quoteRequestId }) };
+
+    try {
+      const created = await createQuoteRoute(endpoint(`/api/staff/quotes/${request.quoteRequestId}`, salesToken, 'POST', {
+        priceListId,
+        lines: [{ catalogItemId: itemId, quantity: '1' }],
+      }), params);
+      const draftVersionId = (await created.json() as { versionId: string }).versionId;
+      const versionParams = { params: Promise.resolve({ versionId: draftVersionId }) };
+
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${draftVersionId}/status`, salesToken, 'POST', { action: 'submit_for_review' }), versionParams)).status).toBe(200);
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${draftVersionId}/status`, salesToken, 'POST', { action: 'return_to_draft' }), versionParams)).status).toBe(400);
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${draftVersionId}/status`, salesToken, 'POST', { action: 'return_to_draft', reason: 'Falta ajustar una línea.' }), versionParams)).status).toBe(200);
+      const history = await prisma.quoteStatusHistory.findFirst({ where: { quoteVersionId: draftVersionId, toStatus: 'BORRADOR' }, orderBy: { createdAt: 'desc' } });
+      expect(history).toMatchObject({ reason: 'Falta ajustar una línea.' });
+
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${draftVersionId}/status`, salesToken, 'POST', { action: 'submit_for_review' }), versionParams)).status).toBe(200);
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${draftVersionId}/status`, salesToken, 'POST', { action: 'reject' }), versionParams)).status).toBe(400);
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${draftVersionId}/status`, salesToken, 'POST', { action: 'reject', reason: 'El cliente ya no continuará.' }), versionParams)).status).toBe(200);
+      expect(await prisma.quoteVersion.findUnique({ where: { id: draftVersionId }, select: { status: true } })).toMatchObject({ status: 'RECHAZADA' });
+    } finally {
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [request.quoteRequestId] } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [request.quoteRequestId, ...versionIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+    }
+  });
+
+  it('clones a published version into a fresh working draft (D2-04)', async () => {
+    const suffix = Date.now().toString();
+    const now = new Date('2026-03-19T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quotes-api-clone-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quotes API clone ${suffix}`, email: `quotes-api-clone-${suffix}@example.test` },
+      detail: { projectType: 'Comercial', location: 'Culiacán', description: 'Clone fixture', consentAt: now },
+    }, { prisma, now });
+    await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+    const params = { params: Promise.resolve({ quoteRequestId: request.quoteRequestId }) };
+    const cloneParams = { params: Promise.resolve({ quoteRequestId: request.quoteRequestId }) };
+
+    try {
+      const noPublicationYet = await cloneRoute(endpoint(`/api/staff/quotes/${request.quoteRequestId}/clone`, salesToken, 'POST', { priceListId }), cloneParams);
+      expect(noPublicationYet.status).toBe(409);
+
+      const created = await createQuoteRoute(endpoint(`/api/staff/quotes/${request.quoteRequestId}`, salesToken, 'POST', {
+        priceListId,
+        lines: [{ catalogItemId: itemId, quantity: '1' }],
+      }), params);
+      const firstVersionId = (await created.json() as { versionId: string }).versionId;
+      const firstVersionParams = { params: Promise.resolve({ versionId: firstVersionId }) };
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${firstVersionId}/status`, salesToken, 'POST', { action: 'submit_for_review' }), firstVersionParams)).status).toBe(200);
+      expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${firstVersionId}/status`, salesToken, 'POST', { action: 'publish' }), firstVersionParams)).status).toBe(200);
+
+      const cloned = await cloneRoute(endpoint(`/api/staff/quotes/${request.quoteRequestId}/clone`, salesToken, 'POST', { priceListId }), cloneParams);
+      expect(cloned.status).toBe(201);
+      const clonedBody = await cloned.json() as { versionId: string; status: string };
+      expect(clonedBody.status).toBe('BORRADOR');
+      expect(clonedBody.versionId).not.toBe(firstVersionId);
+
+      const workingConflict = await cloneRoute(endpoint(`/api/staff/quotes/${request.quoteRequestId}/clone`, salesToken, 'POST', { priceListId }), cloneParams);
+      expect(workingConflict.status).toBe(409);
+    } finally {
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [request.quoteRequestId] } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [request.quoteRequestId, ...versionIds] } } });
       await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
       await prisma.clientContact.delete({ where: { id: request.contactId } });
       await prisma.client.delete({ where: { id: request.clientId } });

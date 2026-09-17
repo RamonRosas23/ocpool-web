@@ -436,7 +436,7 @@ export default function StaffQuotesPanel() {
     if (!currentVersion) return;
     setSaving(true); setError(null); setNotice(null);
     try {
-      const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/status`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ toStatus }) });
+      const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/status`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: toStatus === 'ENVIADA' ? 'publish' : 'submit_for_review' }) });
       await readResponse(response);
       setNotice(`Cotización movida a ${statusLabel(toStatus).toLowerCase()}.`);
       await refresh();

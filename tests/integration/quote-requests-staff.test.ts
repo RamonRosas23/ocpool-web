@@ -10,6 +10,7 @@ import {
   listStaffAssignees,
   listStaffQuoteRequestActivity,
   listStaffQuoteRequests,
+  markInformationReviewedQuoteRequest,
   requestInformationQuoteRequest,
   takeQuoteRequest,
   transitionQuoteRequest,
@@ -382,6 +383,41 @@ describe('staff quote request operations', () => {
     createdContactIds.push(newClient.contactId);
     expect(newClient.clientId).not.toBe(existing.clientId);
     expect(newClient.contactId).not.toBe(existing.contactId);
+  });
+
+  it('only marks information reviewed once a real customer reply exists (D2-03)', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+
+    const actor = await createStaffUser(`mark-reviewed-${Date.now()}`);
+    const suffix = `mark-reviewed-${Date.now()}`;
+    const request = await createRequest(suffix);
+    const operator = staffActor(actor.id, ['requests.read', 'requests.status.update', 'messaging.send']);
+    await transitionQuoteRequest(operator, request.quoteRequestId, { toStatus: 'EN_REVISION', reason: 'Revisión inicial' }, { prisma });
+
+    await expect(markInformationReviewedQuoteRequest(operator, request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+
+    await requestInformationQuoteRequest(operator, request.quoteRequestId, {
+      message: 'Necesitamos confirmar las dimensiones del proyecto.',
+      idempotencyKey: `mark-reviewed-info-${Date.now()}`,
+    }, { prisma, now: new Date('2026-09-17T12:00:00.000Z') });
+
+    await expect(markInformationReviewedQuoteRequest(operator, request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+    await expect(markInformationReviewedQuoteRequest(staffActor(actor.id, []), request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+
+    const customerUser = await prisma.user.create({
+      data: { email: `mark-reviewed-customer-${suffix}@example.test`, emailNormalized: `mark-reviewed-customer-${suffix}@example.test`, displayName: 'Mark reviewed customer', type: 'CUSTOMER', status: 'ACTIVE', clientId: request.clientId },
+    });
+    createdCustomerUserIds.push(customerUser.id);
+    const conversation = await prisma.conversation.findUniqueOrThrow({ where: { quoteRequestId_clientId: { quoteRequestId: request.quoteRequestId, clientId: request.clientId } }, select: { id: true } });
+    await prisma.conversationMessage.create({
+      data: { conversationId: conversation.id, senderUserId: customerUser.id, visibility: 'CUSTOMER', body: 'Las dimensiones son 10x5m.', createdAt: new Date('2026-09-17T12:05:00.000Z') },
+    });
+
+    const result = await markInformationReviewedQuoteRequest(operator, request.quoteRequestId, { prisma });
+    expect(result).toMatchObject({ quoteRequestId: request.quoteRequestId, fromStatus: 'INFORMACION_REQUERIDA', toStatus: 'EN_REVISION' });
+    expect(await prisma.quoteRequest.findUnique({ where: { id: request.quoteRequestId }, select: { status: true } })).toMatchObject({ status: 'EN_REVISION' });
+    expect(await prisma.auditLog.findFirst({ where: { entityId: request.quoteRequestId, action: 'quote_request.customer_response_reviewed' } })).not.toBeNull();
+    expect(await prisma.outboxEvent.findFirst({ where: { aggregateId: request.quoteRequestId, eventType: 'REQUEST.CUSTOMER_RESPONSE' } })).not.toBeNull();
   });
 
   afterAll(async () => {
