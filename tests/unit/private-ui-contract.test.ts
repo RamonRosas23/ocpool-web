@@ -32,6 +32,17 @@ describe('private UI foundation contract', () => {
     expect(Object.keys(PRIVATE_UI_TOKENS).every((name) => name.startsWith('--private-'))).toBe(true);
   });
 
+  it('renders a hidden field label as a real associated <label>, never a bare aria-label (U1-02 parte 2)', () => {
+    const field = readFileSync(join(process.cwd(), 'src/components/private/ui/PrivateField.tsx'), 'utf8');
+    expect(field).toContain('hideLabel');
+    expect(field).toContain("htmlFor={id}");
+    expect(field).toContain("hideLabel ? 'private-field__label--hidden' : 'private-field__label'");
+    expect(field).toContain('!required && !hideLabel && <small>Opcional</small>');
+
+    const css = readFileSync(join(process.cwd(), 'src/components/private/ui/private-ui.css'), 'utf8');
+    expect(css).toContain('.private-field__label--hidden');
+  });
+
   it('generates stable field relationships for description and errors', () => {
     expect(privateFieldA11y('request-email', true, true, true)).toEqual({
       labelId: 'request-email-label',

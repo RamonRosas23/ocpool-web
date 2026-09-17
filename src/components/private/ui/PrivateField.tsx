@@ -7,18 +7,19 @@ export type PrivateFieldChromeProps = {
   description?: ReactNode;
   error?: ReactNode;
   required?: boolean;
+  hideLabel?: boolean;
   className?: string;
   children: ReactNode;
 };
 
-export default function PrivateField({ id, label, description, error, required = false, className = '', children }: PrivateFieldChromeProps) {
+export default function PrivateField({ id, label, description, error, required = false, hideLabel = false, className = '', children }: PrivateFieldChromeProps) {
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
 
   return (
     <div className={`private-field ${className}`.trim()}>
-      <label className="private-field__label" id={a11y.labelId} htmlFor={id}>
+      <label className={hideLabel ? 'private-field__label--hidden' : 'private-field__label'} id={a11y.labelId} htmlFor={id}>
         <span>{label}</span>
-        {!required && <small>Opcional</small>}
+        {!required && !hideLabel && <small>Opcional</small>}
       </label>
       {description && <p className="private-field__description" id={a11y.descriptionId}>{description}</p>}
       {children}

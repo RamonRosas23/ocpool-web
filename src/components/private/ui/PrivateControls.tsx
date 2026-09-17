@@ -92,11 +92,11 @@ export type PrivateSelectProps = Omit<PrivateFieldChromeProps, 'children'> & {
 
 const EMPTY_SELECT_VALUE = '__private_ui_empty__';
 
-export function PrivateSelect({ id, label, description, error, required, className, value, options, onValueChange, placeholder = 'Selecciona una opción', disabled = false }: PrivateSelectProps) {
+export function PrivateSelect({ id, label, description, error, required, hideLabel, className, value, options, onValueChange, placeholder = 'Selecciona una opción', disabled = false }: PrivateSelectProps) {
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   const selectedValue = value || EMPTY_SELECT_VALUE;
   return (
-    <PrivateField id={id} label={label} description={description} error={error} required={required}>
+    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
       <SelectPrimitive.Root value={selectedValue} onValueChange={(nextValue) => onValueChange(nextValue === EMPTY_SELECT_VALUE ? '' : nextValue)} disabled={disabled}>
         <SelectPrimitive.Trigger id={id} className={joinClasses('private-control private-select__trigger', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required}>
           <SelectPrimitive.Value placeholder={placeholder} />

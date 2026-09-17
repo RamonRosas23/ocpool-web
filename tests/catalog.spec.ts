@@ -204,7 +204,7 @@ test.describe('staff catalog operations', () => {
     await itemActions.getByRole('button', { name: 'Editar' }).click();
     const editedItemName = `Concepto E2E editado ${suffix}`;
     await page.getByLabel('Nombre', { exact: true }).fill(editedItemName);
-    await page.getByRole('combobox', { name: 'Unidad (editar concepto)', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Unidad', exact: true }).click();
     await page.getByRole('option', { name: 'lote', exact: true }).click();
     await page.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(page.getByRole('status')).toContainText('Concepto actualizado.');

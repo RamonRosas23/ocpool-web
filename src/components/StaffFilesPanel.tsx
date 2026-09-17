@@ -1,8 +1,7 @@
 'use client';
 
 import { ChangeEvent, KeyboardEvent, useCallback, useEffect, useId, useState } from 'react';
-import SelectField from '@/components/SelectField';
-import { nextRovingTabIndex } from '@/components/private/ui';
+import { nextRovingTabIndex, PrivateSelect } from '@/components/private/ui';
 import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
 import { shouldResetUploadIdempotencyKey, type UploadStage } from '@/lib/private-file-upload';
 
@@ -97,6 +96,8 @@ export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPA
   const headingId = useId();
   const sharedTabId = useId();
   const internalTabId = useId();
+  const visibilityFieldId = useId();
+  const categoryFieldId = useId();
   const [items, setItems] = useState<FileItem[]>([]);
   const [mode, setMode] = useState<FileVisibility>('CUSTOMER');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -275,7 +276,7 @@ export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPA
 
   return <section className="staff-files" aria-labelledby={headingId}>
     <div className="staff-files__head"><div><p className="staff-section-label">Documentación</p><h3 id={headingId}>Archivos del expediente</h3><p className="staff-files__intro">Consulta y organiza el material relacionado sin salir del expediente.</p></div>{capabilities.filesUpload && <button type="button" className="staff-button staff-button--copper" onClick={() => setShowUpload((current) => !current)}>{showUpload ? 'Cerrar carga' : 'Añadir archivo'}</button>}</div>
-    {showUpload && capabilities.filesUpload && <div className="staff-files__upload"><label><span>Archivo</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" onChange={selectFile} disabled={uploading} /></label><label><span>Visibilidad</span><SelectField ariaLabel="Visibilidad" value={visibility} onValueChange={(value) => setVisibility(value as FileVisibility)} options={[{ value: 'CUSTOMER', label: 'Compartido con cliente' }, { value: 'INTERNAL', label: 'Sólo equipo' }]} disabled={uploading} /></label><label><span>Categoría</span><SelectField ariaLabel="Categoría" value={category} onValueChange={(value) => setCategory(value as FileCategory)} options={availableCategories.map((option) => ({ value: option, label: categoryLabel(option) }))} disabled={uploading} /></label><div className="staff-files__upload-foot"><span>{selectedFile ? selectedFile.name : 'Ningún archivo seleccionado'}</span><button type="button" className="staff-button staff-button--dark" disabled={!selectedFile || uploading} onClick={() => void upload()}>{uploading ? 'Cargando…' : error && selectedFile ? 'Reintentar carga' : 'Cargar archivo'}</button></div></div>}
+    {showUpload && capabilities.filesUpload && <div className="staff-files__upload"><label><span>Archivo</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" onChange={selectFile} disabled={uploading} /></label><PrivateSelect id={visibilityFieldId} label="Visibilidad" required value={visibility} onValueChange={(value) => setVisibility(value as FileVisibility)} options={[{ value: 'CUSTOMER', label: 'Compartido con cliente' }, { value: 'INTERNAL', label: 'Sólo equipo' }]} disabled={uploading} /><PrivateSelect id={categoryFieldId} label="Categoría" required value={category} onValueChange={(value) => setCategory(value as FileCategory)} options={availableCategories.map((option) => ({ value: option, label: categoryLabel(option) }))} disabled={uploading} /><div className="staff-files__upload-foot"><span>{selectedFile ? selectedFile.name : 'Ningún archivo seleccionado'}</span><button type="button" className="staff-button staff-button--dark" disabled={!selectedFile || uploading} onClick={() => void upload()}>{uploading ? 'Cargando…' : error && selectedFile ? 'Reintentar carga' : 'Cargar archivo'}</button></div></div>}
     {uploadState && <p className="staff-files__progress" role="status" aria-live="polite">{uploadState}{uploadProgress !== null && uploadState.startsWith('Subiendo') ? ` ${uploadProgress}%` : ''}</p>}
     {error && <div className="staff-files__error" role="alert"><p>{error}</p><button type="button" onClick={() => void loadFiles()}>Reintentar</button></div>}
     {!capabilities.filesRead && <div className="staff-files__empty"><strong>Archivos no disponibles.</strong><span>Tu rol no tiene permiso para consultar los archivos de este expediente.</span></div>}

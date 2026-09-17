@@ -115,6 +115,7 @@
 .private-field { display: grid; gap: var(--private-space-2); min-width: 0; }
 .private-field__label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--private-space-3); color: var(--private-color-ink); font-size: 12px; font-weight: 750; }
 .private-field__label small { color: var(--private-color-ink-muted); font-size: 10px; font-weight: 600; }
+.private-field__label--hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .private-field__description, .private-field__error { margin: 0; font-size: 11px; line-height: 1.5; }
 .private-field__description { color: var(--private-color-ink-muted); }
 .private-field__error { color: var(--private-color-danger); }
