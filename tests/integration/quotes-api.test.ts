@@ -110,6 +110,11 @@ describe('staff quotes API', () => {
     expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${versionId}/status`, salesToken, 'POST', { action: 'submit_for_review' }), { params: Promise.resolve({ versionId }) })).status).toBe(200);
     expect((await transitionQuoteRoute(endpoint(`/api/staff/quotes/versions/${versionId}/status`, salesToken, 'POST', { action: 'publish' }), { params: Promise.resolve({ versionId }) })).status).toBe(200);
     expect(await prisma.generatedDocument.findUnique({ where: { quoteVersionId_documentType: { quoteVersionId: versionId, documentType: 'QUOTE_PDF' } }, select: { status: true, readyAt: true } })).toMatchObject({ status: 'READY', readyAt: expect.any(Date) });
+    const publishedVersion = await prisma.quoteVersion.findUniqueOrThrow({ where: { id: versionId }, select: { quoteId: true } });
+    expect(await prisma.auditLog.findFirst({ where: { entityId: versionId, action: 'quote.version.published' } })).not.toBeNull();
+    expect(await prisma.outboxEvent.findFirst({ where: { aggregateId: publishedVersion.quoteId, eventType: 'QUOTE.PUBLISHED' } })).not.toBeNull();
+    const pdfReadyEvent = await prisma.outboxEvent.findFirst({ where: { eventType: 'QUOTE.PDF_READY' }, orderBy: { createdAt: 'desc' } });
+    expect(pdfReadyEvent?.payload).toMatchObject({ quoteRequestId: requestId, folio: expect.stringMatching(/^OCQ-/) });
     expect((await replaceDraftRoute(endpoint(`/api/staff/quotes/versions/${versionId}`, salesToken, 'PATCH', { priceListId, lines: [{ catalogItemId: itemId, quantity: '3' }] }), { params: Promise.resolve({ versionId }) })).status).toBe(409);
     expect(await prisma.quoteRequest.findUnique({ where: { id: requestId }, select: { status: true } })).toMatchObject({ status: 'COTIZACION_DISPONIBLE' });
   });

@@ -159,6 +159,10 @@ export default function ClientPortalPanel() {
 
   useEffect(() => { void loadRequests(); }, [loadRequests]);
   useEffect(() => { if (selectedId) void loadDetail(selectedId); else setWorkspace(null); }, [loadDetail, selectedId]);
+  useEffect(() => {
+    const requestFromUrl = new URLSearchParams(window.location.search).get('request');
+    if (requestFromUrl) setSelectedId(requestFromUrl);
+  }, []);
 
   const logout = async () => {
     await fetch('/api/auth/session', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' } }).catch(() => undefined);

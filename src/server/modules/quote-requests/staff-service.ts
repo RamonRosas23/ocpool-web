@@ -631,6 +631,19 @@ export async function updateStaffQuoteRequest(actor: Actor, quoteRequestId: stri
     await transaction.quoteRequestDetail.update({ where: { quoteRequestId: requestId }, data: nextDetail });
     await transaction.quoteRequest.update({ where: { id: requestId }, data: { updatedAt: now } });
 
+    if (nextContact.email !== existing.contact.email) {
+      const quote = await transaction.quote.findUnique({ where: { quoteRequestId: requestId }, select: { id: true } });
+      const staleAggregateIds = [requestId, ...(quote ? [quote.id] : [])];
+      await transaction.notificationDelivery.updateMany({
+        where: {
+          outboxEvent: { aggregateId: { in: staleAggregateIds } },
+          status: { in: ['PENDING', 'PROCESSING'] },
+          recipientUserId: null,
+        },
+        data: { status: 'CANCELLED', cancelReason: 'CONTACT_EMAIL_CHANGED' },
+      });
+    }
+
     await transaction.auditLog.create({
       data: {
         actorUserId: actor.userId,

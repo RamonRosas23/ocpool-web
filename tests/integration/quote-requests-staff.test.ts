@@ -28,6 +28,7 @@ describe('staff quote request operations', () => {
   const createdClientIds: string[] = [];
   const createdContactIds: string[] = [];
   const createdCustomerUserIds: string[] = [];
+  const createdNotificationDeliveryIds: string[] = [];
 
   const staffActor = (userId: string, permissions: string[]): Actor => ({
     userId,
@@ -315,6 +316,44 @@ describe('staff quote request operations', () => {
     await expect(updateStaffQuoteRequest(staffActor(actor.id, ['requests.read']), request.quoteRequestId, { detail: { location: 'Mérida' } }, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
 
+  it('cancels only the stale, unregistered-customer pending deliveries when contact email changes (D2-06)', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+
+    const actor = await createStaffUser(`email-change-${Date.now()}`);
+    const staffUser = await createStaffUser(`email-change-staff-${Date.now()}`);
+    const request = await createRequest(`email-change-${Date.now()}`);
+    const operator = staffActor(actor.id, ['requests.read', 'requests.edit']);
+
+    const outboxEvent = await prisma.outboxEvent.create({
+      data: { eventType: 'REQUEST.RECEIVED', aggregateType: 'QUOTE_REQUEST', aggregateId: request.quoteRequestId, payload: { quoteRequestId: request.quoteRequestId } },
+    });
+    const customerDelivery = await prisma.notificationDelivery.create({
+      data: { outboxEventId: outboxEvent.id, recipientUserId: null, recipientAddressCiphertext: 'ciphertext-a', recipientAddressHash: 'a'.repeat(64), templateKey: 'request.received', templateVersion: 'v1', status: 'PENDING' },
+    });
+    const staffDelivery = await prisma.notificationDelivery.create({
+      data: { outboxEventId: outboxEvent.id, recipientUserId: staffUser.id, recipientAddressCiphertext: 'ciphertext-b', recipientAddressHash: 'b'.repeat(64), templateKey: 'request.received', templateVersion: 'v1', status: 'PENDING' },
+    });
+    const alreadySentDelivery = await prisma.notificationDelivery.create({
+      data: { outboxEventId: outboxEvent.id, recipientUserId: null, recipientAddressCiphertext: 'ciphertext-c', recipientAddressHash: 'c'.repeat(64), templateKey: 'request.received', templateVersion: 'v1', status: 'SENT', processedAt: new Date() },
+    });
+    createdNotificationDeliveryIds.push(customerDelivery.id, staffDelivery.id, alreadySentDelivery.id);
+
+    await expect(updateStaffQuoteRequest(operator, request.quoteRequestId, {
+      detail: { location: 'Ensenada' },
+      reason: 'Corrección de ubicación, sin tocar contacto.',
+    }, { prisma })).resolves.toMatchObject({ quoteRequestId: request.quoteRequestId });
+    expect(await prisma.notificationDelivery.findUnique({ where: { id: customerDelivery.id } })).toMatchObject({ status: 'PENDING', cancelReason: null });
+
+    await expect(updateStaffQuoteRequest(operator, request.quoteRequestId, {
+      contact: { email: `email-changed-${Date.now()}@example.test` },
+      reason: 'Corrección de correo de contacto.',
+    }, { prisma })).resolves.toMatchObject({ quoteRequestId: request.quoteRequestId, changedFields: expect.arrayContaining(['contact.email']) });
+
+    expect(await prisma.notificationDelivery.findUnique({ where: { id: customerDelivery.id } })).toMatchObject({ status: 'CANCELLED', cancelReason: 'CONTACT_EMAIL_CHANGED' });
+    expect(await prisma.notificationDelivery.findUnique({ where: { id: staffDelivery.id } })).toMatchObject({ status: 'PENDING', cancelReason: null });
+    expect(await prisma.notificationDelivery.findUnique({ where: { id: alreadySentDelivery.id } })).toMatchObject({ status: 'SENT', cancelReason: null });
+  });
+
   it('requests information as one idempotent intent with message, access and recovery evidence', async () => {
     if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
 
@@ -422,6 +461,7 @@ describe('staff quote request operations', () => {
 
   afterAll(async () => {
     if (process.env.RUN_DB_TESTS !== '1') return;
+    await prisma.notificationDelivery.deleteMany({ where: { id: { in: createdNotificationDeliveryIds } } });
     await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: createdRequestIds } } });
     await prisma.auditLog.deleteMany({ where: { entityId: { in: createdRequestIds } } });
     await prisma.quoteRequest.deleteMany({ where: { id: { in: createdRequestIds } } });

@@ -703,5 +703,8 @@ export async function clonePublishedVersion(actor: Actor, quoteRequestId: string
 export async function publishQuoteVersion(actor: Actor, quoteVersionId: string, dependencies: QuoteServiceDependencies = {}) {
   requireEmployeePermission(actor, 'quotes.send');
   await generateQuotePdf(actor, quoteVersionId, { prisma: dependencies.prisma, now: dependencies.now });
-  return transitionQuoteVersion(actor, quoteVersionId, 'ENVIADA', dependencies);
+  return performQuoteVersionTransition(actor, quoteVersionId, 'ENVIADA', {
+    auditAction: 'quote.version.published',
+    outboxEventType: 'QUOTE.PUBLISHED',
+  }, dependencies);
 }

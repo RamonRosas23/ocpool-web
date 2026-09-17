@@ -38,7 +38,8 @@ function contactRecipient(contact: { id: string; email: string; displayName: str
   return { userId: null, email: contact.email, displayName: contact.displayName, audience: 'CUSTOMER' };
 }
 
-function customerContext(recipient: NotificationRecipientContext, actionPath = '/portal'): NotificationMappingContext {
+export function customerContext(recipient: NotificationRecipientContext, quoteRequestId?: string): NotificationMappingContext {
+  const actionPath = quoteRequestId ? `/portal?request=${encodeURIComponent(quoteRequestId)}` : '/portal';
   return recipient.userId
     ? { recipient, actionPath }
     : { recipient, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' };
@@ -97,7 +98,7 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       const request = await prisma.quoteRequest.findUnique({ where: { id: event.aggregateId }, include: { client: true, contact: { include: { user: true } } } });
       if (!request || stringValue(payload, 'quoteRequestId') !== request.id || stringValue(payload, 'folio') !== request.folio) return cancellation('INVALID_PAYLOAD');
       const recipient = request?.client.status === 'ACTIVE' ? contactRecipient(request.contact) : null;
-      return recipient ? { kind: 'RECIPIENTS', contexts: [customerContext(recipient)] } : cancellation('NO_RECIPIENT');
+      return recipient ? { kind: 'RECIPIENTS', contexts: [customerContext(recipient, request.id)] } : cancellation('NO_RECIPIENT');
     }
     case 'REQUEST.ASSIGNED': {
       if (event.aggregateType !== 'QUOTE_REQUEST' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
@@ -107,7 +108,8 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       const recipient = activeStaff(request.currentAssignee);
       return recipient ? { kind: 'RECIPIENTS', contexts: [staffContext(recipient, request.id, 'summary', flags)] } : cancellation('NO_RECIPIENT');
     }
-    case 'QUOTE.VERSION_STATUS_CHANGED': {
+    case 'QUOTE.VERSION_STATUS_CHANGED':
+    case 'QUOTE.PUBLISHED': {
       if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
       const quoteVersionId = stringValue(payload, 'quoteVersionId');
       const quoteRequestId = stringValue(payload, 'quoteRequestId');
@@ -115,7 +117,7 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       const quoteVersion = quote && quoteVersionId ? await prisma.quoteVersion.findFirst({ where: { id: quoteVersionId, quoteId: quote.id }, select: { id: true } }) : null;
       const recipient = quote?.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(quote.quoteRequest.contact) : null;
       if (!quote || !quoteVersionId || !quoteRequestId || stringValue(payload, 'folio') !== quote.quoteRequest.folio || quote.quoteRequestId !== quoteRequestId || !quoteVersion) return cancellation('INVALID_PAYLOAD');
-      return recipient ? { kind: 'RECIPIENTS', contexts: [customerContext(recipient)] } : cancellation('NO_RECIPIENT');
+      return recipient ? { kind: 'RECIPIENTS', contexts: [customerContext(recipient, quoteRequestId)] } : cancellation('NO_RECIPIENT');
     }
     case 'QUOTE.APPROVAL_REQUESTED': {
       if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
@@ -176,14 +178,14 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
         return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...staffContext({ ...recipient }, conversation.quoteRequestId, 'conversation', flags), senderName: message.sender.displayName, messagePreview: message.body }] } : cancellation('NO_RECIPIENT');
       }
       const recipient = conversation.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(conversation.quoteRequest.contact) : null;
-      return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient), senderName: message.sender?.displayName ?? 'Tu equipo OCPOOL', messagePreview: message.body }] } : cancellation('NO_RECIPIENT');
+      return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, conversation.quoteRequestId), senderName: message.sender?.displayName ?? 'Tu equipo OCPOOL', messagePreview: message.body }] } : cancellation('NO_RECIPIENT');
     }
     case 'FILE.AVAILABLE': {
       if (event.aggregateType !== 'FILE_ATTACHMENT' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
       const attachment = await prisma.fileAttachment.findUnique({ where: { id: event.aggregateId }, include: { quoteRequest: { include: { client: true, contact: { include: { user: true } } } } } });
       if (!attachment || attachment.status !== 'AVAILABLE' || attachment.visibility !== 'CUSTOMER' || stringValue(payload, 'fileId') !== attachment.id || stringValue(payload, 'quoteRequestId') !== attachment.quoteRequestId || stringValue(payload, 'visibility') !== 'CUSTOMER' || stringValue(payload, 'category') !== attachment.category) return cancellation(attachment?.visibility === 'INTERNAL' ? 'INTERNAL_VISIBILITY' : 'INVALID_PAYLOAD');
       const recipient = attachment.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(attachment.quoteRequest.contact) : null;
-      return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, '/portal'), folio: attachment.quoteRequest.folio, fileName: attachment.originalFileName }] } : cancellation('NO_RECIPIENT');
+      return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, attachment.quoteRequestId), folio: attachment.quoteRequest.folio, fileName: attachment.originalFileName }] } : cancellation('NO_RECIPIENT');
     }
     default:
       return cancellation('UNSUPPORTED_EVENT');

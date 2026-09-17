@@ -24,6 +24,7 @@ export const SUPPORTED_NOTIFICATION_EVENT_TYPES = [
   'REQUEST.RECEIVED',
   'REQUEST.ASSIGNED',
   'QUOTE.VERSION_STATUS_CHANGED',
+  'QUOTE.PUBLISHED',
   'QUOTE.APPROVAL_REQUESTED',
   'QUOTE.APPROVAL_RESOLVED',
   'QUOTE.ACCEPTED',
@@ -93,6 +94,7 @@ const authEmployeePayload = z.object({ tokenId: uuid, tokenCiphertext: z.string(
 const requestReceivedPayload = z.object({ quoteRequestId: uuid, folio, origin: z.enum(['PUBLIC_FORM', 'STAFF_CREATED']) }).passthrough();
 const requestAssignedPayload = z.object({ quoteRequestId: uuid, folio, assignedToId: uuid }).passthrough();
 const quoteStatusPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, fromStatus: z.string().min(1).max(40), toStatus: z.literal('ENVIADA') }).passthrough();
+const quotePublishedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio }).passthrough();
 const quoteApprovalRequestedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, versionNumber: z.number().int().positive(), approvalId: uuid, type: z.enum(['DISCOUNT', 'PRICE_OVERRIDE']) }).passthrough();
 const quoteApprovalResolvedPayload = quoteApprovalRequestedPayload.extend({ status: z.enum(['APPROVED', 'REJECTED']) });
 const quoteAcceptedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, versionNumber: z.number().int().positive(), acceptanceId: uuid, generatedDocumentId: uuid, termsVersion: z.string().min(1).max(64) }).passthrough();
@@ -105,6 +107,7 @@ const EVENT_AGGREGATE_TYPES: Record<string, string> = {
   'REQUEST.RECEIVED': 'QUOTE_REQUEST',
   'REQUEST.ASSIGNED': 'QUOTE_REQUEST',
   'QUOTE.VERSION_STATUS_CHANGED': 'QUOTE',
+  'QUOTE.PUBLISHED': 'QUOTE',
   'QUOTE.APPROVAL_REQUESTED': 'QUOTE',
   'QUOTE.APPROVAL_RESOLVED': 'QUOTE',
   'QUOTE.ACCEPTED': 'QUOTE',
@@ -192,6 +195,13 @@ export function mapNotificationEvent(event: NotificationEventInput, context: Not
       }
       case 'QUOTE.VERSION_STATUS_CHANGED': {
         const parsed = quoteStatusPayload.safeParse(event.payload);
+        const scope = rejectScope(context, 'CUSTOMER');
+        if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        if (scope) return scope;
+        return makeIntent(context, 'quote.version_sent', { recipientName: context.recipient.displayName, folio: parsed.data.folio });
+      }
+      case 'QUOTE.PUBLISHED': {
+        const parsed = quotePublishedPayload.safeParse(event.payload);
         const scope = rejectScope(context, 'CUSTOMER');
         if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
         if (scope) return scope;

@@ -741,6 +741,16 @@ describe('quote pricing and versioning service', () => {
       expect(legacy).toMatchObject({ fromStatus: 'BORRADOR', toStatus: 'EN_REVISION' });
       expect(await prisma.auditLog.findFirst({ where: { entityId: secondVersion.versionId, action: 'quote.version.status_changed' } })).not.toBeNull();
       expect(await prisma.outboxEvent.findFirst({ where: { aggregateId: secondVersion.quoteId, eventType: 'QUOTE.VERSION_STATUS_CHANGED' } })).not.toBeNull();
+
+      // D2-06 non-regression: reaching ENVIADA through the generic primitive (bypassing
+      // publishQuoteVersion) must keep emitting the OLD generic audit action/event, not
+      // the new dedicated QUOTE.PUBLISHED ones — only the named command owns that signal.
+      const legacyPublish = await transitionQuoteVersion(actor, secondVersion.versionId, 'ENVIADA', { prisma, now });
+      expect(legacyPublish).toMatchObject({ fromStatus: 'EN_REVISION', toStatus: 'ENVIADA' });
+      expect(await prisma.auditLog.findFirst({ where: { entityId: secondVersion.versionId, action: 'quote.version.status_changed', outcome: 'SUCCESS' } })).not.toBeNull();
+      expect(await prisma.auditLog.findFirst({ where: { entityId: secondVersion.versionId, action: 'quote.version.published' } })).toBeNull();
+      expect(await prisma.outboxEvent.findFirst({ where: { aggregateId: secondVersion.quoteId, eventType: 'QUOTE.VERSION_STATUS_CHANGED', payload: { path: ['toStatus'], equals: 'ENVIADA' } } })).not.toBeNull();
+      expect(await prisma.outboxEvent.findFirst({ where: { aggregateId: secondVersion.quoteId, eventType: 'QUOTE.PUBLISHED' } })).toBeNull();
     } finally {
       const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);

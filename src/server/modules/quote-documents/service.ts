@@ -77,7 +77,7 @@ async function audit(transaction: Prisma.TransactionClient, actorUserId: string 
   await transaction.auditLog.create({ data: { actorUserId, action, entityType: 'generated_document', entityId, outcome, metadata } });
 }
 
-async function outbox(transaction: Prisma.TransactionClient, eventType: string, document: { id: string; quoteId: string; quoteVersionId: string; templateVersion: string; byteSize: number; sha256: string }): Promise<void> {
+async function outbox(transaction: Prisma.TransactionClient, eventType: string, document: { id: string; quoteId: string; quoteVersionId: string; templateVersion: string; byteSize: number; sha256: string; quoteRequestId: string; folio: string }): Promise<void> {
   await transaction.outboxEvent.create({
     data: {
       eventType,
@@ -87,6 +87,8 @@ async function outbox(transaction: Prisma.TransactionClient, eventType: string, 
         documentId: document.id,
         quoteId: document.quoteId,
         quoteVersionId: document.quoteVersionId,
+        quoteRequestId: document.quoteRequestId,
+        folio: document.folio,
         templateVersion: document.templateVersion,
         byteSize: document.byteSize,
         sha256: document.sha256,
@@ -107,7 +109,7 @@ async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVers
   return rows[0] ?? null;
 }
 
-async function loadSnapshot(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<QuotePdfSnapshot> {
+async function loadSnapshot(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<{ snapshot: QuotePdfSnapshot; quoteRequestId: string }> {
   const version = await transaction.quoteVersion.findUnique({
     where: { id: quoteVersionId },
     include: {
@@ -118,29 +120,32 @@ async function loadSnapshot(transaction: Prisma.TransactionClient, quoteVersionI
   if (!version || !version.quote.quoteRequest.detail) throw new AppError('CONFLICT', 'La cotización no tiene un expediente comercial completo.', 409);
   const detail = version.quote.quoteRequest.detail;
   return {
-    folio: version.quote.quoteRequest.folio,
-    versionNumber: version.versionNumber,
-    clientName: version.quote.client.displayName,
-    projectType: detail.projectType,
-    location: detail.location,
-    description: detail.description,
-    currencyCode: version.currencyCode,
-    validUntil: version.validUntil,
-    lines: version.lines.map((line) => ({
-      name: line.name,
-      description: line.description,
-      unit: line.unit,
-      quantityMilliunits: line.quantityMilliunits,
-      unitPriceMinor: line.unitPriceMinor,
-      discountMinor: line.discountMinor,
-      taxMinor: line.taxMinor,
-      totalMinor: line.totalMinor,
-    })),
-    subtotalMinor: version.subtotalMinor,
-    discountTotalMinor: version.discountTotalMinor,
-    taxableTotalMinor: version.taxableTotalMinor,
-    taxTotalMinor: version.taxTotalMinor,
-    totalMinor: version.totalMinor,
+    quoteRequestId: version.quote.quoteRequestId,
+    snapshot: {
+      folio: version.quote.quoteRequest.folio,
+      versionNumber: version.versionNumber,
+      clientName: version.quote.client.displayName,
+      projectType: detail.projectType,
+      location: detail.location,
+      description: detail.description,
+      currencyCode: version.currencyCode,
+      validUntil: version.validUntil,
+      lines: version.lines.map((line) => ({
+        name: line.name,
+        description: line.description,
+        unit: line.unit,
+        quantityMilliunits: line.quantityMilliunits,
+        unitPriceMinor: line.unitPriceMinor,
+        discountMinor: line.discountMinor,
+        taxMinor: line.taxMinor,
+        totalMinor: line.totalMinor,
+      })),
+      subtotalMinor: version.subtotalMinor,
+      discountTotalMinor: version.discountTotalMinor,
+      taxableTotalMinor: version.taxableTotalMinor,
+      taxTotalMinor: version.taxTotalMinor,
+      totalMinor: version.totalMinor,
+    },
   };
 }
 
@@ -168,6 +173,7 @@ export async function generateQuotePdf(actor: Actor | null, quoteVersionIdInput:
 
   let pendingDocument: StoredDocument;
   let snapshot: QuotePdfSnapshot;
+  let snapshotQuoteRequestId: string;
   try {
     const prepared = await prisma.$transaction(async (transaction) => {
       const lockedVersion = await lockQuoteVersion(transaction, quoteVersionId);
@@ -186,7 +192,7 @@ export async function generateQuotePdf(actor: Actor | null, quoteVersionIdInput:
       const document = existing
         ? await transaction.generatedDocument.update({ where: { id: existing.id }, data: { status: 'PENDING', failureCode: null, deletedAt: null }, include: { storageObject: true } })
         : await transaction.generatedDocument.create({ data: { quoteId: lockedVersion.quoteId, quoteVersionId, templateVersion: 'quote-pdf-v1', contentType: PDF_CONTENT_TYPE, generatedAt: now }, include: { storageObject: true } });
-      snapshot = await loadSnapshot(transaction, quoteVersionId);
+      ({ snapshot, quoteRequestId: snapshotQuoteRequestId } = await loadSnapshot(transaction, quoteVersionId));
       return { pending: document as StoredDocument };
     });
     if ('existing' in prepared && prepared.existing) return serializeReadyDocument(prepared.existing);
@@ -226,7 +232,7 @@ export async function generateQuotePdf(actor: Actor | null, quoteVersionIdInput:
       });
       const updated = await transaction.generatedDocument.update({ where: { id: current.id }, data: { status: 'READY', storageObjectId: storageObject.id, byteSize: BigInt(rendered.byteSize), sha256: rendered.sha256, readyAt: now, failureCode: null }, include: { storageObject: true } });
       await audit(transaction, actorUserId, 'quote.pdf.generated', updated.id, 'SUCCESS', { quoteId: updated.quoteId, quoteVersionId: updated.quoteVersionId, templateVersion: updated.templateVersion, byteSize: rendered.byteSize, sha256: rendered.sha256 });
-      await outbox(transaction, 'QUOTE.PDF_READY', { id: updated.id, quoteId: updated.quoteId, quoteVersionId: updated.quoteVersionId, templateVersion: updated.templateVersion, byteSize: rendered.byteSize, sha256: rendered.sha256 });
+      await outbox(transaction, 'QUOTE.PDF_READY', { id: updated.id, quoteId: updated.quoteId, quoteVersionId: updated.quoteVersionId, quoteRequestId: snapshotQuoteRequestId, folio: snapshot.folio, templateVersion: updated.templateVersion, byteSize: rendered.byteSize, sha256: rendered.sha256 });
       return updated as StoredDocument;
     });
     return serializeReadyDocument(ready);
