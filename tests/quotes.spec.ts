@@ -154,14 +154,14 @@ test.describe('staff quote builder opt-in flow', () => {
     });
     const draftStartedAt = new Date();
     await page.getByRole('button', { name: 'Crear borrador' }).click();
-    await expect(page.locator('p.staff-notice')).toContainText(/Borrador actualizado|Nueva versión creada/, { timeout: 10_000 });
+    await expect(page.locator('.private-toast').last()).toContainText(/Borrador actualizado|Nueva versión creada/, { timeout: 10_000 });
     await expect(page.locator('.quotes-request-row.is-selected')).toContainText('Quote builder client', { timeout: 10_000 });
     const draftVersion = await prisma.quoteVersion.findFirst({ where: { quote: { quoteRequestId: requestId }, status: 'BORRADOR' }, orderBy: { versionNumber: 'desc' }, select: { id: true } });
     expect(draftVersion).not.toBeNull();
     const staffActor = { userId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.read', 'quotes.pdf.generate']), mfaVerified: true };
     const publishStartedAt = new Date();
     await page.getByRole('button', { name: 'Pasar a revisión' }).click();
-    await expect(page.locator('p.staff-notice')).toContainText('revisión', { timeout: 10_000 });
+    await expect(page.locator('.private-toast').last()).toContainText('revisión', { timeout: 10_000 });
     await expect(page.locator('.quotes-request-row.is-selected')).toContainText('Quote builder client', { timeout: 10_000 });
     const pdfRecoveryStartedAt = new Date();
     const reviewVersion = await prisma.quoteVersion.findFirst({ where: { id: draftVersion!.id, status: 'EN_REVISION' }, select: { id: true } });
@@ -205,7 +205,7 @@ test.describe('staff quote builder opt-in flow', () => {
       abandoned: false,
     });
     await page.getByRole('button', { name: 'Enviar cotización' }).click();
-    await expect(page.locator('p.staff-notice')).toContainText('enviada', { timeout: 10_000 });
+    await expect(page.locator('.private-toast').last()).toContainText('enviada', { timeout: 10_000 });
     await recordBaselineMeasurement({
       schemaVersion: 1,
       metricId: 'publish_quote',
@@ -241,7 +241,7 @@ test.describe('staff quote builder opt-in flow', () => {
 
     const newWorkingStartedAt = new Date();
     await page.getByRole('button', { name: 'Crear nueva versión' }).click();
-    await expect(page.locator('p.staff-notice')).toContainText('Nueva versión creada como borrador.', { timeout: 10_000 });
+    await expect(page.locator('.private-toast').last()).toContainText('Nueva versión creada como borrador.', { timeout: 10_000 });
     await expect(page.getByRole('heading', { name: 'Versión 2 · Borrador' })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Precio de 000 E2E concept', exact: true })).toHaveValue('150.00', { timeout: 10_000 });
     await expect(page.locator('.quotes-history')).toContainText('V1');
@@ -279,13 +279,13 @@ test.describe('staff quote builder opt-in flow', () => {
     await expect(page.locator('.quotes-summary__total')).not.toContainText('Revisa las líneas');
 
     await page.getByRole('button', { name: 'Guardar borrador' }).click();
-    await expect(page.locator('p.staff-notice')).toContainText('Borrador actualizado.', { timeout: 10_000 });
+    await expect(page.locator('.private-toast').last()).toContainText('Borrador actualizado.', { timeout: 10_000 });
     await page.getByRole('button', { name: 'Pasar a revisión' }).click();
-    await expect(page.locator('p.staff-notice')).toContainText('revisión', { timeout: 10_000 });
+    await expect(page.locator('.private-toast').last()).toContainText('revisión', { timeout: 10_000 });
     await page.getByRole('button', { name: 'Solicitar aprobación', exact: true }).click();
-    await expect(page.locator('p.staff-notice')).toContainText('Aprobación solicitada', { timeout: 10_000 });
+    await expect(page.locator('.private-toast').last()).toContainText('Aprobación solicitada', { timeout: 10_000 });
     await page.getByRole('button', { name: 'Solicitar aprobación de concepto especial' }).click();
-    await expect(page.locator('p.staff-notice')).toContainText('Aprobación solicitada', { timeout: 10_000 });
+    await expect(page.locator('.private-toast').last()).toContainText('Aprobación solicitada', { timeout: 10_000 });
 
     const browser = page.context().browser();
     expect(browser).not.toBeNull();
@@ -301,12 +301,12 @@ test.describe('staff quote builder opt-in flow', () => {
       await expect(approverPage.getByRole('heading', { name: /OCQ-\d{4}-\d{6}/u })).toBeVisible();
       await expect(approverPage.getByRole('button', { name: 'Aprobar descuento' })).toBeVisible({ timeout: 10_000 });
       await approverPage.getByRole('button', { name: 'Aprobar descuento' }).click();
-      await expect(approverPage.locator('p.staff-notice')).toContainText('Descuento aprobado', { timeout: 10_000 });
+      await expect(approverPage.locator('.private-toast').last()).toContainText('Descuento aprobado', { timeout: 10_000 });
       await expect(approverPage.getByRole('button', { name: 'Aprobar concepto especial' })).toBeVisible({ timeout: 10_000 });
       await approverPage.getByRole('button', { name: 'Aprobar concepto especial' }).click();
-      await expect(approverPage.locator('p.staff-notice')).toContainText('Concepto especial aprobado', { timeout: 10_000 });
+      await expect(approverPage.locator('.private-toast').last()).toContainText('Concepto especial aprobado', { timeout: 10_000 });
       await approverPage.getByRole('button', { name: 'Enviar cotización' }).click();
-      await expect(approverPage.locator('p.staff-notice')).toContainText('enviada', { timeout: 10_000 });
+      await expect(approverPage.locator('.private-toast').last()).toContainText('enviada', { timeout: 10_000 });
       await recordBaselineMeasurement({
         schemaVersion: 1,
         metricId: 'draft_to_approval_resolution',

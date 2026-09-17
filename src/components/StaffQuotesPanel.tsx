@@ -11,7 +11,7 @@ import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
-import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
+import { PrivateBlockingState, PrivateLinkButton, PrivatePagination, usePrivateToast } from '@/components/private/ui';
 import {
   QUOTE_REQUEST_BUDGET_RANGE_LABELS,
   QUOTE_REQUEST_PROJECT_STAGE_LABELS,
@@ -223,7 +223,7 @@ export default function StaffQuotesPanel() {
   const [saving, setSaving] = useState(false);
   const [restricted, setRestricted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const { showToast } = usePrivateToast();
 
   const loadBase = useCallback(async (currentPage: number, query: string) => {
     setLoading(true);
@@ -397,7 +397,7 @@ export default function StaffQuotesPanel() {
 
   const saveDraft = async () => {
     if (!workspace || !selectedPriceListId || draftLines.length === 0 || !capabilities?.quotesCreate) return;
-    setSaving(true); setError(null); setNotice(null);
+    setSaving(true); setError(null);
     try {
       const payload = {
         priceListId: selectedPriceListId,
@@ -432,7 +432,7 @@ export default function StaffQuotesPanel() {
       const isDraftUpdate = currentVersion?.status === 'BORRADOR';
       const response = await fetch(isDraftUpdate ? `/api/staff/quotes/versions/${currentVersion.id}` : `/api/staff/quotes/${workspace.request.id}`, { method: isDraftUpdate ? 'PATCH' : 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       await readApiResponseOrThrow(response, 'No fue posible guardar la cotización.');
-      setNotice(isDraftUpdate ? 'Borrador actualizado.' : 'Nueva versión creada como borrador.');
+      showToast(isDraftUpdate ? 'Borrador actualizado.' : 'Nueva versión creada como borrador.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible guardar la cotización.'); }
     finally { setSaving(false); }
@@ -440,11 +440,11 @@ export default function StaffQuotesPanel() {
 
   const transition = async (toStatus: string) => {
     if (!currentVersion) return;
-    setSaving(true); setError(null); setNotice(null);
+    setSaving(true); setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/status`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: toStatus === 'ENVIADA' ? 'publish' : 'submit_for_review' }) });
       await readApiResponseOrThrow(response, 'No fue posible cambiar el estado.');
-      setNotice(`Cotización movida a ${statusLabel(toStatus).toLowerCase()}.`);
+      showToast(`Cotización movida a ${statusLabel(toStatus).toLowerCase()}.`);
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible cambiar el estado.'); }
     finally { setSaving(false); }
@@ -452,7 +452,7 @@ export default function StaffQuotesPanel() {
 
   const requestDiscountApproval = async () => {
     if (!currentVersion || !hasDiscount || currentVersion.status !== 'EN_REVISION') return;
-    setSaving(true); setError(null); setNotice(null);
+    setSaving(true); setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/approvals`, {
         method: 'POST',
@@ -461,14 +461,14 @@ export default function StaffQuotesPanel() {
         body: JSON.stringify({ type: 'DISCOUNT', policyVersion: 'discount-v1', thresholdBps: Math.max(...currentVersion.lines.map((line) => line.discountBasisPoints), 0) }),
       });
       await readApiResponseOrThrow(response, 'No fue posible solicitar la aprobación.');
-      setNotice('Aprobación solicitada. Una persona autorizada debe resolverla antes de enviar la cotización.');
+      showToast('Aprobación solicitada. Una persona autorizada debe resolverla antes de enviar la cotización.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible solicitar la aprobación.'); }
     finally { setSaving(false); }
   };
 
   const decideDiscountApproval = async (approvalId: string, decision: 'APPROVED' | 'REJECTED') => {
-    setSaving(true); setError(null); setNotice(null);
+    setSaving(true); setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/approvals/${approvalId}/decision`, {
         method: 'POST',
@@ -477,7 +477,7 @@ export default function StaffQuotesPanel() {
         body: JSON.stringify({ decision, ...(decision === 'REJECTED' ? { reason: 'No se autoriza el descuento en esta versión.' } : {}) }),
       });
       await readApiResponseOrThrow(response, 'No fue posible resolver la aprobación.');
-      setNotice(decision === 'APPROVED' ? 'Descuento aprobado. Ya puedes enviar la cotización.' : 'Aprobación rechazada; revisa la propuesta antes de continuar.');
+      showToast(decision === 'APPROVED' ? 'Descuento aprobado. Ya puedes enviar la cotización.' : 'Aprobación rechazada; revisa la propuesta antes de continuar.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible resolver la aprobación.'); }
     finally { setSaving(false); }
@@ -485,7 +485,7 @@ export default function StaffQuotesPanel() {
 
   const requestSpecialApproval = async () => {
     if (!currentVersion || !hasSpecialLines || currentVersion.status !== 'EN_REVISION') return;
-    setSaving(true); setError(null); setNotice(null);
+    setSaving(true); setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/approvals`, {
         method: 'POST',
@@ -494,14 +494,14 @@ export default function StaffQuotesPanel() {
         body: JSON.stringify({ type: 'SPECIAL_CONCEPT', policyVersion: 'special-concept-v1' }),
       });
       await readApiResponseOrThrow(response, 'No fue posible solicitar la aprobación.');
-      setNotice('Aprobación solicitada. Una persona autorizada debe resolverla antes de enviar la cotización.');
+      showToast('Aprobación solicitada. Una persona autorizada debe resolverla antes de enviar la cotización.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible solicitar la aprobación.'); }
     finally { setSaving(false); }
   };
 
   const decideSpecialApproval = async (approvalId: string, decision: 'APPROVED' | 'REJECTED') => {
-    setSaving(true); setError(null); setNotice(null);
+    setSaving(true); setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/approvals/${approvalId}/decision`, {
         method: 'POST',
@@ -510,7 +510,7 @@ export default function StaffQuotesPanel() {
         body: JSON.stringify({ decision, ...(decision === 'REJECTED' ? { reason: 'No se autorizan los conceptos especiales de esta versión.' } : {}) }),
       });
       await readApiResponseOrThrow(response, 'No fue posible resolver la aprobación.');
-      setNotice(decision === 'APPROVED' ? 'Concepto especial aprobado. Ya puedes enviar la cotización.' : 'Aprobación rechazada; revisa la propuesta antes de continuar.');
+      showToast(decision === 'APPROVED' ? 'Concepto especial aprobado. Ya puedes enviar la cotización.' : 'Aprobación rechazada; revisa la propuesta antes de continuar.');
       await refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible resolver la aprobación.'); }
     finally { setSaving(false); }
@@ -522,7 +522,6 @@ export default function StaffQuotesPanel() {
     <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Constructor de cotizaciones</div></div></header>
     <div className="staff-content">
       <div className="staff-intro"><div><p className="staff-kicker">Trabajo comercial</p><h1>Cotizaciones</h1><p className="staff-intro__copy">Convierte el alcance de cada expediente en una propuesta trazable, precisa y lista para revisión.</p></div><div className="staff-intro__metric"><strong>{total}</strong><span>expedientes listos</span></div></div>
-      {notice && <p className="staff-notice" role="status">{notice}</p>}
       {error && <p className="staff-error" role="alert">{error}</p>}
       <section className="quotes-workspace" aria-label="Constructor de cotizaciones">
         <aside className="quotes-rail">
@@ -533,7 +532,7 @@ export default function StaffQuotesPanel() {
             {!loading && requests.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark">—</span><h2>Sin expedientes listos.</h2><p>Las solicitudes en elaboración o negociación aparecerán aquí.</p></div>}
             {!loading && requests.map((item) => <button className={`quotes-request-row${selectedId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedId(item.id)}><span className="quotes-request-row__signal" aria-hidden="true" /><span><strong>{item.folio}</strong><b>{item.client.displayName}</b><small>{item.detail?.projectType ?? 'Sin tipo'} · {item.detail?.location ?? 'Sin ubicación'}</small></span><em>{item.quote?.currentVersion ? `V${item.quote.currentVersion.versionNumber}` : 'Nuevo'}</em></button>)}
           </div>
-          <div className="staff-pagination"><button type="button" className="staff-pagination__button" disabled={page <= 1 || loading} onClick={() => setPage((value) => value - 1)}>Anterior</button><button type="button" className="staff-pagination__button" disabled={page >= totalPages || loading} onClick={() => setPage((value) => value + 1)}>Siguiente</button></div>
+          <PrivatePagination page={page} totalPages={totalPages} disabled={loading} onPrevious={() => setPage((value) => value - 1)} onNext={() => setPage((value) => value + 1)} />
         </aside>
         <section className="quotes-main">
           {loadingWorkspace && <div className="staff-detail__loading"><span /><span /><span /></div>}

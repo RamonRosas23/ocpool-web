@@ -8,7 +8,7 @@ import SelectField from '@/components/SelectField';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
-import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
+import { PrivateBlockingState, PrivateLinkButton, PrivatePagination } from '@/components/private/ui';
 import {
   QUOTE_REQUEST_BUDGET_RANGE_LABELS,
   QUOTE_REQUEST_PROJECT_STAGE_LABELS,
@@ -328,7 +328,7 @@ export default function StaffRequestsPanel() {
               {!loadingList && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark">—</span><h2>No hay solicitudes aquí.</h2><p>Prueba con otro estado o término de búsqueda.</p></div>}
               {!loadingList && items.map((item) => <button className={`staff-request-row${selectedId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedId(item.id)}><span className={`staff-status-dot staff-status-dot--${item.status.toLowerCase()}`} aria-hidden="true" /><span className="staff-request-row__main"><strong>{item.folio}</strong><span>{item.client.displayName}</span><small>{item.detail?.projectType ?? 'Sin detalle'} · {item.detail?.location ?? 'Sin ubicación'}</small></span><span className="staff-request-row__date">{formatDate(item.createdAt)}</span></button>)}
             </div>
-            <div className="staff-pagination"><button type="button" className="staff-pagination__button" disabled={page <= 1 || loadingList} onClick={() => setPage((current) => current - 1)}>Anterior</button><button type="button" className="staff-pagination__button" disabled={page >= totalPages || loadingList} onClick={() => setPage((current) => current + 1)}>Siguiente</button></div>
+            <PrivatePagination page={page} totalPages={totalPages} disabled={loadingList} onPrevious={() => setPage((current) => current - 1)} onNext={() => setPage((current) => current + 1)} />
           </aside>
 
           <section className="staff-detail" aria-label="Detalle de solicitud">

@@ -8,7 +8,7 @@ import DateField from '@/components/DateField';
 import SelectField from '@/components/SelectField';
 import MoneyField from '@/components/MoneyField';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
-import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
+import { PrivateBlockingState, PrivateLinkButton, PrivatePagination } from '@/components/private/ui';
 import { parseMoneyInput } from '@/lib/money-input';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
@@ -380,7 +380,7 @@ export default function StaffCatalogPanel() {
           <form className="staff-filters" onSubmit={submitSearch}><label><span>Buscar concepto</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Clave o nombre" maxLength={100} /></label><label className="catalog-filters__toggle"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>Mostrar archivados</span></label><button className="staff-button staff-button--filter" type="submit">Buscar</button></form>
           <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `${items.length} de ${total}`}</span><span>Página {page} / {totalPages}</span></div>
           <div className="catalog-item-list" aria-live="polite">{loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}{!loading && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark">—</span><h2>Catálogo vacío.</h2><p>Prueba otra búsqueda o agrega el primer concepto.</p></div>}{!loading && items.map((item) => <button className={`catalog-item-row${selectedItemId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedItemId(item.id)}><span className="catalog-item-row__code">{item.code}</span><strong>{item.name}</strong><small>{item.category?.name ?? 'Sin categoría'} · {item.unit}{item.status === 'ARCHIVED' ? ' · Archivado' : ''}</small></button>)}</div>
-          <div className="staff-pagination"><button type="button" className="staff-pagination__button" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Anterior</button><button type="button" className="staff-pagination__button" disabled={page >= totalPages || loading} onClick={() => setPage((current) => current + 1)}>Siguiente</button></div>
+          <PrivatePagination page={page} totalPages={totalPages} disabled={loading} onPrevious={() => setPage((current) => current - 1)} onNext={() => setPage((current) => current + 1)} />
         </aside>
         <section className="catalog-main">
           <div className="catalog-main__top"><div><p className="staff-section-label">Concepto seleccionado</p>{selectedItem ? <><h2>{selectedItem.name}</h2><p className="catalog-main__meta">{selectedItem.code} · {selectedItem.unit} · actualizado {formatDate(selectedItem.updatedAt)}</p></> : <h2>Selecciona un concepto</h2>}</div>{selectedItem && capabilities.catalogManage && <div className="catalog-main__actions"><button className="staff-button" type="button" disabled={saving} onClick={startEditItem}>Editar</button><button className="staff-button" type="button" disabled={saving} onClick={() => void toggleItemStatus()}>{selectedItem.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'}</button></div>}</div>

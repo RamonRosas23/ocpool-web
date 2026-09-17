@@ -261,13 +261,15 @@ describe('request workspace V2 route contract', () => {
     const detail = readProjectFile('src/components/RequestWorkspaceDetailV2.tsx');
     const header = readProjectFile('src/components/RequestWorkspaceHeaderV2.tsx');
     const actions = readProjectFile('src/components/RequestWorkspaceActionsV2.tsx');
+    const menu = readProjectFile('src/components/private/ui/PrivateMenu.tsx');
 
     expect(detail).toContain('RequestWorkspaceHeaderV2');
     expect(detail).toContain('getRequestWorkspacePrimaryAction');
     expect(detail).toContain('secondaryActions');
     expect(detail).toContain('actionsRef');
-    expect(header).toContain('aria-haspopup="menu"');
-    expect(header).toContain('role="menuitem"');
+    expect(header).toContain('PrivateMenu');
+    expect(menu).toContain('aria-haspopup="menu"');
+    expect(menu).toContain('role="menuitem"');
     expect(header).toContain('Siguiente actor');
     expect(header).toContain('Atención');
     expect(actions).toContain('RequestWorkspaceActionsHandle');

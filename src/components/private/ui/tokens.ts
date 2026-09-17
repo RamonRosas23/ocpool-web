@@ -34,6 +34,7 @@ export const PRIVATE_UI_TOKENS = Object.freeze({
   '--private-motion-standard': '160ms ease',
   '--private-z-popover': '20',
   '--private-z-dialog': '30',
+  '--private-z-toast': '40',
 } as const);
 
 export type PrivateUiTokenName = keyof typeof PRIVATE_UI_TOKENS;

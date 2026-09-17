@@ -16,5 +16,10 @@ export {
 export type { PrivateButtonProps, PrivateIconButtonProps, PrivateLinkButtonProps, PrivateSelectOption, PrivateSelectProps } from './PrivateControls';
 export { PrivateStatus, PrivateSkeleton, PrivateEmptyState, PrivateBlockingState } from './PrivateStates';
 export { default as PrivateSurfaceRoot } from '../PrivateSurfaceRoot';
+export { PrivateToastProvider, usePrivateToast } from './PrivateToast';
+export { PrivatePagination } from './PrivatePagination';
+export type { PrivatePaginationProps } from './PrivatePagination';
+export { PrivateMenu } from './PrivateMenu';
+export type { PrivateMenuItem, PrivateMenuProps } from './PrivateMenu';
 export { PRIVATE_UI_BREAKPOINTS, PRIVATE_UI_REQUIRED_TOKEN_GROUPS, PRIVATE_UI_TOKENS } from './tokens';
 export type { PrivateUiTokenName } from './tokens';
