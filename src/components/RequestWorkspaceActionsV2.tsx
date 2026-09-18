@@ -1,7 +1,7 @@
 'use client';
 
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { PrivateBlockingState, PrivateButton, PrivateSelect, PrivateTextArea } from '@/components/private/ui';
+import { PrivateBlockingState, PrivateButton, PrivateDialog, PrivateSelect, PrivateTextArea } from '@/components/private/ui';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
 import { requestWorkspaceStatusActionLabel, type RequestWorkspacePrimaryAction } from '@/lib/request-workspace-primary-action';
@@ -77,14 +77,9 @@ const RequestWorkspaceActionsV2 = forwardRef<RequestWorkspaceActionsHandle, Requ
   const [expanded, setExpanded] = useState(!compact);
   const [informationIdempotencyKey, setInformationIdempotencyKey] = useState(() => getOrCreateIdempotencyKey(null, 'request-information'));
   const informationTriggerRef = useRef<HTMLButtonElement>(null);
-  const informationDrawerRef = useRef<HTMLDivElement>(null);
   const informationTitleId = useId();
   const informationDescriptionId = useId();
   const informationDrawerId = useId();
-  const restoreInformationFocus = useCallback(() => {
-    informationTriggerRef.current?.focus();
-    if (!informationTriggerRef.current) document.getElementById('request-workspace-v2-primary-action')?.focus();
-  }, []);
 
   useEffect(() => {
     setExpanded(!compact);
@@ -109,19 +104,6 @@ const RequestWorkspaceActionsV2 = forwardRef<RequestWorkspaceActionsHandle, Requ
       });
     return () => controller.abort();
   }, [canReassign]);
-
-  useEffect(() => {
-    if (!informationOpen) return;
-    informationDrawerRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && busyAction !== 'information') {
-        setInformationOpen(false);
-        restoreInformationFocus();
-      }
-    };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [busyAction, informationOpen, restoreInformationFocus]);
 
   const run = useCallback(async (action: string, path: string, body: unknown, successMessage: string, after?: () => void | Promise<void>) => {
     setBusyAction(action);
@@ -185,7 +167,6 @@ const RequestWorkspaceActionsV2 = forwardRef<RequestWorkspaceActionsHandle, Requ
       });
       await readResponse(response);
       setInformationOpen(false);
-      restoreInformationFocus();
       setNotice('Solicitud de información registrada. El aviso quedó en cola para entrega.');
       await onUpdated();
     } catch (caught) {
@@ -234,7 +215,7 @@ const RequestWorkspaceActionsV2 = forwardRef<RequestWorkspaceActionsHandle, Requ
       <section className="request-workspace-v2__action-card" aria-labelledby="request-workspace-v2-review-title">
         <p className="private-kicker">Checklist de revisión</p>
         <h3 id="request-workspace-v2-review-title">Avanza el expediente</h3>
-        {canRequestInformation && (primaryActionKey !== 'request.information' || informationOpen) && <div className="request-workspace-v2__information-request">{primaryActionKey !== 'request.information' && <PrivateButton ref={informationTriggerRef} type="button" variant="secondary" busy={busyAction === 'information'} aria-expanded={informationOpen} aria-controls={informationOpen ? informationDrawerId : undefined} onClick={openInformation}>Solicitar información</PrivateButton>}{informationOpen && <div id={informationDrawerId} ref={informationDrawerRef} className="request-workspace-v2__information-drawer" role="dialog" aria-modal="false" aria-labelledby={informationTitleId} aria-describedby={informationDescriptionId} tabIndex={-1}><p className="private-kicker">Una sola intención</p><h4 id={informationTitleId}>Qué necesitamos del cliente</h4><p id={informationDescriptionId} className="request-workspace-v2__muted">El expediente cambiará a Información requerida cuando el mensaje y el evento queden registrados.</p><fieldset className="request-workspace-v2__information-fields"><legend>Campos por confirmar</legend>{informationFieldOptions.length > 0 ? informationFieldOptions.map(({ value, label }) => <label key={value}><input type="checkbox" checked={missingFields.includes(value)} onChange={(event) => setMissingFields((current) => event.target.checked ? [...new Set([...current, value])] : current.filter((field) => field !== value))} />{label}</label>) : <p className="request-workspace-v2__muted">No hay campos incompletos detectados; el mensaje puede pedir una confirmación abierta.</p>}</fieldset><PrivateTextArea id="request-workspace-v2-information-message" label="Mensaje para el cliente" value={informationMessage} onChange={(event) => setInformationMessage(event.target.value)} required rows={5} /><div className="request-workspace-v2__information-recipient"><p className="private-kicker">Canal y destinatario</p><strong>Portal del cliente + aviso por correo</strong><span>{contact.displayName} · {contact.email}</span>{contact.phone && <span>{contact.phone}</span>}<small>El contenido compartido queda visible en el expediente del cliente.</small></div>{capabilities.identityUsersManage && contact.user?.status !== 'ACTIVE' && <label className="request-workspace-v2__information-access"><input type="checkbox" checked={enablePortalAccess} onChange={(event) => setEnablePortalAccess(event.target.checked)} />Habilitar o reutilizar su acceso al portal y enviarle un enlace seguro.</label>}<div className="request-workspace-v2__information-actions"><PrivateButton type="button" variant="quiet" onClick={() => { setInformationOpen(false); restoreInformationFocus(); }} disabled={busyAction === 'information'}>Cancelar</PrivateButton><PrivateButton type="button" busy={busyAction === 'information'} onClick={() => void requestInformation()}>Enviar y esperar información</PrivateButton></div></div>}</div>}
+        {canRequestInformation && (primaryActionKey !== 'request.information' || informationOpen) && <div className="request-workspace-v2__information-request">{primaryActionKey !== 'request.information' && <PrivateButton ref={informationTriggerRef} type="button" variant="secondary" busy={busyAction === 'information'} aria-expanded={informationOpen} aria-controls={informationOpen ? informationDrawerId : undefined} onClick={openInformation}>Solicitar información</PrivateButton>}<PrivateDialog open={informationOpen} onClose={() => { if (busyAction !== 'information') setInformationOpen(false); }} modal={false} id={informationDrawerId} className="request-workspace-v2__information-drawer" labelledBy={informationTitleId} describedBy={informationDescriptionId}><p className="private-kicker">Una sola intención</p><h4 id={informationTitleId}>Qué necesitamos del cliente</h4><p id={informationDescriptionId} className="request-workspace-v2__muted">El expediente cambiará a Información requerida cuando el mensaje y el evento queden registrados.</p><fieldset className="request-workspace-v2__information-fields"><legend>Campos por confirmar</legend>{informationFieldOptions.length > 0 ? informationFieldOptions.map(({ value, label }) => <label key={value}><input type="checkbox" checked={missingFields.includes(value)} onChange={(event) => setMissingFields((current) => event.target.checked ? [...new Set([...current, value])] : current.filter((field) => field !== value))} />{label}</label>) : <p className="request-workspace-v2__muted">No hay campos incompletos detectados; el mensaje puede pedir una confirmación abierta.</p>}</fieldset><PrivateTextArea id="request-workspace-v2-information-message" label="Mensaje para el cliente" value={informationMessage} onChange={(event) => setInformationMessage(event.target.value)} required rows={5} /><div className="request-workspace-v2__information-recipient"><p className="private-kicker">Canal y destinatario</p><strong>Portal del cliente + aviso por correo</strong><span>{contact.displayName} · {contact.email}</span>{contact.phone && <span>{contact.phone}</span>}<small>El contenido compartido queda visible en el expediente del cliente.</small></div>{capabilities.identityUsersManage && contact.user?.status !== 'ACTIVE' && <label className="request-workspace-v2__information-access"><input type="checkbox" checked={enablePortalAccess} onChange={(event) => setEnablePortalAccess(event.target.checked)} />Habilitar o reutilizar su acceso al portal y enviarle un enlace seguro.</label>}<div className="request-workspace-v2__information-actions"><PrivateButton type="button" variant="quiet" onClick={() => setInformationOpen(false)} disabled={busyAction === 'information'}>Cancelar</PrivateButton><PrivateButton type="button" busy={busyAction === 'information'} onClick={() => void requestInformation()}>Enviar y esperar información</PrivateButton></div></PrivateDialog></div>}
         {canChangeStatus ? <><PrivateTextArea id="request-workspace-v2-status-reason" label="Nota de la acción" value={statusReason} onChange={(event) => setStatusReason(event.target.value)} description="Opcional para revisión; úsala para dejar contexto operativo." rows={3} /><div className="request-workspace-v2__status-actions">{availableStatusTransitions.filter((nextStatus) => primaryActionKey !== `request.status:${nextStatus}`).map((nextStatus) => <PrivateButton key={nextStatus} type="button" variant={nextStatus === 'RECHAZADA' ? 'danger' : nextStatus === 'EN_ELABORACION' ? 'primary' : 'secondary'} busy={busyAction === `status:${nextStatus}`} onClick={() => void transition(nextStatus)}>{requestWorkspaceStatusActionLabel(nextStatus)}</PrivateButton>)}</div></> : <p className="request-workspace-v2__muted">No hay pasos disponibles para este estado o tu cuenta sólo tiene acceso de lectura.</p>}
         <span className="request-workspace-v2__status-context" aria-hidden="true">{status}</span>
       </section>

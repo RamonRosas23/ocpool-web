@@ -54,6 +54,23 @@ describe('private UI foundation contract', () => {
     expect(datePicker).toContain('triggerRef.current?.focus()');
   });
 
+  it('consolidates focus-trap, focus-restore and Escape handling in PrivateDialog (U1-02 parte 4)', () => {
+    const dialog = readFileSync(join(process.cwd(), 'src/components/private/ui/PrivateDialog.tsx'), 'utf8');
+    expect(dialog).toContain('function focusableElements(');
+    expect(dialog).toContain("document.activeElement instanceof HTMLElement ? document.activeElement : null");
+    expect(dialog).toContain('previouslyFocusedRef.current?.focus()');
+    expect(dialog).toContain("event.key === 'Escape'");
+    expect(dialog).toContain("document.body.style.overflow = 'hidden'");
+
+    const clientAcceptance = readFileSync(join(process.cwd(), 'src/components/ClientQuoteActions.tsx'), 'utf8');
+    expect(clientAcceptance).toContain("import { PrivateDialog } from '@/components/private/ui'");
+    expect(clientAcceptance).toContain('<PrivateDialog');
+
+    const requestActions = readFileSync(join(process.cwd(), 'src/components/RequestWorkspaceActionsV2.tsx'), 'utf8');
+    expect(requestActions).toContain('PrivateDialog');
+    expect(requestActions).toContain('modal={false}');
+  });
+
   it('generates stable field relationships for description and errors', () => {
     expect(privateFieldA11y('request-email', true, true, true)).toEqual({
       labelId: 'request-email-label',

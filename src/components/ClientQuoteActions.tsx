@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { PrivateDialog } from '@/components/private/ui';
 
 type QuoteVersionActionData = Readonly<{
   id: string;
@@ -35,10 +36,6 @@ function createIdempotencyKey(): string {
   return `portal-quote-${Date.now()}-${globalThis.crypto.randomUUID()}`;
 }
 
-function focusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [href], [tabindex="0"]'));
-}
-
 export default function ClientQuoteActions({ quoteId, version, validity, onAccepted }: Props) {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -48,40 +45,8 @@ export default function ClientQuoteActions({ quoteId, version, validity, onAccep
   const [accepting, setAccepting] = useState(false);
   const [acceptanceError, setAcceptanceError] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(false);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const signerInputRef = useRef<HTMLInputElement | null>(null);
   const idempotencyKeyRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!dialogOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    signerInputRef.current?.focus();
-    const dialog = dialogRef.current;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !accepting) {
-        setDialogOpen(false);
-        return;
-      }
-      if (event.key !== 'Tab' || !dialog) return;
-      const elements = focusableElements(dialog);
-      if (elements.length === 0) return;
-      const first = elements[0];
-      const last = elements[elements.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [accepting, dialogOpen]);
 
   const openDialog = () => {
     setAcceptanceError(null);
@@ -145,18 +110,16 @@ export default function ClientQuoteActions({ quoteId, version, validity, onAccep
       {!available && !alreadyAccepted && validity.expired && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta vencida. Escríbenos en la conversación del expediente para solicitar una actualización.</span>}
     </div>
     {pdfError && <p className="client-quote-action-error" role="alert">{pdfError}</p>}
-    {dialogOpen && <div className="client-accept-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !accepting) setDialogOpen(false); }}>
-      <div className="client-accept-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="client-accept-title" aria-describedby="client-accept-description">
-        <div className="client-accept-dialog__head"><div><p className="client-eyebrow">Decisión sobre tu propuesta</p><h2 id="client-accept-title">Aceptar versión {version.versionNumber}</h2></div><button className="client-accept-dialog__close" type="button" onClick={() => setDialogOpen(false)} disabled={accepting} aria-label="Cerrar aceptación">×</button></div>
-        {accepted ? <div className="client-accept-success" role="status"><span className="client-accept-success__mark" aria-hidden="true">✓</span><h3>Propuesta aceptada.</h3><p>La aceptación quedó registrada y tu expediente se actualizó. Conserva el PDF para tus archivos.</p><button className="client-quote-action client-quote-action--primary" type="button" onClick={() => { setDialogOpen(false); onAccepted(); }}>Continuar</button></div> : <form onSubmit={submitAcceptance}>
-          <p id="client-accept-description" className="client-accept-dialog__copy">Revisa el PDF y confirma que deseas avanzar con esta propuesta. Esta acción fija la versión aceptada y no permite modificarla.</p>
-          <label className="client-accept-field"><span>Nombre de quien acepta</span><input ref={signerInputRef} value={signerName} onChange={(event) => setSignerName(event.target.value)} autoComplete="name" maxLength={180} required placeholder="Escribe tu nombre completo" /></label>
-          <label className="client-accept-check"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} /><span>Confirmo que revisé la propuesta, el PDF y las condiciones comerciales de la versión {version.versionNumber}.</span></label>
-          <p className="client-accept-terms">{version.termsLabel}</p>
-          {acceptanceError && <p className="client-quote-action-error" role="alert">{acceptanceError}</p>}
-          <div className="client-accept-dialog__actions"><button className="client-quote-action client-quote-action--quiet" type="button" onClick={() => setDialogOpen(false)} disabled={accepting}>Cancelar</button><button className="client-quote-action client-quote-action--primary" type="submit" disabled={accepting || !signerName.trim()}>{accepting ? 'Registrando…' : 'Aceptar propuesta'}</button></div>
-        </form>}
-      </div>
-    </div>}
+    <PrivateDialog open={dialogOpen} onClose={() => { if (!accepting) setDialogOpen(false); }} className="client-accept-dialog" overlayClassName="client-accept-overlay" labelledBy="client-accept-title" describedBy="client-accept-description" initialFocusRef={signerInputRef}>
+      <div className="client-accept-dialog__head"><div><p className="client-eyebrow">Decisión sobre tu propuesta</p><h2 id="client-accept-title">Aceptar versión {version.versionNumber}</h2></div><button className="client-accept-dialog__close" type="button" onClick={() => setDialogOpen(false)} disabled={accepting} aria-label="Cerrar aceptación">×</button></div>
+      {accepted ? <div className="client-accept-success" role="status"><span className="client-accept-success__mark" aria-hidden="true">✓</span><h3>Propuesta aceptada.</h3><p>La aceptación quedó registrada y tu expediente se actualizó. Conserva el PDF para tus archivos.</p><button className="client-quote-action client-quote-action--primary" type="button" onClick={() => { setDialogOpen(false); onAccepted(); }}>Continuar</button></div> : <form onSubmit={submitAcceptance}>
+        <p id="client-accept-description" className="client-accept-dialog__copy">Revisa el PDF y confirma que deseas avanzar con esta propuesta. Esta acción fija la versión aceptada y no permite modificarla.</p>
+        <label className="client-accept-field"><span>Nombre de quien acepta</span><input ref={signerInputRef} value={signerName} onChange={(event) => setSignerName(event.target.value)} autoComplete="name" maxLength={180} required placeholder="Escribe tu nombre completo" /></label>
+        <label className="client-accept-check"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} /><span>Confirmo que revisé la propuesta, el PDF y las condiciones comerciales de la versión {version.versionNumber}.</span></label>
+        <p className="client-accept-terms">{version.termsLabel}</p>
+        {acceptanceError && <p className="client-quote-action-error" role="alert">{acceptanceError}</p>}
+        <div className="client-accept-dialog__actions"><button className="client-quote-action client-quote-action--quiet" type="button" onClick={() => setDialogOpen(false)} disabled={accepting}>Cancelar</button><button className="client-quote-action client-quote-action--primary" type="submit" disabled={accepting || !signerName.trim()}>{accepting ? 'Registrando…' : 'Aceptar propuesta'}</button></div>
+      </form>}
+    </PrivateDialog>
   </>;
 }

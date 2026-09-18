@@ -186,6 +186,11 @@ test.describe('customer portal opt-in flow', () => {
     await pdfPopup.close();
     await page.getByRole('button', { name: 'Revisar y aceptar' }).click();
     await expect(page.getByRole('dialog', { name: 'Aceptar versión 1' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Aceptar versión 1' })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Revisar y aceptar' })).toBeFocused();
+    await page.getByRole('button', { name: 'Revisar y aceptar' }).click();
+    await expect(page.getByRole('dialog', { name: 'Aceptar versión 1' })).toBeVisible();
     await expectNoSeriousA11yViolations(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole('textbox', { name: 'Nombre de quien acepta' }).fill('Ana López Rivera');
