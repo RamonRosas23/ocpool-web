@@ -13,7 +13,7 @@ type PrivateShellProps = {
 
 export default function PrivateShell({ surface, context, navigation, children }: PrivateShellProps) {
   return (
-    <div className={`private-ui-scope private-shell private-shell--${surface}`}>
+    <div className={`private-shell private-shell--${surface}`}>
       <PrivateShellChrome surface={surface} user={context.user} roleLabel={context.roleLabel} navigation={navigation} />
       <PrivateShellProvider>
         <main id="contenido" className="private-shell__content" tabIndex={-1}>{children}</main>

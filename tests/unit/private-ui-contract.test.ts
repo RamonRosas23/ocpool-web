@@ -71,6 +71,16 @@ describe('private UI foundation contract', () => {
     expect(requestActions).toContain('modal={false}');
   });
 
+  it('activates .private-ui-scope unconditionally on all four private surfaces (U1-01 parte 3)', () => {
+    for (const layoutPath of ['src/app/auth/layout.tsx', 'src/app/login/layout.tsx', 'src/app/staff/layout.tsx', 'src/app/portal/layout.tsx']) {
+      const layout = readFileSync(join(process.cwd(), layoutPath), 'utf8');
+      expect(layout, `${layoutPath} must always render a private-ui-scope wrapper, independent of the commercialWorkspaceV2 flag`).toContain('className="private-ui-scope"');
+    }
+
+    const privateShell = readFileSync(join(process.cwd(), 'src/components/private/PrivateShell.tsx'), 'utf8');
+    expect(privateShell, 'PrivateShell must not duplicate the scope its layout already provides').not.toContain('private-ui-scope');
+  });
+
   it('generates stable field relationships for description and errors', () => {
     expect(privateFieldA11y('request-email', true, true, true)).toEqual({
       labelId: 'request-email-label',

@@ -7,8 +7,8 @@ import { readCommercialV2Flags } from '@/server/flags/commercial-v2';
 import '@/components/private/ui/private-ui.css';
 
 export default async function StaffLayout({ children }: { children: ReactNode }) {
-  if (!readCommercialV2Flags().commercialWorkspaceV2) return <PrivateToastProvider>{children}</PrivateToastProvider>;
+  if (!readCommercialV2Flags().commercialWorkspaceV2) return <div className="private-ui-scope"><PrivateToastProvider>{children}</PrivateToastProvider></div>;
   const context = await getPrivateShellContext('staff');
-  if (!context) return <PrivateToastProvider>{children}</PrivateToastProvider>;
-  return <PrivateToastProvider><PrivateShell surface="staff" context={context} navigation={visibleStaffNavigation(context.capabilities)}>{children}</PrivateShell></PrivateToastProvider>;
+  if (!context) return <div className="private-ui-scope"><PrivateToastProvider>{children}</PrivateToastProvider></div>;
+  return <div className="private-ui-scope"><PrivateToastProvider><PrivateShell surface="staff" context={context} navigation={visibleStaffNavigation(context.capabilities)}>{children}</PrivateShell></PrivateToastProvider></div>;
 }
