@@ -384,6 +384,28 @@
 .private-menu__panel strong { color: var(--private-color-brand); font-size: 12px; font-weight: 800; }
 .private-menu__panel small { color: var(--private-color-ink-muted); font-size: 11px; line-height: 1.4; }
 
+.private-money-field { position: relative; min-width: 0; }
+.private-money-field__input { padding-left: 26px; }
+.private-money-field__prefix { position: absolute; top: 0; left: 12px; z-index: 1; display: flex; height: 100%; align-items: center; color: var(--private-color-ink-muted); font-size: 13px; font-weight: 700; pointer-events: none; }
+
+.private-date-field { position: relative; min-width: 0; }
+.private-date-field__control { display: flex; min-width: 0; gap: var(--private-space-2); }
+.private-date-field__input { flex: 1 1 auto; min-width: 0; }
+.private-date-field__trigger { display: flex; flex: 0 0 44px; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-control); padding: 0; background: var(--private-color-surface); color: var(--private-color-accent); cursor: pointer; transition: border-color var(--private-motion-standard), background var(--private-motion-standard); }
+.private-date-field__trigger:hover:not(:disabled) { border-color: var(--private-color-border-strong); }
+.private-date-field__trigger:focus-visible { border-color: var(--private-color-focus); outline: 2px solid color-mix(in srgb, var(--private-color-focus) 34%, transparent); outline-offset: 2px; }
+.private-date-field__trigger:disabled { cursor: not-allowed; opacity: .56; }
+.private-date-field__icon { font-size: 15px; line-height: 1; }
+.private-date-field__popover { position: absolute; z-index: var(--private-z-popover); top: calc(100% + 7px); left: 0; min-width: 286px; padding: var(--private-space-3); border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-popover); }
+.private-date-field__popover .rdp-root { --rdp-accent-color: var(--private-color-accent); --rdp-accent-background-color: color-mix(in srgb, var(--private-color-accent) 12%, transparent); --rdp-day-width: 36px; --rdp-day-height: 36px; --rdp-day_button-width: 34px; --rdp-day_button-height: 34px; margin: 0; font-family: var(--private-font-interface); font-size: 11px; }
+.private-date-field__popover .rdp-caption_label { font-size: 12px; font-weight: 700; }
+.private-date-field__popover .rdp-day_button { border-radius: 6px; }
+.private-date-field__popover .rdp-day_button:hover { border-color: var(--private-color-accent); }
+.private-date-field__popover .rdp-today:not(.rdp-outside) { font-weight: 800; color: var(--private-color-focus); }
+@media (max-width: 480px) {
+  .private-date-field__popover { right: 0; left: auto; min-width: min(286px, calc(100vw - 42px)); }
+}
+
 @keyframes private-ui-spin { to { transform: rotate(360deg); } }
 @keyframes private-ui-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .private-ui-scope *, .private-ui-scope *::before, .private-ui-scope *::after { animation-duration: .01ms !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }

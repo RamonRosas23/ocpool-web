@@ -13,7 +13,9 @@ export {
   PrivatePercentField,
   PrivateSelect,
 } from './PrivateControls';
-export type { PrivateButtonProps, PrivateIconButtonProps, PrivateLinkButtonProps, PrivateSelectOption, PrivateSelectProps } from './PrivateControls';
+export type { PrivateButtonProps, PrivateIconButtonProps, PrivateLinkButtonProps, PrivateSelectOption, PrivateSelectProps, PrivateMoneyFieldProps } from './PrivateControls';
+export { PrivateDatePicker } from './PrivateDatePicker';
+export type { PrivateDatePickerProps } from './PrivateDatePicker';
 export { PrivateStatus, PrivateSkeleton, PrivateEmptyState, PrivateBlockingState } from './PrivateStates';
 export { default as PrivateSurfaceRoot } from '../PrivateSurfaceRoot';
 export { PrivateToastProvider, usePrivateToast } from './PrivateToast';

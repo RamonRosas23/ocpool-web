@@ -271,7 +271,7 @@ test.describe('staff quote builder opt-in flow', () => {
     await page.getByRole('button', { name: 'Agregar concepto especial' }).click();
     await page.getByLabel('Nombre', { exact: true }).fill('Ajuste especial E2E');
     await page.getByLabel('Unidad', { exact: true }).fill('servicio');
-    await page.getByRole('textbox', { name: 'Importe del concepto especial', exact: true }).fill('500.00');
+    await page.getByRole('textbox', { name: 'Importe del concepto especial' }).fill('500.00');
     await page.getByLabel('Motivo', { exact: true }).fill('Condición de sitio no catalogada');
     await page.getByRole('button', { name: 'Agregar a la propuesta' }).click();
     await expect(page.getByLabel('Nombre del concepto especial')).toHaveValue('Ajuste especial E2E');

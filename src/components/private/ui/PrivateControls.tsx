@@ -5,6 +5,7 @@ import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from 'react
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { privateFieldA11y } from './a11y';
 import PrivateField, { type PrivateFieldChromeProps } from './PrivateField';
+import { parseMoneyInput } from '@/lib/money-input';
 
 function joinClasses(...values: Array<string | undefined>): string {
   return values.filter(Boolean).join(' ');
@@ -73,8 +74,24 @@ export function PrivateNumberField(props: PrivateTextFieldProps) {
   return <PrivateTextField {...props} type="number" inputMode="decimal" />;
 }
 
-export function PrivateMoneyField(props: PrivateTextFieldProps) {
-  return <PrivateTextField {...props} inputMode="decimal" />;
+export type PrivateMoneyFieldProps = Omit<PrivateFieldChromeProps, 'children'> & {
+  value: string;
+  onValueChange: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+};
+
+export function PrivateMoneyField({ id, label, description, error, required, hideLabel, className, value, onValueChange, placeholder = '0.00', disabled = false }: PrivateMoneyFieldProps) {
+  const isInvalid = value !== '' && parseMoneyInput(value) === null;
+  const a11y = privateFieldA11y(id, Boolean(description), Boolean(error) || isInvalid, required);
+  return (
+    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
+      <div className={joinClasses('private-money-field', className)}>
+        <span className="private-money-field__prefix" aria-hidden="true">$</span>
+        <input id={id} className="private-control private-money-field__input" type="text" inputMode="decimal" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
+      </div>
+    </PrivateField>
+  );
 }
 
 export function PrivatePercentField(props: PrivateTextFieldProps) {

@@ -2,10 +2,9 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import DateField from '@/components/DateField';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
-import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
+import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton } from '@/components/private/ui';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 import { readApiResponse } from '@/lib/api-response-error';
 
@@ -178,7 +177,7 @@ export default function StaffDashboardPanel() {
     <div className="staff-content analytics-content" aria-busy={loading}>
       <section className="analytics-hero" aria-labelledby="analytics-title"><div><p className="staff-kicker">Centro de operación</p><h1 id="analytics-title">Pulso <em>comercial</em></h1><p className="staff-intro__copy">Una lectura compacta de la operación para decidir qué merece atención ahora.</p></div><div className="analytics-period"><p className="staff-section-label">Periodo de lectura</p><strong>{displayRange}</strong><span>Zona de negocio: {dashboard?.meta.timezone ?? '—'}</span><span>Actualizado {dashboard ? formatDate(dashboard.meta.generatedAt, dashboard.meta.timezone, true) : '—'}</span></div></section>
 
-      <section className="analytics-controls" aria-label="Controles del periodo"><div className="analytics-presets"><span>Vista rápida</span><button className={selectedPreset === '7' ? 'is-selected' : ''} type="button" onClick={() => applyPreset(7)} disabled={!draftTo}>7 días</button><button className={selectedPreset === '30' ? 'is-selected' : ''} type="button" onClick={() => applyPreset(30)} disabled={!draftTo}>30 días</button><button className={selectedPreset === '90' ? 'is-selected' : ''} type="button" onClick={() => applyPreset(90)} disabled={!draftTo}>90 días</button></div><div className="analytics-date-form"><label><span>Desde</span><DateField ariaLabel="Desde" value={draftFrom} onValueChange={(value) => { rangeEdited.current = true; setDraftFrom(value); }} /></label><label><span>Hasta</span><DateField ariaLabel="Hasta" value={draftTo} onValueChange={(value) => { rangeEdited.current = true; setDraftTo(value); }} /></label><button className="staff-button staff-button--dark" type="button" onClick={applyCustomRange} disabled={!draftFrom || !draftTo || loading}>Aplicar periodo</button></div></section>
+      <section className="analytics-controls" aria-label="Controles del periodo"><div className="analytics-presets"><span>Vista rápida</span><button className={selectedPreset === '7' ? 'is-selected' : ''} type="button" onClick={() => applyPreset(7)} disabled={!draftTo}>7 días</button><button className={selectedPreset === '30' ? 'is-selected' : ''} type="button" onClick={() => applyPreset(30)} disabled={!draftTo}>30 días</button><button className={selectedPreset === '90' ? 'is-selected' : ''} type="button" onClick={() => applyPreset(90)} disabled={!draftTo}>90 días</button></div><div className="analytics-date-form"><PrivateDatePicker id="dashboard-from" label="Desde" required value={draftFrom} onValueChange={(value) => { rangeEdited.current = true; setDraftFrom(value); }} /><PrivateDatePicker id="dashboard-to" label="Hasta" required value={draftTo} onValueChange={(value) => { rangeEdited.current = true; setDraftTo(value); }} /><button className="staff-button staff-button--dark" type="button" onClick={applyCustomRange} disabled={!draftFrom || !draftTo || loading}>Aplicar periodo</button></div></section>
 
       {error && <p className="staff-error" role="alert">{error}</p>}
       {loading && !dashboard && <div className="analytics-loading" role="status" aria-live="polite"><span /><span /><span /><strong>Preparando lectura operativa…</strong></div>}

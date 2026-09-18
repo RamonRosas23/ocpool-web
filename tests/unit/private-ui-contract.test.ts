@@ -43,6 +43,17 @@ describe('private UI foundation contract', () => {
     expect(css).toContain('.private-field__label--hidden');
   });
 
+  it('validates PrivateMoneyField input through the real money-input parser (U1-02 parte 3)', () => {
+    const controls = readFileSync(join(process.cwd(), 'src/components/private/ui/PrivateControls.tsx'), 'utf8');
+    expect(controls).toContain("import { parseMoneyInput } from '@/lib/money-input'");
+    expect(controls).toContain('const isInvalid = value !== \'\' && parseMoneyInput(value) === null');
+    expect(controls).toContain('private-money-field__prefix');
+
+    const datePicker = readFileSync(join(process.cwd(), 'src/components/private/ui/PrivateDatePicker.tsx'), 'utf8');
+    expect(datePicker).toContain("from 'react-day-picker'");
+    expect(datePicker).toContain('triggerRef.current?.focus()');
+  });
+
   it('generates stable field relationships for description and errors', () => {
     expect(privateFieldA11y('request-email', true, true, true)).toEqual({
       labelId: 'request-email-label',
