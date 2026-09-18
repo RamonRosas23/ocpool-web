@@ -1,6 +1,7 @@
 'use client';
 
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { getApiErrorMessage } from '@/lib/api-error-message';
 import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
 import { shouldResetUploadIdempotencyKey, type UploadStage } from '@/lib/private-file-upload';
 
@@ -23,7 +24,7 @@ type FileItem = {
 
 type FilesResponse = { items: FileItem[]; nextCursor: string | null };
 type ReserveResponse = { file: FileItem; uploadUrl: string | null };
-type ErrorResponse = { error?: { message?: string } };
+type ErrorResponse = { error?: { message?: string; requestId?: string } };
 class ApiResponseError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -37,7 +38,7 @@ function fileEndpoint(requestId: string, suffix = ''): string {
 
 async function readResponse<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & ErrorResponse;
-  if (!response.ok) throw new ApiResponseError(data.error?.message ?? 'No fue posible completar la operación.', response.status);
+  if (!response.ok) throw new ApiResponseError(getApiErrorMessage(data, 'No fue posible completar la operación.'), response.status);
   return data as T;
 }
 

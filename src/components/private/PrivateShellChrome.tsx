@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import { pathMatches, privateShellTrail, type PrivateNavigationItem } from '@/components/private/navigation';
+import { getApiErrorMessage } from '@/lib/api-error-message';
 import type { PrivateShellSurface } from '@/server/private-shell';
 
 type PrivateShellChromeProps = {
@@ -35,7 +36,10 @@ export default function PrivateShellChrome({ surface, user, roleLabel, navigatio
     setLogoutError(null);
     try {
       const response = await fetch('/api/auth/session', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' } });
-      if (!response.ok) throw new Error('No fue posible cerrar la sesión.');
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(getApiErrorMessage(data, 'No fue posible cerrar la sesión.'));
+      }
       window.location.assign(logoutTarget);
     } catch (caught) {
       setLogoutError(caught instanceof Error ? caught.message : 'No fue posible cerrar la sesión.');
