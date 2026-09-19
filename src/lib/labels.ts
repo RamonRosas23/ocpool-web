@@ -1,3 +1,4 @@
+import { CheckCircle2, Clock, XCircle, type LucideIcon } from 'lucide-react';
 import type { QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
 import type { QuoteVersionStatus } from '@/server/modules/quotes/domain';
 
@@ -29,6 +30,12 @@ export function fileStatusLabel(file: { status: string; downloadAvailable: boole
   if (file.status === 'AVAILABLE' && file.downloadAvailable) return 'Disponible';
   if (file.status === 'PENDING_SCAN') return 'En validación';
   return 'No disponible';
+}
+
+export function fileStatusIcon(file: { status: string; downloadAvailable: boolean }): LucideIcon {
+  if (file.status === 'AVAILABLE' && file.downloadAvailable) return CheckCircle2;
+  if (file.status === 'PENDING_SCAN') return Clock;
+  return XCircle;
 }
 
 export function fileCategoryLabel(category: string): string {

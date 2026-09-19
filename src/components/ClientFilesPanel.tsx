@@ -3,7 +3,7 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
-import { fileStatusLabel } from '@/lib/labels';
+import { fileStatusIcon, fileStatusLabel } from '@/lib/labels';
 import { shouldResetUploadIdempotencyKey, type UploadStage } from '@/lib/private-file-upload';
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -68,6 +68,11 @@ function mergeFiles(current: FileItem[], incoming: FileItem[]): FileItem[] {
 
 function fileIsAccepted(file: File): boolean {
   return (ACCEPTED_TYPES.has(file.type) || file.type === '' && ACCEPTED_EXTENSIONS.test(file.name)) && ACCEPTED_EXTENSIONS.test(file.name);
+}
+
+function FileStatusBadge({ file }: { file: FileItem }) {
+  const StatusIcon = fileStatusIcon(file);
+  return <span className={`client-file__status client-file__status--${file.status.toLowerCase()}`}><StatusIcon size={13} aria-hidden="true" />{fileStatusLabel(file)}</span>;
 }
 
 export default function ClientFilesPanel({ requestId }: { requestId: string }) {
@@ -263,7 +268,7 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
       {items.map((file) => <li className="client-file" key={file.id}>
         <div className="client-file__icon" aria-hidden="true">{file.contentType === 'application/pdf' ? 'PDF' : 'IMG'}</div>
         <div className="client-file__info"><strong title={file.originalFileName}>{file.originalFileName}</strong><span>{formatBytes(file.byteSize)} · {formatDate(file.createdAt)}</span></div>
-        <span className={`client-file__status client-file__status--${file.status.toLowerCase()}`}>{fileStatusLabel(file)}</span>
+        <FileStatusBadge file={file} />
         <div className="client-file__actions">
           {file.downloadAvailable && <button type="button" className="client-file__action" disabled={busyFileId === file.id} onClick={() => void download(file)}>Descargar {file.originalFileName}</button>}
           {confirmDeleteId === file.id ? <span className="client-file__confirm"><button type="button" className="client-file__action client-file__action--danger" disabled={busyFileId === file.id} onClick={() => void remove(file)}>Confirmar eliminación</button><button type="button" className="client-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(null)}>Cancelar</button></span> : <button type="button" className="client-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(file.id)}>Eliminar archivo</button>}
