@@ -158,6 +158,11 @@ test.describe('staff quote builder opt-in flow', () => {
     await expect(page.locator('.quotes-request-row.is-selected')).toContainText('Quote builder client', { timeout: 10_000 });
     const draftVersion = await prisma.quoteVersion.findFirst({ where: { quote: { quoteRequestId: requestId }, status: 'BORRADOR' }, orderBy: { versionNumber: 'desc' }, select: { id: true } });
     expect(draftVersion).not.toBeNull();
+
+    // Q1-05 (fidelidad S0-02): tras el autosave, un cambio de precio del catálogo NO debe
+    // repreciar en silencio la línea ya persistida, incluso sin recargar la página.
+    await prisma.priceListItem.updateMany({ where: { priceListId, catalogItemId: itemId }, data: { unitPriceMinor: 25_000n } });
+    await expect(page.getByRole('textbox', { name: 'Precio de 000 E2E concept', exact: true })).toHaveValue('150.00', { timeout: 5_000 });
     const staffActor = { userId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.read', 'quotes.pdf.generate']), mfaVerified: true };
     const publishStartedAt = new Date();
     await page.getByRole('button', { name: 'Pasar a revisión' }).click();
@@ -186,7 +191,8 @@ test.describe('staff quote builder opt-in flow', () => {
       errorCount: 0,
       abandoned: false,
     });
-    await prisma.priceListItem.updateMany({ where: { priceListId, catalogItemId: itemId }, data: { unitPriceMinor: 25_000n } });
+    // El precio de catálogo ya cambió antes del autosave inicial (arriba); confirmar que también
+    // sobrevive a una recarga completa de página, no sólo a la re-hidratación en memoria.
     await page.reload();
     await expect(page.getByRole('textbox', { name: 'Precio de 000 E2E concept', exact: true })).toHaveValue('150.00', { timeout: 10_000 });
     await recordBaselineMeasurement({

@@ -252,6 +252,10 @@ export default function StaffQuotesPanel() {
   const errorRetryCountRef = useRef(0);
   const selectedPriceListIdRef = useRef('');
   useEffect(() => { selectedPriceListIdRef.current = selectedPriceListId; }, [selectedPriceListId]);
+  const validUntilRef = useRef('');
+  useEffect(() => { validUntilRef.current = validUntil; }, [validUntil]);
+  const draftLinesRef = useRef<DraftLine[]>([]);
+  useEffect(() => { draftLinesRef.current = draftLines; }, [draftLines]);
   const { showToast } = usePrivateToast();
 
   const loadBase = useCallback(async (currentPage: number, query: string) => {
@@ -399,14 +403,16 @@ export default function StaffQuotesPanel() {
 
   // Refresco ligero tras un autosave exitoso: trae approvals/historial/updatedAt frescos sin tocar
   // draftLines/selectedPriceListId/validUntil, que pueden ya haber avanzado más allá de lo recién persistido.
-  const syncQuoteVersionMetadata = async (requestId: string) => {
+  const syncQuoteVersionMetadata = async (requestId: string): Promise<QuoteVersion | null> => {
     try {
       const response = await fetch(`/api/staff/quotes/${requestId}`, { credentials: 'include', cache: 'no-store' });
       const data = await readApiResponseOrThrow<Workspace>(response, 'No fue posible actualizar el expediente.');
       setWorkspace(data);
       expectedUpdatedAtRef.current = data.quote?.currentVersion?.updatedAt ?? null;
+      return data.quote?.currentVersion ?? null;
     } catch {
       // el próximo ciclo de autosave o refresco manual reintentará; no interrumpir el guardado ya exitoso.
+      return null;
     }
   };
 
@@ -534,7 +540,26 @@ export default function StaffQuotesPanel() {
         if (!result.ok) { errorRetryCountRef.current += 1; setAutosaveMessage(result.message); setAutosaveState('error'); return false; }
         errorRetryCountRef.current = 0;
         savedSnapshotRef.current = snapshotToPersist;
-        await Promise.all([syncQuoteVersionMetadata(workspace.request.id), loadBase(page, appliedSearch)]);
+        const [freshVersion] = await Promise.all([syncQuoteVersionMetadata(workspace.request.id), loadBase(page, appliedSearch)]);
+        // Re-congela el precio snapshot (fidelidad S0-02) sólo si nada cambió localmente durante el round-trip;
+        // si el usuario ya siguió editando, dejamos sus ediciones intactas — el próximo ciclo las persistirá.
+        if (freshVersion && draftSnapshotKey(selectedPriceListIdRef.current, validUntilRef.current, draftLinesRef.current) === snapshotToPersist) {
+          const persistedByItem = new Map(freshVersion.lines.filter((line) => line.catalogItemId !== null).map((line) => [line.catalogItemId as string, line]));
+          setDraftLines((lines) => lines.map((line) => {
+            if (line.special || !line.catalogItemId) return line;
+            const persisted = persistedByItem.get(line.catalogItemId);
+            if (!persisted) return line;
+            return {
+              ...line,
+              id: persisted.id,
+              catalogItemCode: persisted.catalogItemCode ?? line.catalogItemCode,
+              snapshotUnitPriceMinor: persisted.unitPriceMinor,
+              unitPriceInput: moneyInputLabel(persisted.unitPriceMinor),
+              unitPriceMinorOverride: persisted.unitPriceMinor,
+              unitPriceDirty: false,
+            };
+          }));
+        }
         setAutosaveState('saved');
         return true;
       } catch (caught) {
