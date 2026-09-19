@@ -183,6 +183,17 @@ enum QuoteApprovalStatus {
   SUPERSEDED
 }
 
+/// D1-03: only rounding rule in use today (half-up per line, then sum).
+/// A future rule is a new enum value, never a change of meaning of this one.
+enum TaxRoundingRule {
+  HALF_UP
+}
+
+enum QuotePublicationStatus {
+  PUBLISHED
+  SUPERSEDED
+}
+
 enum AuthTokenType {
   MAGIC_LINK
   PASSWORD_RESET
@@ -302,40 +313,43 @@ model Client {
 }
 
 model User {
-  id                         String                 @id @default(uuid()) @db.Uuid
-  email                      String                 @db.VarChar(320)
-  emailNormalized            String                 @unique @db.VarChar(320)
-  displayName                String                 @db.VarChar(180)
-  type                       UserType
-  status                     UserStatus             @default(INVITED)
-  passwordHash               String?                @db.VarChar(255)
-  mfaRequired                Boolean                @default(false)
-  mfaSecretCiphertext        String?                @db.VarChar(512)
-  mfaEnrolledAt              DateTime?              @db.Timestamptz(3)
-  mfaLastAcceptedCounter     Int?
-  clientId                   String?                @db.Uuid
-  client                     Client?                @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  contactProfile             ClientContact?
-  roles                      UserRole[]
-  sessions                   Session[]
-  authTokens                 AuthToken[]
-  authEvents                 AuthEvent[]
-  currentQuoteRequests       QuoteRequest[]         @relation("QuoteRequestCurrentAssignee")
-  requestAssignmentsAssigned RequestAssignment[]    @relation("RequestAssignmentAssignee")
-  requestAssignmentsCreated  RequestAssignment[]    @relation("RequestAssignmentActor")
-  requestStatusChanges       RequestStatusHistory[] @relation("RequestStatusHistoryActor")
-  quoteVersionsCreated       QuoteVersion[]         @relation("QuoteVersionCreator")
-  quoteAcceptances           QuoteAcceptance[]      @relation("QuoteAcceptanceActor")
-  quoteStatusChanges         QuoteStatusHistory[]   @relation("QuoteStatusHistoryActor")
-  closedConversations        Conversation[]         @relation("ConversationCloser")
-  conversationMessages       ConversationMessage[]  @relation("ConversationMessageSender")
-  uploadedFileAttachments    FileAttachment[]       @relation("FileAttachmentUploader")
-  notificationDeliveries     NotificationDelivery[] @relation("NotificationRecipient")
-  quoteApprovalsRequested    QuoteApproval[]        @relation("QuoteApprovalRequester")
-  quoteApprovalsDecided      QuoteApproval[]        @relation("QuoteApprovalDecider")
-  specialConceptPromotions   SpecialConceptPromotion[]
-  createdAt                  DateTime               @default(now()) @db.Timestamptz(3)
-  updatedAt                  DateTime               @updatedAt @db.Timestamptz(3)
+  id                              String                    @id @default(uuid()) @db.Uuid
+  email                           String                    @db.VarChar(320)
+  emailNormalized                 String                    @unique @db.VarChar(320)
+  displayName                     String                    @db.VarChar(180)
+  type                            UserType
+  status                          UserStatus                @default(INVITED)
+  passwordHash                    String?                   @db.VarChar(255)
+  mfaRequired                     Boolean                   @default(false)
+  mfaSecretCiphertext             String?                   @db.VarChar(512)
+  mfaEnrolledAt                   DateTime?                 @db.Timestamptz(3)
+  mfaLastAcceptedCounter          Int?
+  clientId                        String?                   @db.Uuid
+  client                          Client?                   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  contactProfile                  ClientContact?
+  roles                           UserRole[]
+  sessions                        Session[]
+  authTokens                      AuthToken[]
+  authEvents                      AuthEvent[]
+  currentQuoteRequests            QuoteRequest[]            @relation("QuoteRequestCurrentAssignee")
+  requestAssignmentsAssigned      RequestAssignment[]       @relation("RequestAssignmentAssignee")
+  requestAssignmentsCreated       RequestAssignment[]       @relation("RequestAssignmentActor")
+  requestStatusChanges            RequestStatusHistory[]    @relation("RequestStatusHistoryActor")
+  quoteVersionsCreated            QuoteVersion[]            @relation("QuoteVersionCreator")
+  quoteAcceptances                QuoteAcceptance[]         @relation("QuoteAcceptanceActor")
+  quoteStatusChanges              QuoteStatusHistory[]      @relation("QuoteStatusHistoryActor")
+  closedConversations             Conversation[]            @relation("ConversationCloser")
+  conversationMessages            ConversationMessage[]     @relation("ConversationMessageSender")
+  uploadedFileAttachments         FileAttachment[]          @relation("FileAttachmentUploader")
+  notificationDeliveries          NotificationDelivery[]    @relation("NotificationRecipient")
+  quoteApprovalsRequested         QuoteApproval[]           @relation("QuoteApprovalRequester")
+  quoteApprovalsDecided           QuoteApproval[]           @relation("QuoteApprovalDecider")
+  specialConceptPromotions        SpecialConceptPromotion[]
+  commercialPolicyVersionsCreated CommercialPolicyVersion[] @relation("CommercialPolicyCreator")
+  commercialTermsVersionsCreated  CommercialTermsVersion[]  @relation("CommercialTermsCreator")
+  quotePublications               QuotePublication[]        @relation("QuotePublicationActor")
+  createdAt                       DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt                       DateTime                  @updatedAt @db.Timestamptz(3)
 
   @@index([clientId, status])
   @@index([type, status])
@@ -501,6 +515,7 @@ model GeneratedDocument {
   quoteVersion    QuoteVersion            @relation(fields: [quoteVersionId, quoteId], references: [id, quoteId], onDelete: Cascade)
   storageObject   StorageObject?          @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
   acceptance      QuoteAcceptance?
+  publication     QuotePublication?
 
   @@unique([quoteVersionId, documentType])
   @@index([quoteId, status, documentType])
@@ -573,19 +588,19 @@ model CatalogCategory {
 }
 
 model CatalogItem {
-  id          String              @id @default(uuid()) @db.Uuid
-  code        String              @unique @db.VarChar(64)
-  name        String              @db.VarChar(180)
-  description String?             @db.Text
-  unit        String              @db.VarChar(40)
-  status      CatalogStatus       @default(ACTIVE)
-  categoryId  String?             @db.Uuid
-  category    CatalogCategory?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  id          String                    @id @default(uuid()) @db.Uuid
+  code        String                    @unique @db.VarChar(64)
+  name        String                    @db.VarChar(180)
+  description String?                   @db.Text
+  unit        String                    @db.VarChar(40)
+  status      CatalogStatus             @default(ACTIVE)
+  categoryId  String?                   @db.Uuid
+  category    CatalogCategory?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   prices      PriceListItem[]
   quoteLines  QuoteLineSnapshot[]
   promotions  SpecialConceptPromotion[]
-  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+  createdAt   DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime                  @updatedAt @db.Timestamptz(3)
 
   @@index([status, name])
   @@index([categoryId, status, name])
@@ -593,16 +608,17 @@ model CatalogItem {
 }
 
 model PriceList {
-  id           String          @id @default(uuid()) @db.Uuid
-  code         String          @unique @db.VarChar(64)
-  name         String          @db.VarChar(180)
-  currencyCode String          @db.Char(3)
-  status       PriceListStatus @default(ACTIVE)
-  validFrom    DateTime        @default(now()) @db.Timestamptz(3)
-  validUntil   DateTime?       @db.Timestamptz(3)
-  items        PriceListItem[]
-  createdAt    DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime        @updatedAt @db.Timestamptz(3)
+  id                   String          @id @default(uuid()) @db.Uuid
+  code                 String          @unique @db.VarChar(64)
+  name                 String          @db.VarChar(180)
+  currencyCode         String          @db.Char(3)
+  status               PriceListStatus @default(ACTIVE)
+  validFrom            DateTime        @default(now()) @db.Timestamptz(3)
+  validUntil           DateTime?       @db.Timestamptz(3)
+  items                PriceListItem[]
+  sourcedQuoteVersions QuoteVersion[]
+  createdAt            DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime        @updatedAt @db.Timestamptz(3)
 
   @@index([currencyCode, status, validFrom])
   @@map("price_lists")
@@ -641,6 +657,7 @@ model Quote {
   generatedDocuments GeneratedDocument[]
   quoteAcceptances   QuoteAcceptance[]
   approvals          QuoteApproval[]
+  publications       QuotePublication[]
   createdAt          DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -650,30 +667,56 @@ model Quote {
 }
 
 model QuoteVersion {
-  id                 String               @id @default(uuid()) @db.Uuid
-  quoteId            String               @db.Uuid
-  versionNumber      Int                  @default(1)
-  status             QuoteVersionStatus   @default(BORRADOR)
-  currencyCode       String               @db.Char(3)
-  validUntil         DateTime?            @db.Timestamptz(3)
-  subtotalMinor      BigInt               @default(0)
-  discountTotalMinor BigInt               @default(0)
-  taxableTotalMinor  BigInt               @default(0)
-  taxTotalMinor      BigInt               @default(0)
-  totalMinor         BigInt               @default(0)
-  createdById        String               @db.Uuid
-  quote              Quote                @relation("QuoteVersions", fields: [quoteId], references: [id], onDelete: Cascade)
-  currentForQuote    Quote?               @relation("QuoteCurrentVersion")
-  workingForQuote    Quote?               @relation("QuoteWorkingVersion")
-  publishedForQuote  Quote?               @relation("QuotePublishedVersion")
-  createdBy          User                 @relation("QuoteVersionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  id                 String                   @id @default(uuid()) @db.Uuid
+  quoteId            String                   @db.Uuid
+  versionNumber      Int                      @default(1)
+  status             QuoteVersionStatus       @default(BORRADOR)
+  currencyCode       String                   @db.Char(3)
+  validUntil         DateTime?                @db.Timestamptz(3)
+  subtotalMinor      BigInt                   @default(0)
+  discountTotalMinor BigInt                   @default(0)
+  taxableTotalMinor  BigInt                   @default(0)
+  taxTotalMinor      BigInt                   @default(0)
+  totalMinor         BigInt                   @default(0)
+  createdById        String                   @db.Uuid
+  /// D1-01: real optimistic-concurrency counter, replacing the `updatedAt`
+  /// stand-in that D2-04/Q1-05 use today. Incremented by every command that
+  /// mutates content.
+  revision           Int                      @default(1)
+  /// D1-01: sha256 of the frozen content (sections + lines + totals + terms),
+  /// same digest algorithm QuoteApproval.digest already uses.
+  contentDigest      String?                  @db.Char(64)
+  publishedAt        DateTime?                @db.Timestamptz(3)
+  supersededAt       DateTime?                @db.Timestamptz(3)
+  /// D1-02: structured commercial content, published to client/PDF verbatim.
+  scopeText          String?                  @db.Text
+  exclusionsText     String?                  @db.Text
+  paymentTermsText   String?                  @db.Text
+  warrantyText       String?                  @db.Text
+  publicNotesText    String?                  @db.Text
+  /// D1-03: nullable while BORRADOR; resolved before EN_REVISION.
+  taxProfileId       String?                  @db.Uuid
+  commercialPolicyId String?                  @db.Uuid
+  termsVersionId     String?                  @db.Uuid
+  sourcePriceListId  String?                  @db.Uuid
+  quote              Quote                    @relation("QuoteVersions", fields: [quoteId], references: [id], onDelete: Cascade)
+  currentForQuote    Quote?                   @relation("QuoteCurrentVersion")
+  workingForQuote    Quote?                   @relation("QuoteWorkingVersion")
+  publishedForQuote  Quote?                   @relation("QuotePublishedVersion")
+  createdBy          User                     @relation("QuoteVersionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  taxProfile         TaxProfileVersion?       @relation(fields: [taxProfileId], references: [id], onDelete: Restrict)
+  commercialPolicy   CommercialPolicyVersion? @relation(fields: [commercialPolicyId], references: [id], onDelete: Restrict)
+  termsVersion       CommercialTermsVersion?  @relation(fields: [termsVersionId], references: [id], onDelete: Restrict)
+  sourcePriceList    PriceList?               @relation(fields: [sourcePriceListId], references: [id], onDelete: SetNull)
   lines              QuoteLineSnapshot[]
+  sections           QuoteSectionSnapshot[]
   statusHistory      QuoteStatusHistory[]
   generatedDocuments GeneratedDocument[]
   acceptance         QuoteAcceptance?
   approvals          QuoteApproval[]
-  createdAt          DateTime             @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime             @updatedAt @db.Timestamptz(3)
+  publication        QuotePublication?
+  createdAt          DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                 @updatedAt @db.Timestamptz(3)
 
   @@unique([quoteId, versionNumber])
   @@unique([id, quoteId])
@@ -683,30 +726,58 @@ model QuoteVersion {
 }
 
 model QuoteLineSnapshot {
-  id                  String       @id @default(uuid()) @db.Uuid
-  quoteVersionId      String       @db.Uuid
-  catalogItemId       String?      @db.Uuid
-  catalogItemCode     String?      @db.VarChar(64)
-  name                String       @db.VarChar(180)
-  description         String?      @db.Text
-  unit                String       @db.VarChar(40)
-  specialReason       String?      @db.VarChar(300)
+  id                  String                @id @default(uuid()) @db.Uuid
+  quoteVersionId      String                @db.Uuid
+  /// D1-02: explicit order, replacing reliance on `id` insertion order (which
+  /// does not preserve submission order — see Q1-05 client-side merge gotcha).
+  position            Int                   @default(0)
+  sectionId           String?               @db.Uuid
+  catalogItemId       String?               @db.Uuid
+  catalogItemCode     String?               @db.VarChar(64)
+  name                String                @db.VarChar(180)
+  description         String?               @db.Text
+  unit                String                @db.VarChar(40)
+  specialReason       String?               @db.VarChar(300)
   quantityMilliunits  BigInt
-  currencyCode        String       @db.Char(3)
+  currencyCode        String                @db.Char(3)
+  /// D1-02: catalog price before any override, distinct from `unitPriceMinor`
+  /// (the final, possibly overridden, price already snapshotted below).
+  baseUnitPriceMinor  BigInt?
+  overrideReason      String?               @db.VarChar(300)
   unitPriceMinor      BigInt
-  discountBasisPoints Int          @default(0)
-  discountMinor       BigInt       @default(0)
-  taxableMinor        BigInt       @default(0)
-  taxBasisPoints      Int          @default(0)
-  taxMinor            BigInt       @default(0)
-  subtotalMinor       BigInt       @default(0)
-  totalMinor          BigInt       @default(0)
-  quoteVersion        QuoteVersion @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
-  catalogItem         CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  discountBasisPoints Int                   @default(0)
+  discountMinor       BigInt                @default(0)
+  taxableMinor        BigInt                @default(0)
+  taxBasisPoints      Int                   @default(0)
+  taxMinor            BigInt                @default(0)
+  subtotalMinor       BigInt                @default(0)
+  totalMinor          BigInt                @default(0)
+  quoteVersion        QuoteVersion          @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
+  section             QuoteSectionSnapshot? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  catalogItem         CatalogItem?          @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
 
+  @@unique([quoteVersionId, position])
   @@index([quoteVersionId])
   @@index([catalogItemId, quoteVersionId])
+  @@index([sectionId])
   @@map("quote_line_snapshots")
+}
+
+/// D1-02: optional grouping for quote lines (title + description); a line
+/// without a section remains valid so Q1-03 can build on this without
+/// forcing every historical/simple quote to have sections.
+model QuoteSectionSnapshot {
+  id             String              @id @default(uuid()) @db.Uuid
+  quoteVersionId String              @db.Uuid
+  position       Int
+  title          String              @db.VarChar(180)
+  description    String?             @db.Text
+  quoteVersion   QuoteVersion        @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
+  lines          QuoteLineSnapshot[]
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+
+  @@unique([quoteVersionId, position])
+  @@map("quote_section_snapshots")
 }
 
 /// K1-05 parte 2: sólo-inserción, nunca se actualiza. Registra qué texto de
@@ -771,6 +842,95 @@ model QuoteApproval {
   @@index([requestedById, requestedAt])
   @@index([decidedById, decidedAt])
   @@map("quote_approvals")
+}
+
+/// D1-03: versioned commercial policy (currency/precision/timezone/discount
+/// threshold). Immutable once referenced by a QuoteVersion; a change creates
+/// a new version and marks the previous one `active=false`.
+model CommercialPolicyVersion {
+  id                           String         @id @default(uuid()) @db.Uuid
+  versionTag                   String         @unique @db.VarChar(64)
+  currencyCode                 String         @db.Char(3)
+  precision                    Int            @default(2)
+  timezone                     String         @db.VarChar(64)
+  /// BIZ-06/07: discounts at or below this threshold (basis points of the
+  /// version subtotal) do not require manager approval.
+  discountApprovalThresholdBps Int            @default(1000)
+  active                       Boolean        @default(true)
+  /// Nullable: system-seeded policy versions (the initial default) have no
+  /// human actor, same convention already used by QuoteStatusHistory.changedById.
+  createdById                  String?        @db.Uuid
+  createdBy                    User?          @relation("CommercialPolicyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  quoteVersions                QuoteVersion[]
+  createdAt                    DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([active, createdAt])
+  @@map("commercial_policy_versions")
+}
+
+/// D1-03/BIZ-03: tax RATE profile only — never a fiscal identity. No RFC or
+/// régimen fiscal field belongs here; see ADR 2026-09-19.
+model TaxProfileVersion {
+  id                     String          @id @default(uuid()) @db.Uuid
+  code                   String          @unique @db.VarChar(32)
+  name                   String          @db.VarChar(120)
+  ratePercentBasisPoints Int
+  roundingRule           TaxRoundingRule @default(HALF_UP)
+  currencyCode           String          @db.Char(3)
+  active                 Boolean         @default(true)
+  quoteVersions          QuoteVersion[]
+  createdAt              DateTime        @default(now()) @db.Timestamptz(3)
+
+  @@index([active, currencyCode])
+  @@map("tax_profile_versions")
+}
+
+/// D1-03/BIZ-10: immutable once referenced by a QuoteVersion; a text change
+/// creates a new version, it never edits an already-used one.
+model CommercialTermsVersion {
+  id              String             @id @default(uuid()) @db.Uuid
+  versionTag      String             @unique @db.VarChar(64)
+  title           String             @db.VarChar(180)
+  bodyMarkdown    String             @db.Text
+  privacyMarkdown String             @db.Text
+  active          Boolean            @default(true)
+  /// Nullable: system-seeded terms versions (the initial default) have no
+  /// human actor, same convention already used by QuoteStatusHistory.changedById.
+  createdById     String?            @db.Uuid
+  createdBy       User?              @relation("CommercialTermsCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  quoteVersions   QuoteVersion[]
+  publications    QuotePublication[]
+  publishedAt     DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@index([active, publishedAt])
+  @@map("commercial_terms_versions")
+}
+
+/// D1-04: one row per real publish event, distinct from QuoteStatusHistory
+/// (which records every transition, not only publications). Lets D2/P1 ask
+/// "when and with what digest was this actually published" directly.
+model QuotePublication {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  quoteId            String                 @db.Uuid
+  quoteVersionId     String                 @db.Uuid
+  documentId         String                 @unique @db.Uuid
+  termsVersionId     String                 @db.Uuid
+  preflightDigest    String                 @db.Char(64)
+  /// Hash only — never the recipient email in clear, same policy already
+  /// applied to other sensitive fields elsewhere in the audit trail.
+  recipientEmailHash String                 @db.Char(64)
+  status             QuotePublicationStatus @default(PUBLISHED)
+  publishedAt        DateTime               @default(now()) @db.Timestamptz(3)
+  publishedById      String                 @db.Uuid
+  quote              Quote                  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quoteVersion       QuoteVersion           @relation(fields: [quoteVersionId, quoteId], references: [id, quoteId], onDelete: Cascade)
+  document           GeneratedDocument      @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  termsVersion       CommercialTermsVersion @relation(fields: [termsVersionId], references: [id], onDelete: Restrict)
+  publishedBy        User                   @relation("QuotePublicationActor", fields: [publishedById], references: [id], onDelete: Restrict)
+
+  @@unique([quoteVersionId, quoteId])
+  @@index([quoteId, publishedAt])
+  @@map("quote_publications")
 }
 
 model RequestAssignment {

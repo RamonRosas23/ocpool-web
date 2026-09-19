@@ -343,7 +343,8 @@ function versionCreateData(snapshot: ReturnType<typeof buildQuoteVersionSnapshot
   return {
     ...versionTotalsData(snapshot),
     lines: {
-      create: snapshot.lines.map((line) => ({
+      create: snapshot.lines.map((line, position) => ({
+        position,
         catalogItemId: line.catalogItemId,
         catalogItemCode: line.catalogItemCode,
         name: line.name,
@@ -499,8 +500,9 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       },
     });
     await transaction.quoteLineSnapshot.deleteMany({ where: { quoteVersionId: version.id } });
-    await transaction.quoteLineSnapshot.createMany({ data: snapshot.lines.map((line) => ({
+    await transaction.quoteLineSnapshot.createMany({ data: snapshot.lines.map((line, position) => ({
       quoteVersionId: version.id,
+      position,
       catalogItemId: line.catalogItemId,
       catalogItemCode: line.catalogItemCode,
       name: line.name,
