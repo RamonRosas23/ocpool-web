@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Menu, X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import { pathMatches, privateShellTrail, type PrivateNavigationItem } from '@/components/private/navigation';
@@ -52,7 +53,7 @@ export default function PrivateShellChrome({ surface, user, roleLabel, navigatio
       <div className="private-shell__topline">
         <WorkspaceBrand className={brandClass} subtitle={surface === 'staff' ? 'Operaciones comerciales' : 'Portal de cliente'} href={brandHref} ariaLabel={brandAriaLabel} />
         <button className="private-shell__menu-toggle" type="button" aria-expanded={menuOpen} aria-controls="private-shell-navigation" onClick={() => setMenuOpen((current) => !current)}>
-          <span aria-hidden="true">{menuOpen ? '×' : '☰'}</span>{menuOpen ? 'Cerrar' : 'Menú'}
+          <span aria-hidden="true">{menuOpen ? <X size={16} /> : <Menu size={16} />}</span>{menuOpen ? 'Cerrar' : 'Menú'}
         </button>
       </div>
       {trail && <nav className="private-shell__trail" aria-label="Ruta actual"><Link href={trail.returnHref}>← {trail.returnLabel}</Link><span aria-hidden="true">/</span><span aria-current="page">{trail.currentLabel}</span></nav>}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { PrivateDialog } from '@/components/private/ui';
 
 type QuoteVersionActionData = Readonly<{
@@ -111,7 +112,7 @@ export default function ClientQuoteActions({ quoteId, version, validity, onAccep
     </div>
     {pdfError && <p className="client-quote-action-error" role="alert">{pdfError}</p>}
     <PrivateDialog open={dialogOpen} onClose={() => { if (!accepting) setDialogOpen(false); }} className="client-accept-dialog" overlayClassName="client-accept-overlay" labelledBy="client-accept-title" describedBy="client-accept-description" initialFocusRef={signerInputRef}>
-      <div className="client-accept-dialog__head"><div><p className="client-eyebrow">Decisión sobre tu propuesta</p><h2 id="client-accept-title">Aceptar versión {version.versionNumber}</h2></div><button className="client-accept-dialog__close" type="button" onClick={() => setDialogOpen(false)} disabled={accepting} aria-label="Cerrar aceptación">×</button></div>
+      <div className="client-accept-dialog__head"><div><p className="client-eyebrow">Decisión sobre tu propuesta</p><h2 id="client-accept-title">Aceptar versión {version.versionNumber}</h2></div><button className="client-accept-dialog__close" type="button" onClick={() => setDialogOpen(false)} disabled={accepting} aria-label="Cerrar aceptación"><X size={20} aria-hidden="true" /></button></div>
       {accepted ? <div className="client-accept-success" role="status"><span className="client-accept-success__mark" aria-hidden="true">✓</span><h3>Propuesta aceptada.</h3><p>La aceptación quedó registrada y tu expediente se actualizó. Conserva el PDF para tus archivos.</p><button className="client-quote-action client-quote-action--primary" type="button" onClick={() => { setDialogOpen(false); onAccepted(); }}>Continuar</button></div> : <form onSubmit={submitAcceptance}>
         <p id="client-accept-description" className="client-accept-dialog__copy">Revisa el PDF y confirma que deseas avanzar con esta propuesta. Esta acción fija la versión aceptada y no permite modificarla.</p>
         <label className="client-accept-field"><span>Nombre de quien acepta</span><input ref={signerInputRef} value={signerName} onChange={(event) => setSignerName(event.target.value)} autoComplete="name" maxLength={180} required placeholder="Escribe tu nombre completo" /></label>

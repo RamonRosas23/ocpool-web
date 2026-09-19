@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Inbox } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
@@ -376,7 +377,7 @@ export default function StaffCatalogPanel() {
         <aside className="catalog-rail">
           <form className="staff-filters" onSubmit={submitSearch}><label><span>Buscar concepto</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Clave o nombre" maxLength={100} /></label><label className="catalog-filters__toggle"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>Mostrar archivados</span></label><button className="staff-button staff-button--filter" type="submit">Buscar</button></form>
           <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `${items.length} de ${total}`}</span><span>Página {page} / {totalPages}</span></div>
-          <div className="catalog-item-list" aria-live="polite">{loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}{!loading && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark">—</span><h2>Catálogo vacío.</h2><p>Prueba otra búsqueda o agrega el primer concepto.</p></div>}{!loading && items.map((item) => <button className={`catalog-item-row${selectedItemId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedItemId(item.id)}><span className="catalog-item-row__code">{item.code}</span><strong>{item.name}</strong><small>{item.category?.name ?? 'Sin categoría'} · {item.unit}{item.status === 'ARCHIVED' ? ' · Archivado' : ''}</small></button>)}</div>
+          <div className="catalog-item-list" aria-live="polite">{loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}{!loading && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>Catálogo vacío.</h2><p>Prueba otra búsqueda o agrega el primer concepto.</p></div>}{!loading && items.map((item) => <button className={`catalog-item-row${selectedItemId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedItemId(item.id)}><span className="catalog-item-row__code">{item.code}</span><strong>{item.name}</strong><small>{item.category?.name ?? 'Sin categoría'} · {item.unit}{item.status === 'ARCHIVED' ? ' · Archivado' : ''}</small></button>)}</div>
           <PrivatePagination page={page} totalPages={totalPages} disabled={loading} onPrevious={() => setPage((current) => current - 1)} onNext={() => setPage((current) => current + 1)} />
         </aside>
         <section className="catalog-main">

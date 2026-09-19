@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
+import { ChevronDown } from 'lucide-react';
 import { privateFieldA11y } from './a11y';
 import PrivateField, { type PrivateFieldChromeProps } from './PrivateField';
 import { parseMoneyInput } from '@/lib/money-input';
@@ -117,7 +118,7 @@ export function PrivateSelect({ id, label, description, error, required, hideLab
       <SelectPrimitive.Root value={selectedValue} onValueChange={(nextValue) => onValueChange(nextValue === EMPTY_SELECT_VALUE ? '' : nextValue)} disabled={disabled}>
         <SelectPrimitive.Trigger id={id} className={joinClasses('private-control private-select__trigger', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required}>
           <SelectPrimitive.Value placeholder={placeholder} />
-          <SelectPrimitive.Icon aria-hidden="true">⌄</SelectPrimitive.Icon>
+          <SelectPrimitive.Icon aria-hidden="true"><ChevronDown size={16} /></SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
         <SelectPrimitive.Portal>
           <SelectPrimitive.Content className="private-select__content" position="popper" sideOffset={6} collisionPadding={10}>

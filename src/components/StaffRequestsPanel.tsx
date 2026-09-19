@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Inbox } from 'lucide-react';
 import StaffFilesPanel, { type StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import StaffMessagingPanel, { type StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
@@ -324,7 +325,7 @@ export default function StaffRequestsPanel() {
             <div className="staff-inbox__head"><span>{loadingList ? 'Actualizando…' : `${items.length} de ${total}`}</span><span>Página {page} / {totalPages}</span></div>
             <div className="staff-request-list" aria-live="polite">
               {loadingList && <div className="staff-list-placeholder"><span /><span /><span /></div>}
-              {!loadingList && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark">—</span><h2>No hay solicitudes aquí.</h2><p>Prueba con otro estado o término de búsqueda.</p></div>}
+              {!loadingList && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>No hay solicitudes aquí.</h2><p>Prueba con otro estado o término de búsqueda.</p></div>}
               {!loadingList && items.map((item) => <button className={`staff-request-row${selectedId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedId(item.id)}><span className={`staff-status-dot staff-status-dot--${item.status.toLowerCase()}`} aria-hidden="true" /><span className="staff-request-row__main"><strong>{item.folio}</strong><span>{item.client.displayName}</span><small>{item.detail?.projectType ?? 'Sin detalle'} · {item.detail?.location ?? 'Sin ubicación'}</small></span><span className="staff-request-row__date">{formatDate(item.createdAt)}</span></button>)}
             </div>
             <PrivatePagination page={page} totalPages={totalPages} disabled={loadingList} onPrevious={() => setPage((current) => current - 1)} onNext={() => setPage((current) => current + 1)} />

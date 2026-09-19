@@ -1,5 +1,6 @@
 'use client';
 
+import { Inbox } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
@@ -188,7 +189,7 @@ export default function StaffNotificationsPanel() {
 
           <div className="staff-notification-list" aria-live="polite">
             {loading && <div className="staff-notification-loading" role="status"><span /><span /><span /><b>Consultando la cola…</b></div>}
-            {!loading && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark">—</span><h2>No hay entregas en esta vista.</h2><p>Cuando existan notificaciones con este estado aparecerán aquí con su diagnóstico operativo.</p></div>}
+            {!loading && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>No hay entregas en esta vista.</h2><p>Cuando existan notificaciones con este estado aparecerán aquí con su diagnóstico operativo.</p></div>}
             {!loading && items.length > 0 && <ul>{items.map((item) => <li className={`staff-notification-row staff-notification-row--${item.status.toLowerCase()}`} key={item.id}>
               <div className="staff-notification-row__identity"><span className={`staff-status-pill staff-status-pill--${item.status.toLowerCase()}`}>{statusLabel(item.status)}</span><strong>{item.templateKey}</strong><small>{item.eventType} · {item.aggregateType}</small></div>
               <dl className="staff-notification-row__facts"><div><dt>Intentos</dt><dd>{item.attempts}</dd></div><div><dt>Antigüedad</dt><dd>{formatAge(item.ageSeconds)}</dd></div><div><dt>Actualizada</dt><dd><time dateTime={item.updatedAt}>{formatDate(item.updatedAt)}</time></dd></div><div><dt>Diagnóstico</dt><dd>{errorLabel(item.errorCategory)}</dd></div></dl>
