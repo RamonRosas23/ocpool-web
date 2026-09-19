@@ -230,6 +230,7 @@ async function resolvePricingSnapshot(
   priceListId: string,
   lines: readonly QuotePricingLineInput[],
   at: Date,
+  previousPricesByItem?: ReadonlyMap<string, bigint>,
 ): Promise<ReturnType<typeof buildQuoteVersionSnapshot>> {
   const normalizedPriceListId = requireUuid(priceListId, 'La lista de precios no es válida.');
   if (lines.length < 1 || lines.length > 100) validation('La cotización debe contener entre 1 y 100 conceptos.');
@@ -293,7 +294,13 @@ async function resolvePricingSnapshot(
 
     const price = pricesByItem.get(line.catalogItemId);
     if (!price) conflict('Uno o más conceptos no tienen precio vigente.');
-    if (line.unitPriceMinorOverride !== undefined) requireEmployeePermission(actor, 'quotes.edit_prices');
+    if (line.unitPriceMinorOverride !== undefined) {
+      const overrideMinor = BigInt(line.unitPriceMinorOverride);
+      const previousMinor = previousPricesByItem?.get(line.catalogItemId);
+      // Reenviar el mismo precio ya congelado en esta versión (fidelidad S0-02 en cada autosave)
+      // no es un override real y no debe exigir el permiso; sólo un valor que de verdad cambia lo exige.
+      if (previousMinor === undefined || previousMinor !== overrideMinor) requireEmployeePermission(actor, 'quotes.edit_prices');
+    }
     let unitPrice;
     try {
       unitPrice = createMoney(line.unitPriceMinorOverride ?? price.unitPriceMinor, currencyCode);
@@ -477,7 +484,12 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       currentAssigneeId: version.currentAssigneeId,
     };
     assertBuildableRequest(request);
-    const snapshot = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now);
+    const existingLines = await transaction.quoteLineSnapshot.findMany({
+      where: { quoteVersionId: version.id, catalogItemId: { not: null } },
+      select: { catalogItemId: true, unitPriceMinor: true },
+    });
+    const previousPricesByItem = new Map(existingLines.map((line) => [line.catalogItemId as string, line.unitPriceMinor]));
+    const snapshot = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem);
     assertSameCurrency(version.currencyCode, snapshot.currency);
     const updated = await transaction.quoteVersion.update({
       where: { id: version.id },

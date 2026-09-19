@@ -138,6 +138,31 @@ describe('quote pricing and versioning service', () => {
       }, { prisma, now });
       expect(editedDraft.totalMinor).toBe(10000n);
       expect(await prisma.quoteLineSnapshot.count({ where: { quoteVersionId: first.versionId } })).toBe(1);
+
+      // Q1-05: un autosave reenvía el precio ya congelado de la línea (para que no se repriecie en
+      // silencio si el catálogo cambia mientras tanto) sin exigir quotes.edit_prices — sólo un valor
+      // que de verdad difiere del ya persistido en esta versión cuenta como un override real.
+      const resent = await replaceQuoteDraft(actor, first.versionId, {
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '2', unitPriceMinorOverride: '5000' }],
+      }, { prisma, now });
+      expect(resent.totalMinor).toBe(10000n);
+      await expect(replaceQuoteDraft(actor, first.versionId, {
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '2', unitPriceMinorOverride: '7000' }],
+      }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+      const genuinelyOverridden = await replaceQuoteDraft(manager, first.versionId, {
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '2', unitPriceMinorOverride: '7000' }],
+      }, { prisma, now });
+      expect(genuinelyOverridden.totalMinor).toBe(14000n);
+      // Deja la versión de vuelta en el precio de catálogo para que el resto del escenario no se altere.
+      const restored = await replaceQuoteDraft(actor, first.versionId, {
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '2' }],
+      }, { prisma, now });
+      expect(restored.totalMinor).toBe(10000n);
+
       await transitionQuoteVersion(actor, first.versionId, 'EN_REVISION', { prisma, now });
       await transitionQuoteVersion(actor, first.versionId, 'ENVIADA', { prisma, now });
       expect(await prisma.quote.findUnique({ where: { id: first.quoteId }, select: { workingVersionId: true, publishedVersionId: true } })).toMatchObject({ workingVersionId: null, publishedVersionId: first.versionId });
