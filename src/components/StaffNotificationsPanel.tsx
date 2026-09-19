@@ -149,7 +149,7 @@ export default function StaffNotificationsPanel() {
   };
 
   if (accessDenied) {
-    return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</PrivateBlockingState></PrivateSurfaceRoot>;
+    return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</PrivateBlockingState></PrivateSurfaceRoot>;
   }
 
   const health = data?.health;

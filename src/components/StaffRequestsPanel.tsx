@@ -294,7 +294,7 @@ export default function StaffRequestsPanel() {
   };
 
   if (accessDenied) {
-    return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</PrivateBlockingState></PrivateSurfaceRoot>;
+    return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</PrivateBlockingState></PrivateSurfaceRoot>;
   }
 
   return (

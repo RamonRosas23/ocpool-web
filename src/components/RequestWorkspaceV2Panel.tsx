@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import WorkspaceBrand from '@/components/WorkspaceBrand';
 import {
   PrivateBlockingState,
   PrivateButton,
@@ -205,7 +206,7 @@ export default function RequestWorkspaceV2Panel() {
   };
 
   if (accessDenied) {
-    return <PrivateSurfaceRoot className="request-workspace-v2 request-workspace-v2--restricted"><PrivateBlockingState title="Acceso restringido.">Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</PrivateBlockingState></PrivateSurfaceRoot>;
+    return <PrivateSurfaceRoot className="request-workspace-v2 request-workspace-v2--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido.">Inicia sesión con una cuenta de empleado autorizada para consultar solicitudes.</PrivateBlockingState></PrivateSurfaceRoot>;
   }
 
   const viewOptions = (canReadGlobal ? REQUEST_WORKSPACE_VIEWS : REQUEST_WORKSPACE_VIEWS.filter((value) => value !== 'all')).map((value) => ({ value, label: VIEW_LABELS[value] }));

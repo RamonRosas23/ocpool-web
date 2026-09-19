@@ -365,7 +365,7 @@ export default function StaffCatalogPanel() {
     finally { setSaving(false); }
   };
 
-  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado autorizada para consultar el catálogo.</PrivateBlockingState></PrivateSurfaceRoot>;
+  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado autorizada para consultar el catálogo.</PrivateBlockingState></PrivateSurfaceRoot>;
 
   return <PrivateSurfaceRoot className="staff-shell">
     <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Catálogo y precios</div></div></header>

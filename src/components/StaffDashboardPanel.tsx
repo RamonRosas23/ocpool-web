@@ -158,7 +158,7 @@ export default function StaffDashboardPanel() {
 
   const displayRange = useMemo(() => data ? `${formatDate(data.meta.from, data.meta.timezone)} — ${formatDate(data.meta.to, data.meta.timezone)}` : 'Preparando periodo', [data]);
 
-  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Necesitas una cuenta de empleado autorizada para consultar las métricas operativas.</PrivateBlockingState></PrivateSurfaceRoot>;
+  if (accessDenied) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Necesitas una cuenta de empleado autorizada para consultar las métricas operativas.</PrivateBlockingState></PrivateSurfaceRoot>;
 
   if (error && !data) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="No fue posible cargarlo." onRetry={() => { setError(null); setReloadToken((current) => current + 1); }}>{error}</PrivateBlockingState></PrivateSurfaceRoot>;
 
