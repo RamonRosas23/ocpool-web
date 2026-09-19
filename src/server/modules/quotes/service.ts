@@ -16,7 +16,7 @@ import {
 } from '@/server/modules/quotes/domain';
 import { canTransitionQuoteRequest, type QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
 import { hasValidApprovedQuoteApproval } from '@/server/modules/quotes/approval-service';
-import { generateQuotePdf } from '@/server/modules/quote-documents/service';
+import { generateQuotePdf, invalidateQuoteVersionDocument } from '@/server/modules/quote-documents/service';
 import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 
 export type CatalogPricingLineInput = Readonly<{
@@ -643,11 +643,15 @@ export async function submitQuoteForReview(actor: Actor, quoteVersionId: string,
 }
 
 export async function returnQuoteToDraft(actor: Actor, quoteVersionId: string, input: Readonly<{ reason: string }>, dependencies: QuoteServiceDependencies = {}) {
-  return performQuoteVersionTransition(actor, quoteVersionId, 'BORRADOR', {
+  const result = await performQuoteVersionTransition(actor, quoteVersionId, 'BORRADOR', {
     reason: requireTransitionReason(input.reason),
     auditAction: 'quote.version.returned_to_draft',
     outboxEventType: 'QUOTE.VERSION_REOPENED',
   }, dependencies);
+  // generateQuotePdf es idempotente por diseño (reutiliza el documento READY existente); sin invalidar
+  // aquí, editar y reenviar publicaría el PDF con el contenido previo a la corrección.
+  await invalidateQuoteVersionDocument(result.versionId, { prisma: dependencies.prisma });
+  return result;
 }
 
 export async function rejectQuoteVersion(actor: Actor, quoteVersionId: string, input: Readonly<{ reason: string }>, dependencies: QuoteServiceDependencies = {}) {

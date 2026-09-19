@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { clonePublishedVersion, createQuoteVersion, rejectQuoteVersion, replaceQuoteDraft, returnQuoteToDraft, submitQuoteForReview, transitionQuoteVersion } from '@/server/modules/quotes/service';
 import { decideQuoteApproval, listPendingQuoteApprovalsForActor, listQuoteApprovals, requestQuoteApproval } from '@/server/modules/quotes/approval-service';
+import { generateQuotePdf } from '@/server/modules/quote-documents/service';
+import type { QuotePdfSnapshot, RenderedQuotePdf } from '@/server/modules/quote-documents/pdf-renderer';
 import { getPrisma } from '@/server/db/client';
 import type { Actor } from '@/server/auth/types';
 
@@ -790,6 +793,73 @@ describe('quote pricing and versioning service', () => {
     } finally {
       const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.delete({ where: { id: item.id } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
+
+  it('invalidates a generated PDF when a reviewed version returns to draft (bug fix: generateQuotePdf is idempotent and would otherwise resend stale content)', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-09-19T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-service-${suffix}-pdf-invalidate`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quote PDF invalidate ${suffix}`, email: `quote-pdf-invalidate-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Culiacán', description: 'PDF invalidation fixture', consentAt: now },
+    }, { prisma, now });
+    const employee = await prisma.user.create({
+      data: { email: `quote-pdf-invalidate-employee-${suffix}@example.test`, emailNormalized: `quote-pdf-invalidate-employee-${suffix}@example.test`, displayName: 'Quote PDF invalidate employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    const category = await prisma.catalogCategory.create({ data: { code: `PDFINV-${suffix}`, name: 'PDF invalidate service' } });
+    const item = await prisma.catalogItem.create({ data: { code: `PDFINV-ITEM-${suffix}`, name: 'PDF invalidate item', unit: 'pieza', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `PDFINV-PRICE-${suffix}`, name: 'PDF invalidate prices', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 10_000n, validFrom: now } });
+    let quoteId: string | null = null;
+    const actor = salesActor(employee.id, ['quotes.create', 'quotes.read', 'quotes.send', 'quotes.pdf.generate', 'quotes.pdf.read', 'prices.read']);
+    const fakeRenderer = async (snapshot: QuotePdfSnapshot): Promise<RenderedQuotePdf> => {
+      const bytes = new TextEncoder().encode(`fake-pdf-total:${snapshot.totalMinor}`);
+      return { bytes, byteSize: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex'), pageCount: 1, templateVersion: 'test-fake' };
+    };
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const created = await createQuoteVersion(actor, { quoteRequestId: request.quoteRequestId, priceListId: priceList.id, lines: [{ catalogItemId: item.id, quantity: '1' }] }, { prisma, now });
+      quoteId = created.quoteId;
+      await submitQuoteForReview(actor, created.versionId, { prisma, now });
+
+      const firstDocument = await generateQuotePdf(actor, created.versionId, { prisma, now, renderer: fakeRenderer });
+      expect(firstDocument.status).toBe('READY');
+      expect(await prisma.generatedDocument.count({ where: { quoteVersionId: created.versionId } })).toBe(1);
+
+      await returnQuoteToDraft(actor, created.versionId, { reason: 'Ajustar cantidad antes de reenviar.' }, { prisma, now });
+      // La fila del documento generado debe desaparecer de inmediato: generateQuotePdf reutiliza
+      // cualquier documento READY existente, así que dejarla viva habría reenviado el PDF viejo.
+      expect(await prisma.generatedDocument.count({ where: { quoteVersionId: created.versionId } })).toBe(0);
+
+      await replaceQuoteDraft(actor, created.versionId, { priceListId: priceList.id, lines: [{ catalogItemId: item.id, quantity: '5' }] }, { prisma, now });
+      await submitQuoteForReview(actor, created.versionId, { prisma, now });
+      const secondDocument = await generateQuotePdf(actor, created.versionId, { prisma, now, renderer: fakeRenderer });
+      expect(secondDocument.status).toBe('READY');
+      expect(secondDocument.id).not.toBe(firstDocument.id);
+      expect(secondDocument.sha256).not.toBe(firstDocument.sha256);
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.generatedDocument.deleteMany({ where: { quoteVersionId: { in: versionIds } } });
       await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
       await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds] } } });

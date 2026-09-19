@@ -1188,6 +1188,10 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .quotes-preflight-dialog__facts dt { color: var(--staff-muted); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .quotes-preflight-dialog__facts dd { display: grid; margin: 0; color: var(--staff-deep); font-size: 13px; font-weight: 600; text-align: right; }
 .quotes-preflight-dialog__facts dd small { color: var(--staff-muted); font-size: 10px; font-weight: 400; }
+.quotes-preflight-field { display: grid; gap: 7px; margin-top: 18px; }
+.quotes-preflight-field > span { color: var(--staff-muted); font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.quotes-preflight-field textarea { width: 100%; min-height: 76px; border: 1px solid var(--staff-line); padding: 10px 12px; background: var(--staff-paper); color: var(--staff-ink); font: inherit; font-size: 13px; resize: vertical; }
+.quotes-preflight-field textarea:focus-visible { border-color: var(--staff-deep); outline: 2px solid rgba(24,37,42,.18); outline-offset: 1px; }
 .quotes-preflight-dialog__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
 .quotes-scope { padding: 24px 0 27px; border-bottom: 1px solid var(--staff-line); }
 .quotes-scope p:last-child { max-width: 760px; margin: 0; color: var(--staff-ink); font-family: var(--private-font-display); font-size: 20px; line-height: 1.2; }

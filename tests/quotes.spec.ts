@@ -203,6 +203,25 @@ test.describe('staff quote builder opt-in flow', () => {
     await expect(page.locator('.quote-document-status')).toHaveText(/Requiere reintento/);
     await page.getByRole('button', { name: 'Reintentar PDF' }).click();
     await expect(page.locator('.quote-document-status')).toHaveText(/Listo para compartir/, { timeout: 10_000 });
+
+    // Q1-06: "Volver a borrador" es la única forma real de corregir algo detectado en revisión;
+    // confirmar exige un motivo y explica que invalida el PDF ya generado (bug fix: generateQuotePdf
+    // es idempotente, así que sin invalidar, editar y reenviar habría publicado el PDF viejo).
+    await page.getByRole('button', { name: 'Volver a borrador' }).click();
+    const returnDialog = page.getByRole('dialog', { name: 'Volver a borrador' });
+    await expect(returnDialog).toBeVisible();
+    await expect(returnDialog).toContainText('El PDF ya generado deja de ser válido');
+    await returnDialog.getByLabel('Motivo (obligatorio, queda en el historial)').fill('Falta corregir una línea antes de reenviar.');
+    await returnDialog.getByRole('button', { name: 'Confirmar y volver a borrador' }).click();
+    await expect(returnDialog).toBeHidden();
+    await expect(page.locator('.private-toast').last()).toContainText('volvió a borrador', { timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: /Versión \d+ · Borrador/ })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('textbox', { name: 'Cantidad de 000 E2E concept', exact: true })).toBeEnabled();
+    await expect(page.locator('.quote-document-status')).toHaveText(/Aún no generado/, { timeout: 10_000 });
+    await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: 'Pasar a revisión' }).click();
+    await expect(page.locator('.private-toast').last()).toContainText('revisión', { timeout: 10_000 });
+
     await recordBaselineMeasurement({
       schemaVersion: 1,
       metricId: 'document_failure_to_recovery',

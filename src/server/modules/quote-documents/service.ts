@@ -160,6 +160,37 @@ async function markFailed(prisma: PrismaClient, documentId: string, actorUserId:
   });
 }
 
+/**
+ * Invalida el PDF ya generado de una versión que vuelve a edición: `generateQuotePdf` es idempotente
+ * por diseño (regresa el documento existente si ya está `READY`), así que sin este paso una versión
+ * que vuelve a BORRADOR, se edita y se reenvía habría publicado el PDF viejo con el contenido previo
+ * a la corrección. El borrado de la fila en base de datos es la parte que debe garantizarse (permite
+ * que la siguiente generación arranque desde cero); el borrado del objeto en storage es mejor esfuerzo,
+ * ya que un huérfano ahí no compromete la corrección, sólo limpieza pendiente.
+ */
+export async function invalidateQuoteVersionDocument(quoteVersionId: string, dependencies: QuotePdfGenerationDependencies = {}): Promise<void> {
+  const prisma = dependencies.prisma ?? getPrisma();
+  const storage = dependencies.storage ?? getPrivateStorage();
+  const existing = await prisma.generatedDocument.findUnique({
+    where: { quoteVersionId_documentType: { quoteVersionId, documentType: 'QUOTE_PDF' } },
+    include: { storageObject: true },
+  });
+  if (!existing) return;
+  const storageKey = existing.storageObject?.storageKey ?? null;
+  const storageObjectId = existing.storageObjectId;
+  await prisma.$transaction([
+    prisma.generatedDocument.delete({ where: { id: existing.id } }),
+    ...(storageObjectId ? [prisma.storageObject.delete({ where: { id: storageObjectId } })] : []),
+  ]);
+  if (storageKey) {
+    try {
+      await storage.delete(storageKey);
+    } catch {
+      // Huérfano en storage; limpieza best-effort. La fila ya fue eliminada, que es lo que importa para la corrección.
+    }
+  }
+}
+
 export async function generateQuotePdf(actor: Actor | null, quoteVersionIdInput: string, dependencies: QuotePdfGenerationDependencies = {}): Promise<GeneratedQuotePdfResult> {
   if (!actor || actor.type !== 'EMPLOYEE') throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
   requirePermission(actor, 'quotes.read');
