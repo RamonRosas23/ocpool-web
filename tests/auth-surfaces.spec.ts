@@ -102,6 +102,7 @@ test.describe('auth browser surfaces', () => {
     await page.goto('/portal/access');
     await expect(page.getByRole('heading', { name: 'Accede a tu portal' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Volver al sitio', exact: true })).toBeVisible();
+    await expect(page.locator('img[alt="OCPOOL"]')).toBeVisible();
     await page.getByLabel('Correo').fill(customerEmail);
     await page.getByRole('button', { name: 'Solicitar acceso' }).click();
     await expect(page.getByRole('status')).toContainText('Si tu cuenta ya está habilitada');
@@ -116,11 +117,13 @@ test.describe('auth browser surfaces', () => {
   test('requests and consumes password recovery safely', async ({ page }) => {
     await page.goto('/login/recovery');
     await expect(page.getByRole('heading', { name: 'Recupera tu acceso' })).toBeVisible();
+    await expect(page.locator('img[alt="OCPOOL"]')).toBeVisible();
     await page.getByLabel('Correo').fill(`unknown-recovery-${suffix}@example.test`);
     await page.getByRole('button', { name: 'Enviar solicitud' }).click();
     await expect(page.getByRole('status')).toContainText('Si el correo está asociado');
 
     await page.goto(`/auth/recovery?token=${encodeURIComponent(recoveryToken)}`);
+    await expect(page.locator('img[alt="OCPOOL"]')).toBeVisible();
     await page.getByLabel('Nueva contraseña').fill('AuthSurfaceReset123!');
     await page.getByLabel('Confirmar contraseña').fill('AuthSurfaceReset123!');
     await page.getByRole('button', { name: 'Actualizar contraseña' }).click();
@@ -132,8 +135,10 @@ test.describe('auth browser surfaces', () => {
   test('renders invalid and replayed links as safe non-authenticated states', async ({ page }) => {
     await page.goto('/auth/customer/consume-link?token=invalid-token');
     await expect(page.getByRole('heading', { name: 'Enlace no disponible' })).toBeVisible();
+    await expect(page.locator('img[alt="OCPOOL"]')).toBeVisible();
     await expect(page.locator('body')).not.toContainText(/UUID|tokenHash|stack|DATABASE_URL/i);
     await page.goto('/auth/recovery');
     await expect(page.getByRole('heading', { name: 'Enlace no disponible' })).toBeVisible();
+    await expect(page.locator('img[alt="OCPOOL"]')).toBeVisible();
   });
 });
