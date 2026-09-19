@@ -1,7 +1,7 @@
 # ADR — Política comercial, fiscal, scope y legal V1
 
 **ID:** ADR-2026-09-10-commercial-policy-v1  
-**Estado:** `PARTIAL_APPROVED_PRODUCT_PENDING_FISCAL_LEGAL`
+**Estado:** `PARTIAL_APPROVED_PRODUCT_PENDING_FISCAL_LEGAL` — histórico; las filas `PENDING_FISCAL`/`PENDING_PRODUCT_LEGAL`/`PENDING_LEGAL` (BIZ-03, BIZ-04, BIZ-09, BIZ-10) quedaron cerradas por [`2026-09-19-commercial-policy-v2-resolution.md`](2026-09-19-commercial-policy-v2-resolution.md). Las filas `APPROVED_PRODUCT` de este documento siguen vigentes sin cambio.
 **Fecha:** 2026-09-10  
 **Owner técnico:** Codex/arquitectura  
 **Decisores:** responsable de producto OCPOOL; fiscalía/jurídico para los ámbitos indicados  

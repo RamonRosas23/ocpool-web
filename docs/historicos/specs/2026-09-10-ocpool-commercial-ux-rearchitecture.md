@@ -1,5 +1,9 @@
 # OCPOOL — Especificación normativa de experiencia comercial V2
 
+> **ARCHIVADO 2026-09-19:** documento histórico. Ver
+> [`docs/ocpool-commercial-v2/plans/2026-09-19-ocpool-commercial-v3-continuacion.md`](../../ocpool-commercial-v2/plans/2026-09-19-ocpool-commercial-v3-continuacion.md)
+> para el norte y el alcance vigentes.
+
 **Fecha:** 2026-09-10
 **Versión:** 2.0
 **Estado:** revisada técnicamente; los cambios funcionales de flujo, datos y UI comienzan únicamente después de cerrar el gate G0 del plan maestro. G0 sí puede crear documentación, fixtures, medición e infraestructura inerte de flags/QA.
