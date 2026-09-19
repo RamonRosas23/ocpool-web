@@ -324,7 +324,16 @@ test.describe('staff quote builder opt-in flow', () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     const approvalStartedAt = new Date();
-    await page.getByRole('textbox', { name: 'Descuento de 000 E2E concept', exact: true }).fill('5');
+    // A1-01/BIZ-06/BIZ-07: el umbral del 10% aplica al descuento de TODA la versión, no de una
+    // línea aislada. Esta versión trae las 10 líneas de catálogo agregadas al inicio del recorrido
+    // (más la línea especial de 500.00 sin descuento) — un 20% sólo en la primera línea (~150.00)
+    // queda muy diluido contra un subtotal total de ~2,000.00. Se aplica a las 10 para que la razón
+    // real de la versión completa supere el 10% de forma robusta.
+    await page.getByRole('textbox', { name: 'Descuento de 000 E2E concept', exact: true }).fill('20');
+    for (let index = 2; index <= 10; index += 1) {
+      const label = `Descuento de 000 E2E concept ${String(index).padStart(2, '0')}`;
+      await page.getByRole('textbox', { name: label, exact: true }).fill('20');
+    }
 
     // K1-05: a special concept line (no catalogItemId) recalculates the total and needs its
     // own SPECIAL_CONCEPT approval, alongside the discount approval, before the version can send.

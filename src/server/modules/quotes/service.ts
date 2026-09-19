@@ -115,7 +115,9 @@ type LockedQuoteVersion = {
   versionNumber: number;
   status: QuoteVersionStatus;
   currencyCode: string;
+  subtotalMinor: bigint;
   discountTotalMinor: bigint;
+  commercialPolicyId: string | null;
   updatedAt: Date;
   currentVersionId: string | null;
   workingVersionId: string | null;
@@ -198,7 +200,7 @@ async function lockQuote(transaction: Prisma.TransactionClient, quoteId: string)
 
 async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<LockedQuoteVersion | null> {
   const rows = await transaction.$queryRaw<LockedQuoteVersion[]>(Prisma.sql`
-    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."discountTotalMinor", qv."updatedAt", q."currentVersionId", q."workingVersionId", q."publishedVersionId",
+    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."subtotalMinor", qv."discountTotalMinor", qv."commercialPolicyId", qv."updatedAt", q."currentVersionId", q."workingVersionId", q."publishedVersionId",
            q."quoteRequestId", qr."folio", qr."status" AS "requestStatus", qr."currentAssigneeId", qrd."currencyCode" AS "requestCurrencyCode"
     FROM "quote_versions" qv
     INNER JOIN "quotes" q ON q."id" = qv."quoteId"
@@ -578,6 +580,20 @@ function requiredPermissionForTransition(status: QuoteVersionStatus): string {
   return 'quotes.send';
 }
 
+/// A1-01/BIZ-06/BIZ-07: resolve the discount-approval threshold from the
+/// version's own frozen policy when it has one (so a later policy change
+/// never retroactively changes what an existing version already required),
+/// falling back to the currently active default policy for versions created
+/// before D1-03. If neither exists, fail closed -- ANY discount requires
+/// approval, matching the original V1 policy default -- rather than silently
+/// skip the control.
+export async function resolveDiscountApprovalThresholdBps(transaction: Prisma.TransactionClient, commercialPolicyId: string | null): Promise<number> {
+  const policy = commercialPolicyId
+    ? await transaction.commercialPolicyVersion.findUnique({ where: { id: commercialPolicyId }, select: { discountApprovalThresholdBps: true } })
+    : await transaction.commercialPolicyVersion.findFirst({ where: { active: true }, orderBy: { createdAt: 'desc' }, select: { discountApprovalThresholdBps: true } });
+  return policy?.discountApprovalThresholdBps ?? 0;
+}
+
 type PerformTransitionOptions = Readonly<{ reason?: string | null; auditAction?: string; outboxEventType?: string }>;
 
 async function performQuoteVersionTransition(actor: Actor, quoteVersionId: string, toStatus: QuoteVersionStatus, options: PerformTransitionOptions, dependencies: QuoteServiceDependencies): Promise<{ versionId: string; quoteId: string; fromStatus: QuoteVersionStatus; toStatus: QuoteVersionStatus }> {
@@ -596,7 +612,9 @@ async function performQuoteVersionTransition(actor: Actor, quoteVersionId: strin
     if (version.workingVersionId !== version.id && !(version.publishedVersionId === version.id && version.status !== 'BORRADOR' && version.status !== 'EN_REVISION')) conflict('Sólo la versión vigente puede cambiar de estado.');
     if (!canTransitionQuoteVersion(version.status, toStatus)) conflict('La transición de cotización no está permitida.');
     if (toStatus === 'ENVIADA' && version.discountTotalMinor > 0n) {
-      if (!(await hasValidApprovedQuoteApproval(transaction, version.id, 'DISCOUNT', now))) {
+      const discountRatioBps = version.subtotalMinor > 0n ? (version.discountTotalMinor * 10_000n) / version.subtotalMinor : 10_000n;
+      const thresholdBps = await resolveDiscountApprovalThresholdBps(transaction, version.commercialPolicyId);
+      if (discountRatioBps > BigInt(thresholdBps) && !(await hasValidApprovedQuoteApproval(transaction, version.id, 'DISCOUNT', now))) {
         conflict('La cotización requiere una aprobación vigente antes de enviarse.');
       }
     }

@@ -11,6 +11,7 @@ import { isRecoverableNotificationErrorCode } from '@/server/modules/notificatio
 import { getLatestAggregateNotificationDelivery } from '@/server/modules/notifications/operations';
 import { resolveQuoteWorkspaceProjection, type WorkspaceApprovalStatus, type WorkspaceVersionInput } from '@/server/modules/quotes/workspace-projection';
 import type { QuoteVersionStatus } from '@/server/modules/quotes/domain';
+import { resolveDiscountApprovalThresholdBps } from '@/server/modules/quotes/service';
 
 export type QuoteStaffServiceDependencies = Readonly<{ prisma?: PrismaClient; now?: Date }>;
 
@@ -95,6 +96,7 @@ function serializeVersion(version: {
   taxTotalMinor: bigint;
   totalMinor: bigint;
   taxProfileId: string | null;
+  requiresDiscountApproval: boolean;
   createdAt: Date;
   updatedAt: Date;
   createdBy: { id: string; displayName: string };
@@ -125,6 +127,7 @@ function serializeVersion(version: {
     taxTotalMinor: serializeBigInt(version.taxTotalMinor),
     totalMinor: serializeBigInt(version.totalMinor),
     taxProfileId: version.taxProfileId,
+    requiresDiscountApproval: version.requiresDiscountApproval,
     createdAt: version.createdAt,
     updatedAt: version.updatedAt,
     createdBy: version.createdBy,
@@ -401,6 +404,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       taxTotalMinor: true,
       totalMinor: true,
       taxProfileId: true,
+      commercialPolicyId: true,
       createdAt: true,
       updatedAt: true,
       createdBy: { select: { id: true, displayName: true } },
@@ -458,7 +462,12 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       },
     },
   }) : [];
-  const detailVersionById = new Map(detailVersions.map((version) => [version.id, version]));
+  const detailVersionsWithApprovalFlag = await Promise.all(detailVersions.map(async (version) => {
+    const thresholdBps = await resolveDiscountApprovalThresholdBps(prisma, version.commercialPolicyId);
+    const discountRatioBps = version.subtotalMinor > 0n ? (version.discountTotalMinor * 10_000n) / version.subtotalMinor : 10_000n;
+    return { ...version, requiresDiscountApproval: version.discountTotalMinor > 0n && discountRatioBps > BigInt(thresholdBps) };
+  }));
+  const detailVersionById = new Map(detailVersionsWithApprovalFlag.map((version) => [version.id, version]));
   const currentVersion = displayedVersionId ? detailVersionById.get(displayedVersionId) ?? null : null;
   const currentVersionItemIds = [...new Set(currentVersion?.lines.map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
   const workingVersionRaw = quote?.workingVersionId ? detailVersionById.get(quote.workingVersionId) ?? null : null;

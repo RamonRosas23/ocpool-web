@@ -198,9 +198,11 @@ describe('quote pricing and versioning service', () => {
       expect(draftResult).not.toBeNull();
       expect(await prisma.quote.findUnique({ where: { id: first.quoteId }, select: { workingVersionId: true, publishedVersionId: true } })).toMatchObject({ workingVersionId: draftResult!.versionId, publishedVersionId: first.versionId });
       const discountEditor = salesActor(employee.id, ['quotes.create', 'quotes.send', 'quotes.apply_discount', 'prices.read']);
+      // A1-01/BIZ-06/BIZ-07: > 10% (umbral por defecto de CommercialPolicyVersion) para seguir
+      // exigiendo aprobación de verdad en esta prueba, no un descuento ya autorizado sin aprobar.
       await replaceQuoteDraft(discountEditor, draftResult!.versionId, {
         priceListId: priceList.id,
-        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 500 }],
+        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 1500 }],
       }, { prisma, now });
       await transitionQuoteVersion(discountEditor, draftResult!.versionId, 'EN_REVISION', { prisma, now });
       await expect(transitionQuoteVersion(discountEditor, draftResult!.versionId, 'ENVIADA', { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
@@ -264,10 +266,12 @@ describe('quote pricing and versioning service', () => {
 
     try {
       await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      // A1-01/BIZ-06/BIZ-07: > 10% (umbral por defecto) para que la aprobación siga siendo
+      // realmente exigida en esta prueba, no un descuento que la nueva policy ya deja pasar.
       const created = await createQuoteVersion(requesterActor, {
         quoteRequestId: request.quoteRequestId,
         priceListId: priceList.id,
-        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 500 }],
+        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 1500 }],
       }, { prisma, now });
       quoteId = created.quoteId;
       await transitionQuoteVersion(requesterActor, created.versionId, 'EN_REVISION', { prisma, now });
@@ -306,7 +310,7 @@ describe('quote pricing and versioning service', () => {
       expect(await prisma.quoteApproval.findUnique({ where: { id: approval.id }, select: { status: true } })).toMatchObject({ status: 'SUPERSEDED' });
       await replaceQuoteDraft(requesterActor, created.versionId, {
         priceListId: priceList.id,
-        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 600 }],
+        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 1600 }],
       }, { prisma, now });
       await transitionQuoteVersion(requesterActor, created.versionId, 'EN_REVISION', { prisma, now });
       await expect(transitionQuoteVersion(requesterActor, created.versionId, 'ENVIADA', { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
