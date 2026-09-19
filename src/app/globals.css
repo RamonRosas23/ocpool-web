@@ -1178,6 +1178,17 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .quotes-reprice-lines__after { color: var(--copper); font-weight: 700; }
 .quotes-reprice-dialog__total { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; margin-top: 11px; padding-top: 13px; border-top: 1px solid var(--staff-line); font-size: 13px; font-weight: 700; color: var(--staff-deep); }
 .quotes-reprice-dialog__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.quotes-preflight-overlay { position: fixed; z-index: 30; inset: 0; display: grid; overflow-y: auto; place-items: center; padding: 24px; background: rgba(24,20,12,.55); }
+.quotes-preflight-dialog { width: min(100%, 480px); padding: clamp(22px, 5vw, 34px); border: 1px solid var(--staff-line); background: var(--staff-paper); color: var(--staff-ink); box-shadow: 0 28px 100px rgba(24,20,12,.3); }
+.quotes-preflight-dialog__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--staff-line); }
+.quotes-preflight-dialog__head h3 { margin: 0; color: var(--staff-deep); font-size: 18px; font-weight: 700; }
+.quotes-preflight-dialog__copy { margin: 15px 0 0; color: var(--staff-muted); font-size: 12px; line-height: 1.55; }
+.quotes-preflight-dialog__facts { display: grid; gap: 12px; margin: 18px 0 0; padding: 0; }
+.quotes-preflight-dialog__facts div { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--staff-line); }
+.quotes-preflight-dialog__facts dt { color: var(--staff-muted); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.quotes-preflight-dialog__facts dd { display: grid; margin: 0; color: var(--staff-deep); font-size: 13px; font-weight: 600; text-align: right; }
+.quotes-preflight-dialog__facts dd small { color: var(--staff-muted); font-size: 10px; font-weight: 400; }
+.quotes-preflight-dialog__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
 .quotes-scope { padding: 24px 0 27px; border-bottom: 1px solid var(--staff-line); }
 .quotes-scope p:last-child { max-width: 760px; margin: 0; color: var(--staff-ink); font-family: var(--private-font-display); font-size: 20px; line-height: 1.2; }
 .quotes-history { padding-top: 27px; }

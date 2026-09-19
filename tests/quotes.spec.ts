@@ -237,7 +237,14 @@ test.describe('staff quote builder opt-in flow', () => {
       errorCount: 0,
       abandoned: false,
     });
+    // P1-04 (parte 1): enviar exige confirmar un resumen (destinatario/total/vigencia/documento)
+    // antes de publicar; nunca un solo clic sin evidencia intermedia.
     await page.getByRole('button', { name: 'Enviar cotización' }).click();
+    const preflightDialog = page.getByRole('dialog', { name: 'Confirmar envío al cliente' });
+    await expect(preflightDialog).toBeVisible({ timeout: 10_000 });
+    await expect(preflightDialog).toContainText('Quote builder client');
+    await expect(preflightDialog).toContainText('MXN 1,500.00');
+    await preflightDialog.getByRole('button', { name: 'Confirmar y enviar' }).click();
     await expect(page.locator('.private-toast').last()).toContainText('enviada', { timeout: 10_000 });
     await recordBaselineMeasurement({
       schemaVersion: 1,
@@ -339,6 +346,10 @@ test.describe('staff quote builder opt-in flow', () => {
       await approverPage.getByRole('button', { name: 'Aprobar concepto especial' }).click();
       await expect(approverPage.locator('.private-toast').last()).toContainText('Concepto especial aprobado', { timeout: 10_000 });
       await approverPage.getByRole('button', { name: 'Enviar cotización' }).click();
+      const approverPreflightDialog = approverPage.getByRole('dialog', { name: 'Confirmar envío al cliente' });
+      await expect(approverPreflightDialog).toBeVisible({ timeout: 10_000 });
+      await expect(approverPreflightDialog).toContainText('Quote builder client');
+      await approverPreflightDialog.getByRole('button', { name: 'Confirmar y enviar' }).click();
       await expect(approverPage.locator('.private-toast').last()).toContainText('enviada', { timeout: 10_000 });
       await recordBaselineMeasurement({
         schemaVersion: 1,
