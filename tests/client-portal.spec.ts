@@ -314,13 +314,21 @@ test.describe('customer portal opt-in flow', () => {
     await expect(page.getByRole('heading', { name: 'Comercial' })).toBeVisible();
     await expect(page.getByText('Propuesta vencida', { exact: true })).toBeVisible();
     await expect(page.getByText('Vigencia expirada el 15 ago 2026')).toBeVisible();
-    await expect(page.getByText('Propuesta vencida. Escríbenos en la conversación del expediente para solicitar una actualización.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Propuesta vencida. Solicita cambios para recibir una versión actualizada.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Revisar y aceptar' })).toBeHidden();
+    // C1-04: una propuesta vencida usa la misma acción explícita "Solicitar cambios" que cualquier
+    // otra, en vez de depender de que el cliente encuentre y use el chat general por su cuenta.
     const message = 'Solicito una actualización de la propuesta vencida.';
-    await page.getByRole('textbox', { name: 'Escribe una actualización' }).fill(message);
-    await page.getByRole('button', { name: 'Enviar mensaje' }).click();
-    await expect(page.getByText(message, { exact: true })).toBeVisible();
-    await expect.poll(async () => prisma.conversationMessage.count({ where: { body: message } })).toBe(1);
+    await page.getByRole('button', { name: 'Solicitar cambios' }).click();
+    const changeDialog = page.getByRole('dialog', { name: 'Solicitar cambios' });
+    await expect(changeDialog).toBeVisible();
+    await changeDialog.getByLabel('¿Qué te gustaría ajustar?').fill(message);
+    await changeDialog.getByRole('button', { name: 'Enviar solicitud' }).click();
+    await expect(changeDialog.getByText('Tu solicitud fue enviada.')).toBeVisible();
+    await expect.poll(async () => prisma.conversationMessage.count({ where: { body: { contains: message } } })).toBe(1);
+    await changeDialog.getByRole('button', { name: 'Continuar' }).click();
+    await expect(changeDialog).toBeHidden();
+    await expect(page.getByText(message)).toBeVisible();
     await recordBaselineMeasurement({
       schemaVersion: 1,
       metricId: 'expired_quote_to_next_step',
