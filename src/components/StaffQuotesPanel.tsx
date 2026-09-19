@@ -10,7 +10,7 @@ import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
-import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateMoneyField, PrivatePagination, PrivateSelect, usePrivateToast } from '@/components/private/ui';
+import { PrivateBlockingState, PrivateDatePicker, PrivateDialog, PrivateLinkButton, PrivateMoneyField, PrivatePagination, PrivateSelect, usePrivateToast } from '@/components/private/ui';
 import {
   QUOTE_REQUEST_BUDGET_RANGE_LABELS,
   QUOTE_REQUEST_PROJECT_STAGE_LABELS,
@@ -246,6 +246,7 @@ export default function StaffQuotesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [autosaveState, setAutosaveState] = useState<AutosaveState>('saved');
   const [autosaveMessage, setAutosaveMessage] = useState<string | null>(null);
+  const [repriceDialogOpen, setRepriceDialogOpen] = useState(false);
   const savedSnapshotRef = useRef('');
   const expectedUpdatedAtRef = useRef<string | null>(null);
   const lastAttemptSnapshotRef = useRef('');
@@ -395,6 +396,59 @@ export default function StaffQuotesPanel() {
   const canEdit = Boolean(capabilities?.quotesCreate && workspace && (!currentVersion || currentVersion.status === 'BORRADOR')) && autosaveState !== 'conflict';
   const canStartVersion = Boolean(capabilities?.quotesCreate && workspace && currentVersion && ['ENVIADA', 'EN_NEGOCIACION'].includes(currentVersion.status));
   const selectedCurrency = priceListDetail?.currencyCode ?? workspace?.request.detail?.currencyCode ?? 'MXN';
+
+  // Q1-04: repreciar es una comprobación explícita bajo demanda, no un aviso ambiental — el precio
+  // vigente sólo se conoce con certeza si se consulta al servidor en el momento, ya que
+  // `priceListDetail` (cargado una sola vez por `selectedPriceListId`) no se refresca solo si el
+  // catálogo cambia mientras el borrador sigue abierto.
+  const [checkingReprice, setCheckingReprice] = useState(false);
+  const [repriceAfterTotal, setRepriceAfterTotal] = useState<{ valid: boolean; total: bigint } | null>(null);
+  const [repriceCandidates, setRepriceCandidates] = useState<Array<{ id: string; name: string; oldPriceMinor: string; newPriceMinor: string }>>([]);
+
+  const checkReprice = async () => {
+    if (!selectedPriceListId || checkingReprice) return;
+    setCheckingReprice(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { credentials: 'include', cache: 'no-store' });
+      const fresh = await readApiResponseOrThrow<PriceListDetail>(response, 'No fue posible consultar los precios vigentes.');
+      setPriceListDetail(fresh);
+      const freshPricesByItem = new Map(fresh.items.map((item) => [item.catalogItemId, item]));
+      const candidates = draftLines.flatMap((line) => {
+        if (line.special || line.unitPriceDirty || line.snapshotUnitPriceMinor === null || !line.catalogItemId) return [];
+        const livePriceMinor = freshPricesByItem.get(line.catalogItemId)?.unitPriceMinor;
+        if (!livePriceMinor || livePriceMinor === line.snapshotUnitPriceMinor) return [];
+        return [{ id: line.id, name: line.catalogItemName, oldPriceMinor: line.snapshotUnitPriceMinor, newPriceMinor: livePriceMinor }];
+      });
+      if (candidates.length === 0) { showToast('Los precios de esta propuesta ya están actualizados.'); return; }
+      const newPriceById = new Map(candidates.map((candidate) => [candidate.id, candidate.newPriceMinor]));
+      const after = draftLines.reduce((summary, line) => {
+        const price = line.catalogItemId ? freshPricesByItem.get(line.catalogItemId)?.unitPriceMinor : undefined;
+        const previewLine = newPriceById.has(line.id) ? { ...line, snapshotUnitPriceMinor: newPriceById.get(line.id)! } : line;
+        const result = calculatePreview(previewLine, price);
+        if (!result) return { ...summary, valid: false };
+        return { valid: summary.valid, total: summary.total + result.total };
+      }, { valid: true, total: 0n });
+      setRepriceCandidates(candidates);
+      setRepriceAfterTotal(after);
+      setRepriceDialogOpen(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No fue posible consultar los precios vigentes.');
+    } finally {
+      setCheckingReprice(false);
+    }
+  };
+
+  const confirmReprice = () => {
+    const newPriceById = new Map(repriceCandidates.map((candidate) => [candidate.id, candidate.newPriceMinor]));
+    setDraftLines((lines) => lines.map((line) => {
+      const newPriceMinor = newPriceById.get(line.id);
+      if (newPriceMinor === undefined) return line;
+      return { ...line, snapshotUnitPriceMinor: null, unitPriceMinorOverride: '', unitPriceInput: moneyInputLabel(newPriceMinor), unitPriceDirty: false };
+    }));
+    setRepriceDialogOpen(false);
+    showToast(`Se repreció ${repriceCandidates.length} concepto${repriceCandidates.length === 1 ? '' : 's'} a la lista de precios vigente.`);
+  };
 
   const refresh = async () => {
     if (selectedId) await loadWorkspace(selectedId);
@@ -725,9 +779,16 @@ export default function StaffQuotesPanel() {
           {!loadingWorkspace && workspace && <>
             <div className="quotes-main__top"><div><p className="staff-kicker">{workspace.request.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{workspace.request.folio}</h2><p className="staff-detail__date">{workspace.request.client.displayName} · Actualizado {formatDate(workspace.request.updatedAt)}</p></div><StatusPill status={workspace.request.status} /></div>
             <div className="quotes-brief"><div><p className="staff-section-label">Alcance</p><strong>{workspace.request.detail?.projectType ?? 'Sin tipo de proyecto'}</strong><span>{workspace.request.detail?.location ?? 'Sin ubicación'}{workspace.request.detail?.dimensions ? ` · ${workspace.request.detail.dimensions}` : ''}</span></div><div><p className="staff-section-label">Calificación</p><strong>{qualificationLabel(workspace.request.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</strong><span>{qualificationLabel(workspace.request.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)} · {qualificationLabel(workspace.request.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</span></div><div><p className="staff-section-label">Contacto</p><strong>{workspace.request.contact.displayName}</strong><span>{workspace.request.contact.email}</span></div><div><p className="staff-section-label">Moneda</p><strong>{selectedCurrency}</strong><span>{workspace.request.detail?.budgetCents ? `Presupuesto ${moneyLabel(workspace.request.detail.budgetCents, workspace.request.detail.currencyCode)}` : 'Sin presupuesto declarado'}</span></div></div>
-            <section className="quotes-builder"><div className="quotes-builder__head"><div><p className="staff-section-label">Composición</p><h3>{currentVersion ? `Versión ${currentVersion.versionNumber} · ${statusLabel(currentVersion.status)}` : 'Primera versión'}</h3>{canEdit && draftLines.length > 0 ? <AutosaveIndicator state={autosaveState} /> : null}</div><PrivateSelect id="quotes-price-list" className="quotes-list-select" label="Lista de precios" value={selectedPriceListId} onValueChange={setSelectedPriceListId} options={priceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currencyCode}` }))} placeholder="Selecciona una lista" disabled={(!canEdit && !canStartVersion) || autosaveState === 'conflict'} /></div>
+            <section className="quotes-builder"><div className="quotes-builder__head"><div><p className="staff-section-label">Composición</p><h3>{currentVersion ? `Versión ${currentVersion.versionNumber} · ${statusLabel(currentVersion.status)}` : 'Primera versión'}</h3>{canEdit && draftLines.length > 0 ? <AutosaveIndicator state={autosaveState} /> : null}</div><PrivateSelect id="quotes-price-list" className="quotes-list-select" label="Lista de precios" value={selectedPriceListId} onValueChange={setSelectedPriceListId} options={priceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currencyCode}` }))} placeholder="Selecciona una lista" disabled={(!canEdit && !canStartVersion) || autosaveState === 'conflict'} />{canEdit && draftLines.some((line) => !line.special) && <button className="staff-button staff-button--outline quotes-reprice-trigger" type="button" disabled={checkingReprice} onClick={() => void checkReprice()}>{checkingReprice ? 'Comprobando…' : 'Verificar precios vigentes'}</button>}</div>
               {autosaveState === 'conflict' && <div className="quotes-conflict" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p>{autosaveMessage ?? 'La versión cambió desde la última lectura.'}</p><div className="quotes-conflict__actions"><button className="staff-button staff-button--outline" type="button" onClick={() => void reloadDiscardingLocalEdits()}>Recargar con los cambios del servidor</button><button className="staff-button staff-button--danger" type="button" onClick={() => void overwriteWithLocalEdits()}>Mantener mis cambios y sobrescribir</button></div></div>}
               {autosaveState === 'error' && autosaveMessage && <p className="staff-error" role="alert">{autosaveMessage} <button className="quotes-retry-link" type="button" onClick={retryDraftSaveNow}>Reintentar</button></p>}
+              <PrivateDialog open={repriceDialogOpen} onClose={() => setRepriceDialogOpen(false)} className="quotes-reprice-dialog" overlayClassName="quotes-reprice-overlay" labelledBy="quotes-reprice-title" describedBy="quotes-reprice-description">
+                <div className="quotes-reprice-dialog__head"><h3 id="quotes-reprice-title">Repreciar con la lista vigente</h3><button className="quotes-reprice-dialog__close" type="button" onClick={() => setRepriceDialogOpen(false)} aria-label="Cerrar repreciado"><X size={18} aria-hidden="true" /></button></div>
+                <p id="quotes-reprice-description" className="quotes-reprice-dialog__copy">Estos conceptos conservan el precio con el que se guardaron. Repreciar los actualiza al precio vigente de <strong>{priceListDetail?.name ?? 'la lista seleccionada'}</strong>; el resto de la propuesta no cambia.</p>
+                <ul className="quotes-reprice-lines">{repriceCandidates.map((candidate) => <li key={candidate.id}><span>{candidate.name}</span><span className="quotes-reprice-lines__before">{moneyLabel(candidate.oldPriceMinor, selectedCurrency)}</span><span aria-hidden="true">→</span><span className="quotes-reprice-lines__after">{moneyLabel(candidate.newPriceMinor, selectedCurrency)}</span></li>)}</ul>
+                <div className="quotes-reprice-dialog__total"><span>Total de propuesta</span><span className="quotes-reprice-lines__before">{moneyLabel(preview.total, selectedCurrency)}</span><span aria-hidden="true">→</span><span className="quotes-reprice-lines__after">{repriceAfterTotal?.valid ? moneyLabel(repriceAfterTotal.total, selectedCurrency) : 'Revisa las líneas'}</span></div>
+                <div className="quotes-reprice-dialog__actions"><button className="staff-button staff-button--outline" type="button" onClick={() => setRepriceDialogOpen(false)}>Cancelar</button><button className="staff-button staff-button--copper" type="button" onClick={confirmReprice}>Confirmar repreciado</button></div>
+              </PrivateDialog>
               <div className="quotes-lines-head"><span>Concepto</span><span>Cantidad</span><span>Precio</span><span>Descuento</span><span>Impuesto</span><span>Total</span><span className="sr-only">Acción</span></div>
               <div className="quotes-lines">
                 {draftLines.map((line) => { const price = line.catalogItemId ? pricesByItem.get(line.catalogItemId)?.unitPriceMinor : undefined; const linePreview = calculatePreview(line, price); const displayedPrice = line.unitPriceDirty ? line.unitPriceInput : line.snapshotUnitPriceMinor ? moneyInputLabel(line.snapshotUnitPriceMinor) : price ? moneyInputLabel(price) : ''; return <div className={`quotes-line${line.special ? ' quotes-line--special' : ''}`} key={line.id}><div className="quotes-line__item">{line.special ? <div className="quotes-line__special"><input aria-label="Nombre del concepto especial" value={line.catalogItemName} onChange={(event) => updateLine(line.id, 'catalogItemName', event.target.value)} disabled={!canEdit} placeholder="Nombre" maxLength={180} /><input aria-label="Unidad del concepto especial" value={line.unit} onChange={(event) => updateLine(line.id, 'unit', event.target.value)} disabled={!canEdit} placeholder="Unidad" maxLength={40} /><small><strong>Especial</strong>{line.reason ? ` · ${line.reason}` : ''}</small></div> : <><strong>{line.catalogItemName}</strong><small>{line.catalogItemCode} · {line.unit}</small></>}</div><label><span className="quotes-mobile-label">Cantidad</span><input aria-label={`Cantidad de ${line.catalogItemName}`} value={line.quantity} onChange={(event) => updateLine(line.id, 'quantity', event.target.value)} disabled={!canEdit} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Precio</span><input aria-label={`Precio de ${line.catalogItemName}`} value={displayedPrice} onChange={(event) => setDraftLines((lines) => lines.map((candidate) => candidate.id === line.id ? { ...candidate, unitPriceInput: event.target.value, unitPriceMinorOverride: parseMoneyInput(event.target.value) ?? '', unitPriceDirty: true } : candidate))} disabled={!canEdit || !capabilities?.quotesEditPrices} placeholder={price ? moneyInputLabel(price) : 'Sin precio'} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Desc. %</span><input aria-label={`Descuento de ${line.catalogItemName}`} value={line.discountBasisPoints === '0' ? '' : (Number(line.discountBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'discountBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit || !capabilities?.quotesApplyDiscount} inputMode="decimal" placeholder="0" /></label><label><span className="quotes-mobile-label">IVA pb</span><input aria-label={`Impuesto de ${line.catalogItemName}`} value={line.taxBasisPoints === '0' ? '' : (Number(line.taxBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'taxBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit} inputMode="decimal" placeholder="0" /></label><strong className="quotes-line__total">{linePreview ? moneyLabel(linePreview.total, selectedCurrency) : '—'}</strong><button className="quotes-line__remove" type="button" aria-label={`Quitar ${line.catalogItemName}`} onClick={() => setDraftLines((lines) => lines.filter((candidate) => candidate.id !== line.id))} disabled={!canEdit}><X size={16} aria-hidden="true" /></button></div>; })}

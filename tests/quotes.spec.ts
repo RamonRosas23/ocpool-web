@@ -163,6 +163,33 @@ test.describe('staff quote builder opt-in flow', () => {
     // repreciar en silencio la línea ya persistida, incluso sin recargar la página.
     await prisma.priceListItem.updateMany({ where: { priceListId, catalogItemId: itemId }, data: { unitPriceMinor: 25_000n } });
     await expect(page.getByRole('textbox', { name: 'Precio de 000 E2E concept', exact: true })).toHaveValue('150.00', { timeout: 5_000 });
+
+    // Q1-04: "Verificar precios vigentes" es una comprobación explícita bajo demanda (el precio no
+    // se repriecia solo ni se anuncia ambientalmente) que siempre muestra antes/después antes de aplicar.
+    await page.getByRole('button', { name: 'Verificar precios vigentes' }).click();
+    const repriceDialog = page.getByRole('dialog', { name: 'Repreciar con la lista vigente' });
+    await expect(repriceDialog).toBeVisible({ timeout: 10_000 });
+    await expect(repriceDialog.locator('.quotes-reprice-lines li')).toHaveCount(1);
+    await expect(repriceDialog.locator('.quotes-reprice-lines__before').first()).toHaveText('MXN 150.00');
+    await expect(repriceDialog.locator('.quotes-reprice-lines__after').first()).toHaveText('MXN 250.00');
+    await repriceDialog.getByRole('button', { name: 'Confirmar repreciado' }).click();
+    await expect(page.locator('.private-toast').last()).toContainText('Se repreció 1 concepto', { timeout: 5_000 });
+    await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('textbox', { name: 'Precio de 000 E2E concept', exact: true })).toHaveValue('250.00', { timeout: 10_000 });
+    await page.reload();
+    await expect(page.getByRole('textbox', { name: 'Precio de 000 E2E concept', exact: true })).toHaveValue('250.00', { timeout: 10_000 });
+    // Verificar de nuevo cuando los precios ya coinciden no debe ofrecer nada que repreciar.
+    await page.getByRole('button', { name: 'Verificar precios vigentes' }).click();
+    await expect(page.locator('.private-toast').last()).toContainText('ya están actualizados', { timeout: 10_000 });
+    // Restaurar el precio de catálogo para que el resto del recorrido (comparación de precio vigente
+    // del renglón, medición de tiempos) siga midiendo contra el mismo valor de siempre.
+    await prisma.priceListItem.updateMany({ where: { priceListId, catalogItemId: itemId }, data: { unitPriceMinor: 15_000n } });
+    await page.getByRole('button', { name: 'Verificar precios vigentes' }).click();
+    await expect(repriceDialog).toBeVisible({ timeout: 10_000 });
+    await repriceDialog.getByRole('button', { name: 'Confirmar repreciado' }).click();
+    await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('textbox', { name: 'Precio de 000 E2E concept', exact: true })).toHaveValue('150.00', { timeout: 10_000 });
+
     const staffActor = { userId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.read', 'quotes.pdf.generate']), mfaVerified: true };
     const publishStartedAt = new Date();
     await page.getByRole('button', { name: 'Pasar a revisión' }).click();
