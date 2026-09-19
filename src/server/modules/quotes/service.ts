@@ -41,6 +41,17 @@ export type SpecialPricingLineInput = Readonly<{
 
 export type QuotePricingLineInput = CatalogPricingLineInput | SpecialPricingLineInput;
 
+/// Q1-03/D1-02: structured commercial content, published verbatim to
+/// client/PDF once the version is sent. All optional/nullable -- a version
+/// with none of this filled in is still a valid, sendable quote.
+export type QuoteContentInput = Readonly<{
+  scopeText?: string | null;
+  exclusionsText?: string | null;
+  paymentTermsText?: string | null;
+  warrantyText?: string | null;
+  publicNotesText?: string | null;
+}>;
+
 export type CreateQuoteVersionInput = Readonly<{
   quoteRequestId: string;
   priceListId: string;
@@ -50,7 +61,7 @@ export type CreateQuoteVersionInput = Readonly<{
   /// K1-04: when provided, its rate overrides every line's tax uniformly.
   /// Omitted keeps the exact prior per-line behavior (see resolveTaxProfile).
   taxProfileId?: string;
-}>;
+}> & QuoteContentInput;
 
 export type ReplaceQuoteDraftInput = Readonly<{
   priceListId: string;
@@ -58,7 +69,7 @@ export type ReplaceQuoteDraftInput = Readonly<{
   validUntil?: Date | null;
   expectedUpdatedAt?: Date;
   taxProfileId?: string;
-}>;
+}> & QuoteContentInput;
 
 export type QuoteServiceDependencies = Readonly<{
   prisma?: PrismaClient;
@@ -145,6 +156,26 @@ function validation(message: string): never {
 
 function conflict(message: string): never {
   throw new AppError('CONFLICT', message, 409);
+}
+
+const MAX_CONTENT_FIELD_LENGTH = 10_000;
+
+function normalizeContentField(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.length > MAX_CONTENT_FIELD_LENGTH) validation('El contenido de la propuesta excede la longitud permitida.');
+  return trimmed;
+}
+
+function normalizeContentFields(input: QuoteContentInput) {
+  return {
+    scopeText: normalizeContentField(input.scopeText),
+    exclusionsText: normalizeContentField(input.exclusionsText),
+    paymentTermsText: normalizeContentField(input.paymentTermsText),
+    warrantyText: normalizeContentField(input.warrantyText),
+    publicNotesText: normalizeContentField(input.publicNotesText),
+  };
 }
 
 function normalizeDate(value: Date | null | undefined, now: Date): Date | null {
@@ -463,6 +494,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
         validUntil,
         createdById: actor.userId,
         ...versionCreateData(snapshot, taxProfileId),
+        ...normalizeContentFields(input),
         statusHistory: { create: { toStatus: 'BORRADOR', changedById: actor.userId, createdAt: now } },
       },
     });
@@ -526,6 +558,7 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
         validUntil,
         taxProfileId,
         ...versionTotalsData(snapshot),
+        ...normalizeContentFields(input),
       },
     });
     await transaction.quoteLineSnapshot.deleteMany({ where: { quoteVersionId: version.id } });

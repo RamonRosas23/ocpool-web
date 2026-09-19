@@ -26,12 +26,18 @@ const specialLineSchema = z.object({
   discountBasisPoints: rateSchema.optional(),
   taxBasisPoints: rateSchema.optional(),
 }).strict();
+const contentFieldSchema = z.string().trim().max(10_000).nullable().optional();
 const bodySchema = z.object({
   priceListId: z.string().uuid(),
   lines: z.array(z.union([catalogLineSchema, specialLineSchema])).min(1).max(100),
   validUntil: z.coerce.date().nullable().optional(),
   expectedUpdatedAt: z.coerce.date().optional(),
   taxProfileId: z.string().uuid().optional(),
+  scopeText: contentFieldSchema,
+  exclusionsText: contentFieldSchema,
+  paymentTermsText: contentFieldSchema,
+  warrantyText: contentFieldSchema,
+  publicNotesText: contentFieldSchema,
 }).strict();
 
 type RouteContext = { params: Promise<{ versionId: string }> };

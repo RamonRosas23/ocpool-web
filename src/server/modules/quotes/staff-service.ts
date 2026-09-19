@@ -97,6 +97,11 @@ function serializeVersion(version: {
   totalMinor: bigint;
   taxProfileId: string | null;
   requiresDiscountApproval: boolean;
+  scopeText: string | null;
+  exclusionsText: string | null;
+  paymentTermsText: string | null;
+  warrantyText: string | null;
+  publicNotesText: string | null;
   createdAt: Date;
   updatedAt: Date;
   createdBy: { id: string; displayName: string };
@@ -128,6 +133,11 @@ function serializeVersion(version: {
     totalMinor: serializeBigInt(version.totalMinor),
     taxProfileId: version.taxProfileId,
     requiresDiscountApproval: version.requiresDiscountApproval,
+    scopeText: version.scopeText,
+    exclusionsText: version.exclusionsText,
+    paymentTermsText: version.paymentTermsText,
+    warrantyText: version.warrantyText,
+    publicNotesText: version.publicNotesText,
     createdAt: version.createdAt,
     updatedAt: version.updatedAt,
     createdBy: version.createdBy,
@@ -405,6 +415,11 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       totalMinor: true,
       taxProfileId: true,
       commercialPolicyId: true,
+      scopeText: true,
+      exclusionsText: true,
+      paymentTermsText: true,
+      warrantyText: true,
+      publicNotesText: true,
       createdAt: true,
       updatedAt: true,
       createdBy: { select: { id: true, displayName: true } },
