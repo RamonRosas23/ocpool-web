@@ -94,6 +94,7 @@ function serializeVersion(version: {
   taxableTotalMinor: bigint;
   taxTotalMinor: bigint;
   totalMinor: bigint;
+  taxProfileId: string | null;
   createdAt: Date;
   updatedAt: Date;
   createdBy: { id: string; displayName: string };
@@ -123,6 +124,7 @@ function serializeVersion(version: {
     taxableTotalMinor: serializeBigInt(version.taxableTotalMinor),
     taxTotalMinor: serializeBigInt(version.taxTotalMinor),
     totalMinor: serializeBigInt(version.totalMinor),
+    taxProfileId: version.taxProfileId,
     createdAt: version.createdAt,
     updatedAt: version.updatedAt,
     createdBy: version.createdBy,
@@ -398,11 +400,12 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       taxableTotalMinor: true,
       taxTotalMinor: true,
       totalMinor: true,
+      taxProfileId: true,
       createdAt: true,
       updatedAt: true,
       createdBy: { select: { id: true, displayName: true } },
       lines: {
-        orderBy: { id: 'asc' },
+        orderBy: { position: 'asc' },
         select: {
           id: true,
           catalogItemId: true,
@@ -494,13 +497,18 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       name: priceList.name,
       currencyCode: priceList.currencyCode,
     }));
-  const [historyPage, latestDelivery, lastCustomerVisibleMessage] = await Promise.all([
+  const [historyPage, latestDelivery, lastCustomerVisibleMessage, taxProfiles] = await Promise.all([
     loadQuoteHistoryPage(prisma, versionSummaries.map((version) => version.id), undefined, DEFAULT_QUOTE_HISTORY_PAGE_SIZE),
     quote ? getLatestAggregateNotificationDelivery(prisma, 'QUOTE', quote.id) : Promise.resolve(null),
     prisma.conversationMessage.findFirst({
       where: { conversation: { quoteRequestId: request.id }, visibility: 'CUSTOMER' },
       orderBy: { createdAt: 'desc' },
       select: { sender: { select: { type: true } } },
+    }),
+    prisma.taxProfileVersion.findMany({
+      where: { active: true },
+      orderBy: { code: 'asc' },
+      select: { id: true, code: true, name: true, ratePercentBasisPoints: true },
     }),
   ]);
 
@@ -543,6 +551,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       historyNextCursor: historyPage.nextCursor,
     } : null,
     priceLists,
+    taxProfiles,
     projection,
     meta: {
       timezone: readServerEnv().APP_TIMEZONE,

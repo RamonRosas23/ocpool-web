@@ -33,6 +33,7 @@ const bodySchema = z.object({
   lines: z.array(lineSchema).min(1).max(100),
   validUntil: z.coerce.date().nullable().optional(),
   expectedCurrentVersionNumber: z.number().int().min(1).nullable().optional(),
+  taxProfileId: z.string().uuid().optional(),
 }).strict();
 
 type RouteContext = { params: Promise<{ quoteRequestId: string }> };

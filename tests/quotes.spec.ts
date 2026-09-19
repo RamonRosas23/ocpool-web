@@ -262,7 +262,8 @@ test.describe('staff quote builder opt-in flow', () => {
     const preflightDialog = page.getByRole('dialog', { name: 'Confirmar envío al cliente' });
     await expect(preflightDialog).toBeVisible({ timeout: 10_000 });
     await expect(preflightDialog).toContainText('Quote builder client');
-    await expect(preflightDialog).toContainText('MXN 1,500.00');
+    // K1-04: el total ya incluye el IVA general (16%) resuelto por defecto — 1,500.00 de subtotal + 240.00 de IVA.
+    await expect(preflightDialog).toContainText('MXN 1,740.00');
     await preflightDialog.getByRole('button', { name: 'Confirmar y enviar' }).click();
     await expect(page.locator('.private-toast').last()).toContainText('enviada', { timeout: 10_000 });
     await recordBaselineMeasurement({

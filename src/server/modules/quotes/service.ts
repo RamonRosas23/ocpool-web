@@ -47,6 +47,9 @@ export type CreateQuoteVersionInput = Readonly<{
   lines: readonly QuotePricingLineInput[];
   validUntil?: Date | null;
   expectedCurrentVersionNumber?: number | null;
+  /// K1-04: when provided, its rate overrides every line's tax uniformly.
+  /// Omitted keeps the exact prior per-line behavior (see resolveTaxProfile).
+  taxProfileId?: string;
 }>;
 
 export type ReplaceQuoteDraftInput = Readonly<{
@@ -54,6 +57,7 @@ export type ReplaceQuoteDraftInput = Readonly<{
   lines: readonly QuotePricingLineInput[];
   validUntil?: Date | null;
   expectedUpdatedAt?: Date;
+  taxProfileId?: string;
 }>;
 
 export type QuoteServiceDependencies = Readonly<{
@@ -224,6 +228,25 @@ function assertSameCurrency(first: string, second: string): void {
   if (normalizedFirst !== normalizedSecond) conflict('La moneda de la cotización no coincide con la solicitud.');
 }
 
+type PricingSnapshotResult = Readonly<{
+  snapshot: ReturnType<typeof buildQuoteVersionSnapshot>;
+  taxProfileId: string | null;
+}>;
+
+/// K1-04/D1-03: when a tax profile is provided, its rate overrides every line's
+/// tax uniformly (a quote has one applicable IVA zone, not a per-line choice) --
+/// this is what lets the UI stop asking sales to type a rate on every line.
+/// Omitting it keeps the exact prior behavior (per-line client value, default
+/// 0) so every existing caller/test that never knew about tax profiles is
+/// unaffected.
+async function resolveTaxProfile(transaction: Prisma.TransactionClient, taxProfileId: string | undefined): Promise<{ id: string; ratePercentBasisPoints: number } | null> {
+  if (taxProfileId === undefined) return null;
+  const normalizedId = requireUuid(taxProfileId, 'El perfil fiscal no es válido.');
+  const profile = await transaction.taxProfileVersion.findUnique({ where: { id: normalizedId }, select: { id: true, active: true, ratePercentBasisPoints: true } });
+  if (!profile || !profile.active) conflict('El perfil fiscal seleccionado no está vigente.');
+  return profile;
+}
+
 async function resolvePricingSnapshot(
   transaction: Prisma.TransactionClient,
   actor: Actor,
@@ -231,9 +254,11 @@ async function resolvePricingSnapshot(
   lines: readonly QuotePricingLineInput[],
   at: Date,
   previousPricesByItem?: ReadonlyMap<string, bigint>,
-): Promise<ReturnType<typeof buildQuoteVersionSnapshot>> {
+  taxProfileId?: string,
+): Promise<PricingSnapshotResult> {
   const normalizedPriceListId = requireUuid(priceListId, 'La lista de precios no es válida.');
   if (lines.length < 1 || lines.length > 100) validation('La cotización debe contener entre 1 y 100 conceptos.');
+  const resolvedTaxProfile = await resolveTaxProfile(transaction, taxProfileId);
   const normalizedLines = lines.map(normalizePricingLine);
   const catalogLines = normalizedLines.filter((line): line is CatalogPricingLineInput => !('special' in line));
   const itemIds = catalogLines.map(({ catalogItemId }) => catalogItemId);
@@ -269,7 +294,7 @@ async function resolvePricingSnapshot(
   const snapshotLines: QuoteLineSnapshotInput[] = normalizedLines.map((line) => {
     const discountBasisPoints = normalizeBasisPoints(line.discountBasisPoints ?? 0);
     if (discountBasisPoints > 0) requireEmployeePermission(actor, 'quotes.apply_discount');
-    const taxBasisPoints = normalizeBasisPoints(line.taxBasisPoints ?? 0);
+    const taxBasisPoints = resolvedTaxProfile ? resolvedTaxProfile.ratePercentBasisPoints : normalizeBasisPoints(line.taxBasisPoints ?? 0);
 
     if ('special' in line) {
       let unitPrice;
@@ -321,7 +346,7 @@ async function resolvePricingSnapshot(
   });
 
   try {
-    return buildQuoteVersionSnapshot(snapshotLines);
+    return { snapshot: buildQuoteVersionSnapshot(snapshotLines), taxProfileId: resolvedTaxProfile?.id ?? null };
   } catch (error) {
     if (error instanceof AppError) throw error;
     validation('No fue posible calcular la cotización con los datos recibidos.');
@@ -339,9 +364,10 @@ function versionTotalsData(snapshot: ReturnType<typeof buildQuoteVersionSnapshot
   };
 }
 
-function versionCreateData(snapshot: ReturnType<typeof buildQuoteVersionSnapshot>) {
+function versionCreateData(snapshot: ReturnType<typeof buildQuoteVersionSnapshot>, taxProfileId: string | null) {
   return {
     ...versionTotalsData(snapshot),
+    taxProfileId,
     lines: {
       create: snapshot.lines.map((line, position) => ({
         position,
@@ -401,7 +427,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
     if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
     requireStaffRequestReadScope(actor, request.currentAssigneeId);
     assertBuildableRequest(request);
-    const snapshot = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now);
+    const { snapshot, taxProfileId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, undefined, input.taxProfileId);
     assertSameCurrency(request.currencyCode, snapshot.currency);
 
     const existingQuote = await transaction.quote.findUnique({ where: { quoteRequestId }, select: { id: true } });
@@ -434,7 +460,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
         status: 'BORRADOR',
         validUntil,
         createdById: actor.userId,
-        ...versionCreateData(snapshot),
+        ...versionCreateData(snapshot, taxProfileId),
         statusHistory: { create: { toStatus: 'BORRADOR', changedById: actor.userId, createdAt: now } },
       },
     });
@@ -490,12 +516,13 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       select: { catalogItemId: true, unitPriceMinor: true },
     });
     const previousPricesByItem = new Map(existingLines.map((line) => [line.catalogItemId as string, line.unitPriceMinor]));
-    const snapshot = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem);
+    const { snapshot, taxProfileId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
     assertSameCurrency(version.currencyCode, snapshot.currency);
     const updated = await transaction.quoteVersion.update({
       where: { id: version.id },
       data: {
         validUntil,
+        taxProfileId,
         ...versionTotalsData(snapshot),
       },
     });
@@ -684,9 +711,11 @@ export async function clonePublishedVersion(actor: Actor, quoteRequestId: string
   if (!quote || !quote.publishedVersionId) conflict('No hay una versión publicada para clonar.');
   if (quote.workingVersionId) conflict('Ya existe una versión de trabajo pendiente; resuélvela antes de clonar.');
 
+  const publishedVersion = await prisma.quoteVersion.findUnique({ where: { id: quote.publishedVersionId }, select: { taxProfileId: true } });
+
   const publishedLines = await prisma.quoteLineSnapshot.findMany({
     where: { quoteVersionId: quote.publishedVersionId },
-    orderBy: { id: 'asc' },
+    orderBy: { position: 'asc' },
     select: { catalogItemId: true, name: true, description: true, unit: true, specialReason: true, quantityMilliunits: true, unitPriceMinor: true, discountBasisPoints: true, taxBasisPoints: true },
   });
 
@@ -709,7 +738,7 @@ export async function clonePublishedVersion(actor: Actor, quoteRequestId: string
       taxBasisPoints: line.taxBasisPoints,
     }));
 
-  return createQuoteVersion(actor, { quoteRequestId: requestId, priceListId, lines }, dependencies);
+  return createQuoteVersion(actor, { quoteRequestId: requestId, priceListId, lines, taxProfileId: publishedVersion?.taxProfileId ?? undefined }, dependencies);
 }
 
 /**

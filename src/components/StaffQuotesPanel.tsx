@@ -92,6 +92,7 @@ type QuoteVersion = {
   taxableTotalMinor: string;
   taxTotalMinor: string;
   totalMinor: string;
+  taxProfileId: string | null;
   createdAt: string;
   updatedAt: string;
   createdBy: { id: string; displayName: string };
@@ -113,6 +114,7 @@ type Workspace = {
   };
   quote: { id: string; currentVersionId: string | null; currentVersion: QuoteVersion | null; versions: QuoteVersion[]; history: Array<{ id: string; fromStatus: string | null; toStatus: string; reason: string | null; createdAt: string; changedBy: { id: string; displayName: string } | null }> } | null;
   priceLists: Array<{ id: string; code: string; name: string; currencyCode: string }>;
+  taxProfiles: Array<{ id: string; code: string; name: string; ratePercentBasisPoints: number }>;
 };
 
 type PriceList = { id: string; code: string; name: string; currencyCode: string; status: string };
@@ -232,6 +234,7 @@ export default function StaffQuotesPanel() {
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
   const [priceListDetail, setPriceListDetail] = useState<PriceListDetail | null>(null);
   const [selectedPriceListId, setSelectedPriceListId] = useState('');
+  const [selectedTaxProfileId, setSelectedTaxProfileId] = useState('');
   const [draftLines, setDraftLines] = useState<DraftLine[]>([]);
   const [showSpecialForm, setShowSpecialForm] = useState(false);
   const [specialForm, setSpecialForm] = useState({ name: '', unit: '', description: '', amountInput: '', reason: '' });
@@ -256,6 +259,8 @@ export default function StaffQuotesPanel() {
   const errorRetryCountRef = useRef(0);
   const selectedPriceListIdRef = useRef('');
   useEffect(() => { selectedPriceListIdRef.current = selectedPriceListId; }, [selectedPriceListId]);
+  const selectedTaxProfileIdRef = useRef('');
+  useEffect(() => { selectedTaxProfileIdRef.current = selectedTaxProfileId; }, [selectedTaxProfileId]);
   const validUntilRef = useRef('');
   useEffect(() => { validUntilRef.current = validUntil; }, [validUntil]);
   const draftLinesRef = useRef<DraftLine[]>([]);
@@ -317,6 +322,8 @@ export default function StaffQuotesPanel() {
       const currentVersion = data.quote?.currentVersion;
       const preferredList = data.priceLists.find((list) => list.currencyCode === (currentVersion?.currencyCode ?? data.request.detail?.currencyCode)) ?? data.priceLists[0];
       const freshPriceListId = data.priceLists.some((list) => list.id === selectedPriceListIdRef.current) ? selectedPriceListIdRef.current : preferredList?.id ?? '';
+      const preferredTaxProfile = data.taxProfiles.find((profile) => profile.code === 'IVA_GENERAL') ?? data.taxProfiles[0];
+      const freshTaxProfileId = currentVersion?.taxProfileId ?? (data.taxProfiles.some((profile) => profile.id === selectedTaxProfileIdRef.current) ? selectedTaxProfileIdRef.current : preferredTaxProfile?.id ?? '');
       const freshValidUntil = currentVersion?.validUntil ? currentVersion.validUntil.slice(0, 10) : '';
       const freshDraftLines: DraftLine[] = (currentVersion?.lines ?? []).map((line) => ({
         id: line.id,
@@ -336,6 +343,7 @@ export default function StaffQuotesPanel() {
         taxBasisPoints: String(line.taxBasisPoints),
       }));
       setSelectedPriceListId(freshPriceListId);
+      setSelectedTaxProfileId(freshTaxProfileId);
       setValidUntil(freshValidUntil);
       setDraftLines(freshDraftLines);
       expectedUpdatedAtRef.current = currentVersion?.updatedAt ?? null;
@@ -399,6 +407,16 @@ export default function StaffQuotesPanel() {
   const canEdit = Boolean(capabilities?.quotesCreate && workspace && (!currentVersion || currentVersion.status === 'BORRADOR')) && autosaveState !== 'conflict';
   const canStartVersion = Boolean(capabilities?.quotesCreate && workspace && currentVersion && ['ENVIADA', 'EN_NEGOCIACION'].includes(currentVersion.status));
   const selectedCurrency = priceListDetail?.currencyCode ?? workspace?.request.detail?.currencyCode ?? 'MXN';
+  const selectedTaxProfile = workspace?.taxProfiles.find((profile) => profile.id === selectedTaxProfileId) ?? null;
+
+  // K1-04: un solo perfil fiscal aplica a toda la versión (una obra tiene una sola zona de IVA),
+  // así que un cambio de selección se propaga de inmediato a todas las líneas editables en vez de
+  // pedir motivo/confirmación como el repreciado de catálogo (que sí es una decisión de precio).
+  useEffect(() => {
+    if (!canEdit || !selectedTaxProfile) return;
+    const rate = String(selectedTaxProfile.ratePercentBasisPoints);
+    setDraftLines((lines) => lines.some((line) => line.taxBasisPoints !== rate) ? lines.map((line) => ({ ...line, taxBasisPoints: rate })) : lines);
+  }, [canEdit, selectedTaxProfile]);
 
   // Q1-04: repreciar es una comprobación explícita bajo demanda, no un aviso ambiental — el precio
   // vigente sólo se conoce con certeza si se consulta al servidor en el momento, ya que
@@ -481,6 +499,7 @@ export default function StaffQuotesPanel() {
         priceListId: selectedPriceListId,
         lines: buildLinesPayload(draftLines),
         ...(validUntil ? { validUntil: new Date(`${validUntil}T23:59:59.999Z`).toISOString() } : {}),
+        ...(selectedTaxProfileId ? { taxProfileId: selectedTaxProfileId } : {}),
         expectedCurrentVersionNumber: currentVersion.versionNumber,
       };
       const response = await fetch(`/api/staff/quotes/${workspace.request.id}`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
@@ -510,7 +529,7 @@ export default function StaffQuotesPanel() {
       snapshotUnitPriceMinor: null,
       unitPriceDirty: false,
       discountBasisPoints: '0',
-      taxBasisPoints: '0',
+      taxBasisPoints: selectedTaxProfile ? String(selectedTaxProfile.ratePercentBasisPoints) : '0',
     }]);
   };
 
@@ -532,7 +551,7 @@ export default function StaffQuotesPanel() {
       snapshotUnitPriceMinor: null,
       unitPriceDirty: true,
       discountBasisPoints: '0',
-      taxBasisPoints: '0',
+      taxBasisPoints: selectedTaxProfile ? String(selectedTaxProfile.ratePercentBasisPoints) : '0',
     }]);
     setSpecialForm({ name: '', unit: '', description: '', amountInput: '', reason: '' });
     setShowSpecialForm(false);
@@ -584,6 +603,7 @@ export default function StaffQuotesPanel() {
           priceListId: selectedPriceListId,
           lines: buildLinesPayload(draftLines),
           ...(validUntil ? { validUntil: new Date(`${validUntil}T23:59:59.999Z`).toISOString() } : {}),
+          ...(selectedTaxProfileId ? { taxProfileId: selectedTaxProfileId } : {}),
           ...(isDraftUpdate && expectedUpdatedAtRef.current ? { expectedUpdatedAt: expectedUpdatedAtRef.current } : {}),
         };
         const response = await fetch(isDraftUpdate ? `/api/staff/quotes/versions/${currentVersion!.id}` : `/api/staff/quotes/${workspace.request.id}`, { method: isDraftUpdate ? 'PATCH' : 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
@@ -629,7 +649,7 @@ export default function StaffQuotesPanel() {
     }
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, selectedPriceListId, draftLines, validUntil, preview.valid, capabilities, currentVersion, page, appliedSearch]);
+  }, [workspace, selectedPriceListId, selectedTaxProfileId, draftLines, validUntil, preview.valid, capabilities, currentVersion, page, appliedSearch]);
 
   const reloadDiscardingLocalEdits = async () => { if (selectedId) await loadWorkspace(selectedId); };
 
@@ -823,7 +843,7 @@ export default function StaffQuotesPanel() {
           {!loadingWorkspace && workspace && <>
             <div className="quotes-main__top"><div><p className="staff-kicker">{workspace.request.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{workspace.request.folio}</h2><p className="staff-detail__date">{workspace.request.client.displayName} · Actualizado {formatDate(workspace.request.updatedAt)}</p></div><StatusPill status={workspace.request.status} /></div>
             <div className="quotes-brief"><div><p className="staff-section-label">Alcance</p><strong>{workspace.request.detail?.projectType ?? 'Sin tipo de proyecto'}</strong><span>{workspace.request.detail?.location ?? 'Sin ubicación'}{workspace.request.detail?.dimensions ? ` · ${workspace.request.detail.dimensions}` : ''}</span></div><div><p className="staff-section-label">Calificación</p><strong>{qualificationLabel(workspace.request.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</strong><span>{qualificationLabel(workspace.request.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)} · {qualificationLabel(workspace.request.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</span></div><div><p className="staff-section-label">Contacto</p><strong>{workspace.request.contact.displayName}</strong><span>{workspace.request.contact.email}</span></div><div><p className="staff-section-label">Moneda</p><strong>{selectedCurrency}</strong><span>{workspace.request.detail?.budgetCents ? `Presupuesto ${moneyLabel(workspace.request.detail.budgetCents, workspace.request.detail.currencyCode)}` : 'Sin presupuesto declarado'}</span></div></div>
-            <section className="quotes-builder"><div className="quotes-builder__head"><div><p className="staff-section-label">Composición</p><h3>{currentVersion ? `Versión ${currentVersion.versionNumber} · ${statusLabel(currentVersion.status)}` : 'Primera versión'}</h3>{canEdit && draftLines.length > 0 ? <AutosaveIndicator state={autosaveState} /> : null}</div><PrivateSelect id="quotes-price-list" className="quotes-list-select" label="Lista de precios" value={selectedPriceListId} onValueChange={setSelectedPriceListId} options={priceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currencyCode}` }))} placeholder="Selecciona una lista" disabled={(!canEdit && !canStartVersion) || autosaveState === 'conflict'} />{canEdit && draftLines.some((line) => !line.special) && <button className="staff-button staff-button--outline quotes-reprice-trigger" type="button" disabled={checkingReprice} onClick={() => void checkReprice()}>{checkingReprice ? 'Comprobando…' : 'Verificar precios vigentes'}</button>}</div>
+            <section className="quotes-builder"><div className="quotes-builder__head"><div><p className="staff-section-label">Composición</p><h3>{currentVersion ? `Versión ${currentVersion.versionNumber} · ${statusLabel(currentVersion.status)}` : 'Primera versión'}</h3>{canEdit && draftLines.length > 0 ? <AutosaveIndicator state={autosaveState} /> : null}</div><PrivateSelect id="quotes-price-list" className="quotes-list-select" label="Lista de precios" value={selectedPriceListId} onValueChange={setSelectedPriceListId} options={priceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currencyCode}` }))} placeholder="Selecciona una lista" disabled={(!canEdit && !canStartVersion) || autosaveState === 'conflict'} /><PrivateSelect id="quotes-tax-profile" className="quotes-list-select" label="Perfil de IVA" value={selectedTaxProfileId} onValueChange={setSelectedTaxProfileId} options={(workspace?.taxProfiles ?? []).map((profile) => ({ value: profile.id, label: `${profile.name} · ${(profile.ratePercentBasisPoints / 100).toString()}%` }))} placeholder="Selecciona un perfil" disabled={!canEdit} />{canEdit && draftLines.some((line) => !line.special) && <button className="staff-button staff-button--outline quotes-reprice-trigger" type="button" disabled={checkingReprice} onClick={() => void checkReprice()}>{checkingReprice ? 'Comprobando…' : 'Verificar precios vigentes'}</button>}</div>
               {autosaveState === 'conflict' && <div className="quotes-conflict" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p>{autosaveMessage ?? 'La versión cambió desde la última lectura.'}</p><div className="quotes-conflict__actions"><button className="staff-button staff-button--outline" type="button" onClick={() => void reloadDiscardingLocalEdits()}>Recargar con los cambios del servidor</button><button className="staff-button staff-button--danger" type="button" onClick={() => void overwriteWithLocalEdits()}>Mantener mis cambios y sobrescribir</button></div></div>}
               {autosaveState === 'error' && autosaveMessage && <p className="staff-error" role="alert">{autosaveMessage} <button className="quotes-retry-link" type="button" onClick={retryDraftSaveNow}>Reintentar</button></p>}
               <PrivateDialog open={repriceDialogOpen} onClose={() => setRepriceDialogOpen(false)} className="quotes-reprice-dialog" overlayClassName="quotes-reprice-overlay" labelledBy="quotes-reprice-title" describedBy="quotes-reprice-description">
@@ -851,9 +871,9 @@ export default function StaffQuotesPanel() {
                 <label className="quotes-preflight-field"><span>Motivo (obligatorio, queda en el historial)</span><textarea value={returnToDraftReason} onChange={(event) => setReturnToDraftReason(event.target.value)} maxLength={500} rows={3} required placeholder="Por ejemplo: falta corregir el alcance de una línea." /></label>
                 <div className="quotes-preflight-dialog__actions"><button className="staff-button staff-button--outline" type="button" onClick={() => setReturnToDraftDialogOpen(false)} disabled={saving}>Cancelar</button><button className="staff-button staff-button--danger" type="button" disabled={saving || !returnToDraftReason.trim()} onClick={() => void confirmReturnToDraft()}>{saving ? 'Guardando…' : 'Confirmar y volver a borrador'}</button></div>
               </PrivateDialog>}
-              <div className="quotes-lines-head"><span>Concepto</span><span>Cantidad</span><span>Precio</span><span>Descuento</span><span>Impuesto</span><span>Total</span><span className="sr-only">Acción</span></div>
+              <div className="quotes-lines-head"><span>Concepto</span><span>Cantidad</span><span>Precio</span><span>Descuento</span><span>Total</span><span className="sr-only">Acción</span></div>
               <div className="quotes-lines">
-                {draftLines.map((line) => { const price = line.catalogItemId ? pricesByItem.get(line.catalogItemId)?.unitPriceMinor : undefined; const linePreview = calculatePreview(line, price); const displayedPrice = line.unitPriceDirty ? line.unitPriceInput : line.snapshotUnitPriceMinor ? moneyInputLabel(line.snapshotUnitPriceMinor) : price ? moneyInputLabel(price) : ''; return <div className={`quotes-line${line.special ? ' quotes-line--special' : ''}`} key={line.id}><div className="quotes-line__item">{line.special ? <div className="quotes-line__special"><input aria-label="Nombre del concepto especial" value={line.catalogItemName} onChange={(event) => updateLine(line.id, 'catalogItemName', event.target.value)} disabled={!canEdit} placeholder="Nombre" maxLength={180} /><input aria-label="Unidad del concepto especial" value={line.unit} onChange={(event) => updateLine(line.id, 'unit', event.target.value)} disabled={!canEdit} placeholder="Unidad" maxLength={40} /><small><strong>Especial</strong>{line.reason ? ` · ${line.reason}` : ''}</small></div> : <><strong>{line.catalogItemName}</strong><small>{line.catalogItemCode} · {line.unit}</small></>}</div><label><span className="quotes-mobile-label">Cantidad</span><input aria-label={`Cantidad de ${line.catalogItemName}`} value={line.quantity} onChange={(event) => updateLine(line.id, 'quantity', event.target.value)} disabled={!canEdit} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Precio</span><input aria-label={`Precio de ${line.catalogItemName}`} value={displayedPrice} onChange={(event) => setDraftLines((lines) => lines.map((candidate) => candidate.id === line.id ? { ...candidate, unitPriceInput: event.target.value, unitPriceMinorOverride: parseMoneyInput(event.target.value) ?? '', unitPriceDirty: true } : candidate))} disabled={!canEdit || !capabilities?.quotesEditPrices} placeholder={price ? moneyInputLabel(price) : 'Sin precio'} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Desc. %</span><input aria-label={`Descuento de ${line.catalogItemName}`} value={line.discountBasisPoints === '0' ? '' : (Number(line.discountBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'discountBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit || !capabilities?.quotesApplyDiscount} inputMode="decimal" placeholder="0" /></label><label><span className="quotes-mobile-label">IVA pb</span><input aria-label={`Impuesto de ${line.catalogItemName}`} value={line.taxBasisPoints === '0' ? '' : (Number(line.taxBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'taxBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit} inputMode="decimal" placeholder="0" /></label><strong className="quotes-line__total">{linePreview ? moneyLabel(linePreview.total, selectedCurrency) : '—'}</strong><button className="quotes-line__remove" type="button" aria-label={`Quitar ${line.catalogItemName}`} onClick={() => setDraftLines((lines) => lines.filter((candidate) => candidate.id !== line.id))} disabled={!canEdit}><X size={16} aria-hidden="true" /></button></div>; })}
+                {draftLines.map((line) => { const price = line.catalogItemId ? pricesByItem.get(line.catalogItemId)?.unitPriceMinor : undefined; const linePreview = calculatePreview(line, price); const displayedPrice = line.unitPriceDirty ? line.unitPriceInput : line.snapshotUnitPriceMinor ? moneyInputLabel(line.snapshotUnitPriceMinor) : price ? moneyInputLabel(price) : ''; return <div className={`quotes-line${line.special ? ' quotes-line--special' : ''}`} key={line.id}><div className="quotes-line__item">{line.special ? <div className="quotes-line__special"><input aria-label="Nombre del concepto especial" value={line.catalogItemName} onChange={(event) => updateLine(line.id, 'catalogItemName', event.target.value)} disabled={!canEdit} placeholder="Nombre" maxLength={180} /><input aria-label="Unidad del concepto especial" value={line.unit} onChange={(event) => updateLine(line.id, 'unit', event.target.value)} disabled={!canEdit} placeholder="Unidad" maxLength={40} /><small><strong>Especial</strong>{line.reason ? ` · ${line.reason}` : ''}</small></div> : <><strong>{line.catalogItemName}</strong><small>{line.catalogItemCode} · {line.unit}</small></>}</div><label><span className="quotes-mobile-label">Cantidad</span><input aria-label={`Cantidad de ${line.catalogItemName}`} value={line.quantity} onChange={(event) => updateLine(line.id, 'quantity', event.target.value)} disabled={!canEdit} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Precio</span><input aria-label={`Precio de ${line.catalogItemName}`} value={displayedPrice} onChange={(event) => setDraftLines((lines) => lines.map((candidate) => candidate.id === line.id ? { ...candidate, unitPriceInput: event.target.value, unitPriceMinorOverride: parseMoneyInput(event.target.value) ?? '', unitPriceDirty: true } : candidate))} disabled={!canEdit || !capabilities?.quotesEditPrices} placeholder={price ? moneyInputLabel(price) : 'Sin precio'} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Desc. %</span><input aria-label={`Descuento de ${line.catalogItemName}`} value={line.discountBasisPoints === '0' ? '' : (Number(line.discountBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'discountBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit || !capabilities?.quotesApplyDiscount} inputMode="decimal" placeholder="0" /></label><strong className="quotes-line__total">{linePreview ? moneyLabel(linePreview.total, selectedCurrency) : '—'}</strong><button className="quotes-line__remove" type="button" aria-label={`Quitar ${line.catalogItemName}`} onClick={() => setDraftLines((lines) => lines.filter((candidate) => candidate.id !== line.id))} disabled={!canEdit}><X size={16} aria-hidden="true" /></button></div>; })}
                 {draftLines.length === 0 && <div className="quotes-lines__empty"><strong>Aún no hay conceptos.</strong><span>Agrega los servicios que componen esta propuesta.</span></div>}
               </div>
               {(canEdit || canStartVersion) && <div className="quotes-add-line"><CatalogItemSearchCombobox priceListId={selectedPriceListId} currencyCode={selectedCurrency} excludeIds={draftLines.map((line) => line.catalogItemId).filter((id): id is string => id !== null)} disabled={!selectedPriceListId} onSelect={addLineFromSearch} /><button className="staff-button staff-button--outline" type="button" onClick={() => setShowSpecialForm((current) => !current)}>{showSpecialForm ? 'Cerrar' : 'Agregar concepto especial'}</button></div>}

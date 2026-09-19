@@ -31,6 +31,7 @@ const bodySchema = z.object({
   lines: z.array(z.union([catalogLineSchema, specialLineSchema])).min(1).max(100),
   validUntil: z.coerce.date().nullable().optional(),
   expectedUpdatedAt: z.coerce.date().optional(),
+  taxProfileId: z.string().uuid().optional(),
 }).strict();
 
 type RouteContext = { params: Promise<{ versionId: string }> };
