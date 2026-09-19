@@ -38,6 +38,25 @@ type DashboardResponse = {
 
 type DashboardQuery = { from?: string; to?: string };
 
+type QueueItem = {
+  id: string;
+  folio: string;
+  status: string;
+  updatedAt: string;
+  client: { displayName: string };
+  detail: { projectType: string } | null;
+};
+
+type QueueResponse = { items: QueueItem[]; total: number };
+
+function ageLabel(value: string): string {
+  const ms = Date.now() - new Date(value).getTime();
+  const days = Math.floor(ms / 86_400_000);
+  if (days <= 0) return 'Actualizada hoy';
+  if (days === 1) return 'Hace 1 día';
+  return `Hace ${days} días`;
+}
+
 const STATUS_LABELS: Record<string, string> = QUOTE_REQUEST_STATUS_LABELS;
 
 const ORIGIN_LABELS: Record<string, string> = { PUBLIC_FORM: 'Formulario público', STAFF_CREATED: 'Creada por staff' };
@@ -106,6 +125,38 @@ export default function StaffDashboardPanel() {
   const [reloadToken, setReloadToken] = useState(0);
   const rangeInitialized = useRef(false);
   const rangeEdited = useRef(false);
+  const [mineQueue, setMineQueue] = useState<QueueResponse | null>(null);
+  const [unassignedQueue, setUnassignedQueue] = useState<QueueResponse | null>(null);
+  const [queuesLoading, setQueuesLoading] = useState(true);
+
+  // W1-02 (primer corte): "qué atender ahora" reutiliza el mismo endpoint y scope de R1 (mine/sin
+  // asignar) — sin score opaco, cada fila es un expediente real con enlace directo al expediente exacto.
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadQueues = async () => {
+      setQueuesLoading(true);
+      try {
+        // El scope "workspace" (view=mine/unassigned) fija su propio pageSize=20 en el servidor;
+        // se toman sólo los primeros 5 para esta lectura compacta y `total` informa el resto.
+        const [mineResponse, unassignedResponse] = await Promise.all([
+          fetch('/api/staff/quote-requests?view=mine&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
+          fetch('/api/staff/quote-requests?view=unassigned&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
+        ]);
+        const [mineResult, unassignedResult] = await Promise.all([
+          readApiResponse<QueueResponse>(mineResponse, 'No fue posible cargar tu trabajo.'),
+          readApiResponse<QueueResponse>(unassignedResponse, 'No fue posible cargar las solicitudes sin asignar.'),
+        ]);
+        if (mineResult.ok) setMineQueue(mineResult.data);
+        if (unassignedResult.ok) setUnassignedQueue(unassignedResult.data);
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+      } finally {
+        if (!controller.signal.aborted) setQueuesLoading(false);
+      }
+    };
+    void loadQueues();
+    return () => controller.abort();
+  }, []);
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -180,6 +231,26 @@ export default function StaffDashboardPanel() {
       <section className="analytics-controls" aria-label="Controles del periodo"><div className="analytics-presets"><span>Vista rápida</span><button className={selectedPreset === '7' ? 'is-selected' : ''} type="button" onClick={() => applyPreset(7)} disabled={!draftTo}>7 días</button><button className={selectedPreset === '30' ? 'is-selected' : ''} type="button" onClick={() => applyPreset(30)} disabled={!draftTo}>30 días</button><button className={selectedPreset === '90' ? 'is-selected' : ''} type="button" onClick={() => applyPreset(90)} disabled={!draftTo}>90 días</button></div><div className="analytics-date-form"><PrivateDatePicker id="dashboard-from" label="Desde" required value={draftFrom} onValueChange={(value) => { rangeEdited.current = true; setDraftFrom(value); }} /><PrivateDatePicker id="dashboard-to" label="Hasta" required value={draftTo} onValueChange={(value) => { rangeEdited.current = true; setDraftTo(value); }} /><button className="staff-button staff-button--dark" type="button" onClick={applyCustomRange} disabled={!draftFrom || !draftTo || loading}>Aplicar periodo</button></div></section>
 
       {error && <p className="staff-error" role="alert">{error}</p>}
+
+      <section className="staff-workqueue" aria-label="Qué atender ahora">
+        <div className="staff-workqueue__grid">
+          <article className="staff-workqueue__card" aria-labelledby="workqueue-mine-title">
+            <div className="staff-workqueue__head"><p className="staff-section-label">Asignado a ti</p><h2 id="workqueue-mine-title">Mi trabajo</h2></div>
+            {queuesLoading && !mineQueue && <div className="staff-workqueue__loading" role="status"><span /><span /><span /></div>}
+            {mineQueue && mineQueue.items.length === 0 && <p className="staff-workqueue__empty">No tienes solicitudes activas asignadas.</p>}
+            {mineQueue && mineQueue.items.length > 0 && <ul className="staff-workqueue__list">{mineQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{labelForStatus(item.status)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>}
+            {mineQueue && mineQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests">Ver las {formatInteger(mineQueue.total)} solicitudes →</Link>}
+          </article>
+          <article className="staff-workqueue__card" aria-labelledby="workqueue-unassigned-title">
+            <div className="staff-workqueue__head"><p className="staff-section-label">Nadie las tiene todavía</p><h2 id="workqueue-unassigned-title">Sin asignar</h2></div>
+            {queuesLoading && !unassignedQueue && <div className="staff-workqueue__loading" role="status"><span /><span /><span /></div>}
+            {unassignedQueue && unassignedQueue.items.length === 0 && <p className="staff-workqueue__empty">No hay solicitudes sin asignar.</p>}
+            {unassignedQueue && unassignedQueue.items.length > 0 && <ul className="staff-workqueue__list">{unassignedQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{labelForStatus(item.status)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>}
+            {unassignedQueue && unassignedQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests">Ver las {formatInteger(unassignedQueue.total)} solicitudes →</Link>}
+          </article>
+        </div>
+      </section>
+
       {loading && !dashboard && <div className="analytics-loading" role="status" aria-live="polite"><span /><span /><span /><strong>Preparando lectura operativa…</strong></div>}
       {dashboard && <>
         <section className="analytics-kpis" aria-label="Indicadores principales"><article><span>Solicitudes recibidas</span><strong>{formatInteger(dashboard.requests.received)}</strong><small>Entradas del periodo</small></article><article><span>Cotizaciones enviadas</span><strong>{formatInteger(dashboard.quotes.sent)}</strong><small>{formatInteger(dashboard.quotes.accepted)} aceptadas</small></article><article><span>Tasa de aceptación</span><strong>{formatRate(dashboard.quotes.acceptanceRateBps)}</strong><small>Sobre cotizaciones enviadas</small></article><article className={dashboard.requests.unassigned ? 'has-alert' : undefined}><span>Sin asignar</span><strong>{formatInteger(dashboard.requests.unassigned)}</strong><small>{dashboard.requests.unassigned ? 'Atención requerida' : 'Sin pendientes'}</small></article></section>

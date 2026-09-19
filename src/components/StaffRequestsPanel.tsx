@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Inbox } from 'lucide-react';
 import { statusToneIcon } from '@/lib/labels';
@@ -129,6 +129,7 @@ export default function StaffRequestsPanel() {
   });
   const [messagingCapabilitiesLoaded, setMessagingCapabilitiesLoaded] = useState(false);
   const [customerAccessBusy, setCustomerAccessBusy] = useState(false);
+  const deepLinkedIdRef = useRef<string | null>(null);
 
   const loadList = useCallback(async (currentPage: number, currentStatus: string, query: string) => {
     setLoadingList(true);
@@ -151,7 +152,12 @@ export default function StaffRequestsPanel() {
       setTotal(data.total);
       setTotalPages(Math.max(data.totalPages, 1));
       setAccessDenied(false);
-      setSelectedId((current) => current && data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null);
+      setSelectedId((current) => {
+        // Un expediente abierto por deep link (ej. desde el dashboard) se conserva la primera vez
+        // aunque no esté en la página actual de la lista; loadDetail lo trae por su cuenta.
+        if (deepLinkedIdRef.current && current === deepLinkedIdRef.current) { deepLinkedIdRef.current = null; return current; }
+        return current && data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null;
+      });
     } catch (caught) {
       setAccessDenied(false);
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el inbox.');
@@ -186,6 +192,11 @@ export default function StaffRequestsPanel() {
     if (selectedId) void loadDetail(selectedId);
     else setSelected(null);
   }, [loadDetail, selectedId]);
+
+  useEffect(() => {
+    const requestFromUrl = new URLSearchParams(window.location.search).get('request');
+    if (requestFromUrl) { deepLinkedIdRef.current = requestFromUrl; setSelectedId(requestFromUrl); }
+  }, []);
 
   useEffect(() => {
     const loadAssignees = async () => {
