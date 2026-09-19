@@ -3,6 +3,7 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
+import { fileStatusLabel } from '@/lib/labels';
 import { shouldResetUploadIdempotencyKey, type UploadStage } from '@/lib/private-file-upload';
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -54,12 +55,6 @@ function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
   return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
-}
-
-function statusLabel(file: FileItem): string {
-  if (file.status === 'AVAILABLE' && file.downloadAvailable) return 'Disponible';
-  if (file.status === 'PENDING_SCAN') return 'En validación';
-  return 'No disponible';
 }
 
 function mergeFiles(current: FileItem[], incoming: FileItem[]): FileItem[] {
@@ -268,7 +263,7 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
       {items.map((file) => <li className="client-file" key={file.id}>
         <div className="client-file__icon" aria-hidden="true">{file.contentType === 'application/pdf' ? 'PDF' : 'IMG'}</div>
         <div className="client-file__info"><strong title={file.originalFileName}>{file.originalFileName}</strong><span>{formatBytes(file.byteSize)} · {formatDate(file.createdAt)}</span></div>
-        <span className={`client-file__status client-file__status--${file.status.toLowerCase()}`}>{statusLabel(file)}</span>
+        <span className={`client-file__status client-file__status--${file.status.toLowerCase()}`}>{fileStatusLabel(file)}</span>
         <div className="client-file__actions">
           {file.downloadAvailable && <button type="button" className="client-file__action" disabled={busyFileId === file.id} onClick={() => void download(file)}>Descargar {file.originalFileName}</button>}
           {confirmDeleteId === file.id ? <span className="client-file__confirm"><button type="button" className="client-file__action client-file__action--danger" disabled={busyFileId === file.id} onClick={() => void remove(file)}>Confirmar eliminación</button><button type="button" className="client-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(null)}>Cancelar</button></span> : <button type="button" className="client-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(file.id)}>Eliminar archivo</button>}

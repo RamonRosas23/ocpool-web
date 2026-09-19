@@ -3,6 +3,8 @@ import {
   type QuoteRequestStatus,
 } from '@/server/modules/quote-requests/domain';
 
+export { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/labels';
+
 export const REQUEST_WORKSPACE_VIEWS = ['all', 'mine', 'unassigned'] as const;
 export const REQUEST_WORKSPACE_AGES = ['all', '0-1', '2-3', '4-7', '8-14', '15-30', '31+'] as const;
 export const REQUEST_WORKSPACE_SORTS = ['newest', 'oldest', 'updated', 'stale'] as const;
@@ -12,20 +14,6 @@ export type RequestWorkspaceView = (typeof REQUEST_WORKSPACE_VIEWS)[number];
 export type RequestWorkspaceAge = (typeof REQUEST_WORKSPACE_AGES)[number];
 export type RequestWorkspaceSort = (typeof REQUEST_WORKSPACE_SORTS)[number];
 export type RequestWorkspaceTab = (typeof REQUEST_WORKSPACE_TABS)[number];
-
-export const QUOTE_REQUEST_STATUS_LABELS: Record<QuoteRequestStatus, string> = {
-  RECIBIDA: 'Recibida',
-  EN_REVISION: 'En revisión',
-  INFORMACION_REQUERIDA: 'Información requerida',
-  EN_ELABORACION: 'En elaboración',
-  COTIZACION_DISPONIBLE: 'Cotización disponible',
-  EN_NEGOCIACION: 'En negociación',
-  PENDIENTE_DE_APROBACION: 'Pendiente de aprobación',
-  ACEPTADA: 'Aceptada',
-  RECHAZADA: 'Rechazada',
-  VENCIDA: 'Vencida',
-  CONVERTIDA_EN_PROYECTO: 'Convertida en proyecto',
-};
 
 export type RequestWorkspaceQuery = Readonly<{
   view: RequestWorkspaceView;

@@ -15,17 +15,7 @@ import {
   QUOTE_REQUEST_TIMELINE_LABELS,
 } from '@/server/modules/quote-requests/domain';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
-
-const STATUS_LABELS: Record<string, string> = {
-  EN_ELABORACION: 'En elaboración',
-  COTIZACION_DISPONIBLE: 'Cotización disponible',
-  EN_NEGOCIACION: 'En negociación',
-  BORRADOR: 'Borrador',
-  EN_REVISION: 'En revisión',
-  ENVIADA: 'Enviada',
-  RECHAZADA: 'Rechazada',
-  VENCIDA: 'Vencida',
-};
+import { QUOTE_REQUEST_STATUS_LABELS, QUOTE_VERSION_STATUS_LABELS } from '@/lib/labels';
 
 type Capabilities = {
   quotesRead: boolean;
@@ -136,7 +126,11 @@ type DraftLine = {
   taxBasisPoints: string;
 };
 
-function statusLabel(status: string): string { return STATUS_LABELS[status] ?? status; }
+function statusLabel(status: string): string {
+  return (QUOTE_VERSION_STATUS_LABELS as Record<string, string>)[status]
+    ?? (QUOTE_REQUEST_STATUS_LABELS as Record<string, string>)[status]
+    ?? status;
+}
 
 function approvalStatusLabel(status: string): string {
   return ({ REQUESTED: 'Pendiente de aprobación', APPROVED: 'Aprobada', REJECTED: 'Rechazada', SUPERSEDED: 'Reemplazada', CANCELLED: 'Cancelada' } as Record<string, string>)[status] ?? status;

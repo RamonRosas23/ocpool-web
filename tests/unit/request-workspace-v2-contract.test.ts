@@ -326,6 +326,7 @@ describe('request workspace V2 route contract', () => {
   });
 
   it('shares one canonical quote request status label dictionary across staff and portal surfaces', () => {
+    const catalog = readProjectFile('src/lib/labels.ts');
     const lib = readProjectFile('src/lib/request-workspace-query.ts');
     const clientPortal = readProjectFile('src/components/ClientPortalPanel.tsx');
     const staffRequests = readProjectFile('src/components/StaffRequestsPanel.tsx');
@@ -333,12 +334,36 @@ describe('request workspace V2 route contract', () => {
     const detail = readProjectFile('src/components/RequestWorkspaceDetailV2.tsx');
     const queuePanel = readProjectFile('src/components/RequestWorkspaceV2Panel.tsx');
 
-    expect(lib).toContain('QUOTE_REQUEST_STATUS_LABELS');
-    expect(lib).toContain('CONVERTIDA_EN_PROYECTO');
+    expect(catalog).toContain('QUOTE_REQUEST_STATUS_LABELS');
+    expect(catalog).toContain('CONVERTIDA_EN_PROYECTO');
+    expect(lib).toContain("export { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/labels'");
 
     for (const file of [clientPortal, staffRequests, staffDashboard, detail, queuePanel]) {
       expect(file).toContain('QUOTE_REQUEST_STATUS_LABELS');
       expect(file).not.toContain("ENVIADA: 'Enviada'");
+    }
+  });
+
+  it('labels every quote version status, including ACEPTADA, without leaking the raw code (U1-05 parte 2)', () => {
+    const catalog = readProjectFile('src/lib/labels.ts');
+    expect(catalog).toContain('QUOTE_VERSION_STATUS_LABELS');
+    expect(catalog).toContain("ACEPTADA: 'Aceptada'");
+
+    const quotesPanel = readProjectFile('src/components/StaffQuotesPanel.tsx');
+    expect(quotesPanel).toContain('QUOTE_VERSION_STATUS_LABELS');
+    expect(quotesPanel).not.toContain("BORRADOR: 'Borrador'");
+  });
+
+  it('shares one canonical file status/category label helper between staff and portal file panels', () => {
+    const catalog = readProjectFile('src/lib/labels.ts');
+    expect(catalog).toContain('export function fileStatusLabel(');
+    expect(catalog).toContain('export function fileCategoryLabel(');
+
+    const staffFiles = readProjectFile('src/components/StaffFilesPanel.tsx');
+    const clientFiles = readProjectFile('src/components/ClientFilesPanel.tsx');
+    for (const file of [staffFiles, clientFiles]) {
+      expect(file).toContain('fileStatusLabel');
+      expect(file).not.toContain("if (file.status === 'PENDING_SCAN') return 'En validación'");
     }
   });
 
