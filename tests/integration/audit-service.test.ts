@@ -104,6 +104,35 @@ describe('staff audit read service', () => {
     expect(result.items.every((item) => item.entityLabel === 'Identidad' && item.details.length === 0)).toBe(true);
   });
 
+  it('pages through security events that share an identical createdAt without duplicating or skipping any', async () => {
+    const tiedAt = new Date('2026-01-16T09:00:00.000Z');
+    const tied = await prisma.authEvent.createManyAndReturn({
+      data: Array.from({ length: 4 }, (_, index) => ({
+        userId: admin.id,
+        eventType: 'LOGIN_SUCCESS' as const,
+        outcome: 'SUCCESS' as const,
+        identifierHash: `${index}`.repeat(64).slice(0, 64),
+        ipAddress: '192.0.2.20',
+        userAgent: 'tie-test-browser',
+        metadata: {},
+        createdAt: tiedAt,
+      })),
+    });
+    authEventIds.push(...tied.map((row) => row.id));
+
+    const seenKeys: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 10; page += 1) {
+      const result = await getStaffAudit(actor(admin.id, ['audit.read', 'audit.security.read']), { from: '2026-01-16', to: '2026-01-17', category: 'security', limit: 2, cursor }, dependencies);
+      seenKeys.push(...result.items.map((item) => item.eventKey));
+      if (!result.nextCursor) break;
+      cursor = result.nextCursor;
+    }
+
+    expect(new Set(seenKeys).size).toBe(seenKeys.length);
+    expect(seenKeys).toHaveLength(4);
+  });
+
   it('denies actors outside staff audit capabilities and applies rate limit before reads', async () => {
     await expect(getStaffAudit(actor(sales.id, []), { from: '2026-09-01', to: '2026-09-08' }, dependencies)).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
     await expect(getStaffAudit(actor(customer.id, ['audit.read'], 'CUSTOMER'), { from: '2026-09-01', to: '2026-09-08' }, dependencies)).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
@@ -111,6 +140,34 @@ describe('staff audit read service', () => {
       ...dependencies,
       rateLimit: async () => ({ allowed: false, retryAfterSeconds: 60 }),
     })).rejects.toMatchObject({ code: 'RATE_LIMITED', status: 429 });
+  });
+
+  it('pages through rows that share an identical createdAt without duplicating or skipping any', async () => {
+    const tiedAt = new Date('2026-01-15T09:00:00.000Z');
+    const tied = await prisma.auditLog.createManyAndReturn({
+      data: Array.from({ length: 4 }, (_, index) => ({
+        actorUserId: manager.id,
+        action: 'quote.pdf.generation_failed',
+        entityType: 'generated_document',
+        entityId: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`,
+        outcome: 'FAILURE' as const,
+        metadata: { failureCode: `TIE-${index}` },
+        createdAt: tiedAt,
+      })),
+    });
+    auditIds.push(...tied.map((row) => row.id));
+
+    const seenKeys: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 10; page += 1) {
+      const result = await getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-01-15', to: '2026-01-16', category: 'documents', outcome: 'FAILURE', limit: 2, cursor }, dependencies);
+      seenKeys.push(...result.items.map((item) => item.eventKey));
+      if (!result.nextCursor) break;
+      cursor = result.nextCursor;
+    }
+
+    expect(new Set(seenKeys).size).toBe(seenKeys.length);
+    expect(seenKeys).toHaveLength(4);
   });
 
   it('rejects a cursor reused with a different filter instead of broadening the query', async () => {
