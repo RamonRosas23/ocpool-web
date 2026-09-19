@@ -4,6 +4,8 @@ import { seedIdentityCatalog } from '../prisma/seed';
 import { getPrisma } from '@/server/db/client';
 import { createSession } from '@/server/auth/sessions';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
+import { createQuoteVersion, transitionQuoteVersion } from '@/server/modules/quotes/service';
+import { requestQuoteApproval } from '@/server/modules/quotes/approval-service';
 import { expectNoSeriousA11yViolations } from './a11y';
 
 test.describe('staff analytics dashboard', () => {
@@ -24,6 +26,14 @@ test.describe('staff analytics dashboard', () => {
   let unassignedContactId = '';
   let unassignedClientId = '';
   let unassignedFolio = '';
+  let approvalRequestId = '';
+  let approvalContactId = '';
+  let approvalClientId = '';
+  let approvalFolio = '';
+  let approvalRequesterId = '';
+  let approvalCategoryId = '';
+  let approvalItemId = '';
+  let approvalPriceListId = '';
 
   test.beforeAll(async () => {
     await seedIdentityCatalog(prisma);
@@ -70,10 +80,53 @@ test.describe('staff analytics dashboard', () => {
     // retrasa el reloj de esta fixture para garantizar que quede entre las primeras sin depender
     // de vaciar datos ajenos. `updatedAt` es `@updatedAt`, por eso se fuerza con SQL directo.
     await prisma.$executeRaw`UPDATE quote_requests SET "updatedAt" = '2000-01-01T00:00:00.000Z' WHERE id = ${unassignedRequestId}::uuid`;
+
+    // W1-02: cola de aprobaciones pendientes — el manager de este dashboard es el aprobador
+    // elegible, pero la aprobación debe solicitarla otro actor (separación de funciones).
+    const requester = await prisma.user.create({
+      data: {
+        email: `e2e-dashboard-requester-${suffix}@example.test`,
+        emailNormalized: `e2e-dashboard-requester-${suffix}@example.test`,
+        displayName: 'E2E Dashboard Requester',
+        type: 'EMPLOYEE',
+        status: 'ACTIVE',
+        roles: { create: { roleId: managerRole.id } },
+      },
+    });
+    approvalRequesterId = requester.id;
+    const approvalRequest = await createQuoteRequest({
+      idempotencyKey: `dashboard-approval-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Dashboard queue approval ${suffix}`, email: `dashboard-approval-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Culiacán', description: 'W1-02 approval queue fixture', consentAt: now },
+    }, { prisma, now });
+    approvalRequestId = approvalRequest.quoteRequestId;
+    approvalClientId = approvalRequest.clientId;
+    approvalContactId = approvalRequest.contactId;
+    approvalFolio = approvalRequest.folio;
+    await prisma.quoteRequest.update({ where: { id: approvalRequestId }, data: { status: 'EN_ELABORACION' } });
+    // catalog_categories/catalog_items/price_lists exigen códigos en mayúsculas (CHECK ^[A-Z0-9][A-Z0-9_-]*$);
+    // el `suffix` de este archivo incluye letras en minúscula (base36), así que se normaliza aquí.
+    const codeSuffix = suffix.toUpperCase();
+    const category = await prisma.catalogCategory.create({ data: { code: `DASH-APPROVAL-${codeSuffix}`, name: 'Dashboard approval queue' } });
+    approvalCategoryId = category.id;
+    const item = await prisma.catalogItem.create({ data: { code: `DASH-APPROVAL-ITEM-${codeSuffix}`, name: 'Dashboard approval item', unit: 'pieza', categoryId: category.id } });
+    approvalItemId = item.id;
+    const priceList = await prisma.priceList.create({ data: { code: `DASH-APPROVAL-PRICE-${codeSuffix}`, name: 'Dashboard approval prices', currencyCode: 'MXN', validFrom: now } });
+    approvalPriceListId = priceList.id;
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 20_000n, validFrom: now } });
+    const requesterActor = { userId: approvalRequesterId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.create', 'quotes.send', 'quotes.apply_discount']), mfaVerified: true };
+    const approvalQuote = await createQuoteVersion(requesterActor, { quoteRequestId: approvalRequestId, priceListId: approvalPriceListId, lines: [{ catalogItemId: approvalItemId, quantity: '1', discountBasisPoints: 500 }] }, { prisma, now });
+    await transitionQuoteVersion(requesterActor, approvalQuote.versionId, 'EN_REVISION', { prisma, now });
+    await requestQuoteApproval(requesterActor, approvalQuote.versionId, { type: 'DISCOUNT', policyVersion: 'discount-v1', thresholdBps: 500 }, { prisma, now });
   });
 
   test.afterAll(async () => {
-    for (const id of [mineRequestId, unassignedRequestId]) {
+    if (approvalRequestId) {
+      await prisma.quoteApproval.deleteMany({ where: { quote: { quoteRequestId: approvalRequestId } } });
+      await prisma.quote.deleteMany({ where: { quoteRequestId: approvalRequestId } });
+    }
+    for (const id of [mineRequestId, unassignedRequestId, approvalRequestId]) {
       if (!id) continue;
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: id } });
       await prisma.auditLog.deleteMany({ where: { entityId: id } });
@@ -83,6 +136,13 @@ test.describe('staff analytics dashboard', () => {
     if (mineClientId) await prisma.client.delete({ where: { id: mineClientId } });
     if (unassignedContactId) await prisma.clientContact.delete({ where: { id: unassignedContactId } });
     if (unassignedClientId) await prisma.client.delete({ where: { id: unassignedClientId } });
+    if (approvalContactId) await prisma.clientContact.delete({ where: { id: approvalContactId } });
+    if (approvalClientId) await prisma.client.delete({ where: { id: approvalClientId } });
+    if (approvalPriceListId) await prisma.priceListItem.deleteMany({ where: { priceListId: approvalPriceListId } });
+    if (approvalPriceListId) await prisma.priceList.delete({ where: { id: approvalPriceListId } });
+    if (approvalItemId) await prisma.catalogItem.delete({ where: { id: approvalItemId } });
+    if (approvalCategoryId) await prisma.catalogCategory.delete({ where: { id: approvalCategoryId } });
+    if (approvalRequesterId) await prisma.user.delete({ where: { id: approvalRequesterId } });
     if (sessionId) await prisma.session.delete({ where: { id: sessionId } });
     if (userId) await prisma.user.delete({ where: { id: userId } });
     await prisma.$disconnect();
@@ -134,6 +194,18 @@ test.describe('staff analytics dashboard', () => {
     await expect(mineCard.getByText(unassignedFolio)).toHaveCount(0);
     await expect(unassignedCard.getByText(mineFolio)).toHaveCount(0);
 
+    // W1-02: la cola de aprobaciones sólo aparece porque este actor puede resolverlas (nunca la que
+    // él mismo hubiera solicitado) y enlaza al constructor de cotizaciones, no al panel de solicitudes.
+    const approvalsCard = page.locator('.staff-workqueue__card', { has: page.getByRole('heading', { name: 'Aprobaciones' }) });
+    await expect(approvalsCard.getByText(approvalFolio)).toBeVisible({ timeout: 10_000 });
+    await expect(approvalsCard.getByText(`Dashboard queue approval ${suffix}`)).toBeVisible();
+    await expect(approvalsCard.getByText('Descuento')).toBeVisible();
+    await approvalsCard.getByText(approvalFolio).click();
+    await expect(page).toHaveURL(new RegExp(`/staff/quotes\\?request=${approvalRequestId}$`));
+    await expect(page.getByRole('heading', { name: approvalFolio })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Aprobar descuento' })).toBeVisible({ timeout: 10_000 });
+
+    await page.goto('/staff');
     await mineCard.getByText(mineFolio).click();
     await expect(page).toHaveURL(new RegExp(`/staff/requests\\?request=${mineRequestId}$`));
     await expect(page.getByRole('heading', { name: mineFolio })).toBeVisible({ timeout: 10_000 });

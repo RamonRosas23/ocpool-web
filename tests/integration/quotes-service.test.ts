@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { clonePublishedVersion, createQuoteVersion, rejectQuoteVersion, replaceQuoteDraft, returnQuoteToDraft, submitQuoteForReview, transitionQuoteVersion } from '@/server/modules/quotes/service';
-import { decideQuoteApproval, listQuoteApprovals, requestQuoteApproval } from '@/server/modules/quotes/approval-service';
+import { decideQuoteApproval, listPendingQuoteApprovalsForActor, listQuoteApprovals, requestQuoteApproval } from '@/server/modules/quotes/approval-service';
 import { getPrisma } from '@/server/db/client';
 import type { Actor } from '@/server/auth/types';
 
@@ -277,6 +277,16 @@ describe('quote pricing and versioning service', () => {
       }, { prisma, now });
       expect(approval).toMatchObject({ status: 'REQUESTED', type: 'DISCOUNT', policyVersion: 'discount-v1' });
       expect(approval.digest).toMatch(/^[a-f0-9]{64}$/u);
+
+      // W1-02: la cola de aprobaciones pendientes sólo existe para quien puede resolverlas, y
+      // nunca lista las que el propio actor solicitó (separación de funciones), salvo con override.
+      expect(await listPendingQuoteApprovalsForActor(requesterActor, { prisma, now })).toEqual([]);
+      const approverQueue = await listPendingQuoteApprovalsForActor(approverActor, { prisma, now });
+      expect(approverQueue).toHaveLength(1);
+      expect(approverQueue[0]).toMatchObject({ id: approval.id, type: 'DISCOUNT', folio: request.folio });
+      const overrideRequesterQueue = await listPendingQuoteApprovalsForActor({ ...requesterActor, permissionKeys: new Set([...requesterActor.permissionKeys, 'quotes.approve_discount', 'quotes.approval.override']) }, { prisma, now });
+      expect(overrideRequesterQueue).toHaveLength(1);
+
       expect((await requestQuoteApproval(requesterActor, created.versionId, {
         type: 'DISCOUNT',
         policyVersion: 'discount-v1',
@@ -287,6 +297,7 @@ describe('quote pricing and versioning service', () => {
       await expect(decideQuoteApproval({ ...requesterActor, permissionKeys: new Set([...requesterActor.permissionKeys, 'quotes.approve_discount']) }, approval.id, { decision: 'APPROVED' }, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
       const approved = await decideQuoteApproval(approverActor, approval.id, { decision: 'APPROVED' }, { prisma, now });
       expect(approved.status).toBe('APPROVED');
+      expect(await listPendingQuoteApprovalsForActor(approverActor, { prisma, now })).toEqual([]);
 
       await transitionQuoteVersion(requesterActor, created.versionId, 'BORRADOR', { prisma, now });
       expect(await prisma.quoteApproval.findUnique({ where: { id: approval.id }, select: { status: true } })).toMatchObject({ status: 'SUPERSEDED' });

@@ -374,6 +374,62 @@ export async function listQuoteApprovals(
   return rows as QuoteApprovalResult[];
 }
 
+export type PendingQuoteApprovalSummary = Readonly<{
+  id: string;
+  type: QuoteApprovalType;
+  requestedAt: Date;
+  requestId: string;
+  folio: string;
+  clientDisplayName: string;
+  versionNumber: number;
+  totalMinor: string;
+  currencyCode: string;
+}>;
+
+// W1-02: cola global de aprobaciones pendientes que este actor puede resolver — mismo scope de
+// lectura de R1 (mine/global) y la misma regla de separación de funciones que decideQuoteApproval,
+// para no listar como "tuyas" aprobaciones que el propio servidor rechazaría si se intentan resolver.
+export async function listPendingQuoteApprovalsForActor(actor: Actor, dependencies: ApprovalServiceDependencies = {}): Promise<PendingQuoteApprovalSummary[]> {
+  if (!hasPermission(actor, 'quotes.approve_discount')) return [];
+  const prisma = dependencies.prisma ?? getPrisma();
+  const now = dependencies.now ?? new Date();
+  const canOverride = hasPermission(actor, 'quotes.approval.override');
+  const rows = await prisma.quoteApproval.findMany({
+    where: {
+      status: 'REQUESTED',
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      ...(canOverride ? {} : { requestedById: { not: actor.userId } }),
+      quoteVersion: { quote: { quoteRequest: staffRequestReadScopeWhere(actor) } },
+    },
+    orderBy: { requestedAt: 'asc' },
+    take: 20,
+    select: {
+      id: true,
+      type: true,
+      requestedAt: true,
+      quoteVersion: {
+        select: {
+          versionNumber: true,
+          totalMinor: true,
+          currencyCode: true,
+          quote: { select: { quoteRequest: { select: { id: true, folio: true, client: { select: { displayName: true } } } } } },
+        },
+      },
+    },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    requestedAt: row.requestedAt,
+    requestId: row.quoteVersion.quote.quoteRequest.id,
+    folio: row.quoteVersion.quote.quoteRequest.folio,
+    clientDisplayName: row.quoteVersion.quote.quoteRequest.client.displayName,
+    versionNumber: row.quoteVersion.versionNumber,
+    totalMinor: row.quoteVersion.totalMinor.toString(),
+    currencyCode: row.quoteVersion.currencyCode,
+  }));
+}
+
 export async function hasValidApprovedQuoteApproval(
   transaction: Prisma.TransactionClient,
   versionId: string,

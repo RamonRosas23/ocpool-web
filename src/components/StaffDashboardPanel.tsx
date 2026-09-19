@@ -49,12 +49,36 @@ type QueueItem = {
 
 type QueueResponse = { items: QueueItem[]; total: number };
 
+type PendingApproval = {
+  id: string;
+  type: 'DISCOUNT' | 'PRICE_OVERRIDE' | 'SPECIAL_CONCEPT';
+  requestedAt: string;
+  requestId: string;
+  folio: string;
+  clientDisplayName: string;
+  versionNumber: number;
+  totalMinor: string;
+  currencyCode: string;
+};
+
+const APPROVAL_TYPE_LABELS: Record<PendingApproval['type'], string> = {
+  DISCOUNT: 'Descuento',
+  PRICE_OVERRIDE: 'Ajuste de precio',
+  SPECIAL_CONCEPT: 'Concepto especial',
+};
+
 function ageLabel(value: string): string {
   const ms = Date.now() - new Date(value).getTime();
   const days = Math.floor(ms / 86_400_000);
   if (days <= 0) return 'Actualizada hoy';
   if (days === 1) return 'Hace 1 día';
   return `Hace ${days} días`;
+}
+
+function approvalMoneyLabel(value: string, currency: string): string {
+  if (!/^\d+$/.test(value)) return '—';
+  const amount = BigInt(value);
+  return `${currency} ${(amount / 100n).toLocaleString('es-MX')}.${(amount % 100n).toString().padStart(2, '0')}`;
 }
 
 const STATUS_LABELS: Record<string, string> = QUOTE_REQUEST_STATUS_LABELS;
@@ -127,6 +151,7 @@ export default function StaffDashboardPanel() {
   const rangeEdited = useRef(false);
   const [mineQueue, setMineQueue] = useState<QueueResponse | null>(null);
   const [unassignedQueue, setUnassignedQueue] = useState<QueueResponse | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[] | null>(null);
   const [queuesLoading, setQueuesLoading] = useState(true);
 
   // W1-02 (primer corte): "qué atender ahora" reutiliza el mismo endpoint y scope de R1 (mine/sin
@@ -138,16 +163,21 @@ export default function StaffDashboardPanel() {
       try {
         // El scope "workspace" (view=mine/unassigned) fija su propio pageSize=20 en el servidor;
         // se toman sólo los primeros 5 para esta lectura compacta y `total` informa el resto.
-        const [mineResponse, unassignedResponse] = await Promise.all([
+        const [mineResponse, unassignedResponse, approvalsResponse] = await Promise.all([
           fetch('/api/staff/quote-requests?view=mine&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quote-requests?view=unassigned&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
+          fetch('/api/staff/quotes/approvals/pending', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
         ]);
-        const [mineResult, unassignedResult] = await Promise.all([
+        const [mineResult, unassignedResult, approvalsResult] = await Promise.all([
           readApiResponse<QueueResponse>(mineResponse, 'No fue posible cargar tu trabajo.'),
           readApiResponse<QueueResponse>(unassignedResponse, 'No fue posible cargar las solicitudes sin asignar.'),
+          readApiResponse<{ items: PendingApproval[] }>(approvalsResponse, 'No fue posible cargar las aprobaciones pendientes.'),
         ]);
         if (mineResult.ok) setMineQueue(mineResult.data);
         if (unassignedResult.ok) setUnassignedQueue(unassignedResult.data);
+        // Un actor sin permiso de aprobar (ej. ventas) recibe [] del servidor, no un 403 — esta
+        // cola simplemente no le aplica, así que la tarjeta no se renderiza para ese rol.
+        if (approvalsResult.ok) setPendingApprovals(approvalsResult.data.items);
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
       } finally {
@@ -248,6 +278,11 @@ export default function StaffDashboardPanel() {
             {unassignedQueue && unassignedQueue.items.length > 0 && <ul className="staff-workqueue__list">{unassignedQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{labelForStatus(item.status)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>}
             {unassignedQueue && unassignedQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests">Ver las {formatInteger(unassignedQueue.total)} solicitudes →</Link>}
           </article>
+          {pendingApprovals && pendingApprovals.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-approvals-title">
+            <div className="staff-workqueue__head"><p className="staff-section-label">Esperan tu decisión</p><h2 id="workqueue-approvals-title">Aprobaciones</h2></div>
+            <ul className="staff-workqueue__list">{pendingApprovals.slice(0, 5).map((approval) => <li key={approval.id}><Link href={`/staff/quotes?request=${approval.requestId}`}><span className="staff-workqueue__folio">{approval.folio}</span><span className="staff-workqueue__client">{approval.clientDisplayName}</span><span className="staff-workqueue__stage">{APPROVAL_TYPE_LABELS[approval.type]} · {approvalMoneyLabel(approval.totalMinor, approval.currencyCode)}</span><span className="staff-workqueue__age">{ageLabel(approval.requestedAt)}</span></Link></li>)}</ul>
+            {pendingApprovals.length > 5 && <span className="staff-workqueue__more">Y {formatInteger(pendingApprovals.length - 5)} más esperando decisión</span>}
+          </article>}
         </div>
       </section>
 
