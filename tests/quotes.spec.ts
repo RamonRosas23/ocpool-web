@@ -152,9 +152,9 @@ test.describe('staff quote builder opt-in flow', () => {
       errorCount: 0,
       abandoned: false,
     });
+    // Q1-05: la primera línea válida autoguarda el borrador; no hay un botón manual de "crear".
     const draftStartedAt = new Date();
-    await page.getByRole('button', { name: 'Crear borrador' }).click();
-    await expect(page.locator('.private-toast').last()).toContainText(/Borrador actualizado|Nueva versión creada/, { timeout: 10_000 });
+    await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.quotes-request-row.is-selected')).toContainText('Quote builder client', { timeout: 10_000 });
     const draftVersion = await prisma.quoteVersion.findFirst({ where: { quote: { quoteRequestId: requestId }, status: 'BORRADOR' }, orderBy: { versionNumber: 'desc' }, select: { id: true } });
     expect(draftVersion).not.toBeNull();
@@ -278,8 +278,8 @@ test.describe('staff quote builder opt-in flow', () => {
     await expect(page.locator('.quotes-line--special')).toContainText('Condición de sitio no catalogada');
     await expect(page.locator('.quotes-summary__total')).not.toContainText('Revisa las líneas');
 
-    await page.getByRole('button', { name: 'Guardar borrador' }).click();
-    await expect(page.locator('.private-toast').last()).toContainText('Borrador actualizado.', { timeout: 10_000 });
+    // Q1-05: el descuento y la línea especial autoguardan; "Pasar a revisión" espera a que el autosave asiente.
+    await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 10_000 });
     await page.getByRole('button', { name: 'Pasar a revisión' }).click();
     await expect(page.locator('.private-toast').last()).toContainText('revisión', { timeout: 10_000 });
     await page.getByRole('button', { name: 'Solicitar aprobación', exact: true }).click();

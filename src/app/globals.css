@@ -1151,6 +1151,17 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .quotes-approval-summary { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 11px 0 0; color: var(--staff-muted); font-size: 11px; }
 .quotes-approval-summary strong { color: var(--staff-ink); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 .quotes-approval-summary span { padding-left: 10px; border-left: 1px solid var(--staff-line); }
+.quotes-autosave { display: inline-flex; align-items: center; gap: 6px; margin: 4px 0 0; font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.quotes-autosave::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.quotes-autosave--dirty, .quotes-autosave--offline { color: var(--staff-muted); }
+.quotes-autosave--saving { color: var(--staff-water); }
+.quotes-autosave--saved { color: #276b49; }
+.quotes-autosave--error, .quotes-autosave--conflict { color: #913e35; }
+.quotes-conflict { display: flex; align-items: flex-start; gap: 10px; margin: 16px 0 0; border: 1px solid rgba(145,62,53,.35); padding: 14px 16px; background: rgba(145,62,53,.06); color: #7a302a; }
+.quotes-conflict svg { flex-shrink: 0; margin-top: 2px; }
+.quotes-conflict p { flex: 1; margin: 0; font-size: 12px; line-height: 1.5; }
+.quotes-conflict__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+.quotes-retry-link { border: 0; background: none; padding: 0; color: #913e35; font-size: 11px; font-weight: 800; text-decoration: underline; }
 .quotes-scope { padding: 24px 0 27px; border-bottom: 1px solid var(--staff-line); }
 .quotes-scope p:last-child { max-width: 760px; margin: 0; color: var(--staff-ink); font-family: var(--private-font-display); font-size: 20px; line-height: 1.2; }
 .quotes-history { padding-top: 27px; }
