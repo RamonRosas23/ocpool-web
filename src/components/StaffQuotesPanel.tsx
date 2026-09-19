@@ -16,7 +16,7 @@ import {
   QUOTE_REQUEST_TIMELINE_LABELS,
 } from '@/server/modules/quote-requests/domain';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
-import { QUOTE_REQUEST_STATUS_LABELS, QUOTE_VERSION_STATUS_LABELS } from '@/lib/labels';
+import { QUOTE_REQUEST_STATUS_LABELS, QUOTE_VERSION_STATUS_LABELS, statusToneIcon } from '@/lib/labels';
 
 type Capabilities = {
   quotesRead: boolean;
@@ -131,6 +131,11 @@ function statusLabel(status: string): string {
   return (QUOTE_VERSION_STATUS_LABELS as Record<string, string>)[status]
     ?? (QUOTE_REQUEST_STATUS_LABELS as Record<string, string>)[status]
     ?? status;
+}
+
+function StatusPill({ status }: { status: string }) {
+  const ToneIcon = statusToneIcon(status);
+  return <span className={`staff-status-pill staff-status-pill--${status.toLowerCase()}`}><ToneIcon size={11} aria-hidden="true" />{statusLabel(status)}</span>;
 }
 
 function approvalStatusLabel(status: string): string {
@@ -530,7 +535,7 @@ export default function StaffQuotesPanel() {
           {loadingWorkspace && <div className="staff-detail__loading"><span /><span /><span /></div>}
           {!loadingWorkspace && !workspace && <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>Selecciona un expediente.</h2><p>El alcance y las líneas de cotización aparecerán aquí.</p></div>}
           {!loadingWorkspace && workspace && <>
-            <div className="quotes-main__top"><div><p className="staff-kicker">{workspace.request.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{workspace.request.folio}</h2><p className="staff-detail__date">{workspace.request.client.displayName} · Actualizado {formatDate(workspace.request.updatedAt)}</p></div><span className={`staff-status-pill staff-status-pill--${workspace.request.status.toLowerCase()}`}>{statusLabel(workspace.request.status)}</span></div>
+            <div className="quotes-main__top"><div><p className="staff-kicker">{workspace.request.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{workspace.request.folio}</h2><p className="staff-detail__date">{workspace.request.client.displayName} · Actualizado {formatDate(workspace.request.updatedAt)}</p></div><StatusPill status={workspace.request.status} /></div>
             <div className="quotes-brief"><div><p className="staff-section-label">Alcance</p><strong>{workspace.request.detail?.projectType ?? 'Sin tipo de proyecto'}</strong><span>{workspace.request.detail?.location ?? 'Sin ubicación'}{workspace.request.detail?.dimensions ? ` · ${workspace.request.detail.dimensions}` : ''}</span></div><div><p className="staff-section-label">Calificación</p><strong>{qualificationLabel(workspace.request.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</strong><span>{qualificationLabel(workspace.request.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)} · {qualificationLabel(workspace.request.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</span></div><div><p className="staff-section-label">Contacto</p><strong>{workspace.request.contact.displayName}</strong><span>{workspace.request.contact.email}</span></div><div><p className="staff-section-label">Moneda</p><strong>{selectedCurrency}</strong><span>{workspace.request.detail?.budgetCents ? `Presupuesto ${moneyLabel(workspace.request.detail.budgetCents, workspace.request.detail.currencyCode)}` : 'Sin presupuesto declarado'}</span></div></div>
             <section className="quotes-builder"><div className="quotes-builder__head"><div><p className="staff-section-label">Composición</p><h3>{currentVersion ? `Versión ${currentVersion.versionNumber} · ${statusLabel(currentVersion.status)}` : 'Primera versión'}</h3></div><PrivateSelect id="quotes-price-list" className="quotes-list-select" label="Lista de precios" value={selectedPriceListId} onValueChange={setSelectedPriceListId} options={priceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currencyCode}` }))} placeholder="Selecciona una lista" disabled={!canEdit && !canStartVersion} /></div>
               <div className="quotes-lines-head"><span>Concepto</span><span>Cantidad</span><span>Precio</span><span>Descuento</span><span>Impuesto</span><span>Total</span><span className="sr-only">Acción</span></div>
