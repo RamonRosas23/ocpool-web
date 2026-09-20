@@ -163,27 +163,27 @@ describe('quote PDF and acceptance API', () => {
   });
 
   it('accepts only through same-origin, enforces strict input and replays safely', async () => {
-    const foreignOrigin = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Ana', termsVersion: 'quote-terms-2026-01', idempotencyKey: 'api-accept-origin-01' }, 'https://attacker.example'), quoteContext());
+    const foreignOrigin = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Ana', termsVersion: 'v1', idempotencyKey: 'api-accept-origin-01' }, 'https://attacker.example'), quoteContext());
     expect(foreignOrigin.status).toBe(403);
-    const extraField = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Ana', termsVersion: 'quote-terms-2026-01', idempotencyKey: 'api-accept-extra-01', quoteId }, readServerEnv().APP_URL), quoteContext());
+    const extraField = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Ana', termsVersion: 'v1', idempotencyKey: 'api-accept-extra-01', quoteId }, readServerEnv().APP_URL), quoteContext());
     expect(extraField.status).toBe(400);
     const staleTerms = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Ana', termsVersion: 'quote-terms-2025-12', idempotencyKey: 'api-accept-stale-terms-01' }), quoteContext());
     expect(staleTerms.status).toBe(409);
-    const accepted = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: '  Ana   López Rivera ', termsVersion: ' quote-terms-2026-01 ', idempotencyKey: 'api-accept-success-01' }), quoteContext());
+    const accepted = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: '  Ana   López Rivera ', termsVersion: ' v1 ', idempotencyKey: 'api-accept-success-01' }), quoteContext());
     expect(accepted.status).toBe(200);
     expect(accepted.headers.get('cache-control')).toBe('no-store');
     const acceptedBody = await accepted.json() as Record<string, unknown>;
-    expect(acceptedBody).toMatchObject({ quoteId, quoteVersionId: versionId, status: 'ACEPTADA', signerName: 'Ana López Rivera', termsVersion: 'quote-terms-2026-01' });
+    expect(acceptedBody).toMatchObject({ quoteId, quoteVersionId: versionId, status: 'ACEPTADA', signerName: 'Ana López Rivera', termsVersion: 'v1' });
     expect(acceptedBody).not.toHaveProperty('documentSha256');
-    const replay = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Otro nombre', termsVersion: 'quote-terms-2026-01', idempotencyKey: 'api-accept-success-01' }), quoteContext());
+    const replay = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Otro nombre', termsVersion: 'v1', idempotencyKey: 'api-accept-success-01' }), quoteContext());
     expect(replay.status).toBe(200);
     await expect(replay.json()).resolves.toMatchObject({ id: acceptedBody.id, status: 'ACEPTADA' });
-    const secondKey = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Otro nombre', termsVersion: 'quote-terms-2026-01', idempotencyKey: 'api-accept-second-01' }), quoteContext());
+    const secondKey = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Otro nombre', termsVersion: 'v1', idempotencyKey: 'api-accept-second-01' }), quoteContext());
     expect(secondKey.status).toBe(409);
     const acceptedStatus = await staffDocumentGet(endpoint(`/api/staff/quotes/versions/${versionId}/document`, salesToken), versionContext());
     expect(acceptedStatus.status).toBe(200);
     const acceptedStatusBody = await acceptedStatus.json() as Record<string, unknown>;
-    expect(acceptedStatusBody).toMatchObject({ document: { status: 'READY' }, actions: { canGenerate: false, canDownload: true }, acceptance: { id: acceptedBody.id, signerName: 'Ana López Rivera', termsVersion: 'quote-terms-2026-01' } });
+    expect(acceptedStatusBody).toMatchObject({ document: { status: 'READY' }, actions: { canGenerate: false, canDownload: true }, acceptance: { id: acceptedBody.id, signerName: 'Ana López Rivera', termsVersion: 'v1' } });
     expect(JSON.stringify(acceptedStatusBody)).not.toContain('storageKey');
     expect(JSON.stringify(acceptedStatusBody)).not.toContain('sha256');
     expect((await prisma.quoteVersion.findUnique({ where: { id: versionId }, select: { status: true } }))).toMatchObject({ status: 'ACEPTADA' });

@@ -48,7 +48,7 @@ describe('customer portal scoped service', () => {
 
       const detail = await getCustomerQuoteRequest(customerActor, requestA.quoteRequestId, { prisma });
       expect(detail.request).toMatchObject({ id: requestA.quoteRequestId, client: { id: requestA.clientId }, detail: { description: 'Cliente A alcance compartido' } });
-      expect(detail.quote?.currentVersion).toMatchObject({ id: quoteA.versionId, totalMinor: '18560', termsVersion: 'quote-terms-2026-01', termsLabel: 'Condiciones comerciales de la propuesta · versión 2026-01' });
+      expect(detail.quote?.currentVersion).toMatchObject({ id: quoteA.versionId, totalMinor: '18560', termsVersion: 'v1', termsLabel: 'Condiciones comerciales y aviso de privacidad OCPOOL' });
       expect(detail.quote?.currentVersion?.pdfReady).toBe(false);
       expect(detail.quote?.currentVersion?.lines[0]).toMatchObject({ name: 'Portal snapshot item', quantityMilliunits: '2000', unitPriceMinor: '8000', taxMinor: '2560', totalMinor: '18560' });
       expect(detail.quote?.versions.map((version) => version.id)).toContain(quoteA.versionId);

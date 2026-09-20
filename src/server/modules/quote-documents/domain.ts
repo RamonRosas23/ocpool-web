@@ -4,22 +4,6 @@ export type GeneratedDocumentType = (typeof DOCUMENT_TYPES)[number];
 export const DOCUMENT_STATUSES = ['PENDING', 'READY', 'FAILED', 'DELETED'] as const;
 export type GeneratedDocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 
-/**
- * The terms identifier is deliberately owned by the server. The browser may
- * display and submit this value, but it can never select an arbitrary set of
- * terms for an acceptance record.
- */
-export const CURRENT_QUOTE_TERMS_VERSION = 'quote-terms-2026-01' as const;
-export const CURRENT_QUOTE_TERMS_LABEL = 'Condiciones comerciales de la propuesta · versión 2026-01' as const;
-
-export function getCurrentQuoteTermsVersion(): typeof CURRENT_QUOTE_TERMS_VERSION {
-  return CURRENT_QUOTE_TERMS_VERSION;
-}
-
-export function getCurrentQuoteTermsLabel(): typeof CURRENT_QUOTE_TERMS_LABEL {
-  return CURRENT_QUOTE_TERMS_LABEL;
-}
-
 const DOCUMENT_TRANSITIONS: Record<GeneratedDocumentStatus, readonly GeneratedDocumentStatus[]> = {
   PENDING: ['READY', 'FAILED'],
   READY: ['DELETED'],
@@ -68,10 +52,6 @@ export function normalizeAcceptanceTermsVersion(value: string): string {
   const normalized = value.trim();
   if (!TERMS_VERSION_PATTERN.test(normalized)) throw new Error('Invalid terms version.');
   return normalized;
-}
-
-export function isCurrentQuoteTermsVersion(value: string): boolean {
-  return value === CURRENT_QUOTE_TERMS_VERSION;
 }
 
 export type GeneratedDocumentInvariantInput = Readonly<{

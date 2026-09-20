@@ -5,11 +5,12 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
-import { canAcceptQuoteVersion, getCurrentQuoteTermsVersion, isCurrentQuoteTermsVersion, normalizeAcceptanceName, normalizeAcceptanceTermsVersion } from '@/server/modules/quote-documents/domain';
+import { canAcceptQuoteVersion, normalizeAcceptanceName, normalizeAcceptanceTermsVersion } from '@/server/modules/quote-documents/domain';
 import { getPrivateStorage, type PrivateStorage } from '@/server/modules/private-files/storage';
 import { normalizeIdempotencyKey } from '@/server/modules/messaging/domain';
 import { canTransitionQuoteRequest, type QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
 import { isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
+import { resolveCommercialTermsRecord } from '@/server/modules/quotes/service';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const PDF_CONTENT_TYPE = 'application/pdf';
@@ -81,10 +82,10 @@ function normalizeInput(input: QuoteAcceptanceInput): QuoteAcceptanceInput & { i
   }
   try {
     const signerName = normalizeAcceptanceName(input.signerName);
+    // C1-05: format-only here -- the version's own frozen terms (or, for a version published
+    // before that existed, whatever is active) are the real source of truth, checked once the
+    // version is actually locked inside the transaction below, not against a hardcoded constant.
     const termsVersion = normalizeAcceptanceTermsVersion(input.termsVersion);
-    if (!isCurrentQuoteTermsVersion(termsVersion)) {
-      throw new AppError('CONFLICT', `La versión de términos vigente es ${getCurrentQuoteTermsVersion()}.`, 409);
-    }
     const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
     return {
       signerName,
@@ -237,9 +238,16 @@ export async function acceptCustomerQuote(actor: Actor, quoteIdInput: string, in
         return serializeAcceptance(replay);
       }
 
-      const version = await transaction.quoteVersion.findUnique({ where: { id: quote.publishedVersionId }, select: { id: true, quoteId: true, versionNumber: true, status: true, validUntil: true } });
+      const version = await transaction.quoteVersion.findUnique({ where: { id: quote.publishedVersionId }, select: { id: true, quoteId: true, versionNumber: true, status: true, validUntil: true, termsVersionId: true } });
       if (!version || version.quoteId !== quote.id) throw new AppError('CONFLICT', 'La cotización no tiene una versión vigente.', 409);
       assertRequestCanBeAccepted(quote.requestStatus);
+      // C1-05: the exact terms this version was frozen to at publish time, not "whatever is
+      // active right now" -- a legal update to the active terms after this was published must
+      // never invalidate (or silently swap) what the customer is actually accepting.
+      const expectedTerms = await resolveCommercialTermsRecord(transaction, version.termsVersionId);
+      if (normalized.termsVersion !== expectedTerms.versionTag) {
+        throw new AppError('CONFLICT', `La versión de términos vigente es ${expectedTerms.versionTag}.`, 409);
+      }
       const document = await loadReadyDocument(transaction, quote.id, version.id);
       const head = await storage.head(document.storageObject!.storageKey);
       const storageSizeSafe = document.storageObject!.byteSize <= BigInt(Number.MAX_SAFE_INTEGER);

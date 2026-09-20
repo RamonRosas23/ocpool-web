@@ -4,8 +4,9 @@ import type { Actor } from '@/server/auth/types';
 import { requirePermission } from '@/server/auth/permissions';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
-import { getCurrentQuoteTermsLabel, getCurrentQuoteTermsVersion, isGeneratedQuotePdfReady } from '@/server/modules/quote-documents/domain';
+import { isGeneratedQuotePdfReady } from '@/server/modules/quote-documents/domain';
 import { CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES, isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
+import { resolveCommercialTermsRecord } from '@/server/modules/quotes/service';
 
 export type ClientPortalServiceDependencies = Readonly<{ prisma?: PrismaClient; now?: Date }>;
 
@@ -110,12 +111,12 @@ function serializeVersion(version: {
   updatedAt: Date;
   pdfReady: boolean;
   lines: Parameters<typeof serializeLine>[0][];
-}) {
+}, terms: { versionTag: string; title: string }) {
   return {
     id: version.id,
     versionNumber: version.versionNumber,
-    termsVersion: getCurrentQuoteTermsVersion(),
-    termsLabel: getCurrentQuoteTermsLabel(),
+    termsVersion: terms.versionTag,
+    termsLabel: terms.title,
     status: publicQuoteStatus(version.status),
     currencyCode: version.currencyCode,
     validUntil: version.validUntil,
@@ -284,6 +285,7 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
               totalMinor: true,
               createdAt: true,
               updatedAt: true,
+              termsVersionId: true,
               lines: {
                 orderBy: { id: 'asc' },
                 select: {
@@ -333,8 +335,14 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
   const quote = request.quotes[0] ?? null;
   const versions = quote ? visibleVersions(quote.versions) : [];
   const currentVersion = quote ? selectVisibleVersion(versions, quote.publishedVersionId ?? quote.currentVersionId) : null;
-  const serializedVersions = versions.map((version) => serializeVersion({ ...version, pdfReady: isGeneratedQuotePdfReady(version.generatedDocuments[0]) }));
-  const serializedCurrentVersion = currentVersion ? serializeVersion({ ...currentVersion, pdfReady: isGeneratedQuotePdfReady(currentVersion.generatedDocuments[0]) }) : null;
+  const serializedVersions = await Promise.all(versions.map(async (version) => serializeVersion(
+    { ...version, pdfReady: isGeneratedQuotePdfReady(version.generatedDocuments[0]) },
+    await resolveCommercialTermsRecord(prisma, version.termsVersionId),
+  )));
+  const serializedCurrentVersion = currentVersion ? serializeVersion(
+    { ...currentVersion, pdfReady: isGeneratedQuotePdfReady(currentVersion.generatedDocuments[0]) },
+    await resolveCommercialTermsRecord(prisma, currentVersion.termsVersionId),
+  ) : null;
   return {
     request: {
       id: request.id,

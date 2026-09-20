@@ -66,14 +66,14 @@ describe('customer quote acceptance service', () => {
       const concurrentInputs = [
         {
           signerName: '  Ana   López Rivera ',
-          termsVersion: ' quote-terms-2026-01 ',
+          termsVersion: ' v1 ',
           idempotencyKey: `acceptance-key-${suffix}`,
           ipAddress: '203.0.113.10',
           userAgent: 'Acceptance Test Browser',
         },
         {
           signerName: 'Otro nombre',
-          termsVersion: 'quote-terms-2026-01',
+          termsVersion: 'v1',
           idempotencyKey: `acceptance-key-concurrent-${suffix}`,
         },
       ] as const;
@@ -89,7 +89,7 @@ describe('customer quote acceptance service', () => {
       const expectedSigner = winningInput.idempotencyKey === `acceptance-key-${suffix}` ? 'Ana López Rivera' : 'Otro nombre';
       const replay = await acceptCustomerQuote(customerActorValue, acceptedQuoteId, {
         signerName: '  Ana   López Rivera ',
-        termsVersion: ' quote-terms-2026-01 ',
+        termsVersion: ' v1 ',
         idempotencyKey: winningInput.idempotencyKey,
         ipAddress: '203.0.113.10',
         userAgent: 'Acceptance Test Browser',
@@ -98,14 +98,14 @@ describe('customer quote acceptance service', () => {
       const persisted = await prisma.quoteAcceptance.findUnique({ where: { quoteVersionId_quoteId: { quoteVersionId: created.versionId, quoteId } } });
       const updatedRequest = await prisma.quoteRequest.findUnique({ where: { id: request.quoteRequestId } });
 
-      expect(accepted).toMatchObject({ quoteId, quoteVersionId: created.versionId, status: 'ACEPTADA', signerName: expectedSigner, termsVersion: 'quote-terms-2026-01' });
+      expect(accepted).toMatchObject({ quoteId, quoteVersionId: created.versionId, status: 'ACEPTADA', signerName: expectedSigner, termsVersion: 'v1' });
       expect(accepted.quoteVersionId).not.toBe(working.versionId);
       expect(replay.id).toBe(accepted.id);
       expect(version?.status).toBe('ACEPTADA');
       expect(updatedRequest?.status).toBe('ACEPTADA');
-      expect(persisted).toMatchObject({ id: accepted.id, signerName: 'Ana López Rivera', termsVersion: 'quote-terms-2026-01', documentSha256: accepted.documentSha256 });
+      expect(persisted).toMatchObject({ id: accepted.id, signerName: 'Ana López Rivera', termsVersion: 'v1', documentSha256: accepted.documentSha256 });
       expect(await prisma.quoteAcceptance.count({ where: { quoteVersionId: created.versionId } })).toBe(1);
-      await expect(acceptCustomerQuote(customerActorValue, acceptedQuoteId, { signerName: 'Otro nombre', termsVersion: 'quote-terms-2026-01', idempotencyKey: `acceptance-key-2-${suffix}` }, { prisma, storage, now: new Date(now.getTime() + 2_000) })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      await expect(acceptCustomerQuote(customerActorValue, acceptedQuoteId, { signerName: 'Otro nombre', termsVersion: 'v1', idempotencyKey: `acceptance-key-2-${suffix}` }, { prisma, storage, now: new Date(now.getTime() + 2_000) })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
     } finally {
       const versions = quoteId ? await prisma.quoteVersion.findMany({ where: { quoteId }, select: { id: true } }) : [];
       const documentIds = versions.length ? (await prisma.generatedDocument.findMany({ where: { quoteVersionId: { in: versions.map(({ id }) => id) } }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } })) : [];

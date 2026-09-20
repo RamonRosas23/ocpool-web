@@ -676,15 +676,18 @@ export async function resolveDiscountApprovalThresholdBps(transaction: Prisma.Tr
   return policy?.discountApprovalThresholdBps ?? 0;
 }
 
-/// P1-01: same fallback shape as `resolveDiscountApprovalThresholdBps` -- a version created before
-/// this field was ever written (i.e. every version so far) resolves to whatever terms are active
-/// right now at the moment it actually publishes, then freezes that choice on the row below so a
-/// later change of the active terms never rewrites what an already-published version pointed to.
-async function resolveActiveCommercialTermsId(transaction: Prisma.TransactionClient, termsVersionId: string | null): Promise<string> {
-  if (termsVersionId) return termsVersionId;
-  const terms = await transaction.commercialTermsVersion.findFirst({ where: { active: true }, orderBy: { publishedAt: 'desc' }, select: { id: true } });
+/// P1-01/C1-05: shared by the publish path (freezes `termsVersionId` so a later change of the
+/// active terms never rewrites what an already-published version pointed to) and by the customer
+/// portal/acceptance (reads the exact terms a specific version was frozen to, falling back to
+/// whatever is active for a version published before this existed, same fallback shape as
+/// `resolveDiscountApprovalThresholdBps`). A version's own `termsVersionId`, once frozen, always
+/// wins over "whatever is active now" -- that is the entire point of freezing it.
+export async function resolveCommercialTermsRecord(transaction: Prisma.TransactionClient, termsVersionId: string | null): Promise<{ id: string; versionTag: string; title: string }> {
+  const terms = termsVersionId
+    ? await transaction.commercialTermsVersion.findUnique({ where: { id: termsVersionId }, select: { id: true, versionTag: true, title: true } })
+    : await transaction.commercialTermsVersion.findFirst({ where: { active: true }, orderBy: { publishedAt: 'desc' }, select: { id: true, versionTag: true, title: true } });
   if (!terms) conflict('No hay términos y condiciones vigentes configurados.');
-  return terms.id;
+  return terms;
 }
 
 type PerformTransitionOptions = Readonly<{
@@ -755,7 +758,7 @@ async function performQuoteVersionTransition(actor: Actor, quoteVersionId: strin
     // P1-01: only a real publication (one `publishQuoteVersion` drove, carrying a READY document)
     // freezes revision/digest/terms/publishedAt -- the bare test-fixture shortcut above (no
     // `documentId`) still just flips status, exactly as it did before this piece existed.
-    const resolvedTermsVersionId = toStatus === 'ENVIADA' && options.documentId ? await resolveActiveCommercialTermsId(transaction, version.termsVersionId) : null;
+    const resolvedTermsVersionId = toStatus === 'ENVIADA' && options.documentId ? (await resolveCommercialTermsRecord(transaction, version.termsVersionId)).id : null;
     await transaction.quoteVersion.update({
       where: { id: version.id },
       data: {
