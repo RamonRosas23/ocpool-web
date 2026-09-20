@@ -111,8 +111,11 @@ export default function StaffAuditPanel() {
       setAccessDenied(false);
       setData((current) => query.cursor && current ? { ...next, items: [...current.items, ...next.items] } : next);
       if (!rangeInitialized.current) {
-        setDraftFrom(dateInputValue(next.meta.from, next.meta.timezone));
-        setDraftTo(dateInputValue(next.meta.to, next.meta.timezone));
+        // Only seed the date pickers with the server's default range if the user hasn't
+        // already typed their own dates while this (possibly slow, e.g. post-retry) request
+        // was in flight — otherwise this would silently clobber their input once it resolves.
+        setDraftFrom((current) => (current === '' ? dateInputValue(next.meta.from, next.meta.timezone) : current));
+        setDraftTo((current) => (current === '' ? dateInputValue(next.meta.to, next.meta.timezone) : current));
         rangeInitialized.current = true;
       }
     } catch (caught) {
