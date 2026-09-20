@@ -47,6 +47,7 @@ type QuoteListItem = {
 
 type QuoteLine = {
   id: string;
+  sectionId: string | null;
   catalogItemId: string | null;
   catalogItemCode: string | null;
   name: string;
@@ -102,6 +103,7 @@ type QuoteVersion = {
   createdAt: string;
   updatedAt: string;
   createdBy: { id: string; displayName: string };
+  sections: Array<{ id: string; position: number; title: string; description: string | null }>;
   lines: QuoteLine[];
   approvals: QuoteApproval[];
 };
@@ -125,9 +127,12 @@ type Workspace = {
 
 type PriceList = { id: string; code: string; name: string; currencyCode: string; status: string };
 type PriceListDetail = PriceList & { items: Array<{ id: string; catalogItemId: string; unitPriceMinor: string; validFrom: string; validUntil: string | null; catalogItem: { code: string; name: string; unit: string; status: string } }> };
+type DraftSection = { id: string; title: string; description: string };
+
 type DraftLine = {
   id: string;
   special: boolean;
+  sectionId: string | null;
   catalogItemId: string | null;
   catalogItemName: string;
   catalogItemCode: string;
@@ -212,8 +217,14 @@ function roundHalfUp(numerator: bigint, denominator: bigint): bigint { return nu
 
 type ContentFields = { scopeText: string; exclusionsText: string; paymentTermsText: string; warrantyText: string; publicNotesText: string };
 
-function draftSnapshotKey(priceListId: string, validUntilValue: string, lines: DraftLine[], content: ContentFields): string {
-  return JSON.stringify({ priceListId, validUntilValue, content, lines: lines.map((line) => ({ special: line.special, catalogItemId: line.catalogItemId, catalogItemName: line.catalogItemName, unit: line.unit, description: line.description, reason: line.reason, quantity: line.quantity, unitPriceInput: line.unitPriceInput, unitPriceDirty: line.unitPriceDirty, discountBasisPoints: line.discountBasisPoints, taxBasisPoints: line.taxBasisPoints })) });
+function draftSnapshotKey(priceListId: string, validUntilValue: string, lines: DraftLine[], content: ContentFields, sections: DraftSection[]): string {
+  return JSON.stringify({
+    priceListId,
+    validUntilValue,
+    content,
+    sections: sections.map((section) => ({ title: section.title, description: section.description })),
+    lines: lines.map((line) => ({ special: line.special, sectionId: line.sectionId, catalogItemId: line.catalogItemId, catalogItemName: line.catalogItemName, unit: line.unit, description: line.description, reason: line.reason, quantity: line.quantity, unitPriceInput: line.unitPriceInput, unitPriceDirty: line.unitPriceDirty, discountBasisPoints: line.discountBasisPoints, taxBasisPoints: line.taxBasisPoints })),
+  });
 }
 
 function calculatePreview(line: DraftLine, priceMinor: string | undefined) {
@@ -244,6 +255,11 @@ export default function StaffQuotesPanel() {
   const [selectedPriceListId, setSelectedPriceListId] = useState('');
   const [selectedTaxProfileId, setSelectedTaxProfileId] = useState('');
   const [draftLines, setDraftLines] = useState<DraftLine[]>([]);
+  // Q1-03: secciones con nombre propio para agrupar líneas -- opcional, una línea sin
+  // sección sigue siendo válida (no se fuerza a nadie a organizar una propuesta simple).
+  const [draftSections, setDraftSections] = useState<DraftSection[]>([]);
+  const [showSectionForm, setShowSectionForm] = useState(false);
+  const [sectionForm, setSectionForm] = useState({ title: '', description: '' });
   // Q1-03/D1-02: contenido comercial estructurado (alcance/exclusiones/pago/garantías/notas),
   // publicado tal cual al cliente/PDF una vez enviada la versión.
   const [contentFields, setContentFields] = useState({ scopeText: '', exclusionsText: '', paymentTermsText: '', warrantyText: '', publicNotesText: '' });
@@ -278,6 +294,8 @@ export default function StaffQuotesPanel() {
   useEffect(() => { contentFieldsRef.current = contentFields; }, [contentFields]);
   const draftLinesRef = useRef<DraftLine[]>([]);
   useEffect(() => { draftLinesRef.current = draftLines; }, [draftLines]);
+  const draftSectionsRef = useRef<DraftSection[]>([]);
+  useEffect(() => { draftSectionsRef.current = draftSections; }, [draftSections]);
   const { showToast } = usePrivateToast();
 
   const loadBase = useCallback(async (currentPage: number, query: string) => {
@@ -338,9 +356,11 @@ export default function StaffQuotesPanel() {
       const preferredTaxProfile = data.taxProfiles.find((profile) => profile.code === 'IVA_GENERAL') ?? data.taxProfiles[0];
       const freshTaxProfileId = currentVersion?.taxProfileId ?? (data.taxProfiles.some((profile) => profile.id === selectedTaxProfileIdRef.current) ? selectedTaxProfileIdRef.current : preferredTaxProfile?.id ?? '');
       const freshValidUntil = currentVersion?.validUntil ? currentVersion.validUntil.slice(0, 10) : '';
+      const freshDraftSections: DraftSection[] = (currentVersion?.sections ?? []).map((section) => ({ id: section.id, title: section.title, description: section.description ?? '' }));
       const freshDraftLines: DraftLine[] = (currentVersion?.lines ?? []).map((line) => ({
         id: line.id,
         special: line.catalogItemId === null,
+        sectionId: line.sectionId,
         catalogItemId: line.catalogItemId,
         catalogItemName: line.name,
         catalogItemCode: line.catalogItemCode ?? '',
@@ -366,6 +386,7 @@ export default function StaffQuotesPanel() {
         publicNotesText: currentVersion?.publicNotesText ?? '',
       });
       setDraftLines(freshDraftLines);
+      setDraftSections(freshDraftSections);
       expectedUpdatedAtRef.current = currentVersion?.updatedAt ?? null;
       savedSnapshotRef.current = draftSnapshotKey(freshPriceListId, freshValidUntil, freshDraftLines, {
         scopeText: currentVersion?.scopeText ?? '',
@@ -373,7 +394,7 @@ export default function StaffQuotesPanel() {
         paymentTermsText: currentVersion?.paymentTermsText ?? '',
         warrantyText: currentVersion?.warrantyText ?? '',
         publicNotesText: currentVersion?.publicNotesText ?? '',
-      });
+      }, freshDraftSections);
       setAutosaveState('saved');
       setAutosaveMessage(null);
     } catch (caught) {
@@ -526,7 +547,8 @@ export default function StaffQuotesPanel() {
     try {
       const payload = {
         priceListId: selectedPriceListId,
-        lines: buildLinesPayload(draftLines),
+        lines: buildLinesPayload(draftLines, draftSections),
+        sections: buildSectionsPayload(draftSections),
         ...(validUntil ? { validUntil: new Date(`${validUntil}T23:59:59.999Z`).toISOString() } : {}),
         ...(selectedTaxProfileId ? { taxProfileId: selectedTaxProfileId } : {}),
         scopeText: contentFields.scopeText || null,
@@ -551,6 +573,7 @@ export default function StaffQuotesPanel() {
     setDraftLines((lines) => [...lines, {
       id: `${item.id}-${Date.now()}`,
       special: false,
+      sectionId: null,
       catalogItemId: item.id,
       catalogItemName: item.name,
       catalogItemCode: item.code,
@@ -573,6 +596,7 @@ export default function StaffQuotesPanel() {
     setDraftLines((lines) => [...lines, {
       id: `special-${Date.now()}`,
       special: true,
+      sectionId: null,
       catalogItemId: null,
       catalogItemName: specialForm.name.trim(),
       catalogItemCode: '',
@@ -601,8 +625,27 @@ export default function StaffQuotesPanel() {
     [next[index], next[target]] = [next[target], next[index]];
     return next;
   });
+  const updateLineSection = (id: string, sectionId: string) => setDraftLines((lines) => lines.map((line) => line.id === id ? { ...line, sectionId: sectionId || null } : line));
 
-  const buildLinesPayload = (lines: DraftLine[]) => lines.map((line) => {
+  const addSection = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!sectionForm.title.trim()) return;
+    setDraftSections((sections) => [...sections, { id: `section-${Date.now()}`, title: sectionForm.title.trim(), description: sectionForm.description.trim() }]);
+    setSectionForm({ title: '', description: '' });
+    setShowSectionForm(false);
+  };
+  // Quitar una sección nunca borra sus líneas -- sólo las deja "sin sección", igual que
+  // cualquier línea que nunca tuvo una asignada.
+  const removeSection = (id: string) => {
+    setDraftSections((sections) => sections.filter((section) => section.id !== id));
+    setDraftLines((lines) => lines.map((line) => line.sectionId === id ? { ...line, sectionId: null } : line));
+  };
+
+  const buildSectionsPayload = (sections: DraftSection[]) => sections.map((section) => ({ title: section.title, description: section.description.trim() || undefined }));
+
+  const buildLinesPayload = (lines: DraftLine[], sections: DraftSection[]) => lines.map((line) => {
+    const sectionIndex = line.sectionId ? sections.findIndex((section) => section.id === line.sectionId) : -1;
+    const sectionIndexField = sectionIndex >= 0 ? { sectionIndex } : {};
     if (line.special) {
       return {
         special: true as const,
@@ -614,6 +657,7 @@ export default function StaffQuotesPanel() {
         reason: line.reason,
         discountBasisPoints: Number(line.discountBasisPoints || '0'),
         taxBasisPoints: Number(line.taxBasisPoints || '0'),
+        ...sectionIndexField,
       };
     }
     const unitPriceMinorOverride = line.unitPriceDirty
@@ -625,6 +669,7 @@ export default function StaffQuotesPanel() {
       ...(unitPriceMinorOverride ? { unitPriceMinorOverride } : {}),
       discountBasisPoints: Number(line.discountBasisPoints || '0'),
       taxBasisPoints: Number(line.taxBasisPoints || '0'),
+      ...sectionIndexField,
     };
   });
 
@@ -634,7 +679,7 @@ export default function StaffQuotesPanel() {
   const persistDraft = useCallback(async (): Promise<boolean> => {
     if (!workspace || !selectedPriceListId || draftLines.length === 0 || !preview.valid || !capabilities?.quotesCreate) return true;
     if (!currentVersion || currentVersion.status === 'BORRADOR') {
-      const snapshotToPersist = draftSnapshotKey(selectedPriceListId, validUntil, draftLines, contentFields);
+      const snapshotToPersist = draftSnapshotKey(selectedPriceListId, validUntil, draftLines, contentFields, draftSections);
       if (snapshotToPersist === savedSnapshotRef.current) return true;
       if (snapshotToPersist !== lastAttemptSnapshotRef.current) errorRetryCountRef.current = 0;
       lastAttemptSnapshotRef.current = snapshotToPersist;
@@ -644,7 +689,8 @@ export default function StaffQuotesPanel() {
         const isDraftUpdate = currentVersion?.status === 'BORRADOR';
         const payload = {
           priceListId: selectedPriceListId,
-          lines: buildLinesPayload(draftLines),
+          lines: buildLinesPayload(draftLines, draftSections),
+          sections: buildSectionsPayload(draftSections),
           ...(validUntil ? { validUntil: new Date(`${validUntil}T23:59:59.999Z`).toISOString() } : {}),
           ...(selectedTaxProfileId ? { taxProfileId: selectedTaxProfileId } : {}),
           ...(isDraftUpdate && expectedUpdatedAtRef.current ? { expectedUpdatedAt: expectedUpdatedAtRef.current } : {}),
@@ -668,7 +714,7 @@ export default function StaffQuotesPanel() {
         const [freshVersion] = await Promise.all([syncQuoteVersionMetadata(workspace.request.id), loadBase(page, appliedSearch)]);
         // Re-congela el precio snapshot (fidelidad S0-02) sólo si nada cambió localmente durante el round-trip;
         // si el usuario ya siguió editando, dejamos sus ediciones intactas — el próximo ciclo las persistirá.
-        if (freshVersion && draftSnapshotKey(selectedPriceListIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current) === snapshotToPersist) {
+        if (freshVersion && draftSnapshotKey(selectedPriceListIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current, draftSectionsRef.current) === snapshotToPersist) {
           const persistedByItem = new Map(freshVersion.lines.filter((line) => line.catalogItemId !== null).map((line) => [line.catalogItemId as string, line]));
           setDraftLines((lines) => lines.map((line) => {
             if (line.special || !line.catalogItemId) return line;
@@ -697,7 +743,7 @@ export default function StaffQuotesPanel() {
     }
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, selectedPriceListId, selectedTaxProfileId, draftLines, validUntil, contentFields, preview.valid, capabilities, currentVersion, page, appliedSearch]);
+  }, [workspace, selectedPriceListId, selectedTaxProfileId, draftLines, draftSections, validUntil, contentFields, preview.valid, capabilities, currentVersion, page, appliedSearch]);
 
   const reloadDiscardingLocalEdits = async () => { if (selectedId) await loadWorkspace(selectedId); };
 
@@ -718,13 +764,13 @@ export default function StaffQuotesPanel() {
   useEffect(() => {
     if (!canEdit || !workspace || !selectedPriceListId || draftLines.length === 0) return;
     if (autosaveState === 'saving' || autosaveState === 'offline') return;
-    const liveSnapshot = draftSnapshotKey(selectedPriceListId, validUntil, draftLines, contentFields);
+    const liveSnapshot = draftSnapshotKey(selectedPriceListId, validUntil, draftLines, contentFields, draftSections);
     if (liveSnapshot === savedSnapshotRef.current) { if (autosaveState !== 'saved') setAutosaveState('saved'); return; }
     if (autosaveState === 'error' && liveSnapshot === lastAttemptSnapshotRef.current && errorRetryCountRef.current >= 3) return;
     setAutosaveState((current) => current === 'saved' || current === 'error' ? 'dirty' : current);
     const timer = setTimeout(() => { void persistDraft(); }, AUTOSAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [canEdit, workspace, selectedPriceListId, validUntil, draftLines, contentFields, autosaveState, persistDraft]);
+  }, [canEdit, workspace, selectedPriceListId, validUntil, draftLines, draftSections, contentFields, autosaveState, persistDraft]);
 
   const retryDraftSaveNow = () => { errorRetryCountRef.current = 0; void persistDraft(); };
 
@@ -921,11 +967,12 @@ export default function StaffQuotesPanel() {
               </PrivateDialog>}
               <div className="quotes-lines-head"><span>Concepto</span><span>Cantidad</span><span>Precio</span><span>Descuento</span><span>Total</span><span className="sr-only">Acción</span></div>
               <div className="quotes-lines">
-                {draftLines.map((line, lineIndex) => { const price = line.catalogItemId ? pricesByItem.get(line.catalogItemId)?.unitPriceMinor : undefined; const linePreview = calculatePreview(line, price); const displayedPrice = line.unitPriceDirty ? line.unitPriceInput : line.snapshotUnitPriceMinor ? moneyInputLabel(line.snapshotUnitPriceMinor) : price ? moneyInputLabel(price) : ''; return <div className={`quotes-line${line.special ? ' quotes-line--special' : ''}`} key={line.id}><div className="quotes-line__item">{line.special ? <div className="quotes-line__special"><input aria-label="Nombre del concepto especial" value={line.catalogItemName} onChange={(event) => updateLine(line.id, 'catalogItemName', event.target.value)} disabled={!canEdit} placeholder="Nombre" maxLength={180} /><input aria-label="Unidad del concepto especial" value={line.unit} onChange={(event) => updateLine(line.id, 'unit', event.target.value)} disabled={!canEdit} placeholder="Unidad" maxLength={40} /><small><strong>Especial</strong>{line.reason ? ` · ${line.reason}` : ''}</small></div> : <><strong>{line.catalogItemName}</strong><small>{line.catalogItemCode} · {line.unit}</small></>}</div><label><span className="quotes-mobile-label">Cantidad</span><input aria-label={`Cantidad de ${line.catalogItemName}`} value={line.quantity} onChange={(event) => updateLine(line.id, 'quantity', event.target.value)} disabled={!canEdit} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Precio</span><input aria-label={`Precio de ${line.catalogItemName}`} value={displayedPrice} onChange={(event) => setDraftLines((lines) => lines.map((candidate) => candidate.id === line.id ? { ...candidate, unitPriceInput: event.target.value, unitPriceMinorOverride: parseMoneyInput(event.target.value) ?? '', unitPriceDirty: true } : candidate))} disabled={!canEdit || !capabilities?.quotesEditPrices} placeholder={price ? moneyInputLabel(price) : 'Sin precio'} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Desc. %</span><input aria-label={`Descuento de ${line.catalogItemName}`} value={line.discountBasisPoints === '0' ? '' : (Number(line.discountBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'discountBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit || !capabilities?.quotesApplyDiscount} inputMode="decimal" placeholder="0" /></label><strong className="quotes-line__total">{linePreview ? moneyLabel(linePreview.total, selectedCurrency) : '—'}</strong><div className="quotes-line__actions"><button className="quotes-line__move" type="button" aria-label={`Mover ${line.catalogItemName} hacia arriba`} onClick={() => moveLine(lineIndex, -1)} disabled={!canEdit || lineIndex === 0}><ChevronUp size={14} aria-hidden="true" /></button><button className="quotes-line__move" type="button" aria-label={`Mover ${line.catalogItemName} hacia abajo`} onClick={() => moveLine(lineIndex, 1)} disabled={!canEdit || lineIndex === draftLines.length - 1}><ChevronDown size={14} aria-hidden="true" /></button><button className="quotes-line__remove" type="button" aria-label={`Quitar ${line.catalogItemName}`} onClick={() => setDraftLines((lines) => lines.filter((candidate) => candidate.id !== line.id))} disabled={!canEdit}><X size={16} aria-hidden="true" /></button></div></div>; })}
+                {draftLines.map((line, lineIndex) => { const price = line.catalogItemId ? pricesByItem.get(line.catalogItemId)?.unitPriceMinor : undefined; const linePreview = calculatePreview(line, price); const displayedPrice = line.unitPriceDirty ? line.unitPriceInput : line.snapshotUnitPriceMinor ? moneyInputLabel(line.snapshotUnitPriceMinor) : price ? moneyInputLabel(price) : ''; const previousLine = draftLines[lineIndex - 1]; const currentSection = draftSections.find((section) => section.id === line.sectionId); const showSectionHeader = Boolean(line.sectionId) && line.sectionId !== (previousLine?.sectionId ?? null); return <div key={line.id}>{showSectionHeader && currentSection && <div className="quotes-section-header"><strong>{currentSection.title}</strong>{canEdit && <button type="button" className="quotes-section-header__remove" onClick={() => removeSection(currentSection.id)}>Quitar sección</button>}</div>}<div className={`quotes-line${line.special ? ' quotes-line--special' : ''}`}><div className="quotes-line__item">{line.special ? <div className="quotes-line__special"><input aria-label="Nombre del concepto especial" value={line.catalogItemName} onChange={(event) => updateLine(line.id, 'catalogItemName', event.target.value)} disabled={!canEdit} placeholder="Nombre" maxLength={180} /><input aria-label="Unidad del concepto especial" value={line.unit} onChange={(event) => updateLine(line.id, 'unit', event.target.value)} disabled={!canEdit} placeholder="Unidad" maxLength={40} /><small><strong>Especial</strong>{line.reason ? ` · ${line.reason}` : ''}</small></div> : <><strong>{line.catalogItemName}</strong><small>{line.catalogItemCode} · {line.unit}</small></>}{canEdit && draftSections.length > 0 && <select aria-label={`Sección de ${line.catalogItemName}`} className="quotes-line__section-select" value={line.sectionId ?? ''} onChange={(event) => updateLineSection(line.id, event.target.value)}><option value="">Sin sección</option>{draftSections.map((section) => <option key={section.id} value={section.id}>{section.title}</option>)}</select>}</div><label><span className="quotes-mobile-label">Cantidad</span><input aria-label={`Cantidad de ${line.catalogItemName}`} value={line.quantity} onChange={(event) => updateLine(line.id, 'quantity', event.target.value)} disabled={!canEdit} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Precio</span><input aria-label={`Precio de ${line.catalogItemName}`} value={displayedPrice} onChange={(event) => setDraftLines((lines) => lines.map((candidate) => candidate.id === line.id ? { ...candidate, unitPriceInput: event.target.value, unitPriceMinorOverride: parseMoneyInput(event.target.value) ?? '', unitPriceDirty: true } : candidate))} disabled={!canEdit || !capabilities?.quotesEditPrices} placeholder={price ? moneyInputLabel(price) : 'Sin precio'} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Desc. %</span><input aria-label={`Descuento de ${line.catalogItemName}`} value={line.discountBasisPoints === '0' ? '' : (Number(line.discountBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'discountBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={!canEdit || !capabilities?.quotesApplyDiscount} inputMode="decimal" placeholder="0" /></label><strong className="quotes-line__total">{linePreview ? moneyLabel(linePreview.total, selectedCurrency) : '—'}</strong><div className="quotes-line__actions"><button className="quotes-line__move" type="button" aria-label={`Mover ${line.catalogItemName} hacia arriba`} onClick={() => moveLine(lineIndex, -1)} disabled={!canEdit || lineIndex === 0}><ChevronUp size={14} aria-hidden="true" /></button><button className="quotes-line__move" type="button" aria-label={`Mover ${line.catalogItemName} hacia abajo`} onClick={() => moveLine(lineIndex, 1)} disabled={!canEdit || lineIndex === draftLines.length - 1}><ChevronDown size={14} aria-hidden="true" /></button><button className="quotes-line__remove" type="button" aria-label={`Quitar ${line.catalogItemName}`} onClick={() => setDraftLines((lines) => lines.filter((candidate) => candidate.id !== line.id))} disabled={!canEdit}><X size={16} aria-hidden="true" /></button></div></div></div>; })}
                 {draftLines.length === 0 && <div className="quotes-lines__empty"><strong>Aún no hay conceptos.</strong><span>Agrega los servicios que componen esta propuesta.</span></div>}
               </div>
-              {(canEdit || canStartVersion) && <div className="quotes-add-line"><CatalogItemSearchCombobox priceListId={selectedPriceListId} currencyCode={selectedCurrency} excludeIds={draftLines.map((line) => line.catalogItemId).filter((id): id is string => id !== null)} disabled={!selectedPriceListId} onSelect={addLineFromSearch} /><button className="staff-button staff-button--outline" type="button" onClick={() => setShowSpecialForm((current) => !current)}>{showSpecialForm ? 'Cerrar' : 'Agregar concepto especial'}</button></div>}
+              {(canEdit || canStartVersion) && <div className="quotes-add-line"><CatalogItemSearchCombobox priceListId={selectedPriceListId} currencyCode={selectedCurrency} excludeIds={draftLines.map((line) => line.catalogItemId).filter((id): id is string => id !== null)} disabled={!selectedPriceListId} onSelect={addLineFromSearch} /><button className="staff-button staff-button--outline" type="button" onClick={() => setShowSpecialForm((current) => !current)}>{showSpecialForm ? 'Cerrar' : 'Agregar concepto especial'}</button>{canEdit && <button className="staff-button staff-button--outline" type="button" onClick={() => setShowSectionForm((current) => !current)}>{showSectionForm ? 'Cerrar' : 'Agregar sección'}</button>}</div>}
               {(canEdit || canStartVersion) && showSpecialForm && <form className="catalog-form" onSubmit={addSpecialLine}><label><span>Nombre</span><input required value={specialForm.name} onChange={(event) => setSpecialForm({ ...specialForm, name: event.target.value })} placeholder="Concepto fuera de catálogo" maxLength={180} /></label><label><span>Unidad</span><input required value={specialForm.unit} onChange={(event) => setSpecialForm({ ...specialForm, unit: event.target.value })} placeholder="pieza" maxLength={40} /></label><PrivateMoneyField id="quotes-special-amount" label="Importe del concepto especial" value={specialForm.amountInput} onValueChange={(value) => setSpecialForm({ ...specialForm, amountInput: value })} placeholder="1,250.00" /><label><span>Motivo</span><input required value={specialForm.reason} onChange={(event) => setSpecialForm({ ...specialForm, reason: event.target.value })} placeholder="Por qué no está en catálogo" maxLength={300} /></label><label><span>Descripción</span><textarea rows={2} value={specialForm.description} onChange={(event) => setSpecialForm({ ...specialForm, description: event.target.value })} maxLength={2000} /></label><button className="staff-button staff-button--copper" type="submit">Agregar a la propuesta</button></form>}
+              {canEdit && showSectionForm && <form className="catalog-form" onSubmit={addSection}><label><span>Título de la sección</span><input required value={sectionForm.title} onChange={(event) => setSectionForm({ ...sectionForm, title: event.target.value })} placeholder="Por ejemplo: Alberca" maxLength={180} /></label><label><span>Descripción (opcional)</span><textarea rows={2} value={sectionForm.description} onChange={(event) => setSectionForm({ ...sectionForm, description: event.target.value })} maxLength={2000} /></label><button className="staff-button staff-button--copper" type="submit">Crear sección</button></form>}
               <details className="quotes-content"><summary>Contenido de la propuesta (alcance, exclusiones, pago, garantías, notas)</summary><label><span>Alcance</span><textarea value={contentFields.scopeText} onChange={(event) => setContentFields((current) => ({ ...current, scopeText: event.target.value }))} disabled={!canEdit} rows={3} maxLength={10000} placeholder="Qué incluye esta propuesta" /></label><label><span>Exclusiones</span><textarea value={contentFields.exclusionsText} onChange={(event) => setContentFields((current) => ({ ...current, exclusionsText: event.target.value }))} disabled={!canEdit} rows={3} maxLength={10000} placeholder="Qué no incluye" /></label><label><span>Condiciones de pago</span><textarea value={contentFields.paymentTermsText} onChange={(event) => setContentFields((current) => ({ ...current, paymentTermsText: event.target.value }))} disabled={!canEdit} rows={3} maxLength={10000} placeholder="Anticipo, contra entrega, etc." /></label><label><span>Garantías</span><textarea value={contentFields.warrantyText} onChange={(event) => setContentFields((current) => ({ ...current, warrantyText: event.target.value }))} disabled={!canEdit} rows={3} maxLength={10000} /></label><label><span>Notas públicas</span><textarea value={contentFields.publicNotesText} onChange={(event) => setContentFields((current) => ({ ...current, publicNotesText: event.target.value }))} disabled={!canEdit} rows={3} maxLength={10000} /></label></details>
               <div className="quotes-summary"><div><span>Subtotal</span><strong>{moneyLabel(preview.subtotal, selectedCurrency)}</strong></div><div><span>Descuentos</span><strong>− {moneyLabel(preview.discount, selectedCurrency)}</strong></div><div><span>Impuestos</span><strong>{moneyLabel(preview.tax, selectedCurrency)}</strong></div><div className="quotes-summary__total"><span>Total de propuesta</span><strong>{preview.valid ? moneyLabel(preview.total, selectedCurrency) : 'Revisa las líneas'}</strong></div></div>
               <div className="quotes-actions"><PrivateDatePicker id="quotes-valid-until" label="Vigencia hasta" value={validUntil} onValueChange={setValidUntil} disabled={!canEdit && !canStartVersion} />{canEdit ? <button className="staff-button staff-button--dark" type="button" disabled={autosaveState === 'saving' || autosaveState === 'saved' || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void persistDraft()}>{autosaveState === 'saving' ? 'Guardando…' : 'Guardar ahora'}</button> : null}{canStartVersion ? <button className="staff-button staff-button--dark" type="button" disabled={saving || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void createVersionFromSent()}>{saving ? 'Creando…' : 'Crear nueva versión'}</button> : null}{currentVersion?.status === 'BORRADOR' && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || autosaveState === 'saving' || autosaveState === 'dirty' || autosaveState === 'conflict' || draftLines.length === 0} onClick={() => void transition('EN_REVISION')}>Pasar a revisión</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesCreate ? <button className="staff-button staff-button--outline" type="button" disabled={saving} onClick={() => { setReturnToDraftReason(''); setReturnToDraftDialogOpen(true); }}>Volver a borrador</button> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval && !hasApprovedDiscount && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeDiscountApproval)} onClick={() => void requestDiscountApproval()}>{activeDiscountApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasDiscount && activeDiscountApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideDiscountApproval(activeDiscountApproval.id, 'APPROVED')}>Aprobar descuento</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => void decideDiscountApproval(activeDiscountApproval.id, 'REJECTED')}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && !hasApprovedSpecial && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeSpecialApproval)} onClick={() => void requestSpecialApproval()}>{activeSpecialApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación de concepto especial'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && activeSpecialApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideSpecialApproval(activeSpecialApproval.id, 'APPROVED')}>Aprobar concepto especial</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => void decideSpecialApproval(activeSpecialApproval.id, 'REJECTED')}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && canPublish && (!requiresDiscountApproval || hasApprovedDiscount) && (!hasSpecialLines || hasApprovedSpecial) ? <button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void openPublishPreflight()}>Enviar cotización</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesSend && !capabilities.quotesPdfGenerate ? <p className="quotes-action-note">Tu perfil puede enviar, pero necesita permiso para preparar el PDF comercial.</p> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval ? <p className="quotes-action-note">{discountApproval ? `${approvalStatusLabel(discountApproval.status)}. ` : ''}{hasApprovedDiscount ? 'La versión tiene una aprobación vigente.' : 'Esta versión no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines ? <p className="quotes-action-note">{specialApproval ? `${approvalStatusLabel(specialApproval.status)}. ` : ''}{hasApprovedSpecial ? 'Los conceptos especiales tienen una aprobación vigente.' : 'Esta versión tiene conceptos especiales y no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}</div>

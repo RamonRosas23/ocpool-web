@@ -1113,6 +1113,11 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .quotes-line__item { display: grid; min-width: 0; gap: 4px; }
 .quotes-line__item strong { overflow: hidden; color: var(--staff-deep); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .quotes-line__item small { overflow: hidden; color: var(--staff-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.quotes-line__section-select { margin-top: 2px; max-width: 180px; min-height: 26px; border: 1px solid var(--staff-line); border-radius: 0; padding: 0 6px; background: var(--staff-paper); color: var(--staff-muted); font-size: 9px; text-transform: uppercase; letter-spacing: .04em; }
+.quotes-section-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; padding: 8px 10px; background: rgba(184,155,108,.12); }
+.quotes-section-header strong { color: var(--staff-deep); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.quotes-section-header__remove { border: 0; background: transparent; color: var(--staff-muted); font-size: 9px; text-decoration: underline; }
+.quotes-section-header__remove:hover { color: #913e35; }
 .quotes-line label { min-width: 0; }
 .quotes-line input { width: 100%; min-height: 38px; border: 1px solid var(--staff-line); border-radius: 0; padding: 0 7px; background: var(--staff-paper); color: var(--staff-ink); font-size: 11px; outline: none; }
 .quotes-line input:disabled { color: var(--staff-muted); background: rgba(239,235,226,.62); }

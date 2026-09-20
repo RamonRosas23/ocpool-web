@@ -55,6 +55,7 @@ function serializeBigInt(value: bigint): string {
 
 function serializeLine(line: {
   id: string;
+  sectionId: string | null;
   catalogItemId: string | null;
   catalogItemCode: string | null;
   name: string;
@@ -105,6 +106,7 @@ function serializeVersion(version: {
   createdAt: Date;
   updatedAt: Date;
   createdBy: { id: string; displayName: string };
+  sections: Array<{ id: string; position: number; title: string; description: string | null }>;
   lines: Parameters<typeof serializeLine>[0][];
   approvals: Array<{
     id: string;
@@ -141,6 +143,7 @@ function serializeVersion(version: {
     createdAt: version.createdAt,
     updatedAt: version.updatedAt,
     createdBy: version.createdBy,
+    sections: version.sections,
     lines: version.lines.map(serializeLine),
     approvals: version.approvals.map((approval) => ({ ...approval })),
   };
@@ -423,10 +426,15 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       createdAt: true,
       updatedAt: true,
       createdBy: { select: { id: true, displayName: true } },
+      sections: {
+        orderBy: { position: 'asc' },
+        select: { id: true, position: true, title: true, description: true },
+      },
       lines: {
         orderBy: { position: 'asc' },
         select: {
           id: true,
+          sectionId: true,
           catalogItemId: true,
           catalogItemCode: true,
           name: true,

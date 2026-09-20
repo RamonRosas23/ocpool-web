@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { requirePermission } from '@/server/auth/permissions';
@@ -25,6 +26,9 @@ export type CatalogPricingLineInput = Readonly<{
   unitPriceMinorOverride?: string | bigint;
   discountBasisPoints?: string | number | bigint;
   taxBasisPoints?: string | number | bigint;
+  /// Q1-03: index into this same request's `sections` array. Omitted/null
+  /// means the line stands alone, outside any section.
+  sectionIndex?: number | null;
 }>;
 
 export type SpecialPricingLineInput = Readonly<{
@@ -37,9 +41,15 @@ export type SpecialPricingLineInput = Readonly<{
   reason: string;
   discountBasisPoints?: string | number | bigint;
   taxBasisPoints?: string | number | bigint;
+  sectionIndex?: number | null;
 }>;
 
 export type QuotePricingLineInput = CatalogPricingLineInput | SpecialPricingLineInput;
+
+/// Q1-03/D1-02: a named grouping of lines (title + optional description),
+/// stored as its own snapshot table so a section's own text is versioned
+/// exactly like everything else. Position is the array order submitted.
+export type QuoteSectionInput = Readonly<{ title: string; description?: string | null }>;
 
 /// Q1-03/D1-02: structured commercial content, published verbatim to
 /// client/PDF once the version is sent. All optional/nullable -- a version
@@ -56,6 +66,7 @@ export type CreateQuoteVersionInput = Readonly<{
   quoteRequestId: string;
   priceListId: string;
   lines: readonly QuotePricingLineInput[];
+  sections?: readonly QuoteSectionInput[];
   validUntil?: Date | null;
   expectedCurrentVersionNumber?: number | null;
   /// K1-04: when provided, its rate overrides every line's tax uniformly.
@@ -66,6 +77,7 @@ export type CreateQuoteVersionInput = Readonly<{
 export type ReplaceQuoteDraftInput = Readonly<{
   priceListId: string;
   lines: readonly QuotePricingLineInput[];
+  sections?: readonly QuoteSectionInput[];
   validUntil?: Date | null;
   expectedUpdatedAt?: Date;
   taxProfileId?: string;
@@ -176,6 +188,38 @@ function normalizeContentFields(input: QuoteContentInput) {
     warrantyText: normalizeContentField(input.warrantyText),
     publicNotesText: normalizeContentField(input.publicNotesText),
   };
+}
+
+const MAX_SECTION_TITLE_LENGTH = 180;
+const MAX_SECTION_DESCRIPTION_LENGTH = 2_000;
+const MAX_SECTIONS_PER_VERSION = 20;
+
+type NormalizedSection = Readonly<{ id: string; position: number; title: string; description: string | null }>;
+
+/// Q1-03: sections are wholesale-replaced on every save, exactly like lines
+/// already are -- IDs are generated here (not left to the DB default) so a
+/// line submitted in the same request can reference its section by array
+/// index without a round-trip.
+function normalizeSections(sections: readonly QuoteSectionInput[] | undefined): NormalizedSection[] {
+  if (!sections || sections.length === 0) return [];
+  if (sections.length > MAX_SECTIONS_PER_VERSION) validation('No se pueden crear más de 20 secciones.');
+  return sections.map((section, position) => {
+    const title = section.title.trim();
+    if (!title || title.length > MAX_SECTION_TITLE_LENGTH) validation('El título de la sección no es válido.');
+    const description = section.description?.trim() || null;
+    if (description && description.length > MAX_SECTION_DESCRIPTION_LENGTH) validation('La descripción de la sección no es válida.');
+    return { id: randomUUID(), position, title, description };
+  });
+}
+
+function resolveLineSectionIds(lines: readonly QuotePricingLineInput[], sections: readonly NormalizedSection[]): Array<string | null> {
+  return lines.map((line) => {
+    const index = line.sectionIndex;
+    if (index === undefined || index === null) return null;
+    const section = sections[index];
+    if (!section) validation('La sección de una línea no es válida.');
+    return section.id;
+  });
 }
 
 function normalizeDate(value: Date | null | undefined, now: Date): Date | null {
@@ -401,28 +445,40 @@ function versionCreateData(snapshot: ReturnType<typeof buildQuoteVersionSnapshot
   return {
     ...versionTotalsData(snapshot),
     taxProfileId,
-    lines: {
-      create: snapshot.lines.map((line, position) => ({
-        position,
-        catalogItemId: line.catalogItemId,
-        catalogItemCode: line.catalogItemCode,
-        name: line.name,
-        description: line.description,
-        unit: line.unit,
-        specialReason: line.specialReason,
-        quantityMilliunits: line.quantity.milliunits,
-        currencyCode: line.unitPrice.currency,
-        unitPriceMinor: line.unitPrice.amountMinor,
-        discountBasisPoints: line.discountBasisPoints,
-        discountMinor: line.discount.amountMinor,
-        taxableMinor: line.taxable.amountMinor,
-        taxBasisPoints: line.taxBasisPoints,
-        taxMinor: line.tax.amountMinor,
-        subtotalMinor: line.subtotal.amountMinor,
-        totalMinor: line.total.amountMinor,
-      })),
-    },
   };
+}
+
+/// Q1-03: sections must be inserted before the lines that reference them --
+/// nesting both under the same `quoteVersion.create()` would leave Prisma
+/// free to order the two nested writes either way, and a line's `sectionId`
+/// FK would fail if its section hadn't landed yet. Two explicit, awaited
+/// `createMany` calls (still inside the same transaction) guarantee the order.
+function buildSectionRows(quoteVersionId: string, sections: readonly NormalizedSection[]) {
+  return sections.map((section) => ({ id: section.id, quoteVersionId, position: section.position, title: section.title, description: section.description }));
+}
+
+function buildLineRows(quoteVersionId: string, snapshot: ReturnType<typeof buildQuoteVersionSnapshot>, sectionIdsByLine: readonly (string | null)[]) {
+  return snapshot.lines.map((line, position) => ({
+    quoteVersionId,
+    position,
+    sectionId: sectionIdsByLine[position] ?? null,
+    catalogItemId: line.catalogItemId,
+    catalogItemCode: line.catalogItemCode,
+    name: line.name,
+    description: line.description,
+    unit: line.unit,
+    specialReason: line.specialReason,
+    quantityMilliunits: line.quantity.milliunits,
+    currencyCode: line.unitPrice.currency,
+    unitPriceMinor: line.unitPrice.amountMinor,
+    discountBasisPoints: line.discountBasisPoints,
+    discountMinor: line.discount.amountMinor,
+    taxableMinor: line.taxable.amountMinor,
+    taxBasisPoints: line.taxBasisPoints,
+    taxMinor: line.tax.amountMinor,
+    subtotalMinor: line.subtotal.amountMinor,
+    totalMinor: line.total.amountMinor,
+  }));
 }
 
 function toResult(input: {
@@ -462,6 +518,8 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
     assertBuildableRequest(request);
     const { snapshot, taxProfileId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, undefined, input.taxProfileId);
     assertSameCurrency(request.currencyCode, snapshot.currency);
+    const sections = normalizeSections(input.sections);
+    const sectionIdsByLine = resolveLineSectionIds(input.lines, sections);
 
     const existingQuote = await transaction.quote.findUnique({ where: { quoteRequestId }, select: { id: true } });
     let quote: LockedQuote | { id: string };
@@ -498,6 +556,8 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
         statusHistory: { create: { toStatus: 'BORRADOR', changedById: actor.userId, createdAt: now } },
       },
     });
+    if (sections.length > 0) await transaction.quoteSectionSnapshot.createMany({ data: buildSectionRows(version.id, sections) });
+    await transaction.quoteLineSnapshot.createMany({ data: buildLineRows(version.id, snapshot, sectionIdsByLine) });
     await transaction.quote.update({ where: { id: quote.id }, data: { currentVersionId: version.id, workingVersionId: version.id } });
     await transaction.auditLog.create({
       data: {
@@ -552,6 +612,8 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
     const previousPricesByItem = new Map(existingLines.map((line) => [line.catalogItemId as string, line.unitPriceMinor]));
     const { snapshot, taxProfileId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
     assertSameCurrency(version.currencyCode, snapshot.currency);
+    const sections = normalizeSections(input.sections);
+    const sectionIdsByLine = resolveLineSectionIds(input.lines, sections);
     const updated = await transaction.quoteVersion.update({
       where: { id: version.id },
       data: {
@@ -562,26 +624,9 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       },
     });
     await transaction.quoteLineSnapshot.deleteMany({ where: { quoteVersionId: version.id } });
-    await transaction.quoteLineSnapshot.createMany({ data: snapshot.lines.map((line, position) => ({
-      quoteVersionId: version.id,
-      position,
-      catalogItemId: line.catalogItemId,
-      catalogItemCode: line.catalogItemCode,
-      name: line.name,
-      description: line.description,
-      unit: line.unit,
-      specialReason: line.specialReason,
-      quantityMilliunits: line.quantity.milliunits,
-      currencyCode: line.unitPrice.currency,
-      unitPriceMinor: line.unitPrice.amountMinor,
-      discountBasisPoints: line.discountBasisPoints,
-      discountMinor: line.discount.amountMinor,
-      taxableMinor: line.taxable.amountMinor,
-      taxBasisPoints: line.taxBasisPoints,
-      taxMinor: line.tax.amountMinor,
-      subtotalMinor: line.subtotal.amountMinor,
-      totalMinor: line.total.amountMinor,
-    })) });
+    await transaction.quoteSectionSnapshot.deleteMany({ where: { quoteVersionId: version.id } });
+    if (sections.length > 0) await transaction.quoteSectionSnapshot.createMany({ data: buildSectionRows(version.id, sections) });
+    await transaction.quoteLineSnapshot.createMany({ data: buildLineRows(version.id, snapshot, sectionIdsByLine) });
     await transaction.quoteApproval.updateMany({
       where: { quoteVersionId: version.id, status: { in: ['REQUESTED', 'APPROVED'] } },
       data: { status: 'SUPERSEDED', decidedAt: null, decidedById: null },
@@ -764,32 +809,47 @@ export async function clonePublishedVersion(actor: Actor, quoteRequestId: string
 
   const publishedVersion = await prisma.quoteVersion.findUnique({ where: { id: quote.publishedVersionId }, select: { taxProfileId: true } });
 
+  // Q1-03: sections carry over by identity (old section id -> new array index)
+  // so cloned lines keep their grouping without needing the old section rows.
+  const publishedSections = await prisma.quoteSectionSnapshot.findMany({
+    where: { quoteVersionId: quote.publishedVersionId },
+    orderBy: { position: 'asc' },
+    select: { id: true, title: true, description: true },
+  });
+  const sections: QuoteSectionInput[] = publishedSections.map((section) => ({ title: section.title, description: section.description }));
+  const sectionIndexById = new Map(publishedSections.map((section, index) => [section.id, index]));
+
   const publishedLines = await prisma.quoteLineSnapshot.findMany({
     where: { quoteVersionId: quote.publishedVersionId },
     orderBy: { position: 'asc' },
-    select: { catalogItemId: true, name: true, description: true, unit: true, specialReason: true, quantityMilliunits: true, unitPriceMinor: true, discountBasisPoints: true, taxBasisPoints: true },
+    select: { catalogItemId: true, name: true, description: true, unit: true, specialReason: true, quantityMilliunits: true, unitPriceMinor: true, discountBasisPoints: true, taxBasisPoints: true, sectionId: true },
   });
 
-  const lines: QuotePricingLineInput[] = publishedLines.map((line) => (line.catalogItemId === null
-    ? {
-      special: true as const,
-      name: line.name,
-      description: line.description,
-      unit: line.unit,
-      quantity: quantityMilliunitsToDecimalString(line.quantityMilliunits),
-      unitPriceMinor: line.unitPriceMinor,
-      reason: line.specialReason ?? '',
-      discountBasisPoints: line.discountBasisPoints,
-      taxBasisPoints: line.taxBasisPoints,
-    }
-    : {
-      catalogItemId: line.catalogItemId,
-      quantity: quantityMilliunitsToDecimalString(line.quantityMilliunits),
-      discountBasisPoints: line.discountBasisPoints,
-      taxBasisPoints: line.taxBasisPoints,
-    }));
+  const lines: QuotePricingLineInput[] = publishedLines.map((line) => {
+    const sectionIndex = line.sectionId ? sectionIndexById.get(line.sectionId) ?? null : null;
+    return line.catalogItemId === null
+      ? {
+        special: true as const,
+        name: line.name,
+        description: line.description,
+        unit: line.unit,
+        quantity: quantityMilliunitsToDecimalString(line.quantityMilliunits),
+        unitPriceMinor: line.unitPriceMinor,
+        reason: line.specialReason ?? '',
+        discountBasisPoints: line.discountBasisPoints,
+        taxBasisPoints: line.taxBasisPoints,
+        sectionIndex,
+      }
+      : {
+        catalogItemId: line.catalogItemId,
+        quantity: quantityMilliunitsToDecimalString(line.quantityMilliunits),
+        discountBasisPoints: line.discountBasisPoints,
+        taxBasisPoints: line.taxBasisPoints,
+        sectionIndex,
+      };
+  });
 
-  return createQuoteVersion(actor, { quoteRequestId: requestId, priceListId, lines, taxProfileId: publishedVersion?.taxProfileId ?? undefined }, dependencies);
+  return createQuoteVersion(actor, { quoteRequestId: requestId, priceListId, lines, sections, taxProfileId: publishedVersion?.taxProfileId ?? undefined }, dependencies);
 }
 
 /**

@@ -8,12 +8,14 @@ import { toErrorResponse } from '@/server/http/errors';
 import { replaceQuoteDraft, serializeQuoteVersionResult } from '@/server/modules/quotes/service';
 
 const rateSchema = z.union([z.string().regex(/^\d+$/u), z.number().int().min(0).max(10_000)]);
+const sectionIndexSchema = z.number().int().min(0).max(19).nullable().optional();
 const catalogLineSchema = z.object({
   catalogItemId: z.string().uuid(),
   quantity: z.string().regex(/^\d+(?:\.\d{1,3})?$/u),
   unitPriceMinorOverride: z.string().regex(/^\d+$/u).optional(),
   discountBasisPoints: rateSchema.optional(),
   taxBasisPoints: rateSchema.optional(),
+  sectionIndex: sectionIndexSchema,
 }).strict();
 const specialLineSchema = z.object({
   special: z.literal(true),
@@ -25,11 +27,17 @@ const specialLineSchema = z.object({
   reason: z.string().trim().min(1).max(300),
   discountBasisPoints: rateSchema.optional(),
   taxBasisPoints: rateSchema.optional(),
+  sectionIndex: sectionIndexSchema,
+}).strict();
+const sectionSchema = z.object({
+  title: z.string().trim().min(1).max(180),
+  description: z.string().trim().max(2000).nullable().optional(),
 }).strict();
 const contentFieldSchema = z.string().trim().max(10_000).nullable().optional();
 const bodySchema = z.object({
   priceListId: z.string().uuid(),
   lines: z.array(z.union([catalogLineSchema, specialLineSchema])).min(1).max(100),
+  sections: z.array(sectionSchema).max(20).optional(),
   validUntil: z.coerce.date().nullable().optional(),
   expectedUpdatedAt: z.coerce.date().optional(),
   taxProfileId: z.string().uuid().optional(),
