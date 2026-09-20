@@ -723,8 +723,12 @@ export async function requestInformationQuoteRequest(actor: Actor, quoteRequestI
       ? await inviteCustomerPortalAccessInTransaction(actor, transaction, request.id, { ...dependencies, now })
       : null;
     await transaction.quoteRequest.update({ where: { id: request.id }, data: { status: 'INFORMACION_REQUERIDA', updatedAt: now } });
+    // request_status_history.reason es VarChar(500); el mensaje real (hasta MAX_MESSAGE_LENGTH)
+    // vive en la conversación, así que aquí guardamos un resumen truncado para que el historial
+    // operativo (paneles legacy y V2) muestre de un vistazo qué se le pidió al cliente.
+    const historyReason = normalized.message.length > 500 ? `${normalized.message.slice(0, 497)}...` : normalized.message;
     await transaction.requestStatusHistory.create({
-      data: { quoteRequestId: request.id, fromStatus: request.status, toStatus: 'INFORMACION_REQUERIDA', changedById: actor.userId, reason: 'Se solicitó información al cliente.', createdAt: now },
+      data: { quoteRequestId: request.id, fromStatus: request.status, toStatus: 'INFORMACION_REQUERIDA', changedById: actor.userId, reason: historyReason, createdAt: now },
     });
     await transaction.auditLog.create({
       data: {

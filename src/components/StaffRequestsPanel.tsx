@@ -17,9 +17,23 @@ import {
 } from '@/server/modules/quote-requests/domain';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
+import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
 
 const STATUS_LABELS: Record<string, string> = QUOTE_REQUEST_STATUS_LABELS;
 const STATUS_OPTIONS = Object.keys(STATUS_LABELS);
+const INFORMATION_REQUEST_STATUS = 'INFORMACION_REQUERIDA';
+
+// El servidor deja INFORMACION_REQUERIDA fuera de availableStatusTransitions a propósito:
+// esa transición exige un mensaje al cliente y se resuelve con la acción dedicada
+// "Solicitar información" (endpoint /request-information), no con el cambio de estado genérico.
+// Cuando el servidor la habilita vía availableActions ('request.information'), la agregamos
+// como una opción más del mismo selector "Siguiente estado" sin declarar nosotros la lista.
+function withInformationRequestOption(availableStatusTransitions: string[], availableActions: string[]): string[] {
+  if (!availableActions.includes('request.information') || availableStatusTransitions.includes(INFORMATION_REQUEST_STATUS)) {
+    return availableStatusTransitions;
+  }
+  return [INFORMATION_REQUEST_STATUS, ...availableStatusTransitions];
+}
 
 type RequestSummary = {
   id: string;
@@ -176,7 +190,7 @@ export default function StaffRequestsPanel() {
       const data = await readApiResponseOrThrow<RequestDetail>(response, 'No fue posible cargar el expediente.');
       setSelected(data);
       setAssignmentId(data.currentAssignee?.id ?? '');
-      setNextStatus(data.availableStatusTransitions[0] ?? '');
+      setNextStatus(withInformationRequestOption(data.availableStatusTransitions, data.availableActions)[0] ?? '');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el expediente.');
     } finally {
@@ -230,7 +244,7 @@ export default function StaffRequestsPanel() {
     void loadCapabilities();
   }, []);
 
-  const nextStatuses = useMemo(() => selected?.availableStatusTransitions ?? [], [selected]);
+  const nextStatuses = useMemo(() => selected ? withInformationRequestOption(selected.availableStatusTransitions, selected.availableActions) : [], [selected]);
 
   const refreshCurrent = async () => {
     await loadList(page, statusFilter, appliedSearch);
@@ -268,16 +282,32 @@ export default function StaffRequestsPanel() {
 
   const transition = async () => {
     if (!selected || !nextStatus) return;
+    const isInformationRequest = nextStatus === INFORMATION_REQUEST_STATUS;
+    if (isInformationRequest && !statusReason.trim()) {
+      setError('Escribe el mensaje que recibirá el cliente para solicitar información.');
+      setNotice(null);
+      return;
+    }
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/staff/quote-requests/${selected.id}/status`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ toStatus: nextStatus, reason: statusReason || undefined }),
-      });
+      // INFORMACION_REQUERIDA no se resuelve con el cambio de estado genérico: el backend exige
+      // enlazar un mensaje al cliente (endpoint dedicado), así que reutilizamos el mismo campo de
+      // motivo como el mensaje a enviar y llamamos a la acción "Solicitar información" en su lugar.
+      const response = isInformationRequest
+        ? await fetch(`/api/staff/quote-requests/${selected.id}/request-information`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ message: statusReason.trim(), idempotencyKey: getOrCreateIdempotencyKey(null, 'request-information') }),
+        })
+        : await fetch(`/api/staff/quote-requests/${selected.id}/status`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ toStatus: nextStatus, reason: statusReason || undefined }),
+        });
       await readApiResponseOrThrow(response, 'No fue posible actualizar el estado.');
       setNotice('Estado actualizado.');
       setStatusReason('');
