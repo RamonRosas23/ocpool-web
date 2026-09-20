@@ -348,6 +348,7 @@ model User {
   commercialPolicyVersionsCreated CommercialPolicyVersion[] @relation("CommercialPolicyCreator")
   commercialTermsVersionsCreated  CommercialTermsVersion[]  @relation("CommercialTermsCreator")
   quotePublications               QuotePublication[]        @relation("QuotePublicationActor")
+  conversationReadStates          ConversationReadState[]
   createdAt                       DateTime                  @default(now()) @db.Timestamptz(3)
   updatedAt                       DateTime                  @updatedAt @db.Timestamptz(3)
 
@@ -407,18 +408,19 @@ model QuoteRequest {
 }
 
 model Conversation {
-  id             String                @id @default(uuid()) @db.Uuid
-  quoteRequestId String                @unique @db.Uuid
-  clientId       String                @db.Uuid
-  status         ConversationStatus    @default(OPEN)
-  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
-  closedAt       DateTime?             @db.Timestamptz(3)
-  closedById     String?               @db.Uuid
-  quoteRequest   QuoteRequest          @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Cascade)
-  client         Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  closedBy       User?                 @relation("ConversationCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  id             String                  @id @default(uuid()) @db.Uuid
+  quoteRequestId String                  @unique @db.Uuid
+  clientId       String                  @db.Uuid
+  status         ConversationStatus      @default(OPEN)
+  createdAt      DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime                @updatedAt @db.Timestamptz(3)
+  closedAt       DateTime?               @db.Timestamptz(3)
+  closedById     String?                 @db.Uuid
+  quoteRequest   QuoteRequest            @relation(fields: [quoteRequestId, clientId], references: [id, clientId], onDelete: Cascade)
+  client         Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  closedBy       User?                   @relation("ConversationCloser", fields: [closedById], references: [id], onDelete: SetNull)
   messages       ConversationMessage[]
+  readStates     ConversationReadState[]
 
   @@unique([quoteRequestId, clientId])
   @@index([clientId, status, updatedAt])
@@ -427,20 +429,44 @@ model Conversation {
 }
 
 model ConversationMessage {
-  id                 String            @id @default(uuid()) @db.Uuid
-  conversationId     String            @db.Uuid
-  senderUserId       String?           @db.Uuid
+  id                 String                  @id @default(uuid()) @db.Uuid
+  conversationId     String                  @db.Uuid
+  senderUserId       String?                 @db.Uuid
   visibility         MessageVisibility
-  body               String            @db.Text
-  idempotencyKeyHash String?           @db.VarChar(64)
-  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
-  conversation       Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender             User?             @relation("ConversationMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  body               String                  @db.Text
+  idempotencyKeyHash String?                 @db.VarChar(64)
+  createdAt          DateTime                @default(now()) @db.Timestamptz(3)
+  conversation       Conversation            @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender             User?                   @relation("ConversationMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  readAsLastBy       ConversationReadState[]
 
   @@unique([conversationId, senderUserId, idempotencyKeyHash])
   @@index([conversationId, createdAt, id])
   @@index([conversationId, visibility, createdAt, id])
   @@map("conversation_messages")
+}
+
+/// W1-01: per-actor read position, deliberately deferred out of Fase 6 until
+/// a product contract, permission story and monotonic-progress guarantee
+/// existed (see PROJECT_STATUS.md invariant #36). No new permission: reading
+/// a conversation already requires `messaging.read`/`messaging.internal_notes.read`,
+/// and marking it read is a byproduct of that, not a separate capability.
+/// `lastReadAt` only ever advances (enforced in the upsert, not just here) --
+/// a stale/out-of-order write must never regress an actor's read position.
+model ConversationReadState {
+  id                String               @id @default(uuid()) @db.Uuid
+  conversationId    String               @db.Uuid
+  userId            String               @db.Uuid
+  lastReadMessageId String?              @db.Uuid
+  lastReadAt        DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime             @updatedAt @db.Timestamptz(3)
+  conversation      Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage   ConversationMessage? @relation(fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, userId])
+  @@index([userId, lastReadAt])
+  @@map("conversation_read_states")
 }
 
 model StorageObject {

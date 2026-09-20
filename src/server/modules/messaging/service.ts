@@ -398,11 +398,49 @@ export async function listConversationMessages(
   });
   const hasNext = messages.length > limit;
   const items = (hasNext ? messages.slice(0, limit) : messages).map((message) => serializeMessage(message, actor.type === 'EMPLOYEE'));
+
+  // W1-01: opening the tab marks it read up to the conversation's actual latest
+  // visible message (not just whatever page was fetched) -- pagination cursor
+  // and read position are independent, so paging through history never marks
+  // unseen recent messages as read, and viewing the tab at all (even without
+  // scrolling to the very bottom) clears "cliente respondió" for this actor.
+  if (actor.type === 'EMPLOYEE') {
+    const latestVisible = await prisma.conversationMessage.findFirst({
+      where: { conversationId: conversation.id, visibility: canReadInternal ? undefined : 'CUSTOMER' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, createdAt: true },
+    });
+    // Best-effort: recording that the tab was opened must never block the read itself
+    // returning what it already fetched, the same principle already applied to
+    // storage cleanup in invalidateQuoteVersionDocument.
+    if (latestVisible) {
+      try {
+        await markConversationRead(prisma, conversation.id, actor.userId, latestVisible.id, latestVisible.createdAt);
+      } catch { /* el próximo ciclo de lectura lo reintenta; no interrumpe esta respuesta ya obtenida. */ }
+    }
+  }
+
   return {
     conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE'),
     items,
     nextCursor: hasNext ? encodeCursor(messages[limit - 1]) : null,
   };
+}
+
+/// W1-01: monotonic upsert -- a stale/out-of-order call (two tabs, a slow
+/// request racing a fast one) must never regress an actor's read position.
+/// `GREATEST` on the conflict target makes this atomic and race-free without
+/// a separate lock, matching the guarantee PROJECT_STATUS.md's Fase 6
+/// invariant #36 required before this model could be built.
+async function markConversationRead(prisma: DbClient, conversationId: string, userId: string, lastMessageId: string, lastMessageCreatedAt: Date): Promise<void> {
+  await prisma.$executeRaw`
+    INSERT INTO "conversation_read_states" ("id", "conversationId", "userId", "lastReadMessageId", "lastReadAt", "updatedAt")
+    VALUES (gen_random_uuid(), ${conversationId}::uuid, ${userId}::uuid, ${lastMessageId}::uuid, ${lastMessageCreatedAt}, now())
+    ON CONFLICT ("conversationId", "userId") DO UPDATE SET
+      "lastReadMessageId" = CASE WHEN ${lastMessageCreatedAt} > "conversation_read_states"."lastReadAt" THEN excluded."lastReadMessageId" ELSE "conversation_read_states"."lastReadMessageId" END,
+      "lastReadAt" = GREATEST("conversation_read_states"."lastReadAt", ${lastMessageCreatedAt}),
+      "updatedAt" = now()
+  `;
 }
 
 async function lockQuoteRequestForRead(prisma: DbClient, quoteRequestId: string, clientId?: string): Promise<LockedRequest | null> {

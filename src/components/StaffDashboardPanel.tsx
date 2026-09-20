@@ -61,6 +61,14 @@ type PendingApproval = {
   currencyCode: string;
 };
 
+type CustomerReplied = {
+  id: string;
+  folio: string;
+  status: string;
+  client: { displayName: string };
+  lastCustomerMessageAt: string;
+};
+
 const APPROVAL_TYPE_LABELS: Record<PendingApproval['type'], string> = {
   DISCOUNT: 'Descuento',
   PRICE_OVERRIDE: 'Ajuste de precio',
@@ -152,6 +160,7 @@ export default function StaffDashboardPanel() {
   const [mineQueue, setMineQueue] = useState<QueueResponse | null>(null);
   const [unassignedQueue, setUnassignedQueue] = useState<QueueResponse | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[] | null>(null);
+  const [customerReplied, setCustomerReplied] = useState<CustomerReplied[] | null>(null);
   const [queuesLoading, setQueuesLoading] = useState(true);
 
   // W1-02 (primer corte): "qué atender ahora" reutiliza el mismo endpoint y scope de R1 (mine/sin
@@ -163,21 +172,26 @@ export default function StaffDashboardPanel() {
       try {
         // El scope "workspace" (view=mine/unassigned) fija su propio pageSize=20 en el servidor;
         // se toman sólo los primeros 5 para esta lectura compacta y `total` informa el resto.
-        const [mineResponse, unassignedResponse, approvalsResponse] = await Promise.all([
+        const [mineResponse, unassignedResponse, approvalsResponse, customerRepliedResponse] = await Promise.all([
           fetch('/api/staff/quote-requests?view=mine&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quote-requests?view=unassigned&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quotes/approvals/pending', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
+          fetch('/api/staff/quote-requests/customer-replied', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
         ]);
-        const [mineResult, unassignedResult, approvalsResult] = await Promise.all([
+        const [mineResult, unassignedResult, approvalsResult, customerRepliedResult] = await Promise.all([
           readApiResponse<QueueResponse>(mineResponse, 'No fue posible cargar tu trabajo.'),
           readApiResponse<QueueResponse>(unassignedResponse, 'No fue posible cargar las solicitudes sin asignar.'),
           readApiResponse<{ items: PendingApproval[] }>(approvalsResponse, 'No fue posible cargar las aprobaciones pendientes.'),
+          readApiResponse<{ items: CustomerReplied[] }>(customerRepliedResponse, 'No fue posible cargar las respuestas de cliente.'),
         ]);
         if (mineResult.ok) setMineQueue(mineResult.data);
         if (unassignedResult.ok) setUnassignedQueue(unassignedResult.data);
         // Un actor sin permiso de aprobar (ej. ventas) recibe [] del servidor, no un 403 — esta
         // cola simplemente no le aplica, así que la tarjeta no se renderiza para ese rol.
         if (approvalsResult.ok) setPendingApprovals(approvalsResult.data.items);
+        // W1-01: "cliente respondió" -- razón determinista (última respuesta del cliente más
+        // reciente que la propia lectura del actor), nunca un score opaco.
+        if (customerRepliedResult.ok) setCustomerReplied(customerRepliedResult.data.items);
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
       } finally {
@@ -278,6 +292,11 @@ export default function StaffDashboardPanel() {
             {unassignedQueue && unassignedQueue.items.length > 0 && <ul className="staff-workqueue__list">{unassignedQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{labelForStatus(item.status)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>}
             {unassignedQueue && unassignedQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests">Ver las {formatInteger(unassignedQueue.total)} solicitudes →</Link>}
           </article>
+          {customerReplied && customerReplied.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-customer-replied-title">
+            <div className="staff-workqueue__head"><p className="staff-section-label">Esperando tu respuesta</p><h2 id="workqueue-customer-replied-title">Cliente respondió</h2></div>
+            <ul className="staff-workqueue__list">{customerReplied.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{labelForStatus(item.status)}</span><span className="staff-workqueue__age">{ageLabel(item.lastCustomerMessageAt)}</span></Link></li>)}</ul>
+            {customerReplied.length > 5 && <span className="staff-workqueue__more">Y {formatInteger(customerReplied.length - 5)} más esperando respuesta</span>}
+          </article>}
           {pendingApprovals && pendingApprovals.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-approvals-title">
             <div className="staff-workqueue__head"><p className="staff-section-label">Esperan tu decisión</p><h2 id="workqueue-approvals-title">Aprobaciones</h2></div>
             <ul className="staff-workqueue__list">{pendingApprovals.slice(0, 5).map((approval) => <li key={approval.id}><Link href={`/staff/quotes?request=${approval.requestId}`}><span className="staff-workqueue__folio">{approval.folio}</span><span className="staff-workqueue__client">{approval.clientDisplayName}</span><span className="staff-workqueue__stage">{APPROVAL_TYPE_LABELS[approval.type]} · {approvalMoneyLabel(approval.totalMinor, approval.currencyCode)}</span><span className="staff-workqueue__age">{ageLabel(approval.requestedAt)}</span></Link></li>)}</ul>

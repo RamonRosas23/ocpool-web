@@ -393,6 +393,53 @@ export async function listStaffQuoteRequests(actor: Actor, filters: StaffQuoteRe
   };
 }
 
+export type CustomerRepliedSummary = Readonly<{
+  id: string;
+  folio: string;
+  status: QuoteRequestStatus;
+  client: { displayName: string };
+  lastCustomerMessageAt: Date;
+}>;
+
+const CUSTOMER_REPLIED_EXCLUDED_STATUSES: readonly QuoteRequestStatus[] = ['ACEPTADA', 'RECHAZADA', 'VENCIDA', 'CONVERTIDA_EN_PROYECTO'];
+const CUSTOMER_REPLIED_QUEUE_LIMIT = 20;
+
+/// W1-01: "cliente respondió" is deterministic, not an opaque score --
+/// a request qualifies exactly when the conversation's latest customer
+/// message is newer than this actor's own read position for it (or the
+/// actor has never read it at all). This is a real SQL join (not a bounded
+/// fetch + JS filter): an earlier version took the oldest-updated 200
+/// requests in scope and filtered in application code, which is wrong on a
+/// dataset with real history -- a shared dev DB already carries hundreds of
+/// old, already-read conversations, so the 200-row window filled up with
+/// stale candidates before ever reaching a genuinely unread, recently
+/// active one. Letting Postgres do the filtering (and only then applying
+/// LIMIT) is what actually bounds the result to real "needs attention" rows.
+export async function listCustomerRepliedForActor(actor: Actor, dependencies: StaffServiceDependencies = {}): Promise<CustomerRepliedSummary[]> {
+  if (!hasPermission(actor, 'requests.read')) return [];
+  const prisma = dependencies.prisma ?? getPrisma();
+  const scope = canReadGlobalStaffRequests(actor) ? Prisma.sql`TRUE` : Prisma.sql`(qr."currentAssigneeId" IS NULL OR qr."currentAssigneeId" = ${actor.userId}::uuid)`;
+  const rows = await prisma.$queryRaw<Array<{ id: string; folio: string; status: QuoteRequestStatus; clientDisplayName: string; lastCustomerMessageAt: Date }>>(Prisma.sql`
+    SELECT qr."id", qr."folio", qr."status", cl."displayName" AS "clientDisplayName", lastmsg."createdAt" AS "lastCustomerMessageAt"
+    FROM "quote_requests" qr
+    INNER JOIN "clients" cl ON cl."id" = qr."clientId"
+    INNER JOIN "conversations" c ON c."quoteRequestId" = qr."id"
+    INNER JOIN LATERAL (
+      SELECT cm."createdAt" FROM "conversation_messages" cm
+      WHERE cm."conversationId" = c."id" AND cm."visibility" = 'CUSTOMER'
+      ORDER BY cm."createdAt" DESC, cm."id" DESC
+      LIMIT 1
+    ) lastmsg ON TRUE
+    LEFT JOIN "conversation_read_states" crs ON crs."conversationId" = c."id" AND crs."userId" = ${actor.userId}::uuid
+    WHERE qr."status" NOT IN (${Prisma.join(CUSTOMER_REPLIED_EXCLUDED_STATUSES)})
+      AND (crs."id" IS NULL OR crs."lastReadAt" < lastmsg."createdAt")
+      AND ${scope}
+    ORDER BY lastmsg."createdAt" ASC
+    LIMIT ${CUSTOMER_REPLIED_QUEUE_LIMIT}
+  `);
+  return rows.map((row) => ({ id: row.id, folio: row.folio, status: row.status, client: { displayName: row.clientDisplayName }, lastCustomerMessageAt: row.lastCustomerMessageAt }));
+}
+
 export async function getStaffQuoteRequest(actor: Actor, quoteRequestId: string, dependencies: StaffServiceDependencies = {}) {
   requireStaffPermission(actor, 'requests.read');
   const prisma = dependencies.prisma ?? getPrisma();

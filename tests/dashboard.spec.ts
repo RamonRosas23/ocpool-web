@@ -34,6 +34,10 @@ test.describe('staff analytics dashboard', () => {
   let approvalCategoryId = '';
   let approvalItemId = '';
   let approvalPriceListId = '';
+  let customerRepliedRequestId = '';
+  let customerRepliedContactId = '';
+  let customerRepliedClientId = '';
+  let customerRepliedFolio = '';
 
   test.beforeAll(async () => {
     await seedIdentityCatalog(prisma);
@@ -119,6 +123,22 @@ test.describe('staff analytics dashboard', () => {
     const approvalQuote = await createQuoteVersion(requesterActor, { quoteRequestId: approvalRequestId, priceListId: approvalPriceListId, lines: [{ catalogItemId: approvalItemId, quantity: '1', discountBasisPoints: 500 }] }, { prisma, now });
     await transitionQuoteVersion(requesterActor, approvalQuote.versionId, 'EN_REVISION', { prisma, now });
     await requestQuoteApproval(requesterActor, approvalQuote.versionId, { type: 'DISCOUNT', policyVersion: 'discount-v1', thresholdBps: 500 }, { prisma, now });
+
+    // W1-01: "cliente respondió" -- asignado a este actor, con un mensaje visible para el cliente
+    // más reciente que cualquier lectura suya (ninguna existe todavía para este expediente).
+    const customerRepliedRequest = await createQuoteRequest({
+      idempotencyKey: `dashboard-customer-replied-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Dashboard queue customer replied ${suffix}`, email: `dashboard-customer-replied-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Culiacán', description: 'W1-01 customer replied queue fixture', consentAt: now },
+    }, { prisma, now });
+    customerRepliedRequestId = customerRepliedRequest.quoteRequestId;
+    customerRepliedClientId = customerRepliedRequest.clientId;
+    customerRepliedContactId = customerRepliedRequest.contactId;
+    customerRepliedFolio = customerRepliedRequest.folio;
+    await prisma.quoteRequest.update({ where: { id: customerRepliedRequestId }, data: { status: 'EN_ELABORACION', currentAssigneeId: userId } });
+    const customerRepliedConversation = await prisma.conversation.create({ data: { quoteRequestId: customerRepliedRequestId, clientId: customerRepliedClientId } });
+    await prisma.conversationMessage.create({ data: { conversationId: customerRepliedConversation.id, visibility: 'CUSTOMER', body: 'Ya tengo el terreno listo, cuando gusten pasar.' } });
   });
 
   test.afterAll(async () => {
@@ -126,7 +146,11 @@ test.describe('staff analytics dashboard', () => {
       await prisma.quoteApproval.deleteMany({ where: { quote: { quoteRequestId: approvalRequestId } } });
       await prisma.quote.deleteMany({ where: { quoteRequestId: approvalRequestId } });
     }
-    for (const id of [mineRequestId, unassignedRequestId, approvalRequestId]) {
+    if (customerRepliedRequestId) {
+      await prisma.conversationMessage.deleteMany({ where: { conversation: { quoteRequestId: customerRepliedRequestId } } });
+      await prisma.conversation.deleteMany({ where: { quoteRequestId: customerRepliedRequestId } });
+    }
+    for (const id of [mineRequestId, unassignedRequestId, approvalRequestId, customerRepliedRequestId]) {
       if (!id) continue;
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: id } });
       await prisma.auditLog.deleteMany({ where: { entityId: id } });
@@ -138,6 +162,8 @@ test.describe('staff analytics dashboard', () => {
     if (unassignedClientId) await prisma.client.delete({ where: { id: unassignedClientId } });
     if (approvalContactId) await prisma.clientContact.delete({ where: { id: approvalContactId } });
     if (approvalClientId) await prisma.client.delete({ where: { id: approvalClientId } });
+    if (customerRepliedContactId) await prisma.clientContact.delete({ where: { id: customerRepliedContactId } });
+    if (customerRepliedClientId) await prisma.client.delete({ where: { id: customerRepliedClientId } });
     if (approvalPriceListId) await prisma.priceListItem.deleteMany({ where: { priceListId: approvalPriceListId } });
     if (approvalPriceListId) await prisma.priceList.delete({ where: { id: approvalPriceListId } });
     if (approvalItemId) await prisma.catalogItem.delete({ where: { id: approvalItemId } });
@@ -204,6 +230,16 @@ test.describe('staff analytics dashboard', () => {
     await expect(page).toHaveURL(new RegExp(`/staff/quotes\\?request=${approvalRequestId}$`));
     await expect(page.getByRole('heading', { name: approvalFolio })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('button', { name: 'Aprobar descuento' })).toBeVisible({ timeout: 10_000 });
+
+    // W1-01: "cliente respondió" enlaza al expediente (solicitud), no al constructor —
+    // la razón es la conversación, no una decisión de cotización.
+    await page.goto('/staff');
+    const customerRepliedCard = page.locator('.staff-workqueue__card', { has: page.getByRole('heading', { name: 'Cliente respondió' }) });
+    await expect(customerRepliedCard.getByText(customerRepliedFolio)).toBeVisible({ timeout: 10_000 });
+    await expect(customerRepliedCard.getByText(`Dashboard queue customer replied ${suffix}`)).toBeVisible();
+    await customerRepliedCard.getByText(customerRepliedFolio).click();
+    await expect(page).toHaveURL(new RegExp(`/staff/requests\\?request=${customerRepliedRequestId}$`));
+    await expect(page.getByRole('heading', { name: customerRepliedFolio })).toBeVisible({ timeout: 10_000 });
 
     await page.goto('/staff');
     await mineCard.getByText(mineFolio).click();
