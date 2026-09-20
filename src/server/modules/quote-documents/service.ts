@@ -12,6 +12,11 @@ import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 const PDF_CONTENT_TYPE = 'application/pdf';
 const PDF_FAILURE_CODE = 'PDF_GENERATION_FAILED';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+/// P1-03: a PENDING row past this age can only mean the process that created it crashed or was
+/// redeployed mid-render (no real render legitimately takes this long) -- without this, that row
+/// stays wedged forever and every future attempt hits the 409 below, with no way to recover short
+/// of a manual DB fix.
+const PDF_PENDING_STALE_MS = 3 * 60_000;
 
 export type QuotePdfGenerationDependencies = Readonly<{
   prisma?: PrismaClient;
@@ -217,7 +222,9 @@ export async function generateQuotePdf(actor: Actor | null, quoteVersionIdInput:
         include: { storageObject: true },
       });
       if (existing?.status === 'READY') return { existing: existing as StoredDocument };
-      if (existing?.status === 'PENDING') throw new AppError('CONFLICT', 'El PDF de la cotización está en preparación.', 409);
+      if (existing?.status === 'PENDING' && now.getTime() - existing.updatedAt.getTime() < PDF_PENDING_STALE_MS) {
+        throw new AppError('CONFLICT', 'El PDF de la cotización está en preparación.', 409);
+      }
       if (existing?.status === 'DELETED') throw new AppError('CONFLICT', 'El PDF de la cotización fue retirado y no puede regenerarse desde este flujo.', 409);
 
       const document = existing

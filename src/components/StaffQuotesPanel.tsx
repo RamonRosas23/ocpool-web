@@ -284,7 +284,7 @@ export default function StaffQuotesPanel() {
   const [autosaveState, setAutosaveState] = useState<AutosaveState>('saved');
   const [autosaveMessage, setAutosaveMessage] = useState<string | null>(null);
   const [repriceDialogOpen, setRepriceDialogOpen] = useState(false);
-  const [publishPreflight, setPublishPreflight] = useState<{ documentStatus: DocumentStatus; loading: boolean } | null>(null);
+  const [publishPreflight, setPublishPreflight] = useState<{ documentStatus: DocumentStatus; contentDigest: string | null; loading: boolean } | null>(null);
   const savedSnapshotRef = useRef('');
   const expectedUpdatedAtRef = useRef<string | null>(null);
   const lastAttemptSnapshotRef = useRef('');
@@ -779,11 +779,11 @@ export default function StaffQuotesPanel() {
 
   const retryDraftSaveNow = () => { errorRetryCountRef.current = 0; void persistDraft(); };
 
-  const transition = async (toStatus: string) => {
+  const transition = async (toStatus: string, expectedContentDigest?: string) => {
     if (!currentVersion) return;
     setSaving(true); setError(null);
     try {
-      const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/status`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: toStatus === 'ENVIADA' ? 'publish' : 'submit_for_review' }) });
+      const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/status`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(toStatus === 'ENVIADA' ? { action: 'publish', expectedContentDigest } : { action: 'submit_for_review' }) });
       await readApiResponseOrThrow(response, 'No fue posible cambiar el estado.');
       showToast(`Cotización movida a ${statusLabel(toStatus).toLowerCase()}.`);
       await refresh();
@@ -791,24 +791,26 @@ export default function StaffQuotesPanel() {
     finally { setSaving(false); }
   };
 
-  // P1-04 (parte 1, visual): antes de publicar, un humano ve destinatario/total/documento reales
-  // y confirma explícitamente — nunca un solo clic sin resumen. El digest/expiración de preflight y
-  // el comando idempotente de D1/P1-05 completos quedan para cuando el modelo objetivo exista.
+  // P1-04/P1-05: antes de publicar, un humano ve destinatario/total/documento reales y confirma
+  // explícitamente — nunca un solo clic sin resumen. El digest leído al abrir este diálogo viaja
+  // de vuelta como `expectedContentDigest`; si la versión volvió a borrador y se editó mientras el
+  // diálogo seguía abierto en otra pestaña, el servidor lo detecta y rechaza el envío obsoleto.
   const openPublishPreflight = async () => {
     if (!currentVersion) return;
-    setPublishPreflight({ documentStatus: 'MISSING', loading: true });
+    setPublishPreflight({ documentStatus: 'MISSING', contentDigest: null, loading: true });
     try {
       const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/document`, { credentials: 'include', cache: 'no-store' });
-      const data = await readApiResponseOrThrow<{ document: { status: DocumentStatus } }>(response, 'No fue posible consultar el documento.');
-      setPublishPreflight({ documentStatus: data.document.status, loading: false });
+      const data = await readApiResponseOrThrow<{ document: { status: DocumentStatus }; contentDigest: string }>(response, 'No fue posible consultar el documento.');
+      setPublishPreflight({ documentStatus: data.document.status, contentDigest: data.contentDigest, loading: false });
     } catch {
-      setPublishPreflight({ documentStatus: 'MISSING', loading: false });
+      setPublishPreflight({ documentStatus: 'MISSING', contentDigest: null, loading: false });
     }
   };
 
   const confirmPublish = async () => {
+    const expectedContentDigest = publishPreflight?.contentDigest ?? undefined;
     setPublishPreflight(null);
-    await transition('ENVIADA');
+    await transition('ENVIADA', expectedContentDigest);
   };
 
   // Q1-06: "volver a editar" no existía en la UI — una vez en revisión, la única salida era enviar

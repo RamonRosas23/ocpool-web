@@ -78,6 +78,9 @@ test.describe('staff quote builder opt-in flow', () => {
     const storage = getPrivateStorage();
     for (const document of documents) if (document.storageObject?.storageKey) await storage.delete(document.storageObject.storageKey);
     await prisma.quoteAcceptance.deleteMany({ where: { quoteId: { in: (await prisma.quote.findMany({ where: { quoteRequestId: requestId }, select: { id: true } })).map(({ id }) => id) } } });
+    // P1-01: a real publish (this test does publish) now leaves a QuotePublication row pointing at
+    // the document via a RESTRICT fk -- it must go before the document itself can be deleted.
+    await prisma.quotePublication.deleteMany({ where: { documentId: { in: documents.map(({ id }) => id) } } });
     await prisma.generatedDocument.deleteMany({ where: { id: { in: documents.map(({ id }) => id) } } });
     await prisma.storageObject.deleteMany({ where: { id: { in: documents.flatMap(({ storageObjectId }) => storageObjectId ? [storageObjectId] : []) } } });
     await prisma.quote.deleteMany({ where: { quoteRequestId: requestId } });
@@ -85,6 +88,8 @@ test.describe('staff quote builder opt-in flow', () => {
     await prisma.auditLog.deleteMany({ where: { entityId: { in: [requestId, ...versionIds] } } });
     await prisma.quoteRequest.delete({ where: { id: requestId } });
     await prisma.clientContact.delete({ where: { id: contactId } });
+    // P1-06: publishing may have auto-provisioned a portal user for this client.
+    await prisma.user.deleteMany({ where: { clientId, type: 'CUSTOMER' } });
     await prisma.client.delete({ where: { id: clientId } });
     await prisma.priceListItem.deleteMany({ where: { priceListId } });
     await prisma.priceList.delete({ where: { id: priceListId } });

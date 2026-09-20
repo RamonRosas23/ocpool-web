@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { requirePermission } from '@/server/auth/permissions';
@@ -16,8 +16,9 @@ import {
   type QuoteVersionStatus,
 } from '@/server/modules/quotes/domain';
 import { canTransitionQuoteRequest, type QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
-import { hasValidApprovedQuoteApproval } from '@/server/modules/quotes/approval-service';
+import { getQuoteVersionDigest, hasValidApprovedQuoteApproval } from '@/server/modules/quotes/approval-service';
 import { generateQuotePdf, invalidateQuoteVersionDocument } from '@/server/modules/quote-documents/service';
+import { provisionCustomerPortalAccess } from '@/server/modules/customer-onboarding/service';
 import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 
 export type CatalogPricingLineInput = Readonly<{
@@ -141,6 +142,9 @@ type LockedQuoteVersion = {
   subtotalMinor: bigint;
   discountTotalMinor: bigint;
   commercialPolicyId: string | null;
+  termsVersionId: string | null;
+  revision: number;
+  contentDigest: string | null;
   updatedAt: Date;
   currentVersionId: string | null;
   workingVersionId: string | null;
@@ -275,7 +279,7 @@ async function lockQuote(transaction: Prisma.TransactionClient, quoteId: string)
 
 async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<LockedQuoteVersion | null> {
   const rows = await transaction.$queryRaw<LockedQuoteVersion[]>(Prisma.sql`
-    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."subtotalMinor", qv."discountTotalMinor", qv."commercialPolicyId", qv."updatedAt", q."currentVersionId", q."workingVersionId", q."publishedVersionId",
+    SELECT qv."id", qv."quoteId", qv."versionNumber", qv."status", qv."currencyCode", qv."subtotalMinor", qv."discountTotalMinor", qv."commercialPolicyId", qv."termsVersionId", qv."revision", qv."contentDigest", qv."updatedAt", q."currentVersionId", q."workingVersionId", q."publishedVersionId",
            q."quoteRequestId", qr."folio", qr."status" AS "requestStatus", qr."currentAssigneeId", qrd."currencyCode" AS "requestCurrencyCode"
     FROM "quote_versions" qv
     INNER JOIN "quotes" q ON q."id" = qv."quoteId"
@@ -672,7 +676,30 @@ export async function resolveDiscountApprovalThresholdBps(transaction: Prisma.Tr
   return policy?.discountApprovalThresholdBps ?? 0;
 }
 
-type PerformTransitionOptions = Readonly<{ reason?: string | null; auditAction?: string; outboxEventType?: string }>;
+/// P1-01: same fallback shape as `resolveDiscountApprovalThresholdBps` -- a version created before
+/// this field was ever written (i.e. every version so far) resolves to whatever terms are active
+/// right now at the moment it actually publishes, then freezes that choice on the row below so a
+/// later change of the active terms never rewrites what an already-published version pointed to.
+async function resolveActiveCommercialTermsId(transaction: Prisma.TransactionClient, termsVersionId: string | null): Promise<string> {
+  if (termsVersionId) return termsVersionId;
+  const terms = await transaction.commercialTermsVersion.findFirst({ where: { active: true }, orderBy: { publishedAt: 'desc' }, select: { id: true } });
+  if (!terms) conflict('No hay términos y condiciones vigentes configurados.');
+  return terms.id;
+}
+
+type PerformTransitionOptions = Readonly<{
+  reason?: string | null;
+  auditAction?: string;
+  outboxEventType?: string;
+  /// P1-05: the digest the caller reviewed at preflight time (see
+  /// `GET .../document` — it now also returns the live digest). Omitting it
+  /// preserves the exact pre-P1-05 behaviour (no check, no idempotent retry).
+  expectedContentDigest?: string;
+  /// P1-01/P1-05: the READY document to attach to this publication. Required
+  /// by `publishQuoteVersion` for any real ENVIADA transition; irrelevant for
+  /// every other transition.
+  documentId?: string;
+}>;
 
 async function performQuoteVersionTransition(actor: Actor, quoteVersionId: string, toStatus: QuoteVersionStatus, options: PerformTransitionOptions, dependencies: QuoteServiceDependencies): Promise<{ versionId: string; quoteId: string; fromStatus: QuoteVersionStatus; toStatus: QuoteVersionStatus }> {
   if (toStatus === 'ACEPTADA') conflict('La aceptación digital todavía no está habilitada.');
@@ -688,6 +715,26 @@ async function performQuoteVersionTransition(actor: Actor, quoteVersionId: strin
     if (!version) throw new AppError('NOT_FOUND', 'La versión no existe.', 404);
     requireStaffRequestReadScope(actor, version.currentAssigneeId);
     if (version.workingVersionId !== version.id && !(version.publishedVersionId === version.id && version.status !== 'BORRADOR' && version.status !== 'EN_REVISION')) conflict('Sólo la versión vigente puede cambiar de estado.');
+    // P1-05: computed unconditionally whenever the target is ENVIADA (needed either way to freeze
+    // `contentDigest` below), but only ever COMPARED against something when the caller opted in by
+    // passing `expectedContentDigest` -- every existing caller that omits it keeps the exact prior
+    // behaviour, including the CONFLICT this used to throw unconditionally on ENVIADA -> ENVIADA.
+    const freshContentDigest = toStatus === 'ENVIADA' && (options.documentId !== undefined || options.expectedContentDigest !== undefined)
+      ? await getQuoteVersionDigest(transaction, version.id)
+      : null;
+    if (toStatus === 'ENVIADA' && options.expectedContentDigest !== undefined) {
+      if (version.status === 'ENVIADA' && version.publishedVersionId === version.id) {
+        if (freshContentDigest !== version.contentDigest || freshContentDigest !== options.expectedContentDigest) {
+          conflict('La cotización ya fue enviada con un contenido distinto.');
+        }
+        // Idempotent retry: an earlier attempt already published this exact content (e.g. the client
+        // never saw the success response and retried) -- return the same receipt, not a fresh error.
+        return { versionId: version.id, quoteId: version.quoteId, fromStatus: version.status, toStatus };
+      }
+      if (freshContentDigest !== options.expectedContentDigest) {
+        conflict('El contenido cambió desde que se abrió la confirmación de envío. Vuelve a revisarlo.');
+      }
+    }
     if (!canTransitionQuoteVersion(version.status, toStatus)) conflict('La transición de cotización no está permitida.');
     if (toStatus === 'ENVIADA' && version.discountTotalMinor > 0n) {
       const discountRatioBps = version.subtotalMinor > 0n ? (version.discountTotalMinor * 10_000n) / version.subtotalMinor : 10_000n;
@@ -705,7 +752,22 @@ async function performQuoteVersionTransition(actor: Actor, quoteVersionId: strin
       conflict('No se puede enviar una cotización sin conceptos.');
     }
     const remainsWorking = toStatus === 'BORRADOR' || toStatus === 'EN_REVISION';
-    await transaction.quoteVersion.update({ where: { id: version.id }, data: { status: toStatus } });
+    // P1-01: only a real publication (one `publishQuoteVersion` drove, carrying a READY document)
+    // freezes revision/digest/terms/publishedAt -- the bare test-fixture shortcut above (no
+    // `documentId`) still just flips status, exactly as it did before this piece existed.
+    const resolvedTermsVersionId = toStatus === 'ENVIADA' && options.documentId ? await resolveActiveCommercialTermsId(transaction, version.termsVersionId) : null;
+    await transaction.quoteVersion.update({
+      where: { id: version.id },
+      data: {
+        status: toStatus,
+        ...(toStatus === 'ENVIADA' && options.documentId ? {
+          revision: { increment: 1 },
+          contentDigest: freshContentDigest,
+          publishedAt: now,
+          termsVersionId: resolvedTermsVersionId,
+        } : {}),
+      },
+    });
     await transaction.quote.update({
       where: { id: version.quoteId },
       data: {
@@ -745,6 +807,43 @@ async function performQuoteVersionTransition(actor: Actor, quoteVersionId: strin
       await transaction.requestStatusHistory.create({ data: { quoteRequestId: version.quoteRequestId, fromStatus: version.requestStatus, toStatus: 'COTIZACION_DISPONIBLE', changedById: actor.userId, createdAt: now } });
       await transaction.auditLog.create({ data: { actorUserId: actor.userId, action: 'quote_request.status_changed', entityType: 'quote_request', entityId: version.quoteRequestId, outcome: 'SUCCESS', metadata: { folio: version.folio, fromStatus: version.requestStatus, toStatus: 'COTIZACION_DISPONIBLE', source: 'quote.version.status_changed' } } });
       await transaction.outboxEvent.create({ data: { eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: version.quoteRequestId, payload: { quoteRequestId: version.quoteRequestId, folio: version.folio, fromStatus: version.requestStatus, toStatus: 'COTIZACION_DISPONIBLE' } } });
+    }
+    if (toStatus === 'ENVIADA' && options.documentId) {
+      // D1-04: one row per real publication, never the version row itself -- lets D2/P1 ask "when
+      // and with what digest was this actually published" without inferring it from status history.
+      if (version.publishedVersionId && version.publishedVersionId !== version.id) {
+        await transaction.quoteVersion.update({ where: { id: version.publishedVersionId }, data: { supersededAt: now } });
+        await transaction.quotePublication.updateMany({ where: { quoteVersionId: version.publishedVersionId, status: 'PUBLISHED' }, data: { status: 'SUPERSEDED' } });
+      }
+      const request = await transaction.quoteRequest.findUniqueOrThrow({
+        where: { id: version.quoteRequestId },
+        select: { contact: { select: { email: true, user: { select: { status: true } } } } },
+      });
+      const publicationData = {
+        documentId: options.documentId,
+        termsVersionId: resolvedTermsVersionId!,
+        preflightDigest: freshContentDigest!,
+        // Hash only -- never the recipient email in clear, same policy already applied elsewhere
+        // in the audit trail (analytics IDs, storage checksums).
+        recipientEmailHash: createHash('sha256').update(request.contact.email.trim().toLowerCase()).digest('hex'),
+        status: 'PUBLISHED' as const,
+        publishedAt: now,
+        publishedById: actor.userId,
+      };
+      await transaction.quotePublication.upsert({
+        where: { quoteVersionId_quoteId: { quoteVersionId: version.id, quoteId: version.quoteId } },
+        create: { quoteId: version.quoteId, quoteVersionId: version.id, ...publicationData },
+        update: publicationData,
+      });
+      // P1-06: best-effort -- a first-time client gets a working portal link automatically instead
+      // of self-serving through /portal/access, but an onboarding hiccup (contact/client not yet
+      // ACTIVE, no customer role configured, etc.) must never block the send itself; the existing
+      // QUOTE.PUBLISHED notification already falls back to the self-service path if this fails.
+      if (request.contact.user?.status !== 'ACTIVE') {
+        try {
+          await provisionCustomerPortalAccess(actor, transaction, version.quoteRequestId, { now });
+        } catch { /* best-effort, see comment above */ }
+      }
     }
     return { versionId: version.id, quoteId: version.quoteId, fromStatus: version.status, toStatus };
   });
@@ -858,11 +957,13 @@ export async function clonePublishedVersion(actor: Actor, quoteRequestId: string
  * de estado usa esta operación; `transitionQuoteVersion` queda como primitive
  * de dominio para transiciones internas y pruebas de máquina de estados.
  */
-export async function publishQuoteVersion(actor: Actor, quoteVersionId: string, dependencies: QuoteServiceDependencies = {}) {
+export async function publishQuoteVersion(actor: Actor, quoteVersionId: string, input: Readonly<{ expectedContentDigest?: string }> = {}, dependencies: QuoteServiceDependencies = {}) {
   requireEmployeePermission(actor, 'quotes.send');
-  await generateQuotePdf(actor, quoteVersionId, { prisma: dependencies.prisma, now: dependencies.now });
+  const document = await generateQuotePdf(actor, quoteVersionId, { prisma: dependencies.prisma, now: dependencies.now });
   return performQuoteVersionTransition(actor, quoteVersionId, 'ENVIADA', {
     auditAction: 'quote.version.published',
     outboxEventType: 'QUOTE.PUBLISHED',
+    documentId: document.id,
+    expectedContentDigest: input.expectedContentDigest,
   }, dependencies);
 }

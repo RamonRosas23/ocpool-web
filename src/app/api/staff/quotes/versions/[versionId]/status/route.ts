@@ -11,7 +11,7 @@ const bodySchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('submit_for_review') }).strict(),
   z.object({ action: z.literal('return_to_draft'), reason: z.string().trim().min(1).max(500) }).strict(),
   z.object({ action: z.literal('reject'), reason: z.string().trim().min(1).max(500) }).strict(),
-  z.object({ action: z.literal('publish') }).strict(),
+  z.object({ action: z.literal('publish'), expectedContentDigest: z.string().length(64).optional() }).strict(),
 ]);
 
 type RouteContext = { params: Promise<{ versionId: string }> };
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const result = body.action === 'submit_for_review' ? await submitQuoteForReview(actor, versionId)
       : body.action === 'return_to_draft' ? await returnQuoteToDraft(actor, versionId, { reason: body.reason })
       : body.action === 'reject' ? await rejectQuoteVersion(actor, versionId, { reason: body.reason })
-      : await publishQuoteVersion(actor, versionId);
+      : await publishQuoteVersion(actor, versionId, { expectedContentDigest: body.expectedContentDigest });
     return NextResponse.json(result, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);

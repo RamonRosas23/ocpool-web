@@ -52,15 +52,21 @@ function isKnownConflict(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
-export async function inviteCustomerPortalAccessInTransaction(
+/**
+ * Núcleo compartido por la invitación manual de staff (`inviteCustomerPortalAccessInTransaction`,
+ * que exige `customer.portal.invite`) y por la provisión automática al publicar una cotización
+ * (P1-06): publicar sólo requiere `quotes.send`, así que un vendedor sin el permiso de invitar
+ * manualmente igual puede disparar el efecto automático -- exigirle aquí el mismo permiso separado
+ * habría bloqueado el envío de cotizaciones para cualquier perfil de ventas sin ese permiso extra.
+ */
+/// P1-06: exported directly so `publishQuoteVersion` can call it as the automatic effect of
+/// publishing (wrapped in try/catch there -- see the doc comment above).
+export async function provisionCustomerPortalAccess(
   actor: Actor,
   transaction: Prisma.TransactionClient,
   quoteRequestId: string,
   dependencies: CustomerOnboardingDependencies = {},
 ): Promise<CustomerAccessResult> {
-  if (actor.type !== 'EMPLOYEE') throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
-  requirePermission(actor, 'customer.portal.invite');
-
   const requestId = requireQuoteRequestId(quoteRequestId);
   const now = dependencies.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new AppError('VALIDATION_ERROR', 'La fecha de operación no es válida.', 400);
@@ -153,6 +159,17 @@ export async function inviteCustomerPortalAccessInTransaction(
     if (isKnownConflict(error)) conflict();
     throw error;
   }
+}
+
+export async function inviteCustomerPortalAccessInTransaction(
+  actor: Actor,
+  transaction: Prisma.TransactionClient,
+  quoteRequestId: string,
+  dependencies: CustomerOnboardingDependencies = {},
+): Promise<CustomerAccessResult> {
+  if (actor.type !== 'EMPLOYEE') throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
+  requirePermission(actor, 'customer.portal.invite');
+  return provisionCustomerPortalAccess(actor, transaction, quoteRequestId, dependencies);
 }
 
 export async function inviteCustomerPortalAccess(

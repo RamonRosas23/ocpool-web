@@ -5,6 +5,7 @@ import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { getPrivateStorage, type PrivateStorage } from '@/server/modules/private-files/storage';
 import { CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES, isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
+import { getQuoteVersionDigest } from '@/server/modules/quotes/approval-service';
 import { staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 
 const PDF_CONTENT_TYPE = 'application/pdf';
@@ -37,6 +38,10 @@ export type QuoteDocumentOperationStatus = Readonly<{
   quoteId: string;
   quoteVersionId: string;
   versionNumber: number;
+  /// P1-05: the live content digest, computed fresh on every call. The staff preflight dialog reads
+  /// this once when it opens and sends it back as `expectedContentDigest` on confirm, so the publish
+  /// command can detect a return-to-draft-and-edit that happened while the dialog sat open.
+  contentDigest: string;
   document: Readonly<{
     id: string | null;
     status: 'MISSING' | 'PENDING' | 'READY' | 'FAILED' | 'DELETED';
@@ -250,6 +255,7 @@ export async function getQuoteDocumentStatusForVersion(actor: Actor, quoteVersio
     quoteId: version.quoteId,
     quoteVersionId: version.id,
     versionNumber: version.versionNumber,
+    contentDigest: await getQuoteVersionDigest(prisma, version.id),
     document: {
       id: stored?.id ?? null,
       status: documentStatus,

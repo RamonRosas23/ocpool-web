@@ -176,6 +176,9 @@ describe('staff quotes API', () => {
       await prisma.auditLog.deleteMany({ where: { entityId: { in: [request.quoteRequestId, ...versionIds, ...approvalIds] } } });
       await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
       await prisma.clientContact.delete({ where: { id: request.contactId } });
+      // P1-06: publishing may have auto-provisioned a portal user for this client (see
+      // provisionCustomerPortalAccess); it must be cleared before the client itself can go.
+      await prisma.user.deleteMany({ where: { clientId: request.clientId, type: 'CUSTOMER' } });
       await prisma.client.delete({ where: { id: request.clientId } });
     }
   });
@@ -217,6 +220,9 @@ describe('staff quotes API', () => {
       await prisma.auditLog.deleteMany({ where: { entityId: { in: [request.quoteRequestId, ...versionIds] } } });
       await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
       await prisma.clientContact.delete({ where: { id: request.contactId } });
+      // P1-06: publishing may have auto-provisioned a portal user for this client (see
+      // provisionCustomerPortalAccess); it must be cleared before the client itself can go.
+      await prisma.user.deleteMany({ where: { clientId: request.clientId, type: 'CUSTOMER' } });
       await prisma.client.delete({ where: { id: request.clientId } });
     }
   });
@@ -262,6 +268,9 @@ describe('staff quotes API', () => {
       await prisma.auditLog.deleteMany({ where: { entityId: { in: [request.quoteRequestId, ...versionIds] } } });
       await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
       await prisma.clientContact.delete({ where: { id: request.contactId } });
+      // P1-06: publishing may have auto-provisioned a portal user for this client (see
+      // provisionCustomerPortalAccess); it must be cleared before the client itself can go.
+      await prisma.user.deleteMany({ where: { clientId: request.clientId, type: 'CUSTOMER' } });
       await prisma.client.delete({ where: { id: request.clientId } });
     }
   });
@@ -274,6 +283,7 @@ describe('staff quotes API', () => {
     await prisma.auditLog.deleteMany({ where: { entityId: { in: [requestId, ...versionIds] } } });
     await prisma.quoteRequest.delete({ where: { id: requestId } });
     await prisma.clientContact.delete({ where: { id: contactId } });
+    await prisma.user.deleteMany({ where: { clientId, type: 'CUSTOMER' } });
     await prisma.client.delete({ where: { id: clientId } });
     await prisma.session.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
