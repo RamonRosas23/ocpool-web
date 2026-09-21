@@ -163,7 +163,7 @@ test.describe('project handoff (J1)', () => {
 
     // Checklist: agregar una tarea real de transición y completarla.
     const taskLabel = `Agendar visita de medición ${suffix}`;
-    await page.getByLabel('Nueva tarea').fill(taskLabel);
+    await page.getByLabel('Nuevas tareas').fill(taskLabel);
     await page.getByRole('button', { name: 'Agregar tarea' }).click();
     const checklistItem = page.locator('.staff-checklist__item', { hasText: taskLabel });
     await expect(checklistItem).toBeVisible({ timeout: 10_000 });

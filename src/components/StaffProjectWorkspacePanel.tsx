@@ -74,13 +74,23 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
   const [newItemLabel, setNewItemLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [assignees, setAssignees] = useState<Array<{ id: string; displayName: string }>>([]);
+  const [assigneesError, setAssigneesError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
+    setAssigneesError(null);
     fetch('/api/staff/projects/assignees', { credentials: 'include', cache: 'no-store', signal: controller.signal })
       .then((response) => readApiResponse<{ items: Array<{ id: string; displayName: string }> }>(response, 'No fue posible cargar responsables.'))
-      .then((result) => { if (result.ok) setAssignees(result.data.items); })
-      .catch(() => {});
+      .then((result) => {
+        if (result.ok) { setAssignees(result.data.items); return; }
+        setAssigneesError(result.message);
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+        // Antes un fallo aquí (red o no-`ok`) se ignoraba en silencio -- el selector "Responsable"
+        // quedaba con la lista vacía, indistinguible de "todavía no hay personal configurado".
+        setAssigneesError(caught instanceof Error ? caught.message : 'No fue posible cargar responsables.');
+      });
     return () => controller.abort();
   }, []);
 
@@ -213,7 +223,7 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
 
           <section className="staff-notification-workspace" aria-label="Responsable y checklist de transición">
             <div className="staff-notification-toolbar">
-              <div className="staff-notification-toolbar__summary"><PrivateSelect key={workspace.owner?.id ?? 'unassigned'} id="project-owner" label="Responsable" value={workspace.owner?.id ?? ''} onValueChange={(value) => void setOwner(value)} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin asignar" disabled={busy} /><small>Creado por {workspace.createdBy.displayName} · {formatDateTime(workspace.createdAt)}</small></div>
+              <div className="staff-notification-toolbar__summary"><PrivateSelect key={workspace.owner?.id ?? 'unassigned'} id="project-owner" label="Responsable" value={workspace.owner?.id ?? ''} onValueChange={(value) => void setOwner(value)} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin asignar" disabled={busy} /><small>Creado por {workspace.createdBy.displayName} · {formatDateTime(workspace.createdAt)}</small>{assigneesError && <small className="staff-error" role="alert">{assigneesError}</small>}</div>
               {workspace.status === 'EN_TRANSICION'
                 ? <button className="staff-button staff-button--copper" type="button" disabled={busy} onClick={() => void setStatus('COMPLETADO')}>Marcar handoff completado</button>
                 : <button className="staff-button staff-button--outline" type="button" disabled={busy} onClick={() => void setStatus('EN_TRANSICION')}>Reabrir handoff</button>}
