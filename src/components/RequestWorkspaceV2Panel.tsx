@@ -95,6 +95,8 @@ export default function RequestWorkspaceV2Panel() {
   const [canAssign, setCanAssign] = useState(false);
   const [canReadGlobal, setCanReadGlobal] = useState(false);
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
+  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
+  const [capabilitiesRetryToken, setCapabilitiesRetryToken] = useState(0);
 
   useEffect(() => setSearchInput(query.query), [query.query]);
 
@@ -141,6 +143,7 @@ export default function RequestWorkspaceV2Panel() {
 
   useEffect(() => {
     const controller = new AbortController();
+    setCapabilitiesError(null);
     fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store', signal: controller.signal })
       .then((response) => readApiResponseOrThrow<WorkspaceCapabilitiesResponse>(response, 'No fue posible validar los permisos disponibles.'))
       .then((data) => {
@@ -149,15 +152,21 @@ export default function RequestWorkspaceV2Panel() {
         setCanReadGlobal(data.requestsReadGlobal);
         setCapabilitiesLoaded(true);
       })
-      .catch(() => {
+      .catch((caught: unknown) => {
         if (controller.signal.aborted) return;
+        // Antes esto caía en silencio al mismo default de "sin permisos" tanto si la petición
+        // falló (red/servidor) como si el rol genuinamente no tiene el permiso -- "Nueva solicitud"
+        // y el filtro "Responsable" desaparecían sin ninguna señal de que fue un error transitorio,
+        // mismo defecto ya corregido en StaffRequestsPanel/StaffAuditPanel y en el componente
+        // hermano RequestWorkspaceDetailV2, cuyo mismo patrón (capabilitiesError + retry) se replica aquí.
         setCanCreate(false);
         setCanAssign(false);
         setCanReadGlobal(false);
         setCapabilitiesLoaded(true);
+        setCapabilitiesError(caught instanceof Error ? caught.message : 'No fue posible validar los permisos disponibles.');
       });
     return () => controller.abort();
-  }, []);
+  }, [capabilitiesRetryToken]);
 
   const updateQuery = useCallback((changes: Partial<RequestWorkspaceQuery>) => {
     const nextQuery = { ...query, ...changes };
@@ -229,6 +238,7 @@ export default function RequestWorkspaceV2Panel() {
           <PrivateButton type="submit" variant="primary">Aplicar búsqueda</PrivateButton>
           {hasFilters && <PrivateButton type="button" variant="quiet" onClick={() => { setSearchInput(''); updateQuery({ view: defaultView, query: '', stage: null, assigneeId: null, age: 'all', sort: 'newest', page: 1 }); }}>Limpiar</PrivateButton>}
         </form>
+        {capabilitiesError && <PrivateBlockingState title="No fue posible validar los permisos." onRetry={() => setCapabilitiesRetryToken((current) => current + 1)}>{capabilitiesError}</PrivateBlockingState>}
         {error && <PrivateBlockingState title="No fue posible cargar las solicitudes." onRetry={() => setRetryToken((current) => current + 1)}>{error}</PrivateBlockingState>}
         <section className="request-workspace-v2__results" aria-label="Cola de solicitudes">
           <div className="request-workspace-v2__results-head"><div><p className="private-kicker">Admisión</p><h2>{loading ? 'Actualizando resultados' : `${items.length} solicitudes`}</h2></div><span>Página {query.page} de {totalPages}</span></div>
