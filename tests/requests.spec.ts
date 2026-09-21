@@ -86,7 +86,10 @@ test.describe('staff request workflow opt-in flow', () => {
     await expect(page.locator('.staff-notice')).toContainText('Estado actualizado.');
     await expect(page.locator('.staff-status-pill')).toHaveText('Información requerida');
     await expect(page.getByRole('heading', { name: 'Historial del expediente' })).toBeVisible();
-    await expect(page.getByText('Faltan medidas aproximadas del proyecto.')).toBeVisible();
+    // Motivo real (no un genérico "Cambio registrado"), acotado al historial de estado -- el
+    // mismo texto también aparece en la conversación de StaffMessagingPanel más abajo (el propio
+    // "Solicitar información" reutiliza mensajería), así que un locator sin acotar es ambiguo.
+    await expect(page.locator('.staff-history').getByText('Faltan medidas aproximadas del proyecto.')).toBeVisible();
 
     await recordBaselineMeasurement({
       schemaVersion: 1,

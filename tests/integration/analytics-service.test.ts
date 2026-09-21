@@ -5,6 +5,12 @@ import { fingerprintToken } from '@/server/auth/crypto';
 import type { Actor } from '@/server/auth/types';
 import { getStaffDashboard } from '@/server/modules/analytics/service';
 
+// Año sintético único por corrida: la ventana histórica "2026-09-01..08" que este archivo usaba
+// también aparece hardcodeada en 16+ pruebas de integración distintas -- un residuo no limpiado
+// de cualquiera de ellas (una corrida interrumpida antes de su afterAll) inflaría en silencio el
+// conteo "global" sin scope de esta prueba, exactamente el "conteo inestable" ya señalado antes.
+const FIXTURE_YEAR = 2200 + (Date.now() % 500);
+
 describe('analytics dashboard service', () => {
   const prisma = getPrisma();
   const userIds: string[] = [];
@@ -15,7 +21,7 @@ describe('analytics dashboard service', () => {
   const generatedDocumentIds: string[] = [];
   const notificationDeliveryIds: string[] = [];
   const outboxEventIds: string[] = [];
-  const now = new Date('2026-09-08T18:00:00.000Z');
+  const now = new Date(`${FIXTURE_YEAR}-09-08T18:00:00.000Z`);
   let sales: { id: string };
   let manager: { id: string };
 
@@ -59,9 +65,9 @@ describe('analytics dashboard service', () => {
     contactIds.push(...contacts.map((contact) => contact.id));
 
     const requestData = [
-      { clientId: clientIds[0], contactId: contactIds[0], currentAssigneeId: sales.id, status: 'RECIBIDA' as const, origin: 'PUBLIC_FORM' as const, createdAt: new Date('2026-09-02T12:00:00.000Z') },
-      { clientId: clientIds[1], contactId: contactIds[1], currentAssigneeId: manager.id, status: 'EN_REVISION' as const, origin: 'STAFF_CREATED' as const, createdAt: new Date('2026-09-03T12:00:00.000Z') },
-      { clientId: clientIds[2], contactId: contactIds[2], currentAssigneeId: null, status: 'RECIBIDA' as const, origin: 'PUBLIC_FORM' as const, createdAt: new Date('2026-09-04T12:00:00.000Z') },
+      { clientId: clientIds[0], contactId: contactIds[0], currentAssigneeId: sales.id, status: 'RECIBIDA' as const, origin: 'PUBLIC_FORM' as const, createdAt: new Date(`${FIXTURE_YEAR}-09-02T12:00:00.000Z`) },
+      { clientId: clientIds[1], contactId: contactIds[1], currentAssigneeId: manager.id, status: 'EN_REVISION' as const, origin: 'STAFF_CREATED' as const, createdAt: new Date(`${FIXTURE_YEAR}-09-03T12:00:00.000Z`) },
+      { clientId: clientIds[2], contactId: contactIds[2], currentAssigneeId: null, status: 'RECIBIDA' as const, origin: 'PUBLIC_FORM' as const, createdAt: new Date(`${FIXTURE_YEAR}-09-04T12:00:00.000Z`) },
     ];
     for (const [index, item] of requestData.entries()) {
       const request = await prisma.quoteRequest.create({
@@ -84,7 +90,7 @@ describe('analytics dashboard service', () => {
         quoteRequestId: requestIds[0],
         assignedToId: sales.id,
         assignedById: manager.id,
-        assignedAt: new Date('2026-09-02T13:00:00.000Z'),
+        assignedAt: new Date(`${FIXTURE_YEAR}-09-02T13:00:00.000Z`),
       },
     });
 
@@ -92,8 +98,8 @@ describe('analytics dashboard service', () => {
       data: {
         quoteRequestId: requestIds[0],
         clientId: clientIds[0],
-        createdAt: new Date('2026-09-02T13:30:00.000Z'),
-        updatedAt: new Date('2026-09-03T10:00:00.000Z'),
+        createdAt: new Date(`${FIXTURE_YEAR}-09-02T13:30:00.000Z`),
+        updatedAt: new Date(`${FIXTURE_YEAR}-09-03T10:00:00.000Z`),
       },
     });
     quoteIds.push(salesQuote.id);
@@ -108,11 +114,11 @@ describe('analytics dashboard service', () => {
         taxTotalMinor: 0n,
         totalMinor: 100000n,
         createdById: sales.id,
-        createdAt: new Date('2026-09-02T14:00:00.000Z'),
+        createdAt: new Date(`${FIXTURE_YEAR}-09-02T14:00:00.000Z`),
         statusHistory: {
           create: [
-            { toStatus: 'ENVIADA', changedById: sales.id, createdAt: new Date('2026-09-02T14:00:00.000Z') },
-            { fromStatus: 'ENVIADA', toStatus: 'ACEPTADA', changedById: manager.id, createdAt: new Date('2026-09-03T10:00:00.000Z') },
+            { toStatus: 'ENVIADA', changedById: sales.id, createdAt: new Date(`${FIXTURE_YEAR}-09-02T14:00:00.000Z`) },
+            { fromStatus: 'ENVIADA', toStatus: 'ACEPTADA', changedById: manager.id, createdAt: new Date(`${FIXTURE_YEAR}-09-03T10:00:00.000Z`) },
           ],
         },
       },
@@ -124,7 +130,7 @@ describe('analytics dashboard service', () => {
         quoteVersionId: salesVersion.id,
         templateVersion: 'analytics-test-v1',
         status: 'PENDING',
-        createdAt: new Date('2026-09-02T14:05:00.000Z'),
+        createdAt: new Date(`${FIXTURE_YEAR}-09-02T14:05:00.000Z`),
       },
     });
     await prisma.quoteAcceptance.create({
@@ -137,7 +143,7 @@ describe('analytics dashboard service', () => {
         signerName: 'Analytics Signer',
         termsVersion: 'analytics-v1',
         idempotencyKeyHash: 'b'.repeat(64),
-        acceptedAt: new Date('2026-09-03T10:00:00.000Z'),
+        acceptedAt: new Date(`${FIXTURE_YEAR}-09-03T10:00:00.000Z`),
       },
     });
     generatedDocumentIds.push(salesDocument.id);
@@ -146,7 +152,7 @@ describe('analytics dashboard service', () => {
       data: {
         quoteRequestId: requestIds[1],
         clientId: clientIds[1],
-        createdAt: new Date('2026-09-03T13:30:00.000Z'),
+        createdAt: new Date(`${FIXTURE_YEAR}-09-03T13:30:00.000Z`),
       },
     });
     quoteIds.push(managerQuote.id);
@@ -161,8 +167,8 @@ describe('analytics dashboard service', () => {
         taxTotalMinor: 0n,
         totalMinor: 250000n,
         createdById: manager.id,
-        createdAt: new Date('2026-09-03T14:00:00.000Z'),
-        statusHistory: { create: { toStatus: 'ENVIADA', changedById: manager.id, createdAt: new Date('2026-09-03T14:00:00.000Z') } },
+        createdAt: new Date(`${FIXTURE_YEAR}-09-03T14:00:00.000Z`),
+        statusHistory: { create: { toStatus: 'ENVIADA', changedById: manager.id, createdAt: new Date(`${FIXTURE_YEAR}-09-03T14:00:00.000Z`) } },
       },
     });
     await prisma.quote.update({ where: { id: managerQuote.id }, data: { currentVersionId: managerVersion.id } });
@@ -172,7 +178,7 @@ describe('analytics dashboard service', () => {
         aggregateType: 'QuoteRequest',
         aggregateId: requestIds[0],
         payload: { privateEmail: `analytics-private-${suffix}@example.test` },
-        createdAt: new Date('2026-09-05T10:00:00.000Z'),
+        createdAt: new Date(`${FIXTURE_YEAR}-09-05T10:00:00.000Z`),
       },
     });
     outboxEventIds.push(outboxEvent.id);
@@ -185,15 +191,15 @@ describe('analytics dashboard service', () => {
         recipientAddressHash: 'c'.repeat(64),
         status: 'FAILED',
         lastErrorCode: 'TEMPORARY_PROVIDER',
-        createdAt: new Date('2026-09-05T10:00:00.000Z'),
-        updatedAt: new Date('2026-09-05T10:00:00.000Z'),
+        createdAt: new Date(`${FIXTURE_YEAR}-09-05T10:00:00.000Z`),
+        updatedAt: new Date(`${FIXTURE_YEAR}-09-05T10:00:00.000Z`),
       },
     });
     notificationDeliveryIds.push(notificationDelivery.id);
   });
 
   it('limits sales metrics to assigned requests and returns safe operational aggregates', async () => {
-    const result = await getStaffDashboard(actor(sales.id), { from: '2026-09-01', to: '2026-09-08', timezone: 'UTC' }, { prisma, now });
+    const result = await getStaffDashboard(actor(sales.id), { from: `${FIXTURE_YEAR}-09-01`, to: `${FIXTURE_YEAR}-09-08`, timezone: 'UTC' }, { prisma, now });
 
     expect(result.meta).toMatchObject({ scope: 'self', timezone: 'UTC' });
     expect(result.requests.received).toBe(1);
@@ -208,7 +214,7 @@ describe('analytics dashboard service', () => {
   });
 
   it('allows manager global metrics and keeps unassigned work visible', async () => {
-    const result = await getStaffDashboard(actor(manager.id, ['metrics.read', 'metrics.read.global']), { from: '2026-09-01', to: '2026-09-08', timezone: 'UTC' }, { prisma, now });
+    const result = await getStaffDashboard(actor(manager.id, ['metrics.read', 'metrics.read.global']), { from: `${FIXTURE_YEAR}-09-01`, to: `${FIXTURE_YEAR}-09-08`, timezone: 'UTC' }, { prisma, now });
 
     expect(result.meta.scope).toBe('global');
     expect(result.requests.received).toBe(3);
@@ -227,12 +233,12 @@ describe('analytics dashboard service', () => {
   });
 
   it('denies dashboard access to an actor without the metrics permission', async () => {
-    await expect(getStaffDashboard(actor(manager.id, []), { from: '2026-09-01', to: '2026-09-08', timezone: 'UTC' }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
-    await expect(getStaffDashboard({ ...actor(manager.id), type: 'CUSTOMER', clientId: clientIds[1] }, { from: '2026-09-01', to: '2026-09-08', timezone: 'UTC' }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    await expect(getStaffDashboard(actor(manager.id, []), { from: `${FIXTURE_YEAR}-09-01`, to: `${FIXTURE_YEAR}-09-08`, timezone: 'UTC' }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    await expect(getStaffDashboard({ ...actor(manager.id), type: 'CUSTOMER', clientId: clientIds[1] }, { from: `${FIXTURE_YEAR}-09-01`, to: `${FIXTURE_YEAR}-09-08`, timezone: 'UTC' }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
 
   it('rate limits expensive reads before executing aggregates', async () => {
-    await expect(getStaffDashboard(actor(sales.id), { from: '2026-09-01', to: '2026-09-08', timezone: 'UTC' }, {
+    await expect(getStaffDashboard(actor(sales.id), { from: `${FIXTURE_YEAR}-09-01`, to: `${FIXTURE_YEAR}-09-08`, timezone: 'UTC' }, {
       prisma,
       now,
       rateLimit: async () => ({ allowed: false, retryAfterSeconds: 60 }),
