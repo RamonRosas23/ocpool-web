@@ -801,15 +801,16 @@ export default function StaffQuotesPanel() {
 
   const retryDraftSaveNow = () => { errorRetryCountRef.current = 0; void persistDraft(); };
 
-  const transition = async (toStatus: string, expectedContentDigest?: string) => {
-    if (!currentVersion) return;
+  const transition = async (toStatus: string, expectedContentDigest?: string): Promise<boolean> => {
+    if (!currentVersion) return false;
     setSaving(true); setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/versions/${currentVersion.id}/status`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(toStatus === 'ENVIADA' ? { action: 'publish', expectedContentDigest } : { action: 'submit_for_review' }) });
       await readApiResponseOrThrow(response, 'No fue posible cambiar el estado.');
       showToast(`Cotización movida a ${statusLabel(toStatus).toLowerCase()}.`);
       await refresh();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible cambiar el estado.'); }
+      return true;
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible cambiar el estado.'); return false; }
     finally { setSaving(false); }
   };
 
@@ -831,8 +832,8 @@ export default function StaffQuotesPanel() {
 
   const confirmPublish = async () => {
     const expectedContentDigest = publishPreflight?.contentDigest ?? undefined;
-    setPublishPreflight(null);
-    await transition('ENVIADA', expectedContentDigest);
+    const succeeded = await transition('ENVIADA', expectedContentDigest);
+    if (succeeded) setPublishPreflight(null);
   };
 
   // Q1-06: "volver a editar" no existía en la UI — una vez en revisión, la única salida era enviar
@@ -990,8 +991,8 @@ export default function StaffQuotesPanel() {
                 <div className="quotes-reprice-dialog__total"><span>Total de propuesta</span><span className="quotes-reprice-lines__before">{moneyLabel(preview.total, selectedCurrency)}</span><span aria-hidden="true">→</span><span className="quotes-reprice-lines__after">{repriceAfterTotal?.valid ? moneyLabel(repriceAfterTotal.total, selectedCurrency) : 'Revisa las líneas'}</span></div>
                 <div className="quotes-reprice-dialog__actions"><button className="staff-button staff-button--outline" type="button" onClick={() => setRepriceDialogOpen(false)}>Cancelar</button><button className="staff-button staff-button--copper" type="button" onClick={confirmReprice}>Confirmar repreciado</button></div>
               </PrivateDialog>
-              {currentVersion && <PrivateDialog open={publishPreflight !== null} onClose={() => setPublishPreflight(null)} className="quotes-preflight-dialog" overlayClassName="quotes-preflight-overlay" labelledBy="quotes-preflight-title" describedBy="quotes-preflight-description">
-                <div className="quotes-preflight-dialog__head"><h3 id="quotes-preflight-title">Confirmar envío al cliente</h3><button className="quotes-reprice-dialog__close" type="button" onClick={() => setPublishPreflight(null)} aria-label="Cerrar confirmación"><X size={18} aria-hidden="true" /></button></div>
+              {currentVersion && <PrivateDialog open={publishPreflight !== null} onClose={() => { if (!saving) setPublishPreflight(null); }} className="quotes-preflight-dialog" overlayClassName="quotes-preflight-overlay" labelledBy="quotes-preflight-title" describedBy="quotes-preflight-description">
+                <div className="quotes-preflight-dialog__head"><h3 id="quotes-preflight-title">Confirmar envío al cliente</h3><button className="quotes-reprice-dialog__close" type="button" onClick={() => setPublishPreflight(null)} disabled={saving} aria-label="Cerrar confirmación"><X size={18} aria-hidden="true" /></button></div>
                 <p id="quotes-preflight-description" className="quotes-preflight-dialog__copy">Esta versión quedará publicada y {workspace?.request.contact.displayName} recibirá un aviso para revisarla. Verifica que todo sea correcto antes de continuar.</p>
                 <dl className="quotes-preflight-dialog__facts">
                   <div><dt>Destinatario</dt><dd>{workspace?.request.contact.displayName}<small>{workspace?.request.contact.email}</small></dd></div>
@@ -1001,7 +1002,7 @@ export default function StaffQuotesPanel() {
                   <div><dt>Documento</dt><dd>{publishPreflight?.loading ? 'Consultando…' : publishPreflight?.documentStatus === 'READY' ? 'Listo, ya generado' : 'Se generará y verificará al confirmar'}</dd></div>
                 </dl>
                 {emptyContentSections.length > 0 && <p className="quotes-action-note">Sin contenido en: {emptyContentSections.join(', ')}. El cliente recibirá la propuesta sin esa sección.</p>}
-                <div className="quotes-preflight-dialog__actions"><button className="staff-button staff-button--outline" type="button" onClick={() => setPublishPreflight(null)}>Cancelar</button><button className="staff-button staff-button--copper" type="button" disabled={saving || publishPreflight?.loading} onClick={() => void confirmPublish()}>{saving ? 'Enviando…' : 'Confirmar y enviar'}</button></div>
+                <div className="quotes-preflight-dialog__actions"><button className="staff-button staff-button--outline" type="button" onClick={() => setPublishPreflight(null)} disabled={saving}>Cancelar</button><button className="staff-button staff-button--copper" type="button" disabled={saving || publishPreflight?.loading} onClick={() => void confirmPublish()}>{saving ? 'Enviando…' : 'Confirmar y enviar'}</button></div>
               </PrivateDialog>}
               {currentVersion && <PrivateDialog open={returnToDraftDialogOpen} onClose={() => { if (!saving) setReturnToDraftDialogOpen(false); }} className="quotes-preflight-dialog" overlayClassName="quotes-preflight-overlay" labelledBy="quotes-return-draft-title" describedBy="quotes-return-draft-description">
                 <div className="quotes-preflight-dialog__head"><h3 id="quotes-return-draft-title">Volver a borrador</h3><button className="quotes-reprice-dialog__close" type="button" onClick={() => setReturnToDraftDialogOpen(false)} disabled={saving} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
