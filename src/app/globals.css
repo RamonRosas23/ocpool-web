@@ -770,6 +770,7 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .staff-filters label span, .staff-action .staff-section-label { color: var(--staff-muted); }
 .staff-filters input, .staff-filters select, .staff-action input, .staff-action select { width: 100%; min-height: 42px; border: 1px solid var(--staff-line); border-radius: 0; background: var(--staff-paper); color: var(--staff-ink); font-size: 12px; outline: none; padding: 0 11px; }
 .staff-filters input::placeholder, .staff-action input::placeholder { color: rgba(24,37,42,.38); }
+.staff-action__hint { margin: -2px 0 0; color: var(--copper); font-size: 11px; line-height: 1.4; }
 .staff-button { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; border: 1px solid var(--staff-deep); border-radius: 0; padding: 0 15px; color: var(--staff-deep); background: transparent; font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease; }
 .staff-button:hover:not(:disabled) { transform: translateY(-1px); }
 .staff-button:disabled { cursor: not-allowed; opacity: .42; }

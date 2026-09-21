@@ -81,7 +81,10 @@ test.describe('staff request workflow opt-in flow', () => {
 
     await page.getByRole('combobox', { name: 'Siguiente estado' }).click();
     await page.getByRole('option', { name: 'Información requerida', exact: true }).click();
-    await page.getByPlaceholder('Motivo opcional').last().fill('Faltan medidas aproximadas del proyecto.');
+    // UX audit fix: este campo ahora se relabela como mensaje obligatorio para el cliente en vez
+    // del "Motivo opcional" genérico (que sigue existiendo para el campo de responsable, aparte).
+    await expect(page.getByText('Este texto lo recibirá el cliente tal cual')).toBeVisible();
+    await page.getByPlaceholder('Mensaje para el cliente (obligatorio)').fill('Faltan medidas aproximadas del proyecto.');
     await page.getByRole('button', { name: 'Actualizar estado' }).click();
     await expect(page.locator('.staff-notice')).toContainText('Estado actualizado.');
     await expect(page.locator('.staff-status-pill')).toHaveText('Información requerida');
