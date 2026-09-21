@@ -430,6 +430,96 @@ export async function listPendingQuoteApprovalsForActor(actor: Actor, dependenci
   }));
 }
 
+export type PendingQuoteApprovalDetail = Readonly<{
+  id: string;
+  type: QuoteApprovalType;
+  requestedAt: Date;
+  reason: string | null;
+  policyVersion: string;
+  requestedByDisplayName: string;
+  requestId: string;
+  folio: string;
+  clientDisplayName: string;
+  projectType: string | null;
+  versionNumber: number;
+  subtotalMinor: string;
+  discountTotalMinor: string;
+  totalMinor: string;
+  currencyCode: string;
+}>;
+
+export type PendingQuoteApprovalPage = Readonly<{ items: PendingQuoteApprovalDetail[]; page: number; pageSize: number; total: number; totalPages: number }>;
+
+/// A1-03/A1-05: `/staff/approvals` is "an authorized view, not a separate universe" -- same
+/// eligibility/scope rules as `listPendingQuoteApprovalsForActor` (the dashboard card), just paged
+/// and with the pricing/reason detail a manager actually needs to decide without opening the
+/// expediente first. Order is oldest-first only, the one documented rule the plan calls for --
+/// no opaque "urgent" weighting on top of it.
+export async function listPendingQuoteApprovalsPageForActor(actor: Actor, filters: Readonly<{ page?: number; pageSize?: number }> = {}, dependencies: ApprovalServiceDependencies = {}): Promise<PendingQuoteApprovalPage> {
+  const pageSize = Math.min(50, Math.max(1, filters.pageSize ?? 20));
+  const page = Math.max(1, filters.page ?? 1);
+  if (!hasPermission(actor, 'quotes.approve_discount')) return { items: [], page: 1, pageSize, total: 0, totalPages: 0 };
+  const prisma = dependencies.prisma ?? getPrisma();
+  const now = dependencies.now ?? new Date();
+  const canOverride = hasPermission(actor, 'quotes.approval.override');
+  const where = {
+    status: 'REQUESTED' as const,
+    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    ...(canOverride ? {} : { requestedById: { not: actor.userId } }),
+    quoteVersion: { quote: { quoteRequest: staffRequestReadScopeWhere(actor) } },
+  };
+  const [total, rows] = await Promise.all([
+    prisma.quoteApproval.count({ where }),
+    prisma.quoteApproval.findMany({
+      where,
+      orderBy: { requestedAt: 'asc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        type: true,
+        requestedAt: true,
+        reason: true,
+        policyVersion: true,
+        requestedBy: { select: { displayName: true } },
+        quoteVersion: {
+          select: {
+            versionNumber: true,
+            subtotalMinor: true,
+            discountTotalMinor: true,
+            totalMinor: true,
+            currencyCode: true,
+            quote: { select: { quoteRequest: { select: { id: true, folio: true, client: { select: { displayName: true } }, detail: { select: { projectType: true } } } } } },
+          },
+        },
+      },
+    }),
+  ]);
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      type: row.type,
+      requestedAt: row.requestedAt,
+      reason: row.reason,
+      policyVersion: row.policyVersion,
+      requestedByDisplayName: row.requestedBy.displayName,
+      requestId: row.quoteVersion.quote.quoteRequest.id,
+      folio: row.quoteVersion.quote.quoteRequest.folio,
+      clientDisplayName: row.quoteVersion.quote.quoteRequest.client.displayName,
+      projectType: row.quoteVersion.quote.quoteRequest.detail?.projectType ?? null,
+      versionNumber: row.quoteVersion.versionNumber,
+      subtotalMinor: row.quoteVersion.subtotalMinor.toString(),
+      discountTotalMinor: row.quoteVersion.discountTotalMinor.toString(),
+      totalMinor: row.quoteVersion.totalMinor.toString(),
+      currencyCode: row.quoteVersion.currencyCode,
+    })),
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
 export async function hasValidApprovedQuoteApproval(
   transaction: Prisma.TransactionClient,
   versionId: string,

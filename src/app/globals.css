@@ -1557,6 +1557,7 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .staff-notification-row__facts div { min-width: 0; }
 .staff-notification-row__facts dt { margin-bottom: 7px; color: var(--staff-muted); font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .staff-notification-row__facts dd { margin: 0; overflow-wrap: anywhere; color: var(--staff-ink); font-size: 11px; line-height: 1.45; }
+.staff-notification-row__reason { grid-column: 1 / -1; margin: 0; color: var(--staff-muted); font-size: 11px; line-height: 1.5; font-style: italic; }
 .staff-notification-row__action { display: flex; min-width: 150px; justify-content: flex-end; }
 .staff-notification-row__action > span { max-width: 150px; color: var(--staff-muted); font-size: 10px; line-height: 1.45; text-align: right; }
 .staff-notification-row--failed { background: rgba(145,62,53,.035); }
