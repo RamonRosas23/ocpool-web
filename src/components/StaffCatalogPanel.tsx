@@ -8,6 +8,7 @@ import WorkspaceLogo from '@/components/WorkspaceLogo';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateMoneyField, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import { formatDate } from '@/lib/format-date';
+import { moneyLabel } from '@/lib/money';
 import { parseMoneyInput } from '@/lib/money-input';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
@@ -56,13 +57,6 @@ type ListResponse = { items: CatalogItem[]; page: number; pageSize: number; tota
 type Capabilities = { catalogRead: boolean; catalogManage: boolean; pricesRead: boolean; pricesManage: boolean };
 type SpecialConceptGroup = { normalizedName: string; unit: string; name: string; occurrences: number; recentFolios: string[]; status: 'PENDING' | 'MATCHES_EXISTING' | 'PROMOTED'; matchingCatalogItem: { id: string; code: string; name: string } | null };
 
-
-function moneyLabel(minor: string, currency: string): string {
-  const normalized = minor.padStart(3, '0');
-  const whole = normalized.slice(0, -2);
-  const fraction = normalized.slice(-2);
-  return `${currency} ${new Intl.NumberFormat('es-MX').format(BigInt(whole))}.${fraction}`;
-}
 
 export default function StaffCatalogPanel() {
   const [items, setItems] = useState<CatalogItem[]>([]);

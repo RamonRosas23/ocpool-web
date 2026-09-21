@@ -7,6 +7,7 @@ import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { formatDateTime } from '@/lib/format-date';
+import { moneyLabel } from '@/lib/money';
 
 type ProjectStatus = 'EN_TRANSICION' | 'COMPLETADO';
 
@@ -55,12 +56,6 @@ const ACTIVITY_LABELS: Record<string, string> = {
   'project.completed': 'Handoff marcado como completado.',
   'project.reopened': 'Handoff reabierto para seguir en transición.',
 };
-
-function moneyLabel(minor: string, currency: string): string {
-  if (!/^\d+$/.test(minor)) return '—';
-  const amount = BigInt(minor);
-  return `${currency} ${(amount / 100n).toLocaleString('es-MX')}.${(amount % 100n).toString().padStart(2, '0')}`;
-}
 
 function quantityLabel(milliunits: string): string {
   if (!/^\d+$/.test(milliunits)) return '—';

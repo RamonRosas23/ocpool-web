@@ -7,6 +7,7 @@ import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateLinkButton, PrivatePagination } from '@/components/private/ui';
 import { formatDateTime } from '@/lib/format-date';
+import { moneyLabel } from '@/lib/money';
 import { readApiResponse } from '@/lib/api-response-error';
 
 type ApprovalType = 'DISCOUNT' | 'PRICE_OVERRIDE' | 'SPECIAL_CONCEPT';
@@ -36,12 +37,6 @@ const APPROVAL_TYPE_LABELS: Record<ApprovalType, string> = {
   PRICE_OVERRIDE: 'Ajuste de precio',
   SPECIAL_CONCEPT: 'Concepto especial',
 };
-
-function moneyLabel(minor: string, currency: string): string {
-  if (!/^\d+$/.test(minor)) return '—';
-  const amount = BigInt(minor);
-  return `${currency} ${(amount / 100n).toLocaleString('es-MX')}.${(amount % 100n).toString().padStart(2, '0')}`;
-}
 
 function discountRateLabel(subtotalMinor: string, discountMinor: string): string | null {
   if (!/^\d+$/.test(subtotalMinor) || !/^\d+$/.test(discountMinor)) return null;

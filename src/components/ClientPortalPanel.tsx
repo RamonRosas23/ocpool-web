@@ -9,6 +9,7 @@ import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { formatDate } from '@/lib/format-date';
+import { moneyLabel } from '@/lib/money';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 import { statusToneIcon } from '@/lib/labels';
 
@@ -85,12 +86,6 @@ function statusLabel(status: string): string { return STATUS_LABELS[status] ?? s
 function ClientStatusPill({ status }: { status: string }) {
   const ToneIcon = statusToneIcon(status);
   return <span className={`client-status client-status--${status.toLowerCase()}`}><ToneIcon size={11} aria-hidden="true" />{statusLabel(status)}</span>;
-}
-
-function moneyLabel(value: string | null, currency = 'MXN'): string {
-  if (!value || !/^\d+$/.test(value)) return '—';
-  const amount = BigInt(value);
-  return `${currency} ${(amount / 100n).toLocaleString('es-MX')}.${(amount % 100n).toString().padStart(2, '0')}`;
 }
 
 function quantityLabel(value: string): string {

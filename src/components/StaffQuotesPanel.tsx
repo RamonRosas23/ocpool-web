@@ -19,6 +19,7 @@ import {
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
+import { moneyLabel } from '@/lib/money';
 import { QUOTE_REQUEST_STATUS_LABELS, QUOTE_VERSION_STATUS_LABELS, statusToneIcon } from '@/lib/labels';
 
 type AutosaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict' | 'offline';
@@ -183,15 +184,6 @@ function qualificationLabel(value: string | null | undefined, labels: Record<str
   return value ? labels[value] ?? value : 'No indicado';
 }
 
-
-function moneyLabel(value: string | bigint, currency = 'MXN'): string {
-  const raw = typeof value === 'bigint' ? value.toString() : value;
-  if (!/^\d+$/u.test(raw)) return '—';
-  const amount = BigInt(raw);
-  const whole = amount / 100n;
-  const decimals = (amount % 100n).toString().padStart(2, '0');
-  return `${currency} ${whole.toLocaleString('es-MX')}.${decimals}`;
-}
 
 function quantityLabel(milliunits: string): string {
   if (!/^\d+$/u.test(milliunits)) return '—';
