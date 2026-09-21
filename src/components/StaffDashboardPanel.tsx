@@ -69,6 +69,25 @@ type CustomerReplied = {
   lastCustomerMessageAt: string;
 };
 
+type ReadyToPublish = {
+  versionId: string;
+  requestId: string;
+  folio: string;
+  clientDisplayName: string;
+  versionNumber: number;
+  totalMinor: string;
+  currencyCode: string;
+  updatedAt: string;
+};
+
+type FailedNotification = {
+  id: string;
+  eventType: string;
+  templateKey: string;
+  errorCategory: string | null;
+  updatedAt: string;
+};
+
 const APPROVAL_TYPE_LABELS: Record<PendingApproval['type'], string> = {
   DISCOUNT: 'Descuento',
   PRICE_OVERRIDE: 'Ajuste de precio',
@@ -161,6 +180,8 @@ export default function StaffDashboardPanel() {
   const [unassignedQueue, setUnassignedQueue] = useState<QueueResponse | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[] | null>(null);
   const [customerReplied, setCustomerReplied] = useState<CustomerReplied[] | null>(null);
+  const [readyToPublish, setReadyToPublish] = useState<ReadyToPublish[] | null>(null);
+  const [failedNotifications, setFailedNotifications] = useState<{ items: FailedNotification[]; total: number } | null>(null);
   const [queuesLoading, setQueuesLoading] = useState(true);
 
   // W1-02 (primer corte): "qué atender ahora" reutiliza el mismo endpoint y scope de R1 (mine/sin
@@ -172,17 +193,21 @@ export default function StaffDashboardPanel() {
       try {
         // El scope "workspace" (view=mine/unassigned) fija su propio pageSize=20 en el servidor;
         // se toman sólo los primeros 5 para esta lectura compacta y `total` informa el resto.
-        const [mineResponse, unassignedResponse, approvalsResponse, customerRepliedResponse] = await Promise.all([
+        const [mineResponse, unassignedResponse, approvalsResponse, customerRepliedResponse, readyToPublishResponse, failedNotificationsResponse] = await Promise.all([
           fetch('/api/staff/quote-requests?view=mine&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quote-requests?view=unassigned&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quotes/approvals/pending', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quote-requests/customer-replied', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
+          fetch('/api/staff/quotes/ready-to-publish', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
+          fetch('/api/staff/notifications?status=FAILED&pageSize=5', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
         ]);
-        const [mineResult, unassignedResult, approvalsResult, customerRepliedResult] = await Promise.all([
+        const [mineResult, unassignedResult, approvalsResult, customerRepliedResult, readyToPublishResult, failedNotificationsResult] = await Promise.all([
           readApiResponse<QueueResponse>(mineResponse, 'No fue posible cargar tu trabajo.'),
           readApiResponse<QueueResponse>(unassignedResponse, 'No fue posible cargar las solicitudes sin asignar.'),
           readApiResponse<{ items: PendingApproval[] }>(approvalsResponse, 'No fue posible cargar las aprobaciones pendientes.'),
           readApiResponse<{ items: CustomerReplied[] }>(customerRepliedResponse, 'No fue posible cargar las respuestas de cliente.'),
+          readApiResponse<{ items: ReadyToPublish[] }>(readyToPublishResponse, 'No fue posible cargar las cotizaciones listas para publicar.'),
+          readApiResponse<{ items: FailedNotification[]; total: number }>(failedNotificationsResponse, 'No fue posible cargar los avisos fallidos.'),
         ]);
         if (mineResult.ok) setMineQueue(mineResult.data);
         if (unassignedResult.ok) setUnassignedQueue(unassignedResult.data);
@@ -192,6 +217,12 @@ export default function StaffDashboardPanel() {
         // W1-01: "cliente respondió" -- razón determinista (última respuesta del cliente más
         // reciente que la propia lectura del actor), nunca un score opaco.
         if (customerRepliedResult.ok) setCustomerReplied(customerRepliedResult.data.items);
+        // W1-03: "listas para publicar" -- ya sin bloqueo de aprobación pendiente (esa es la cola de
+        // arriba); lo único que falta es el clic real de enviar.
+        if (readyToPublishResult.ok) setReadyToPublish(readyToPublishResult.data.items);
+        // W1-03: "fallos de aviso" reutiliza por completo el endpoint ya construido para
+        // /staff/notifications -- ningún servicio ni consulta nuevos, sólo esta lectura compacta.
+        if (failedNotificationsResult.ok) setFailedNotifications({ items: failedNotificationsResult.data.items, total: failedNotificationsResult.data.total });
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
       } finally {
@@ -301,6 +332,16 @@ export default function StaffDashboardPanel() {
             <div className="staff-workqueue__head"><p className="staff-section-label">Esperan tu decisión</p><h2 id="workqueue-approvals-title">Aprobaciones</h2></div>
             <ul className="staff-workqueue__list">{pendingApprovals.slice(0, 5).map((approval) => <li key={approval.id}><Link href={`/staff/quotes?request=${approval.requestId}`}><span className="staff-workqueue__folio">{approval.folio}</span><span className="staff-workqueue__client">{approval.clientDisplayName}</span><span className="staff-workqueue__stage">{APPROVAL_TYPE_LABELS[approval.type]} · {approvalMoneyLabel(approval.totalMinor, approval.currencyCode)}</span><span className="staff-workqueue__age">{ageLabel(approval.requestedAt)}</span></Link></li>)}</ul>
             {pendingApprovals.length > 5 && <span className="staff-workqueue__more">Y {formatInteger(pendingApprovals.length - 5)} más esperando decisión</span>}
+          </article>}
+          {readyToPublish && readyToPublish.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-ready-title">
+            <div className="staff-workqueue__head"><p className="staff-section-label">Sólo falta el envío</p><h2 id="workqueue-ready-title">Listas para publicar</h2></div>
+            <ul className="staff-workqueue__list">{readyToPublish.slice(0, 5).map((item) => <li key={item.versionId}><Link href={`/staff/quotes?request=${item.requestId}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.clientDisplayName}</span><span className="staff-workqueue__stage">V{item.versionNumber} · {approvalMoneyLabel(item.totalMinor, item.currencyCode)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>
+            {readyToPublish.length > 5 && <span className="staff-workqueue__more">Y {formatInteger(readyToPublish.length - 5)} más listas para publicar</span>}
+          </article>}
+          {failedNotifications && failedNotifications.items.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-notification-failures-title">
+            <div className="staff-workqueue__head"><p className="staff-section-label">Un cliente no recibió aviso</p><h2 id="workqueue-notification-failures-title">Fallos de aviso</h2></div>
+            <ul className="staff-workqueue__list">{failedNotifications.items.map((item) => <li key={item.id}><Link href="/staff/notifications"><span className="staff-workqueue__folio">{item.eventType.replaceAll('_', ' ')}</span><span className="staff-workqueue__client">{item.templateKey.replaceAll('_', ' ')}</span><span className="staff-workqueue__stage">{item.errorCategory ?? 'Error de entrega'}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>
+            {failedNotifications.total > failedNotifications.items.length && <Link className="staff-workqueue__more" href="/staff/notifications">Ver los {formatInteger(failedNotifications.total)} fallos →</Link>}
           </article>}
         </div>
       </section>

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
-import { requirePermission } from '@/server/auth/permissions';
+import { hasPermission, requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
@@ -19,7 +19,7 @@ import { canTransitionQuoteRequest, type QuoteRequestStatus } from '@/server/mod
 import { getQuoteVersionDigest, hasValidApprovedQuoteApproval } from '@/server/modules/quotes/approval-service';
 import { generateQuotePdf, invalidateQuoteVersionDocument } from '@/server/modules/quote-documents/service';
 import { provisionCustomerPortalAccess } from '@/server/modules/customer-onboarding/service';
-import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
+import { requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 
 export type CatalogPricingLineInput = Readonly<{
   catalogItemId: string;
@@ -688,6 +688,69 @@ export async function resolveCommercialTermsRecord(transaction: Prisma.Transacti
     : await transaction.commercialTermsVersion.findFirst({ where: { active: true }, orderBy: { publishedAt: 'desc' }, select: { id: true, versionTag: true, title: true } });
   if (!terms) conflict('No hay términos y condiciones vigentes configurados.');
   return terms;
+}
+
+export type ReadyToPublishSummary = Readonly<{
+  versionId: string;
+  requestId: string;
+  folio: string;
+  clientDisplayName: string;
+  versionNumber: number;
+  totalMinor: string;
+  currencyCode: string;
+  updatedAt: Date;
+}>;
+
+/// W1-03: "listas para publicar" -- EN_REVISION is a small, self-limiting working set (a version
+/// leaves it the moment it's sent, returned to draft, or rejected, unlike a conversation's history,
+/// which only grows), so a bounded candidate fetch (`take`) followed by the exact same eligibility
+/// checks the builder itself already uses is correct here, unlike the "N candidates + filter" trap
+/// W1-01 hit against unbounded message history. Deliberately excludes anything the "Aprobaciones"
+/// queue already covers (a still-pending REQUESTED approval) -- this queue is only what's already
+/// one click away from being sent, nothing that still needs a decision first.
+export async function listReadyToPublishForActor(actor: Actor, dependencies: QuoteServiceDependencies = {}): Promise<ReadyToPublishSummary[]> {
+  if (!hasPermission(actor, 'quotes.send') || !hasPermission(actor, 'quotes.pdf.generate')) return [];
+  const prisma = dependencies.prisma ?? getPrisma();
+  const now = dependencies.now ?? new Date();
+  const candidates = await prisma.quoteVersion.findMany({
+    where: { status: 'EN_REVISION', quote: { quoteRequest: staffRequestReadScopeWhere(actor) } },
+    orderBy: { updatedAt: 'asc' },
+    take: 50,
+    select: {
+      id: true,
+      versionNumber: true,
+      totalMinor: true,
+      currencyCode: true,
+      subtotalMinor: true,
+      discountTotalMinor: true,
+      commercialPolicyId: true,
+      updatedAt: true,
+      quote: { select: { quoteRequest: { select: { id: true, folio: true, client: { select: { displayName: true } } } } } },
+    },
+  });
+  const results: ReadyToPublishSummary[] = [];
+  for (const version of candidates) {
+    if (version.discountTotalMinor > 0n) {
+      const discountRatioBps = version.subtotalMinor > 0n ? (version.discountTotalMinor * 10_000n) / version.subtotalMinor : 10_000n;
+      const thresholdBps = await resolveDiscountApprovalThresholdBps(prisma, version.commercialPolicyId);
+      if (discountRatioBps > BigInt(thresholdBps) && !(await hasValidApprovedQuoteApproval(prisma, version.id, 'DISCOUNT', now))) continue;
+    }
+    if (await prisma.quoteLineSnapshot.count({ where: { quoteVersionId: version.id, catalogItemId: null } }) > 0) {
+      if (!(await hasValidApprovedQuoteApproval(prisma, version.id, 'SPECIAL_CONCEPT', now))) continue;
+    }
+    results.push({
+      versionId: version.id,
+      requestId: version.quote.quoteRequest.id,
+      folio: version.quote.quoteRequest.folio,
+      clientDisplayName: version.quote.quoteRequest.client.displayName,
+      versionNumber: version.versionNumber,
+      totalMinor: version.totalMinor.toString(),
+      currencyCode: version.currencyCode,
+      updatedAt: version.updatedAt,
+    });
+    if (results.length >= 20) break;
+  }
+  return results;
 }
 
 type PerformTransitionOptions = Readonly<{

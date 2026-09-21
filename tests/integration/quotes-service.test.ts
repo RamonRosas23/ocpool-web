@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
-import { clonePublishedVersion, createQuoteVersion, rejectQuoteVersion, replaceQuoteDraft, returnQuoteToDraft, submitQuoteForReview, transitionQuoteVersion } from '@/server/modules/quotes/service';
+import { clonePublishedVersion, createQuoteVersion, listReadyToPublishForActor, rejectQuoteVersion, replaceQuoteDraft, returnQuoteToDraft, submitQuoteForReview, transitionQuoteVersion } from '@/server/modules/quotes/service';
 import { decideQuoteApproval, listPendingQuoteApprovalsForActor, listQuoteApprovals, requestQuoteApproval } from '@/server/modules/quotes/approval-service';
 import { generateQuotePdf } from '@/server/modules/quote-documents/service';
 import type { QuotePdfSnapshot, RenderedQuotePdf } from '@/server/modules/quote-documents/pdf-renderer';
@@ -324,6 +324,96 @@ describe('quote pricing and versioning service', () => {
       await decideQuoteApproval(approverActor, refreshedApproval.id, { decision: 'APPROVED' }, { prisma, now });
       await transitionQuoteVersion(requesterActor, created.versionId, 'ENVIADA', { prisma, now });
       expect(await prisma.quoteVersion.findUnique({ where: { id: created.versionId }, select: { status: true } })).toMatchObject({ status: 'ENVIADA' });
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      const approvalIds = (await prisma.quoteApproval.findMany({ where: { quoteVersionId: { in: versionIds } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds, ...approvalIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.deleteMany({ where: { id: { in: [requester.id, approver.id] } } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.delete({ where: { id: item.id } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
+
+  it('excludes a discounted EN_REVISION version from "listas para publicar" until its approval clears (W1-03)', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-09-20T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-service-${suffix}-ready`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quote ready ${suffix}`, email: `quote-ready-${suffix}@example.test` },
+      detail: { projectType: 'Industrial', location: 'Mazatlán', description: 'Ready-to-publish fixture', consentAt: now },
+    }, { prisma, now });
+    const requester = await prisma.user.create({
+      data: {
+        email: `quote-ready-requester-${suffix}@example.test`,
+        emailNormalized: `quote-ready-requester-${suffix}@example.test`,
+        displayName: 'Quote ready requester',
+        type: 'EMPLOYEE',
+        status: 'ACTIVE',
+      },
+    });
+    const approver = await prisma.user.create({
+      data: {
+        email: `quote-ready-approver-${suffix}@example.test`,
+        emailNormalized: `quote-ready-approver-${suffix}@example.test`,
+        displayName: 'Quote ready approver',
+        type: 'EMPLOYEE',
+        status: 'ACTIVE',
+      },
+    });
+    const category = await prisma.catalogCategory.create({ data: { code: `READY-${suffix}`, name: 'Ready to publish' } });
+    const item = await prisma.catalogItem.create({ data: { code: `READY-ITEM-${suffix}`, name: 'Ready to publish item', unit: 'servicio', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `READY-PRICE-${suffix}`, name: 'Ready to publish prices', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 10_000n, validFrom: now } });
+    let quoteId: string | null = null;
+
+    const requesterActor = salesActor(requester.id, ['quotes.create', 'quotes.send', 'quotes.pdf.generate', 'quotes.apply_discount', 'prices.read']);
+    const approverActor = salesActor(approver.id, ['quotes.read', 'quotes.approve_discount']);
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      // A1-01: 15% > el umbral por defecto (10%), así que de entrada exige aprobación real.
+      const created = await createQuoteVersion(requesterActor, {
+        quoteRequestId: request.quoteRequestId,
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 1500 }],
+      }, { prisma, now });
+      quoteId = created.quoteId;
+      await transitionQuoteVersion(requesterActor, created.versionId, 'EN_REVISION', { prisma, now });
+
+      // Sin aprobación vigente todavía: no debe aparecer como "lista para publicar" -- ésa es
+      // exactamente la responsabilidad de la cola de "Aprobaciones", no de ésta.
+      expect(await listReadyToPublishForActor(requesterActor, { prisma, now })).toEqual([]);
+
+      const approval = await requestQuoteApproval(requesterActor, created.versionId, {
+        type: 'DISCOUNT',
+        policyVersion: 'discount-v1',
+        reason: 'Condición comercial autorizada para el cliente.',
+      }, { prisma, now });
+      expect(await listReadyToPublishForActor(requesterActor, { prisma, now })).toEqual([]);
+      await decideQuoteApproval(approverActor, approval.id, { decision: 'APPROVED' }, { prisma, now });
+
+      // Aprobada: ahora sí sólo falta el clic real de "Enviar cotización".
+      const ready = await listReadyToPublishForActor(requesterActor, { prisma, now });
+      expect(ready).toHaveLength(1);
+      expect(ready[0]).toMatchObject({ versionId: created.versionId, requestId: request.quoteRequestId, folio: request.folio, versionNumber: 1 });
+
+      // Un actor sin quotes.send/quotes.pdf.generate no vería el botón de enviar, así que tampoco
+      // debe ver la cola -- mismo criterio ya usado por listPendingQuoteApprovalsForActor.
+      expect(await listReadyToPublishForActor(salesActor(requester.id, ['quotes.create']), { prisma, now })).toEqual([]);
     } finally {
       const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
