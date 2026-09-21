@@ -80,13 +80,28 @@ test.describe('auth browser surfaces', () => {
     await expect(page.locator('body')).not.toContainText(/no existe|no registrado|inactivo/i);
     await expectNoSeriousA11yViolations(page);
 
-    for (const width of [390, 768, 1440]) {
+    for (const width of [360, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 });
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(1);
     }
     const transition = await page.getByRole('button', { name: 'Entrar' }).evaluate((element) => getComputedStyle(element).transitionDuration);
     expect(['0s', '0.01ms', '1e-05s']).toContain(transition);
+  });
+
+  test('H1-06: completes the whole login flow with keyboard only, no click anywhere', async ({ page }) => {
+    await page.goto('/login');
+    // Se ancla el foco inicial en el primer campo (la alcanzabilidad de ESE primer salto ya la
+    // cubre la prueba de skip-link de quality.spec.ts) para poder afirmar, sin ambigüedad, que
+    // TODO lo que sigue -- moverse entre campos y enviar -- ocurre por teclado, sin un solo click.
+    await page.getByLabel('Correo').focus();
+    await page.keyboard.type(employeeEmail);
+    await page.keyboard.press('Tab');
+    await expect(page.getByLabel('Contraseña')).toBeFocused();
+    await page.keyboard.type(employeePassword);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/staff\/?$/);
+    await page.context().clearCookies();
   });
 
   test('supports administrator MFA without relaxing the existing backend contract', async ({ page }) => {

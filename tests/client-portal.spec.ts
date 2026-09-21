@@ -190,7 +190,14 @@ test.describe('customer portal opt-in flow', () => {
     await expect(page.getByRole('dialog', { name: 'Aceptar versión 1' })).toBeHidden();
     await expect(page.getByRole('button', { name: 'Revisar y aceptar' })).toBeFocused();
     await page.getByRole('button', { name: 'Revisar y aceptar' }).click();
-    await expect(page.getByRole('dialog', { name: 'Aceptar versión 1' })).toBeVisible();
+    const acceptDialog = page.getByRole('dialog', { name: 'Aceptar versión 1' });
+    await expect(acceptDialog).toBeVisible();
+    // H1-06: foco realmente contenido dentro del diálogo -- mismo patrón que la prueba de
+    // quality.spec.ts para el diálogo de proyecto, aplicado aquí al diálogo de negocio real.
+    for (let index = 0; index < 5; index += 1) {
+      await page.keyboard.press('Tab');
+      await expect(page.locator(':focus').evaluate((element) => Boolean(element.closest('[role="dialog"]')))).resolves.toBe(true);
+    }
     await expectNoSeriousA11yViolations(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole('textbox', { name: 'Nombre de quien acepta' }).fill('Ana López Rivera');

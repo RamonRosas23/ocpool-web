@@ -96,7 +96,7 @@ test.describe('customer onboarding staff flow', () => {
     await page.getByRole('button', { name: 'Reenviar acceso' }).click();
     await expect(page.locator('.staff-notice')).toContainText('Ya existe una invitación vigente. El cliente debe revisar su correo.');
     await expectNoSeriousA11yViolations(page);
-    for (const width of [390, 768, 1440]) {
+    for (const width of [360, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `horizontal overflow at ${width}px`).toBe(true);
     }

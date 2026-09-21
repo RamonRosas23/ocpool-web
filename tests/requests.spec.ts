@@ -105,7 +105,7 @@ test.describe('staff request workflow opt-in flow', () => {
     });
 
       await expectNoSeriousA11yViolations(page);
-    for (const width of [390, 768, 1440]) {
+    for (const width of [360, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 });
       const layout = await page.evaluate(() => {
         const viewportWidth = document.documentElement.clientWidth;

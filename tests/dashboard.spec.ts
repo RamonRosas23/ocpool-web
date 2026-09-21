@@ -196,7 +196,7 @@ test.describe('staff analytics dashboard', () => {
     await expect(page.locator('body')).not.toContainText(email);
     await expectNoSeriousA11yViolations(page);
 
-    for (const width of [390, 768, 1440]) {
+    for (const width of [360, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 });
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(1);

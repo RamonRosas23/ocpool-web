@@ -257,7 +257,7 @@ test.describe('staff catalog operations', () => {
     await expect(page.getByRole('button', { name: new RegExp(specialConceptName) })).toBeVisible();
     promotedItemId = (await prisma.catalogItem.findFirstOrThrow({ where: { name: specialConceptName }, select: { id: true } })).id;
 
-    for (const width of [390, 768, 1440]) {
+    for (const width of [360, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `horizontal overflow at ${width}px`).toBe(true);
     }
