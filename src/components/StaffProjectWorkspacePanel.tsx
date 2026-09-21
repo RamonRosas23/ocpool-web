@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffTopNav from '@/components/StaffTopNav';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
-import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
+import { PrivateBlockingState, PrivateLinkButton, PrivateSelect } from '@/components/private/ui';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { formatDateTime } from '@/lib/format-date';
 import { moneyLabel } from '@/lib/money';
@@ -56,6 +56,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   'project.created': 'Proyecto creado a partir de la cotización aceptada.',
   'project.completed': 'Handoff marcado como completado.',
   'project.reopened': 'Handoff reabierto para seguir en transición.',
+  'project.owner_changed': 'Responsable actualizado.',
 };
 
 function quantityLabel(milliunits: string): string {
@@ -72,6 +73,16 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
   const [notFound, setNotFound] = useState(false);
   const [newItemLabel, setNewItemLabel] = useState('');
   const [busy, setBusy] = useState(false);
+  const [assignees, setAssignees] = useState<Array<{ id: string; displayName: string }>>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/staff/projects/assignees', { credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then((response) => readApiResponse<{ items: Array<{ id: string; displayName: string }> }>(response, 'No fue posible cargar responsables.'))
+      .then((result) => { if (result.ok) setAssignees(result.data.items); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,6 +152,20 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
     }
   };
 
+  const setOwner = async (ownerId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/staff/projects/${projectId}/owner`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ownerId: ownerId || null }) });
+      await readApiResponseOrThrow(response, 'No fue posible actualizar el responsable.');
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No fue posible actualizar el responsable.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (accessDenied) {
     return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/staff" variant="quiet">Volver al dashboard</PrivateLinkButton></div>}>Necesitas un perfil autorizado para consultar este proyecto.</PrivateBlockingState></PrivateSurfaceRoot>;
   }
@@ -187,7 +212,7 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
 
           <section className="staff-notification-workspace" aria-label="Responsable y checklist de transición">
             <div className="staff-notification-toolbar">
-              <div className="staff-notification-toolbar__summary"><span>Responsable: {workspace.owner?.displayName ?? 'Sin asignar'}</span><small>Creado por {workspace.createdBy.displayName} · {formatDateTime(workspace.createdAt)}</small></div>
+              <div className="staff-notification-toolbar__summary"><PrivateSelect key={workspace.owner?.id ?? 'unassigned'} id="project-owner" label="Responsable" value={workspace.owner?.id ?? ''} onValueChange={(value) => void setOwner(value)} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin asignar" disabled={busy} /><small>Creado por {workspace.createdBy.displayName} · {formatDateTime(workspace.createdAt)}</small></div>
               {workspace.status === 'EN_TRANSICION'
                 ? <button className="staff-button staff-button--copper" type="button" disabled={busy} onClick={() => void setStatus('COMPLETADO')}>Marcar handoff completado</button>
                 : <button className="staff-button staff-button--outline" type="button" disabled={busy} onClick={() => void setStatus('EN_TRANSICION')}>Reabrir handoff</button>}

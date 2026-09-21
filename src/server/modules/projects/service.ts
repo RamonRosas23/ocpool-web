@@ -330,3 +330,42 @@ export async function setProjectHandoffStatus(actor: Actor, projectIdInput: stri
     });
   });
 }
+
+export type ProjectAssignableEmployee = Readonly<{ id: string; displayName: string; email: string }>;
+
+export async function listProjectAssignableEmployees(actor: Actor, dependencies: ProjectServiceDependencies = {}): Promise<ProjectAssignableEmployee[]> {
+  requirePermission(actor, 'projects.manage');
+  const prisma = dependencies.prisma ?? getPrisma();
+  return prisma.user.findMany({
+    where: { type: 'EMPLOYEE', status: 'ACTIVE' },
+    orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
+    take: 100,
+    select: { id: true, displayName: true, email: true },
+  });
+}
+
+export async function setProjectOwner(actor: Actor, projectIdInput: string, ownerIdInput: string | null, dependencies: ProjectServiceDependencies = {}): Promise<void> {
+  requirePermission(actor, 'projects.manage');
+  const projectId = requireUuid(projectIdInput, 'El proyecto no es válido.');
+  const ownerId = ownerIdInput ? requireUuid(ownerIdInput, 'El responsable no es válido.') : null;
+  const prisma = dependencies.prisma ?? getPrisma();
+
+  await prisma.$transaction(async (transaction) => {
+    await lockAndScopeProject(transaction, actor, projectId);
+    if (ownerId) {
+      const owner = await transaction.user.findUnique({ where: { id: ownerId }, select: { id: true, type: true, status: true } });
+      if (!owner || owner.type !== 'EMPLOYEE' || owner.status !== 'ACTIVE') conflict('El responsable indicado no es válido.');
+    }
+    await transaction.project.update({ where: { id: projectId }, data: { ownerId } });
+    await transaction.auditLog.create({
+      data: {
+        actorUserId: actor.userId,
+        action: 'project.owner_changed',
+        entityType: 'project',
+        entityId: projectId,
+        outcome: 'SUCCESS',
+        metadata: { ownerId },
+      },
+    });
+  });
+}

@@ -6,7 +6,7 @@ import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { createQuoteVersion, transitionQuoteVersion } from '@/server/modules/quotes/service';
 import { generateQuotePdf } from '@/server/modules/quote-documents/service';
 import { acceptCustomerQuote } from '@/server/modules/quote-documents/acceptance-service';
-import { addProjectChecklistItem, convertQuoteAcceptanceToProject, getProjectWorkspace, setProjectChecklistItemCompletion, setProjectHandoffStatus } from '@/server/modules/projects/service';
+import { addProjectChecklistItem, convertQuoteAcceptanceToProject, getProjectWorkspace, listProjectAssignableEmployees, setProjectChecklistItemCompletion, setProjectHandoffStatus, setProjectOwner } from '@/server/modules/projects/service';
 import type { PrivateStorage } from '@/server/modules/private-files/storage';
 
 class MemoryProjectStorage implements PrivateStorage {
@@ -116,6 +116,27 @@ describe('project handoff service (J1)', () => {
       const reopened = await getProjectWorkspace(sales, project.id, { prisma, now });
       expect(reopened.status).toBe('EN_TRANSICION');
       expect(reopened.completedAt).toBeNull();
+
+      // U1-05 -- el proyecto nace sin responsable (convertQuoteAcceptanceToProject no recibió
+      // ownerId); antes de este hallazgo no existía forma alguna de asignarlo después.
+      expect(reopened.owner).toBeNull();
+
+      // Sin permiso: bloqueado, igual que el resto de comandos de este módulo.
+      await expect(setProjectOwner(employeeActor(salesUser.id, []), project.id, salesUser.id, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      // Candidato inválido: un cliente no es un responsable posible.
+      await expect(setProjectOwner(sales, project.id, customerUser.id, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT' });
+
+      const assignable = await listProjectAssignableEmployees(sales, { prisma, now });
+      expect(assignable.map((entry) => entry.id)).toEqual(expect.arrayContaining([salesUser.id, outsiderUser.id]));
+
+      await setProjectOwner(sales, project.id, salesUser.id, { prisma, now });
+      const assigned = await getProjectWorkspace(sales, project.id, { prisma, now });
+      expect(assigned.owner).toMatchObject({ id: salesUser.id, displayName: 'Project sales' });
+      expect(assigned.activity.map((entry) => entry.action)).toContain('project.owner_changed');
+
+      await setProjectOwner(sales, project.id, null, { prisma, now });
+      const unassigned = await getProjectWorkspace(sales, project.id, { prisma, now });
+      expect(unassigned.owner).toBeNull();
     } finally {
       if (projectId) {
         await prisma.projectChecklistItem.deleteMany({ where: { projectId } });
