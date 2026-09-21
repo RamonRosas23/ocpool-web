@@ -92,6 +92,7 @@ Los procedimientos operativos están separados de la guía de instalación:
 - [Runbook del dashboard operativo](docs/runbooks/analytics-dashboard.md) — definiciones, scope, zona horaria, supresión, rendimiento y diagnóstico seguro.
 - [Runbook de auditoría y observabilidad](docs/runbooks/audit-observability.md) — acceso, filtros, redacción, rate limit, diagnóstico, `EXPLAIN` y límites de retención.
 - [Runbook de superficies de acceso](docs/runbooks/auth-surfaces.md) — rutas, Mailpit, worker, tokens, MFA, recovery y pruebas locales.
+- [Runbook de recuperación operativa comercial](docs/runbooks/commercial-incident-recovery.md) — kill switch, reintentos idempotentes, corrección de destinatario, recuperación de PDF, punteros, aprobaciones, worker, forward-fix y soporte con `requestId`.
 - [Especificación de captación premium](docs/historicos/specs/2026-09-08-ocpool-premium-quote-intake-design.md) y [plan ejecutado](docs/historicos/plans/2026-09-08-ocpool-premium-quote-intake.md) — contrato, seguridad, pruebas y límites de la captación pública.
 
 El worker de notificaciones se ejecuta separado de Next.js:
