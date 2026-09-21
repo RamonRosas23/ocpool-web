@@ -37,6 +37,8 @@
     "db:seed": "prisma db seed",
     "worker:notifications:once": "tsx scripts/notifications-worker-once.ts",
     "worker:notifications": "tsx scripts/notifications-worker.ts",
+    "pilot:seed": "tsx scripts/seed-pilot-fixtures.ts",
+    "pilot:clean": "tsx scripts/clean-pilot-fixtures.ts",
     "db:up": "docker compose up -d postgres mailpit minio",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs --follow postgres mailpit minio",

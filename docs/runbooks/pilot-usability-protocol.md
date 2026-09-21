@@ -23,11 +23,12 @@ Ninguno de los ocho participantes debe repetirse entre sesiones ni haber recibid
 
 ## Antes de la sesión (moderador)
 
-1. Crear una cuenta desechable por participante staff (rol real: `sales`, `manager`, `admin`) con un expediente/cotización YA en el estado que la tarea necesita (ver tabla de tareas abajo) — nunca pedir a un participante que empiece desde cero un flujo de varios días.
-2. Para clientes: generar un enlace de acceso al portal real (magic link) para un expediente de prueba con una cotización ya enviada.
+1. Correr `npm run pilot:seed` (con Docker/Postgres local activo) — provisiona en una sola corrida las cuatro cuentas staff, el catálogo, y un expediente/cotización YA en el estado que cada tarea de la tabla de abajo necesita, incluyendo los tres enlaces mágicos de cliente. Al terminar imprime las credenciales exactas y los enlaces a usar en la sesión — no hace falta crear nada a mano. Verificado end-to-end (login real, portal real, cola de aprobaciones real) antes de dejarlo como parte de este runbook.
+2. El admin requiere MFA real: agregar la clave TOTP que el script imprime a una app autenticadora (Google Authenticator, Authy, etc.) antes de la sesión de ese participante — igual que un administrador real tendría que hacerlo.
 3. Confirmar que los flags V2 están en el estado que se va a probar (legacy por defecto salvo decisión explícita — ver el [runbook de recuperación operativa](commercial-incident-recovery.md#kill-switch-apagar-todo-v2-de-inmediato) para el mecanismo exacto).
 4. Tener a la mano: cronómetro, la hoja de captura (siguiente sección), y el guion de tareas de la fila que corresponda. No compartir el guion con el participante.
 5. Grabar sólo con consentimiento explícito y verbal al inicio; nunca grabar sin avisar.
+6. Al terminar TODAS las sesiones (no entre una y otra): correr `npm run pilot:clean` para retirar exactamente lo que el seed creó. Si se necesita una segunda ronda con participantes nuevos, volver a correr `pilot:seed` desde cero — nunca reutilizar el mismo expediente para dos participantes distintos.
 
 ## Guion de tareas (frase natural, no instrucciones paso a paso)
 
