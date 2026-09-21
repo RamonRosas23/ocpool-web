@@ -4,6 +4,7 @@ import { Inbox } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import StaffTopNav from '@/components/StaffTopNav';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateSelect } from '@/components/private/ui';
 import { readApiResponse } from '@/lib/api-response-error';
@@ -149,7 +150,7 @@ export default function StaffAuditPanel() {
   const items = data?.items ?? [];
 
   return <PrivateSurfaceRoot className="staff-shell audit-shell">
-    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><nav className="audit-nav" aria-label="Navegación de operaciones"><Link href="/staff">Dashboard</Link><Link href="/staff/requests">Solicitudes</Link><Link href="/staff/quotes">Cotizaciones</Link><Link href="/staff/catalog">Catálogo</Link><Link href="/staff/notifications">Notificaciones</Link><Link className="is-current" href="/staff/audit" aria-current="page">Auditoría</Link></nav><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Trazabilidad protegida</div></div></header>
+    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><StaffTopNav /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Trazabilidad protegida</div></div></header>
     <div className="staff-content audit-content" aria-busy={loading}>
       <section className="audit-hero"><div><p className="staff-kicker">Gobierno operativo</p><h1>{isSecurity ? <>Eventos de <em>seguridad</em></> : <>Auditoría <em>operativa</em></>}</h1><p className="staff-intro__copy">Una lectura trazable de los movimientos autorizados, con identidad y datos sensibles reducidos al mínimo necesario.</p></div><div className="audit-scope"><p className="staff-section-label">Alcance actual</p><strong>{isSecurity ? 'Identidad y acceso' : 'Actividad del negocio'}</strong><span>{data?.meta.timezone ?? 'America/Chihuahua'} · {data?.meta.freshness === 'fresh' ? 'Actualizado al consultar' : '—'}</span></div></section>
 

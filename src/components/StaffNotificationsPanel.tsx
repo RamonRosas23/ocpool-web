@@ -4,6 +4,7 @@ import { Inbox } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import StaffTopNav from '@/components/StaffTopNav';
 import { statusToneIcon } from '@/lib/labels';
 import { formatDateTime } from '@/lib/format-date';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
@@ -163,6 +164,7 @@ export default function StaffNotificationsPanel() {
     <PrivateSurfaceRoot className="staff-shell">
       <header className="staff-header">
         <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
+        <StaffTopNav />
         <div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Operación de notificaciones</div></div>
       </header>
 

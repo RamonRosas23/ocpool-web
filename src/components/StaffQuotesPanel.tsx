@@ -9,6 +9,7 @@ import CatalogItemSearchCombobox, { type CatalogSearchResultItem } from '@/compo
 import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import StaffTopNav from '@/components/StaffTopNav';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateDialog, PrivateLinkButton, PrivateMoneyField, PrivatePagination, PrivateSelect, usePrivateToast } from '@/components/private/ui';
 import {
@@ -944,19 +945,21 @@ export default function StaffQuotesPanel() {
     setSelectedId(id);
   };
 
-  const navigateToDashboard = async (event: MouseEvent<HTMLAnchorElement>) => {
+  const guardNavigation = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (autosaveState === 'conflict') { event.preventDefault(); return; }
     if (canEdit && ['dirty', 'error', 'offline'].includes(autosaveState)) {
       event.preventDefault();
-      const persisted = await persistDraft();
-      if (persisted) router.push('/staff');
+      void (async () => {
+        const persisted = await persistDraft();
+        if (persisted) router.push(href);
+      })();
     }
   };
 
   if (restricted) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/staff/requests" variant="quiet">Volver a solicitudes</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado con permiso comercial para usar el constructor.</PrivateBlockingState></PrivateSurfaceRoot>;
 
   return <PrivateSurfaceRoot className="staff-shell">
-    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff" onClick={(event) => void navigateToDashboard(event)}>Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Constructor de cotizaciones</div></div></header>
+    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><StaffTopNav onNavigate={guardNavigation} /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff" onClick={(event) => guardNavigation(event, '/staff')}>Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Constructor de cotizaciones</div></div></header>
     <div className="staff-content">
       <div className="staff-intro"><div><p className="staff-kicker">Trabajo comercial</p><h1>Cotizaciones</h1><p className="staff-intro__copy">Convierte el alcance de cada expediente en una propuesta trazable, precisa y lista para revisión.</p></div><div className="staff-intro__metric"><strong>{total}</strong><span>expedientes listos</span></div></div>
       {error && <p className="staff-error" role="alert">{error}</p>}

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import StaffTopNav from '@/components/StaffTopNav';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton } from '@/components/private/ui';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
@@ -299,7 +300,7 @@ export default function StaffDashboardPanel() {
   ] : [];
 
   return <PrivateSurfaceRoot className="staff-shell analytics-shell">
-    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><nav className="analytics-nav" aria-label="Navegación de operaciones"><Link href="/staff" aria-current="page">Dashboard</Link><Link href="/staff/requests">Solicitudes</Link><Link href="/staff/quotes">Cotizaciones</Link><Link href="/staff/catalog">Catálogo</Link><Link href="/staff/approvals">Aprobaciones</Link><Link href="/staff/notifications">Notificaciones</Link><Link href="/staff/audit">Auditoría</Link></nav><div className="staff-header__tools"><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Lectura operativa</div></div></header>
+    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><StaffTopNav /><div className="staff-header__tools"><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Lectura operativa</div></div></header>
     <div className="staff-content analytics-content" aria-busy={loading}>
       <section className="analytics-hero" aria-labelledby="analytics-title"><div><p className="staff-kicker">Centro de operación</p><h1 id="analytics-title">Pulso <em>comercial</em></h1><p className="staff-intro__copy">Una lectura compacta de la operación para decidir qué merece atención ahora.</p></div><div className="analytics-period"><p className="staff-section-label">Periodo de lectura</p><strong>{displayRange}</strong><span>Zona de negocio: {dashboard?.meta.timezone ?? '—'}</span><span>Actualizado {dashboard ? formatDate(dashboard.meta.generatedAt, dashboard.meta.timezone, true) : '—'}</span></div></section>
 

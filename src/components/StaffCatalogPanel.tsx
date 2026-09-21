@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Inbox } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
+import StaffTopNav from '@/components/StaffTopNav';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateMoneyField, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import { formatDate } from '@/lib/format-date';
@@ -361,7 +362,7 @@ export default function StaffCatalogPanel() {
   if (accessDenied) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado autorizada para consultar el catálogo.</PrivateBlockingState></PrivateSurfaceRoot>;
 
   return <PrivateSurfaceRoot className="staff-shell">
-    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Catálogo y precios</div></div></header>
+    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><StaffTopNav /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Catálogo y precios</div></div></header>
     <div className="staff-content catalog-content">
       <div className="staff-intro"><div><p className="staff-kicker">Fuente comercial</p><h1>Catálogo</h1><p className="staff-intro__copy">Mantén conceptos y precios claros para que cada cotización nazca de una fuente controlada.</p></div><div className="staff-intro__metric"><strong>{total}</strong><span>conceptos activos</span></div></div>
       {notice && <p className="staff-notice" role="status">{notice}</p>}{error && <p className="staff-error" role="alert">{error}</p>}
