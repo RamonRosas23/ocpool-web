@@ -146,7 +146,10 @@ test.describe('staff catalog operations', () => {
     await page.getByRole('button', { name: 'Programar precio' }).click();
     await expect(page.locator('p[role="alert"]')).toContainText('Selecciona la fecha desde la que aplica el precio.');
 
-    await effectiveFrom.fill('2026-09-20');
+    // Hardcoded as a literal calendar date this went stale the moment real time caught up to it --
+    // computed relative to whenever the test actually runs so "Programados" stays genuinely future.
+    const scheduledFrom = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await effectiveFrom.fill(scheduledFrom);
     await page.getByRole('button', { name: 'Programar precio' }).click();
     await expect(page.getByRole('status')).toContainText('Precio programado.');
 
@@ -259,7 +262,16 @@ test.describe('staff catalog operations', () => {
 
     for (const width of [360, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `horizontal overflow at ${width}px`).toBe(true);
+      const layout = await page.evaluate(() => {
+        const viewportWidth = document.documentElement.clientWidth;
+        const offenders = [...document.querySelectorAll<HTMLElement>('*')]
+          .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+          .filter(({ rect }) => rect.right > viewportWidth + 1 || rect.left < -1)
+          .slice(0, 20)
+          .map(({ element, rect }) => ({ tag: element.tagName, className: element.className, left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), text: element.textContent?.trim().slice(0, 80) }));
+        return { scrollWidth: document.documentElement.scrollWidth, viewportWidth, offenders };
+      });
+      expect(layout.scrollWidth <= layout.viewportWidth, `horizontal overflow at ${width}px: ${JSON.stringify(layout)}`).toBe(true);
     }
     expect(consoleErrors).toEqual([]);
   });
