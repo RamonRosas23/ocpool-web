@@ -167,7 +167,7 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
 
         {workspace && <>
           <div className="staff-intro">
-            <div><p className="staff-kicker">{workspace.folio}</p><h1>{workspace.client.displayName}</h1><p className="staff-intro__copy">{workspace.quoteRequest.projectType} · {workspace.quoteRequest.location} · Expediente {workspace.quoteRequest.folio}</p></div>
+            <div><p className="staff-kicker">{workspace.folio}</p><h1>{workspace.client.displayName}</h1><p className="staff-intro__copy">{workspace.quoteRequest.projectType} · {workspace.quoteRequest.location} · Expediente <Link href={`/staff/requests?request=${encodeURIComponent(workspace.quoteRequest.id)}`}>{workspace.quoteRequest.folio}</Link></p></div>
             <span className={`staff-status-pill staff-status-pill--${workspace.status === 'COMPLETADO' ? 'sent' : 'pending'}`}>{STATUS_LABELS[workspace.status]}</span>
           </div>
 

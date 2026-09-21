@@ -149,6 +149,16 @@ test.describe('project handoff (J1)', () => {
     await expect(statusPill).toHaveText('En transición');
     await expect(page.getByText('Alcance aceptado · V1')).toBeVisible();
     await expect(page.getByText('Firmado por Ana López Rivera')).toBeVisible();
+
+    // UX audit fix: el workspace de proyecto no tenía ningún enlace de regreso al expediente
+    // original -- sólo "Volver al dashboard". Ahora el propio folio de "Expediente" es un enlace real.
+    const sourceRequestLink = page.getByRole('link', { name: quoteFolio });
+    await expect(sourceRequestLink).toBeVisible();
+    await sourceRequestLink.click();
+    await expect(page).toHaveURL(new RegExp(`/staff/requests\\?request=${requestId}$`));
+    await expect(page.getByRole('heading', { name: quoteFolio })).toBeVisible({ timeout: 10_000 });
+    await page.goBack();
+    await expect(page).toHaveURL(/\/staff\/projects\/[0-9a-f-]+$/u);
     await expect(page.getByText('Sin tareas de checklist todavía.')).toBeVisible();
 
     // Checklist: agregar una tarea real de transición y completarla.
