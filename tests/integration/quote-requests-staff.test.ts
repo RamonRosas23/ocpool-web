@@ -293,6 +293,35 @@ describe('staff quote request operations', () => {
     await expect(assignQuoteRequest(globalOperator, request.quoteRequestId, { assignedToId: rival.id, reason: 'Balancear carga operativa' }, { prisma })).resolves.toMatchObject({ currentAssigneeId: rival.id });
   });
 
+  it('H1-03: resolves a genuine concurrent claim on the same unassigned request to exactly one winner', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+
+    const first = await createStaffUser(`take-concurrent-first-${Date.now()}`);
+    const second = await createStaffUser(`take-concurrent-second-${Date.now()}`);
+    const request = await createRequest(`take-concurrent-${Date.now()}`);
+    // requireStaffRequestReadScope se evalúa ANTES del chequeo de "ya tomada" y esconde un
+    // expediente ajeno como 404 (no confirma su existencia) -- por eso ambos actores necesitan
+    // alcance global aquí: sólo así el perdedor llega a ver el CONFLICT real en vez de un 404
+    // producido por perder el alcance sobre un expediente que ya no es suyo.
+    const globalPermissions = ['requests.read', 'requests.read.global', 'requests.claim'];
+    // lockQuoteRequest usa FOR UPDATE -- la segunda transacción no lee currentAssigneeId hasta que
+    // la primera confirma, así que ambos actores parten de "sin asignar" y sólo uno puede ganar.
+    const results = await Promise.allSettled([
+      takeQuoteRequest(staffActor(first.id, globalPermissions), request.quoteRequestId, {}, { prisma }),
+      takeQuoteRequest(staffActor(second.id, globalPermissions), request.quoteRequestId, {}, { prisma }),
+    ]);
+    const fulfilled = results.filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof takeQuoteRequest>>> => result.status === 'fulfilled');
+    const rejected = results.filter((result) => result.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toMatchObject({ code: 'CONFLICT', status: 409 });
+    expect(fulfilled[0].value).toMatchObject({ quoteRequestId: request.quoteRequestId, status: 'TAKEN' });
+    const winnerId = fulfilled[0].value.currentAssigneeId;
+    expect([first.id, second.id]).toContain(winnerId);
+    expect(await prisma.quoteRequest.findUnique({ where: { id: request.quoteRequestId }, select: { currentAssigneeId: true } })).toMatchObject({ currentAssigneeId: winnerId });
+    expect(await prisma.requestAssignment.count({ where: { quoteRequestId: request.quoteRequestId } })).toBe(1);
+  });
+
   it('updates commercial profile and project fields with safe before/after audit', async () => {
     if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
 

@@ -172,4 +172,67 @@ describe('quote PDF generation service', () => {
       await prisma.catalogCategory.delete({ where: { id: category.id } });
     }
   }, 30_000);
+
+  it('H1-03: reclaims a stale PENDING lease left behind by a crashed worker, but not a fresh one', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+
+    const prisma = getPrisma();
+    const storage = new MemoryGeneratedStorage();
+    const suffix = `${Date.now()}-stale-lease`;
+    const now = new Date('2026-09-20T21:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-pdf-stale-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `PDF stale lease ${suffix}`, email: `pdf-stale-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Chihuahua', description: 'PDF stale lease fixture', consentAt: now },
+    }, { prisma, now });
+    const employee = await prisma.user.create({ data: { email: `pdf-stale-employee-${suffix}@example.test`, emailNormalized: `pdf-stale-employee-${suffix}@example.test`, displayName: 'PDF stale lease employee', type: 'EMPLOYEE', status: 'ACTIVE' } });
+    const codeSuffix = Date.now().toString();
+    const category = await prisma.catalogCategory.create({ data: { code: `PDFSTALE-${codeSuffix}`, name: 'PDF stale lease fixture' } });
+    const item = await prisma.catalogItem.create({ data: { code: `PDFSTALE-ITEM-${codeSuffix}`, name: 'PDF stale lease item', unit: 'pieza', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `PDFSTALE-PRICE-${codeSuffix}`, name: 'PDF stale lease prices', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 100_000n, validFrom: now } });
+    const actor = salesActor(employee.id);
+    let quoteId: string | null = null;
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const created = await createQuoteVersion(actor, { quoteRequestId: request.quoteRequestId, priceListId: priceList.id, lines: [{ catalogItemId: item.id, quantity: '1' }] }, { prisma, now });
+      quoteId = created.quoteId;
+      await transitionQuoteVersion(actor, created.versionId, 'EN_REVISION', { prisma, now });
+      await transitionQuoteVersion(actor, created.versionId, 'ENVIADA', { prisma, now });
+
+      // Un PENDING recién dejado (el worker apenas empezó) sigue protegido: un segundo intento
+      // mientras la preparación "en curso" todavía es reciente debe rechazarse, no reclamarse.
+      const freshPending = await prisma.generatedDocument.create({ data: { quoteId, quoteVersionId: created.versionId, templateVersion: 'quote-pdf-v1' } });
+      await expect(generateQuotePdf(actor, created.versionId, { prisma, storage, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      expect(await prisma.generatedDocument.count({ where: { quoteVersionId: created.versionId } })).toBe(1);
+
+      // P1-03: pasado el umbral de "lease" (el worker que la dejó a medias se cayó), el mismo
+      // PENDING debe reclamarse y completarse -- reutilizando la fila existente, sin crear otra.
+      await prisma.$executeRaw`UPDATE "generated_documents" SET "updatedAt" = ${new Date(now.getTime() - 4 * 60_000)} WHERE "id" = ${freshPending.id}::uuid`;
+      const reclaimed = await generateQuotePdf(actor, created.versionId, { prisma, storage, now });
+      expect(reclaimed).toMatchObject({ id: freshPending.id, status: 'READY', quoteId, quoteVersionId: created.versionId });
+      expect(await prisma.generatedDocument.count({ where: { quoteVersionId: created.versionId } })).toBe(1);
+      expect(await prisma.generatedDocument.findUnique({ where: { id: freshPending.id }, select: { status: true } })).toMatchObject({ status: 'READY' });
+    } finally {
+      const versions = quoteId ? await prisma.quoteVersion.findMany({ where: { quoteId }, select: { id: true } }) : [];
+      const documentIds = versions.length ? (await prisma.generatedDocument.findMany({ where: { quoteVersionId: { in: versions.map(({ id }) => id) } }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } })) : [];
+      for (const document of documentIds) if (document.storageObject?.storageKey) await storage.delete(document.storageObject.storageKey);
+      if (quoteId) await prisma.quoteAcceptance.deleteMany({ where: { quoteId } });
+      await prisma.generatedDocument.deleteMany({ where: { id: { in: documentIds.map(({ id }) => id) } } });
+      await prisma.storageObject.deleteMany({ where: { id: { in: documentIds.flatMap(({ storageObjectId }) => storageObjectId ? [storageObjectId] : []) } } });
+      if (quoteId) await prisma.quote.delete({ where: { id: quoteId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [request.quoteRequestId, ...(quoteId ? [quoteId] : []), ...documentIds.map(({ id }) => id)] } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [request.quoteRequestId, ...(quoteId ? [quoteId] : []), ...documentIds.map(({ id }) => id)] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.delete({ where: { id: item.id } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
 });
