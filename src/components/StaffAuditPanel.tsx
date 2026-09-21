@@ -7,7 +7,7 @@ import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffTopNav from '@/components/StaffTopNav';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateSelect } from '@/components/private/ui';
-import { readApiResponse } from '@/lib/api-response-error';
+import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
 const CATEGORY_OPTIONS = ['', 'commercial', 'communication', 'documents', 'notifications', 'security'] as const;
 const OUTCOME_OPTIONS = ['', 'SUCCESS', 'DENIED', 'FAILURE'] as const;
@@ -106,7 +106,10 @@ export default function StaffAuditPanel() {
         throw new Error(auditResult.message);
       }
       const next = auditResult.data;
-      const nextCapabilities = capabilitiesResponse.ok ? await capabilitiesResponse.json() as CapabilitiesResponse : {};
+      // Antes esto caía en silencio a `{}` si la respuesta no era `ok` -- un 500/401 transitorio en
+      // /api/staff/capabilities apagaba la opción "Seguridad" del filtro de categoría como si el
+      // rol no tuviera ese permiso, sin ninguna señal de que fue un fallo de red, no una restricción.
+      const nextCapabilities = await readApiResponseOrThrow<CapabilitiesResponse>(capabilitiesResponse, 'No fue posible validar los permisos.');
       if (requestNumber.current !== currentRequest) return;
       setCapabilities(nextCapabilities);
       setAccessDenied(false);
