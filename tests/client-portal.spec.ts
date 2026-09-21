@@ -87,7 +87,10 @@ test.describe('customer portal opt-in flow', () => {
     await prisma.priceListItem.create({ data: { priceListId, catalogItemId: itemId, unitPriceMinor: 30000n, validFrom: now } });
 
     const employeeActor = { userId: employeeId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.read', 'quotes.create', 'quotes.send', 'quotes.pdf.generate']), mfaVerified: true };
-    const quote = await createQuoteVersion(employeeActor, { quoteRequestId: requestAId, priceListId, lines: [{ catalogItemId: itemId, quantity: '1', taxBasisPoints: 1600 }], validUntil: new Date('2026-10-01T00:00:00.000Z') }, { prisma, now });
+    // Guardado a fin de día UTC (no medianoche) para que "01 oct 2026" siga siendo el mismo día
+    // calendario al mostrarse en America/Chihuahua (UTC-6/7) -- el mismo patrón que ya usa la propia
+    // UI de staff (StaffQuotesPanel.tsx) al construir `validUntil` desde su selector de fecha.
+    const quote = await createQuoteVersion(employeeActor, { quoteRequestId: requestAId, priceListId, lines: [{ catalogItemId: itemId, quantity: '1', taxBasisPoints: 1600 }], validUntil: new Date('2026-10-01T23:59:59.999Z') }, { prisma, now });
     quoteAId = quote.quoteId;
     await transitionQuoteVersion(employeeActor, quote.versionId, 'EN_REVISION', { prisma, now });
     await transitionQuoteVersion(employeeActor, quote.versionId, 'ENVIADA', { prisma, now });
@@ -314,12 +317,13 @@ test.describe('customer portal opt-in flow', () => {
 
   test('explains an expired quote and completes the conversation next step', async ({ page }) => {
     const employeeActor = { userId: employeeId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.read', 'quotes.create', 'quotes.send', 'quotes.pdf.generate']), mfaVerified: true };
-    const expiredQuote = await createQuoteVersion(employeeActor, { quoteRequestId: requestBId, priceListId, lines: [{ catalogItemId: itemId, quantity: '1', taxBasisPoints: 1600 }], validUntil: new Date('2026-09-02T00:00:00.000Z') }, { prisma, now });
+    const expiredQuote = await createQuoteVersion(employeeActor, { quoteRequestId: requestBId, priceListId, lines: [{ catalogItemId: itemId, quantity: '1', taxBasisPoints: 1600 }], validUntil: new Date('2026-09-02T23:59:59.999Z') }, { prisma, now });
     quoteBId = expiredQuote.quoteId;
     await transitionQuoteVersion(employeeActor, expiredQuote.versionId, 'EN_REVISION', { prisma, now });
     await transitionQuoteVersion(employeeActor, expiredQuote.versionId, 'ENVIADA', { prisma, now });
     await generateQuotePdf(employeeActor, expiredQuote.versionId, { prisma, now });
-    await prisma.quoteVersion.update({ where: { id: expiredQuote.versionId }, data: { validUntil: new Date('2026-08-15T00:00:00.000Z') } });
+    // Mismo fin-de-día-UTC que arriba, para que "15 ago 2026" se muestre igual en Chihuahua.
+    await prisma.quoteVersion.update({ where: { id: expiredQuote.versionId }, data: { validUntil: new Date('2026-08-15T23:59:59.999Z') } });
     await setSession(page, customerBToken);
     await page.setViewportSize({ width: 390, height: 844 });
     const measurementStartedAt = new Date();

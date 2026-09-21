@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useId, useState } from 'react';
 import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
 import { getApiErrorMessage } from '@/lib/api-error-message';
+import { formatDateTime } from '@/lib/format-date';
 
 type PortalMessage = {
   id: string;
@@ -31,19 +32,6 @@ type PortalConversationResponse = {
 type PortalErrorResponse = { error?: { message?: string; requestId?: string } };
 
 const MAX_MESSAGE_LENGTH = 10_000;
-
-function formatMessageDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Fecha por confirmar';
-  return new Intl.DateTimeFormat('es-MX', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'UTC',
-  }).format(date);
-}
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & PortalErrorResponse;
@@ -170,7 +158,7 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
       {messages.length === 0 && <div className="client-messaging__empty"><strong>Aún no hay mensajes.</strong><span>Escribe una actualización o una duda y el equipo la verá en este expediente.</span></div>}
       {messages.length > 0 && <ol className="client-messaging__list" aria-live="polite">
         {messages.map((message) => <li className={`client-message client-message--${message.sender?.type === 'EMPLOYEE' ? 'team' : 'client'}`} key={message.id}>
-          <div className="client-message__meta"><strong>{authorLabel(message)}</strong><time dateTime={message.createdAt}>{formatMessageDate(message.createdAt)}</time></div>
+          <div className="client-message__meta"><strong>{authorLabel(message)}</strong><time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time></div>
           <p>{message.body}</p>
         </li>)}
       </ol>}
