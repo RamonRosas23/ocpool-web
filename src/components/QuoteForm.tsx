@@ -85,6 +85,11 @@ export default function QuoteForm() {
 
   const validateStepTwo = (): FormErrors => {
     const next: FormErrors = {};
+    // El servidor acepta `dimensions` vacío (campo opcional) pero exige al menos 2 caracteres si se
+    // llena (publicQuoteRequestSchema en api/quote-requests/route.ts) -- sin este chequeo, un valor
+    // de 1 carácter pasaba sin aviso aquí y sólo fallaba al enviar, con el error genérico de arriba
+    // del formulario sin apuntar a este campo en particular.
+    if (formData.dimensions.trim() && formData.dimensions.trim().length < 2) next.dimensions = 'Escribe al menos 2 caracteres o deja el campo vacío.';
     if (formData.mensaje.trim().length < 10) next.mensaje = 'Cuéntanos un poco más sobre el alcance del proyecto.';
     if (!acceptTerms) next.consent = 'Necesitamos tu autorización para contactarte.';
     return next;
@@ -246,7 +251,8 @@ export default function QuoteForm() {
             </label>
             <label>
               <span>Medidas aproximadas</span>
-              <input id="quote-dimensions" name="dimensions" value={formData.dimensions} onChange={(event) => updateField('dimensions', event.target.value)} placeholder="Ej. 12 x 5 m" maxLength={180} />
+              <input id="quote-dimensions" name="dimensions" value={formData.dimensions} onChange={(event) => updateField('dimensions', event.target.value)} placeholder="Ej. 12 x 5 m" minLength={2} maxLength={180} aria-invalid={Boolean(errors.dimensions)} aria-describedby={errors.dimensions ? 'quote-dimensions-error' : undefined} />
+              {errorMessage('dimensions')}
             </label>
             <label>
               <span>Horizonte de inicio</span>
