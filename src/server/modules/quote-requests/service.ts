@@ -220,7 +220,9 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput, depende
   };
   const assertReplayMatches = (existing: NormalizedQuoteRequestDetail) => {
     if (!sameQuoteRequest(existing, candidate)) {
-      throw new AppError('CONFLICT', 'La llave de idempotencia ya fue utilizada con datos distintos.', 409);
+      // UX audit fix: este mensaje puede llegar hasta el formulario público (visitantes anónimos),
+      // no sólo a staff — nunca debe mencionar términos internos como "llave de idempotencia".
+      throw new AppError('CONFLICT', 'Ya se registró un envío distinto para este intento. Recarga la página e inténtalo de nuevo.', 409);
     }
   };
 

@@ -131,7 +131,10 @@ function assertSameAcceptance(existing: { quoteId: string; signerName: string; t
   // nunca debe regresar en silencio la aceptación original -- mismo criterio que sameReservation()
   // en private-files/service.ts.
   if (existing.quoteId !== quoteId || existing.signerName !== signerName || existing.termsVersion !== termsVersion) {
-    throw new AppError('CONFLICT', 'La llave de idempotencia ya fue utilizada con datos distintos.', 409);
+    // UX audit fix: este mensaje puede llegar sin traducir hasta la persona cliente (no sólo a
+    // staff) si reintenta tras corregir algo; nunca debe mencionar términos internos como "llave
+    // de idempotencia".
+    throw new AppError('CONFLICT', 'Ya se registró un envío distinto para este intento. Recarga la página e inténtalo de nuevo.', 409);
   }
 }
 
