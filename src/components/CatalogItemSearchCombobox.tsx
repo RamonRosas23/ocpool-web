@@ -101,9 +101,13 @@ export default function CatalogItemSearchCombobox({
       event.preventDefault();
       setActiveIndex((current) => visibleItems.length ? (current - 1 + visibleItems.length) % visibleItems.length : -1);
     } else if (event.key === 'Enter') {
-      if (activeIndex >= 0 && visibleItems[activeIndex]) {
+      const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : undefined;
+      if (activeItem) {
         event.preventDefault();
-        choose(visibleItems[activeIndex]);
+        // Mismo guardado que ya aplica el clic de mouse (línea de abajo, onMouseDown) -- sin esto,
+        // un usuario de teclado podía agregar un concepto sin precio en la lista vigente, algo que
+        // el mouse ya impedía.
+        if (!activeItem.blocker) choose(activeItem);
       }
     } else if (event.key === 'Escape') {
       if (open) { event.preventDefault(); setOpen(false); }
