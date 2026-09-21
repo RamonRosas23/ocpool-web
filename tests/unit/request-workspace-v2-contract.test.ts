@@ -194,7 +194,7 @@ describe('request workspace V2 route contract', () => {
   });
 
   it('preserves the server request reference in recoverable UI errors', () => {
-    expect(getApiErrorMessage({ error: { message: 'No se pudo guardar.', requestId: 'req-123' } }, 'Error genérico.')).toBe('No se pudo guardar. Referencia: req-123');
+    expect(getApiErrorMessage({ error: { message: 'No se pudo guardar.', requestId: 'req-123' } }, 'Error genérico.')).toBe('No se pudo guardar. Si necesitas ayuda, menciona esta referencia: req-123');
     expect(getApiErrorMessage({ error: { message: 'No se pudo guardar.' } }, 'Error genérico.')).toBe('No se pudo guardar.');
   });
 
