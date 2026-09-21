@@ -200,6 +200,12 @@ test.describe('customer portal opt-in flow', () => {
     }
     await expectNoSeriousA11yViolations(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    // UX audit fix: clearing the pre-filled signer name used to just disable the button with no
+    // explanation (unlike the terms checkbox, which already showed an inline error). Both paths
+    // now go through the same custom-error mechanism instead of relying on native validation.
+    await page.getByRole('textbox', { name: 'Nombre de quien acepta' }).fill('');
+    await page.getByRole('button', { name: 'Aceptar propuesta' }).click();
+    await expect(page.locator('.client-quote-action-error').filter({ hasText: 'Escribe tu nombre completo para continuar.' })).toBeVisible();
     await page.getByRole('textbox', { name: 'Nombre de quien acepta' }).fill('Ana López Rivera');
     await page.getByRole('button', { name: 'Aceptar propuesta' }).click();
     await expect(page.locator('.client-quote-action-error').filter({ hasText: 'Confirma que revisaste la propuesta y sus condiciones.' })).toBeVisible();

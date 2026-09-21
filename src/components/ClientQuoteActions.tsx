@@ -146,6 +146,10 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
 
   const submitAcceptance = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!signerName.trim()) {
+      setAcceptanceError('Escribe tu nombre completo para continuar.');
+      return;
+    }
     if (!termsAccepted) {
       setAcceptanceError('Confirma que revisaste la propuesta y sus condiciones.');
       return;
@@ -194,11 +198,11 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
           {!previewLoading && previewUrl && <iframe src={previewUrl} title={`Propuesta versión ${version.versionNumber}`} />}
           {!previewLoading && !previewUrl && <div className="client-accept-preview__loading">No fue posible mostrar la vista previa; usa &quot;Descargar PDF&quot;.</div>}
         </div>
-        <label className="client-accept-field"><span>Nombre de quien acepta</span><input ref={signerInputRef} value={signerName} onChange={(event) => setSignerName(event.target.value)} autoComplete="name" maxLength={180} required placeholder="Escribe tu nombre completo" /></label>
+        <label className="client-accept-field"><span>Nombre de quien acepta</span><input ref={signerInputRef} value={signerName} onChange={(event) => setSignerName(event.target.value)} autoComplete="name" maxLength={180} placeholder="Escribe tu nombre completo" /></label>
         <label className="client-accept-check"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} /><span>Confirmo que revisé la propuesta, el PDF y las condiciones comerciales de la versión {version.versionNumber}.</span></label>
         <p className="client-accept-terms">{version.termsLabel}</p>
         {acceptanceError && <p className="client-quote-action-error" role="alert">{acceptanceError}</p>}
-        <div className="client-accept-dialog__actions"><button className="client-quote-action client-quote-action--quiet" type="button" onClick={() => setDialogOpen(false)} disabled={accepting}>Cancelar</button><button className="client-quote-action client-quote-action--primary" type="submit" disabled={accepting || !signerName.trim()}>{accepting ? 'Registrando…' : 'Aceptar propuesta'}</button></div>
+        <div className="client-accept-dialog__actions"><button className="client-quote-action client-quote-action--quiet" type="button" onClick={() => setDialogOpen(false)} disabled={accepting}>Cancelar</button><button className="client-quote-action client-quote-action--primary" type="submit" disabled={accepting}>{accepting ? 'Registrando…' : 'Aceptar propuesta'}</button></div>
       </form>}
     </PrivateDialog>
     <PrivateDialog open={changeDialogOpen} onClose={() => { if (!changeSending) setChangeDialogOpen(false); }} className="client-accept-dialog" overlayClassName="client-accept-overlay" labelledBy="client-change-title" describedBy="client-change-description">
