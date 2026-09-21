@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateLinkButton, PrivatePagination } from '@/components/private/ui';
+import { formatDateTime } from '@/lib/format-date';
 import { readApiResponse } from '@/lib/api-response-error';
 
 type ApprovalType = 'DISCOUNT' | 'PRICE_OVERRIDE' | 'SPECIAL_CONCEPT';
@@ -49,10 +50,6 @@ function discountRateLabel(subtotalMinor: string, discountMinor: string): string
   if (subtotal <= 0n || discount <= 0n) return null;
   const bps = (discount * 10_000n) / subtotal;
   return `${(Number(bps) / 100).toLocaleString('es-MX', { maximumFractionDigits: 2 })}%`;
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
 function ageLabel(value: string): string {
@@ -136,7 +133,7 @@ export default function StaffApprovalsPanel() {
                   {rate && <div><dt>Descuento</dt><dd>{rate} · {moneyLabel(item.discountTotalMinor, item.currencyCode)}</dd></div>}
                   <div><dt>Solicitada por</dt><dd>{item.requestedByDisplayName}</dd></div>
                   <div><dt>Antigüedad</dt><dd><time dateTime={item.requestedAt}>{ageLabel(item.requestedAt)}</time></dd></div>
-                  <div><dt>Fecha</dt><dd>{formatDate(item.requestedAt)}</dd></div>
+                  <div><dt>Fecha</dt><dd>{formatDateTime(item.requestedAt)}</dd></div>
                 </dl>
                 {item.reason && <p className="staff-notification-row__reason">{item.reason}</p>}
                 <div className="staff-notification-row__action"><Link className="staff-button staff-button--copper" href={`/staff/quotes?request=${item.requestId}`}>Abrir expediente</Link></div>

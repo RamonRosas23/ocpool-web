@@ -7,6 +7,7 @@ import WorkspaceBrand from '@/components/WorkspaceBrand';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateMoneyField, PrivatePagination, PrivateSelect } from '@/components/private/ui';
+import { formatDate } from '@/lib/format-date';
 import { parseMoneyInput } from '@/lib/money-input';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
@@ -55,9 +56,6 @@ type ListResponse = { items: CatalogItem[]; page: number; pageSize: number; tota
 type Capabilities = { catalogRead: boolean; catalogManage: boolean; pricesRead: boolean; pricesManage: boolean };
 type SpecialConceptGroup = { normalizedName: string; unit: string; name: string; occurrences: number; recentFolios: string[]; status: 'PENDING' | 'MATCHES_EXISTING' | 'PROMOTED'; matchingCatalogItem: { id: string; code: string; name: string } | null };
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
-}
 
 function moneyLabel(minor: string, currency: string): string {
   const normalized = minor.padStart(3, '0');

@@ -27,6 +27,7 @@ import {
   type RequestWorkspaceSort,
   type RequestWorkspaceView,
 } from '@/lib/request-workspace-query';
+import { formatDateTime } from '@/lib/format-date';
 import { requestWorkspaceScrollStorageKey } from '@/lib/request-workspace-scroll';
 
 const VIEW_LABELS: Record<RequestWorkspaceView, string> = {
@@ -68,9 +69,6 @@ type ListResponse = { items: RequestSummary[]; page: number; pageSize: number; t
 type AssigneeResponse = { items: Array<{ id: string; displayName: string; email: string }> };
 type WorkspaceCapabilitiesResponse = { requestsCreate: boolean; requestsAssign: boolean; requestsReadGlobal: boolean };
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
-}
 
 function queryHref(query: RequestWorkspaceQuery): string {
   const params = serializeRequestWorkspaceQuery(query).toString();
@@ -236,7 +234,7 @@ export default function RequestWorkspaceV2Panel() {
           <div className="request-workspace-v2__results-head"><div><p className="private-kicker">Admisión</p><h2>{loading ? 'Actualizando resultados' : `${items.length} solicitudes`}</h2></div><span>Página {query.page} de {totalPages}</span></div>
           {loading && <PrivateSkeleton label="Cargando solicitudes" />}
           {!loading && !error && items.length === 0 && <PrivateEmptyState title={hasFilters ? 'No hay coincidencias.' : 'Aún no hay solicitudes.'}>{hasFilters ? 'Prueba con otro término o ajusta los filtros de la cola.' : 'Las nuevas solicitudes aparecerán aquí cuando sean recibidas.'}</PrivateEmptyState>}
-          {!loading && items.length > 0 && <ul className="request-workspace-v2__list">{items.map((item) => <li key={item.id}><Link className="request-workspace-v2__row" href={`/staff/requests/${encodeURIComponent(item.id)}${queryHref({ ...query, tab: 'summary' })}`}><span className={`request-workspace-v2__status request-workspace-v2__status--${item.status.toLowerCase()}`} aria-hidden="true" /><span className="request-workspace-v2__row-main"><strong>{item.folio}</strong><span>{item.client.displayName}</span><small>{item.detail?.projectType ?? 'Sin tipo de proyecto'} · {item.detail?.location ?? 'Sin ubicación'}</small></span><span className="request-workspace-v2__row-meta"><strong>{item.currentAssignee?.displayName ?? 'Sin responsable'}</strong><small>{QUOTE_REQUEST_STATUS_LABELS[item.status]}</small><time dateTime={item.createdAt}>{formatDate(item.createdAt)}</time></span><span className="request-workspace-v2__row-action" aria-hidden="true">Abrir →</span></Link></li>)}</ul>}
+          {!loading && items.length > 0 && <ul className="request-workspace-v2__list">{items.map((item) => <li key={item.id}><Link className="request-workspace-v2__row" href={`/staff/requests/${encodeURIComponent(item.id)}${queryHref({ ...query, tab: 'summary' })}`}><span className={`request-workspace-v2__status request-workspace-v2__status--${item.status.toLowerCase()}`} aria-hidden="true" /><span className="request-workspace-v2__row-main"><strong>{item.folio}</strong><span>{item.client.displayName}</span><small>{item.detail?.projectType ?? 'Sin tipo de proyecto'} · {item.detail?.location ?? 'Sin ubicación'}</small></span><span className="request-workspace-v2__row-meta"><strong>{item.currentAssignee?.displayName ?? 'Sin responsable'}</strong><small>{QUOTE_REQUEST_STATUS_LABELS[item.status]}</small><time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time></span><span className="request-workspace-v2__row-action" aria-hidden="true">Abrir →</span></Link></li>)}</ul>}
           {!loading && <nav className="request-workspace-v2__pagination" aria-label="Paginación de solicitudes"><button type="button" disabled={query.page <= 1} onClick={() => updateQuery({ page: query.page - 1 })}>Anterior</button><span aria-live="polite">{query.page} / {totalPages}</span><button type="button" disabled={query.page >= totalPages} onClick={() => updateQuery({ page: query.page + 1 })}>Siguiente</button></nav>}
         </section>
       </div>

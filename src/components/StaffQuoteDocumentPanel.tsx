@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { formatDateTime } from '@/lib/format-date';
 
 type DocumentStatus = 'MISSING' | 'PENDING' | 'READY' | 'FAILED' | 'DELETED';
 
@@ -60,10 +61,6 @@ const STATUS_NOTES: Record<DocumentStatus, string> = {
   FAILED: 'La preparación anterior no terminó. Puedes iniciar un reintento seguro.',
   DELETED: 'El documento fue retirado y no se puede regenerar desde este flujo.',
 };
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
-}
 
 function formatBytes(value: number | null): string {
   if (value === null || !Number.isFinite(value) || value < 0) return 'Tamaño no disponible';
@@ -179,7 +176,7 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
         <div className="quote-document-panel__summary">
           <strong>{STATUS_LABELS[status]}</strong>
           <span>{operation ? STATUS_NOTES[status] : 'No fue posible cargar el estado del documento.'}</span>
-          {operation?.document.status === 'READY' && operation.document.readyAt && <small>{formatBytes(operation.document.byteSize)} · Verificado {formatDate(operation.document.readyAt)}</small>}
+          {operation?.document.status === 'READY' && operation.document.readyAt && <small>{formatBytes(operation.document.byteSize)} · Verificado {formatDateTime(operation.document.readyAt)}</small>}
         </div>
         <div className="quote-document-panel__actions">
           {canDownload && <button className="staff-button staff-button--dark" type="button" onClick={() => void download()} disabled={busy !== null}>{busy === 'download' ? 'Preparando…' : 'Descargar PDF'}</button>}
@@ -191,7 +188,7 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
 
       {operation?.acceptance ? <div className="quote-acceptance-evidence" aria-label="Evidencia de aceptación">
         <div><span className="quote-acceptance-evidence__mark" aria-hidden="true">✓</span><div><p className="staff-section-label">Evidencia registrada</p><strong>Cotización aceptada</strong></div></div>
-        <dl><div><dt>Firmante</dt><dd>{operation.acceptance.signerName}</dd></div><div><dt>Términos</dt><dd>{operation.acceptance.termsVersion}</dd></div><div><dt>Fecha</dt><dd>{formatDate(operation.acceptance.acceptedAt)}</dd></div></dl>
+        <dl><div><dt>Firmante</dt><dd>{operation.acceptance.signerName}</dd></div><div><dt>Términos</dt><dd>{operation.acceptance.termsVersion}</dd></div><div><dt>Fecha</dt><dd>{formatDateTime(operation.acceptance.acceptedAt)}</dd></div></dl>
         {project && canReadProject && <Link className="staff-button staff-button--outline" href={`/staff/projects/${project.id}`}>Ver proyecto {project.folio}</Link>}
         {!project && canCreateProject && <button className="staff-button staff-button--copper" type="button" onClick={() => void convertToProject()} disabled={busy !== null}>{busy === 'convert' ? 'Convirtiendo…' : 'Convertir a proyecto'}</button>}
       </div> : <div className="quote-document-panel__empty"><span>Sin aceptación registrada</span><small>La evidencia aparecerá aquí cuando el cliente acepte esta versión.</small></div>}

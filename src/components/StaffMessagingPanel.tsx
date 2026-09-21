@@ -4,6 +4,7 @@ import { FormEvent, KeyboardEvent, useCallback, useEffect, useId, useMemo, useSt
 import { nextRovingTabIndex } from '@/components/private/ui';
 import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
 import { getApiErrorMessage } from '@/lib/api-error-message';
+import { formatDateTime } from '@/lib/format-date';
 
 export type StaffMessagingCapabilities = {
   messagingRead: boolean;
@@ -53,17 +54,6 @@ type ErrorResponse = { error?: { message?: string; requestId?: string } };
 
 const MAX_MESSAGE_LENGTH = 10_000;
 
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Fecha por confirmar';
-  return new Intl.DateTimeFormat('es-MX', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & ErrorResponse;
@@ -272,7 +262,7 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
         {visibleMessages.length === 0 && <div className="staff-messaging__empty"><strong>{mode === 'CUSTOMER' ? 'Aún no hay mensajes compartidos.' : 'Aún no hay notas internas.'}</strong><span>{mode === 'CUSTOMER' ? 'Las respuestas de este hilo quedarán visibles para el cliente.' : 'Usa este espacio para coordinar detalles que no deben salir del equipo.'}</span></div>}
         {visibleMessages.length > 0 && <ol className="staff-messaging__list" aria-live="polite">
           {visibleMessages.map((message) => <li className={`staff-message${message.visibility === 'INTERNAL' ? ' staff-message--internal' : ''}`} key={message.id}>
-            <div className="staff-message__meta"><strong>{message.sender?.type === 'CUSTOMER' ? 'Cliente' : message.sender?.displayName ?? 'Equipo OCPOOL'}</strong><time dateTime={message.createdAt}>{formatDate(message.createdAt)}</time><span>{message.visibility === 'CUSTOMER' ? 'Visible para cliente' : 'Sólo equipo'}</span></div>
+            <div className="staff-message__meta"><strong>{message.sender?.type === 'CUSTOMER' ? 'Cliente' : message.sender?.displayName ?? 'Equipo OCPOOL'}</strong><time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time><span>{message.visibility === 'CUSTOMER' ? 'Visible para cliente' : 'Sólo equipo'}</span></div>
             <p>{message.body}</p>
           </li>)}
         </ol>}

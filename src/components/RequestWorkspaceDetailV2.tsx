@@ -12,6 +12,7 @@ import RequestWorkspaceEditV2 from '@/components/RequestWorkspaceEditV2';
 import RequestWorkspaceHeaderV2, { type RequestWorkspaceHeaderAction } from '@/components/RequestWorkspaceHeaderV2';
 import type { StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import type { StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
+import { formatDateTime } from '@/lib/format-date';
 import { normalizeRequestWorkspaceQuery, QUOTE_REQUEST_STATUS_LABELS, REQUEST_WORKSPACE_TABS, serializeRequestWorkspaceQuery } from '@/lib/request-workspace-query';
 import type { RequestWorkspaceTab } from '@/lib/request-workspace-query';
 import { readApiResponse, readApiResponseOrThrow, type ApiResponseErrorKind } from '@/lib/api-response-error';
@@ -100,12 +101,6 @@ type QuoteWorkspace = {
     versions: QuoteVersionSummary[];
   } | null;
 };
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Fecha por confirmar';
-  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
-}
 
 // UX audit fix: Intl.NumberFormat's `style: 'currency'` renders only the bare symbol ("$1,650.00"),
 // with nothing distinguishing MXN from USD -- a real ambiguity for a Mexican business, not just a
@@ -199,8 +194,8 @@ function ActivityTab({ detail }: { detail: RequestDetail }) {
   };
 
   return <section className="request-workspace-v2__activity" aria-labelledby="request-workspace-v2-activity-title">
-    <div className="request-workspace-v2__section-heading"><div><p className="private-kicker">Trazabilidad</p><h2 id="request-workspace-v2-activity-title">Actividad del expediente</h2></div><p className="request-workspace-v2__muted">Actualizado el {formatDate(detail.updatedAt)}</p></div>
-    {entries.length === 0 ? <PrivateEmptyState title="Aún no hay actividad registrada.">Los cambios del expediente aparecerán aquí.</PrivateEmptyState> : <ol className="request-workspace-v2__timeline">{entries.map((entry) => <li key={entry.id}><time dateTime={entry.date}>{formatDate(entry.date)}</time><div><p className="private-kicker">{entry.label}</p><h3>{entry.title}</h3><p>{entry.detail}</p></div></li>)}</ol>}
+    <div className="request-workspace-v2__section-heading"><div><p className="private-kicker">Trazabilidad</p><h2 id="request-workspace-v2-activity-title">Actividad del expediente</h2></div><p className="request-workspace-v2__muted">Actualizado el {formatDateTime(detail.updatedAt)}</p></div>
+    {entries.length === 0 ? <PrivateEmptyState title="Aún no hay actividad registrada.">Los cambios del expediente aparecerán aquí.</PrivateEmptyState> : <ol className="request-workspace-v2__timeline">{entries.map((entry) => <li key={entry.id}><time dateTime={entry.date}>{formatDateTime(entry.date)}</time><div><p className="private-kicker">{entry.label}</p><h3>{entry.title}</h3><p>{entry.detail}</p></div></li>)}</ol>}
     {loadMoreError && <p className="private-status private-status--error" role="alert">{loadMoreError}</p>}
     {nextCursor && <button type="button" className="request-workspace-v2__activity-more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando actividad…' : 'Ver actividad anterior'}</button>}
   </section>;
@@ -235,8 +230,8 @@ function QuoteTab({ requestId, detail }: { requestId: string; detail: RequestDet
   const version = quote.currentVersion;
   return <section className="request-workspace-v2__quote" aria-labelledby="request-workspace-v2-quote-title">
     <div className="request-workspace-v2__section-heading"><div><p className="private-kicker">Control comercial</p><h2 id="request-workspace-v2-quote-title">Cotización vigente</h2></div><span className="request-workspace-v2__detail-status">Versión {version.versionNumber}</span></div>
-    <div className="request-workspace-v2__quote-summary"><div><span>Total</span><strong>{formatCurrencyMinor(version.totalMinor, version.currencyCode)}</strong></div><div><span>Estado</span><strong>{quoteStatusLabel(version.status)}</strong></div><div><span>Vigencia</span><strong>{version.validUntil ? formatDate(version.validUntil) : 'Sin fecha de vencimiento'}</strong></div></div>
-    <div className="request-workspace-v2__quote-history"><p className="private-kicker">Versiones</p><ul>{quote.versions.map((candidate) => <li key={candidate.id}><span>Versión {candidate.versionNumber}</span><span>{quoteStatusLabel(candidate.status)}</span><span>{formatDate(candidate.updatedAt)}</span></li>)}</ul></div>
+    <div className="request-workspace-v2__quote-summary"><div><span>Total</span><strong>{formatCurrencyMinor(version.totalMinor, version.currencyCode)}</strong></div><div><span>Estado</span><strong>{quoteStatusLabel(version.status)}</strong></div><div><span>Vigencia</span><strong>{version.validUntil ? formatDateTime(version.validUntil) : 'Sin fecha de vencimiento'}</strong></div></div>
+    <div className="request-workspace-v2__quote-history"><p className="private-kicker">Versiones</p><ul>{quote.versions.map((candidate) => <li key={candidate.id}><span>Versión {candidate.versionNumber}</span><span>{quoteStatusLabel(candidate.status)}</span><span>{formatDateTime(candidate.updatedAt)}</span></li>)}</ul></div>
     {detail.availableActions.includes('quote.open') && <Link className="private-button private-button--primary" href={`/staff/quotes?request=${encodeURIComponent(requestId)}`}>Abrir constructor</Link>}
   </section>;
 }
@@ -362,7 +357,7 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
     origin: detail.origin,
     status: detail.status,
     statusLabel: QUOTE_REQUEST_STATUS_LABELS[detail.status],
-    createdAtLabel: formatDate(detail.createdAt),
+    createdAtLabel: formatDateTime(detail.createdAt),
     clientName: detail.client.displayName,
     projectType: detail.detail?.projectType ?? 'Por definir',
     projectStage: detail.detail?.projectStage ?? 'Por definir',

@@ -6,6 +6,7 @@ import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
+import { formatDateTime } from '@/lib/format-date';
 
 type ProjectStatus = 'EN_TRANSICION' | 'COMPLETADO';
 
@@ -66,9 +67,6 @@ function quantityLabel(milliunits: string): string {
   return (Number(milliunits) / 1000).toLocaleString('es-MX', { maximumFractionDigits: 3 });
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
-}
 
 export default function StaffProjectWorkspacePanel({ projectId }: { projectId: string }) {
   const [workspace, setWorkspace] = useState<ProjectWorkspace | null>(null);
@@ -173,7 +171,7 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
 
           <section className="staff-notification-workspace" aria-label="Resumen del proyecto">
             <div className="staff-notification-toolbar">
-              <div className="staff-notification-toolbar__summary"><span>Alcance aceptado · V{workspace.acceptedVersion.versionNumber}</span><small>Firmado por {workspace.acceptedVersion.signerName} · {formatDate(workspace.acceptedVersion.acceptedAt)}</small></div>
+              <div className="staff-notification-toolbar__summary"><span>Alcance aceptado · V{workspace.acceptedVersion.versionNumber}</span><small>Firmado por {workspace.acceptedVersion.signerName} · {formatDateTime(workspace.acceptedVersion.acceptedAt)}</small></div>
             </div>
             <div className="staff-notification-list">
               <ul>
@@ -192,7 +190,7 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
 
           <section className="staff-notification-workspace" aria-label="Responsable y checklist de transición">
             <div className="staff-notification-toolbar">
-              <div className="staff-notification-toolbar__summary"><span>Responsable: {workspace.owner?.displayName ?? 'Sin asignar'}</span><small>Creado por {workspace.createdBy.displayName} · {formatDate(workspace.createdAt)}</small></div>
+              <div className="staff-notification-toolbar__summary"><span>Responsable: {workspace.owner?.displayName ?? 'Sin asignar'}</span><small>Creado por {workspace.createdBy.displayName} · {formatDateTime(workspace.createdAt)}</small></div>
               {workspace.status === 'EN_TRANSICION'
                 ? <button className="staff-button staff-button--copper" type="button" disabled={busy} onClick={() => void setStatus('COMPLETADO')}>Marcar handoff completado</button>
                 : <button className="staff-button staff-button--outline" type="button" disabled={busy} onClick={() => void setStatus('EN_TRANSICION')}>Reabrir handoff</button>}
@@ -204,7 +202,7 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
                   <input type="checkbox" checked={Boolean(item.completedAt)} disabled={busy} onChange={() => void toggleItem(item)} />
                   <span>{item.label}</span>
                 </label>
-                {item.completedAt && item.completedBy && <small>{item.completedBy.displayName} · {formatDate(item.completedAt)}</small>}
+                {item.completedAt && item.completedBy && <small>{item.completedBy.displayName} · {formatDateTime(item.completedAt)}</small>}
               </li>)}</ul>}
             </div>
             <form onSubmit={(event) => void addItem(event)} className="catalog-form">
@@ -215,7 +213,7 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
 
           <section className="staff-notification-workspace" aria-label="Actividad del proyecto">
             <div className="staff-notification-toolbar"><div className="staff-notification-toolbar__summary"><span>Actividad</span></div></div>
-            <ul className="staff-workqueue__list">{workspace.activity.map((entry) => <li key={entry.id}><span className="staff-workqueue__client">{ACTIVITY_LABELS[entry.action] ?? entry.action}</span><span className="staff-workqueue__age">{formatDate(entry.createdAt)}</span></li>)}</ul>
+            <ul className="staff-workqueue__list">{workspace.activity.map((entry) => <li key={entry.id}><span className="staff-workqueue__client">{ACTIVITY_LABELS[entry.action] ?? entry.action}</span><span className="staff-workqueue__age">{formatDateTime(entry.createdAt)}</span></li>)}</ul>
           </section>
         </>}
       </div>

@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { getApiErrorMessage } from '@/lib/api-error-message';
+import { formatDate } from '@/lib/format-date';
 import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
 import { fileStatusIcon, fileStatusLabel } from '@/lib/labels';
 import { shouldResetUploadIdempotencyKey, type UploadStage } from '@/lib/private-file-upload';
@@ -49,12 +50,6 @@ function formatBytes(value: string): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
-  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
 }
 
 function mergeFiles(current: FileItem[], incoming: FileItem[]): FileItem[] {
@@ -267,7 +262,7 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
     {!loading && items.length > 0 && <ul className="client-files__list">
       {items.map((file) => <li className="client-file" key={file.id}>
         <div className="client-file__icon" aria-hidden="true">{file.contentType === 'application/pdf' ? 'PDF' : 'IMG'}</div>
-        <div className="client-file__info"><strong title={file.originalFileName}>{file.originalFileName}</strong><span>{formatBytes(file.byteSize)} · {formatDate(file.createdAt)}</span></div>
+        <div className="client-file__info"><strong title={file.originalFileName}>{file.originalFileName}</strong><span>{formatBytes(file.byteSize)} · {formatDate(file.createdAt, undefined, 'Fecha no disponible')}</span></div>
         <FileStatusBadge file={file} />
         <div className="client-file__actions">
           {file.downloadAvailable && <button type="button" className="client-file__action" disabled={busyFileId === file.id} onClick={() => void download(file)}>Descargar {file.originalFileName}</button>}
