@@ -8,6 +8,7 @@ import StaffTopNav from '@/components/StaffTopNav';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateSelect } from '@/components/private/ui';
 import { readApiResponse } from '@/lib/api-response-error';
+import { usePersistentState } from '@/lib/use-persistent-state';
 
 const CATEGORY_OPTIONS = ['', 'commercial', 'communication', 'documents', 'notifications', 'security'] as const;
 const OUTCOME_OPTIONS = ['', 'SUCCESS', 'DENIED', 'FAILURE'] as const;
@@ -82,7 +83,13 @@ export default function StaffAuditPanel() {
   const [draftTo, setDraftTo] = useState('');
   const [draftCategory, setDraftCategory] = useState<Category>('');
   const [draftOutcome, setDraftOutcome] = useState<Outcome>('');
-  const [query, setQuery] = useState({ from: '', to: '', category: '' as Category, outcome: '' as Outcome, cursor: null as string | null });
+  // The pagination cursor never persists (a stale cursor from a past session would jump straight
+  // to a mid-list page instead of the first one) -- only the four filter fields are remembered
+  // across visits. Kept separate from `cursor` (instead of one combined object, as before) so the
+  // fetch effect can depend on the hook's own hydrated value directly, with no extra render hop
+  // that could otherwise race the very first fetch against the hydrated one.
+  const [persistedFilter, setPersistedFilter, filterHydrated] = usePersistentState('ocpool.staff.audit.filter', { from: '', to: '', category: '' as Category, outcome: '' as Outcome });
+  const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -97,7 +104,7 @@ export default function StaffAuditPanel() {
     setError(null);
     try {
       const [auditResponse, capabilitiesResponse] = await Promise.all([
-        fetch(`/api/staff/audit?${queryString(query)}`, { credentials: 'include', cache: 'no-store', signal }),
+        fetch(`/api/staff/audit?${queryString({ ...persistedFilter, cursor })}`, { credentials: 'include', cache: 'no-store', signal }),
         fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store', signal }),
       ]);
       const auditResult = await readApiResponse<AuditResponse>(auditResponse, 'No fue posible cargar la auditoría.');
@@ -110,7 +117,7 @@ export default function StaffAuditPanel() {
       if (requestNumber.current !== currentRequest) return;
       setCapabilities(nextCapabilities);
       setAccessDenied(false);
-      setData((current) => query.cursor && current ? { ...next, items: [...current.items, ...next.items] } : next);
+      setData((current) => cursor && current ? { ...next, items: [...current.items, ...next.items] } : next);
       if (!rangeInitialized.current) {
         // Only seed the date pickers with the server's default range if the user hasn't
         // already typed their own dates while this (possibly slow, e.g. post-retry) request
@@ -125,28 +132,40 @@ export default function StaffAuditPanel() {
     } finally {
       if (!signal.aborted && requestNumber.current === currentRequest) setLoading(false);
     }
-  }, [query]);
+  }, [persistedFilter, cursor]);
 
   useEffect(() => {
+    if (!filterHydrated) return;
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [load, reloadToken]);
+  }, [load, reloadToken, filterHydrated]);
+
+  useEffect(() => {
+    // Category/outcome have no server echo to backfill from (unlike from/to, seeded from the
+    // response's meta below) -- restore the visible dropdown selection directly from the
+    // persisted filter once hydration resolves.
+    if (!filterHydrated) return;
+    setDraftCategory(persistedFilter.category);
+    setDraftOutcome(persistedFilter.outcome);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterHydrated]);
 
   const applyFilters = () => {
     setData(null);
-    setQuery({ from: draftFrom, to: draftTo, category: draftCategory, outcome: draftOutcome, cursor: null });
+    setCursor(null);
+    setPersistedFilter({ from: draftFrom, to: draftTo, category: draftCategory, outcome: draftOutcome });
   };
 
   const loadPrevious = () => {
     if (!data?.nextCursor || loading) return;
-    setQuery((current) => ({ ...current, cursor: data.nextCursor }));
+    setCursor(data.nextCursor);
   };
 
   if (accessDenied) return <RestrictedAudit />;
   if (error && !data) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="No fue posible cargar la auditoría." onRetry={() => { setError(null); setReloadToken((current) => current + 1); }}>{error}</PrivateBlockingState></PrivateSurfaceRoot>;
 
-  const isSecurity = query.category === 'security';
+  const isSecurity = persistedFilter.category === 'security';
   const items = data?.items ?? [];
 
   return <PrivateSurfaceRoot className="staff-shell audit-shell">
@@ -154,7 +173,7 @@ export default function StaffAuditPanel() {
     <div className="staff-content audit-content" aria-busy={loading}>
       <section className="audit-hero"><div><p className="staff-kicker">Gobierno operativo</p><h1>{isSecurity ? <>Eventos de <em>seguridad</em></> : <>Auditoría <em>operativa</em></>}</h1><p className="staff-intro__copy">Una lectura trazable de los movimientos autorizados, con identidad y datos sensibles reducidos al mínimo necesario.</p></div><div className="audit-scope"><p className="staff-section-label">Alcance actual</p><strong>{isSecurity ? 'Identidad y acceso' : 'Actividad del negocio'}</strong><span>{data?.meta.timezone ?? 'America/Chihuahua'} · {data?.meta.freshness === 'fresh' ? 'Actualizado al consultar' : '—'}</span></div></section>
 
-      <section className="audit-toolbar" aria-label="Filtros de auditoría"><PrivateDatePicker id="audit-from" label="Desde" required value={draftFrom} onValueChange={setDraftFrom} /><PrivateDatePicker id="audit-to" label="Hasta" required value={draftTo} onValueChange={setDraftTo} /><PrivateSelect id="audit-category" label="Filtrar por categoría" value={draftCategory} onValueChange={(value) => setDraftCategory(value as Category)} options={CATEGORY_OPTIONS.filter((category): category is Exclude<Category, ''> => category !== '' && (category !== 'security' || Boolean(capabilities.auditSecurityRead))).map((category) => ({ value: category, label: CATEGORY_LABELS[category] }))} placeholder="Toda la actividad operativa" /><PrivateSelect id="audit-outcome" label="Filtrar por resultado" value={draftOutcome} onValueChange={(value) => setDraftOutcome(value as Outcome)} options={OUTCOME_OPTIONS.filter((outcome): outcome is Exclude<Outcome, ''> => outcome !== '').map((outcome) => ({ value: outcome, label: OUTCOME_LABELS[outcome] }))} placeholder="Todos los resultados" /><button className="staff-button staff-button--dark" type="button" onClick={applyFilters} disabled={loading || !draftFrom || !draftTo}>Aplicar filtros</button></section>
+      <section className="audit-toolbar" aria-label="Filtros de auditoría"><PrivateDatePicker id="audit-from" label="Desde" required value={draftFrom} onValueChange={setDraftFrom} /><PrivateDatePicker id="audit-to" label="Hasta" required value={draftTo} onValueChange={setDraftTo} /><PrivateSelect key={filterHydrated ? 'category-hydrated' : 'category-pending'} id="audit-category" label="Filtrar por categoría" value={draftCategory} onValueChange={(value) => setDraftCategory(value as Category)} options={CATEGORY_OPTIONS.filter((category): category is Exclude<Category, ''> => category !== '' && (category !== 'security' || Boolean(capabilities.auditSecurityRead))).map((category) => ({ value: category, label: CATEGORY_LABELS[category] }))} placeholder="Toda la actividad operativa" /><PrivateSelect key={filterHydrated ? 'outcome-hydrated' : 'outcome-pending'} id="audit-outcome" label="Filtrar por resultado" value={draftOutcome} onValueChange={(value) => setDraftOutcome(value as Outcome)} options={OUTCOME_OPTIONS.filter((outcome): outcome is Exclude<Outcome, ''> => outcome !== '').map((outcome) => ({ value: outcome, label: OUTCOME_LABELS[outcome] }))} placeholder="Todos los resultados" /><button className="staff-button staff-button--dark" type="button" onClick={applyFilters} disabled={loading || !draftFrom || !draftTo}>Aplicar filtros</button></section>
 
       {error && <p className="staff-error" role="alert">{error} <button className="audit-inline-retry" type="button" onClick={() => setReloadToken((current) => current + 1)}>Reintentar</button></p>}
       <section className="audit-workspace" aria-label={isSecurity ? 'Eventos de seguridad' : 'Registro de auditoría'}>

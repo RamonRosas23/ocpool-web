@@ -8,6 +8,7 @@ import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton } from '@/components/private/ui';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 import { readApiResponse } from '@/lib/api-response-error';
+import { usePersistentState } from '@/lib/use-persistent-state';
 
 type MetricSummary = {
   sampleSize: number | null;
@@ -167,10 +168,10 @@ function MetricLine({ label, metric }: { label: string; metric: MetricSummary })
 
 export default function StaffDashboardPanel() {
   const [data, setData] = useState<DashboardResponse | null>(null);
-  const [query, setQuery] = useState<DashboardQuery>({});
+  const [query, setQuery, queryHydrated] = usePersistentState<DashboardQuery>('ocpool.staff.dashboard.query', {});
   const [draftFrom, setDraftFrom] = useState('');
   const [draftTo, setDraftTo] = useState('');
-  const [selectedPreset, setSelectedPreset] = useState('30');
+  const [selectedPreset, setSelectedPreset] = usePersistentState('ocpool.staff.dashboard.selectedPreset', '30');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -263,10 +264,11 @@ export default function StaffDashboardPanel() {
   }, [query]);
 
   useEffect(() => {
+    if (!queryHydrated) return;
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [load, reloadToken]);
+  }, [load, reloadToken, queryHydrated]);
 
   const applyPreset = (days: number) => {
     if (!draftTo) return;

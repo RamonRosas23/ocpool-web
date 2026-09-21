@@ -7,6 +7,7 @@ import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffTopNav from '@/components/StaffTopNav';
 import { statusToneIcon } from '@/lib/labels';
 import { formatDateTime } from '@/lib/format-date';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateLinkButton, PrivateSelect } from '@/components/private/ui';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
@@ -95,7 +96,7 @@ function formatAge(seconds: number): string {
 }
 
 export default function StaffNotificationsPanel() {
-  const [statusFilter, setStatusFilter] = useState<NotificationStatus>('');
+  const [statusFilter, setStatusFilter, statusFilterHydrated] = usePersistentState<NotificationStatus>('ocpool.staff.notifications.statusFilter', '');
   const [data, setData] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +106,7 @@ export default function StaffNotificationsPanel() {
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
+    if (!statusFilterHydrated) return;
     const controller = new AbortController();
     const load = async () => {
       setLoading(true);
@@ -128,7 +130,7 @@ export default function StaffNotificationsPanel() {
     };
     void load();
     return () => controller.abort();
-  }, [reloadToken, statusFilter]);
+  }, [reloadToken, statusFilter, statusFilterHydrated]);
 
   const refresh = () => setReloadToken((current) => current + 1);
 
@@ -188,7 +190,7 @@ export default function StaffNotificationsPanel() {
 
         <section className="staff-notification-workspace" aria-label="Cola de notificaciones">
           <div className="staff-notification-toolbar">
-            <PrivateSelect id="notification-status" label="Filtrar por estado" value={statusFilter} onValueChange={(value) => { setNotice(null); setStatusFilter(value as NotificationStatus); }} options={STATUS_OPTIONS.slice(1).map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
+            <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="notification-status" label="Filtrar por estado" value={statusFilter} onValueChange={(value) => { setNotice(null); setStatusFilter(value as NotificationStatus); }} options={STATUS_OPTIONS.slice(1).map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
             <div className="staff-notification-toolbar__summary"><span>{loading ? 'Actualizando…' : `${data?.total ?? 0} entregas`}</span><small>La vista se actualiza al cambiar el filtro.</small></div>
           </div>
 

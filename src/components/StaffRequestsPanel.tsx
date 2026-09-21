@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Inbox } from 'lucide-react';
 import { statusToneIcon } from '@/lib/labels';
 import { formatDateTime } from '@/lib/format-date';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import StaffFilesPanel, { type StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import StaffMessagingPanel, { type StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
@@ -107,7 +108,7 @@ export default function StaffRequestsPanel() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<RequestDetail | null>(null);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter, statusFilterHydrated] = usePersistentState('ocpool.staff.requests.statusFilter', '');
   const [searchInput, setSearchInput] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -197,8 +198,9 @@ export default function StaffRequestsPanel() {
   }, []);
 
   useEffect(() => {
+    if (!statusFilterHydrated) return;
     void loadList(page, statusFilter, appliedSearch);
-  }, [appliedSearch, loadList, page, statusFilter]);
+  }, [appliedSearch, loadList, page, statusFilter, statusFilterHydrated]);
 
   useEffect(() => {
     if (selectedId) void loadDetail(selectedId);
@@ -364,7 +366,7 @@ export default function StaffRequestsPanel() {
           <aside className="staff-inbox">
             <form className="staff-filters" onSubmit={submitSearch}>
               <label><span>Buscar</span><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Folio, cliente o correo" maxLength={100} /></label>
-              <PrivateSelect id="requests-status-filter" label="Estado" value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); }} options={STATUS_OPTIONS.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
+              <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="requests-status-filter" label="Estado" value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); }} options={STATUS_OPTIONS.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
               <button className="staff-button staff-button--filter" type="submit">Aplicar filtros</button>
             </form>
 

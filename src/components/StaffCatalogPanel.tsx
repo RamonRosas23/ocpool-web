@@ -11,6 +11,7 @@ import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateMone
 import { formatDate } from '@/lib/format-date';
 import { moneyLabel } from '@/lib/money';
 import { parseMoneyInput } from '@/lib/money-input';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 
 const CATALOG_UNIT_OPTIONS = ['pieza', 'servicio', 'hora', 'visita', 'm²', 'm³', 'lote', 'kit', 'mes'] as const;
@@ -81,7 +82,7 @@ export default function StaffCatalogPanel() {
   const [showItemForm, setShowItemForm] = useState(false);
   const [showPriceListForm, setShowPriceListForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived, showArchivedHydrated] = usePersistentState('ocpool.staff.catalog.showArchived', false);
   const [itemForm, setItemForm] = useState({ code: '', useManualCode: false, name: '', unitPreset: 'pieza', unitCustom: '', description: '', categoryId: '' });
   const [priceListForm, setPriceListForm] = useState({ code: '', name: '', currencyCode: 'MXN' });
   const [priceForm, setPriceForm] = useState({ catalogItemId: '', amountInput: '', effectiveFrom: '', reason: '' });
@@ -176,7 +177,7 @@ export default function StaffCatalogPanel() {
     }
   }, []);
 
-  useEffect(() => { void loadCatalog(page, appliedSearch); }, [appliedSearch, loadCatalog, page]);
+  useEffect(() => { if (showArchivedHydrated) void loadCatalog(page, appliedSearch); }, [appliedSearch, loadCatalog, page, showArchivedHydrated]);
   useEffect(() => { if (selectedPriceListId) void loadPriceList(selectedPriceListId); else setPriceListDetail(null); }, [loadPriceList, selectedPriceListId]);
   useEffect(() => { if (!priceForm.catalogItemId && selectedItemId) setPriceForm((current) => ({ ...current, catalogItemId: selectedItemId })); }, [priceForm.catalogItemId, selectedItemId]);
 
