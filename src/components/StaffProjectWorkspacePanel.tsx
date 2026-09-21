@@ -123,16 +123,17 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
 
   const addItem = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!newItemLabel.trim()) return;
+    const labels = newItemLabel.split('\n').map((line) => line.trim()).filter(Boolean);
+    if (labels.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(`/api/staff/projects/${projectId}/checklist`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ label: newItemLabel.trim() }) });
-      await readApiResponseOrThrow(response, 'No fue posible agregar la tarea.');
+      const response = await fetch(`/api/staff/projects/${projectId}/checklist`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ labels }) });
+      await readApiResponseOrThrow(response, 'No fue posible agregar las tareas.');
       setNewItemLabel('');
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No fue posible agregar la tarea.');
+      setError(caught instanceof Error ? caught.message : 'No fue posible agregar las tareas.');
     } finally {
       setBusy(false);
     }
@@ -228,8 +229,8 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
               </li>)}</ul>}
             </div>
             <form onSubmit={(event) => void addItem(event)} className="catalog-form">
-              <label><span>Nueva tarea</span><input value={newItemLabel} onChange={(event) => setNewItemLabel(event.target.value)} maxLength={240} placeholder="Por ejemplo: agendar visita de medición" disabled={busy} /></label>
-              <button className="staff-button staff-button--outline" type="submit" disabled={busy || !newItemLabel.trim()}>Agregar tarea</button>
+              <label><span>Nuevas tareas</span><textarea value={newItemLabel} onChange={(event) => setNewItemLabel(event.target.value)} maxLength={4000} rows={3} placeholder={'Una tarea por línea, por ejemplo:\nAgendar visita de medición\nConfirmar accesos en sitio'} disabled={busy} /></label>
+              <button className="staff-button staff-button--outline" type="submit" disabled={busy || !newItemLabel.trim()}>{newItemLabel.trim().includes('\n') ? 'Agregar tareas' : 'Agregar tarea'}</button>
             </form>
           </section>
 

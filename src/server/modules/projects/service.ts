@@ -274,17 +274,24 @@ async function lockAndScopeProject(transaction: Prisma.TransactionClient, actor:
   requireStaffRequestReadScope(actor, row.currentAssigneeId);
 }
 
-export async function addProjectChecklistItem(actor: Actor, projectIdInput: string, label: string, dependencies: ProjectServiceDependencies = {}): Promise<void> {
+// U1-05: acepta varias etiquetas a la vez (una por línea en el textarea del cliente) en vez de
+// obligar a repetir la misma acción de un solo campo tarea por tarea -- la única forma real de
+// "aplicación masiva" que no exige inventar el contenido de una plantilla de negocio que este
+// repositorio no tiene autoridad para definir.
+export async function addProjectChecklistItems(actor: Actor, projectIdInput: string, labelsInput: readonly string[], dependencies: ProjectServiceDependencies = {}): Promise<void> {
   requirePermission(actor, 'projects.manage');
   const projectId = requireUuid(projectIdInput, 'El proyecto no es válido.');
-  const normalizedLabel = normalizeChecklistLabel(label);
+  const labels = labelsInput.map(normalizeChecklistLabel);
+  if (labels.length === 0) throw new AppError('VALIDATION_ERROR', 'Escribe al menos una tarea.', 400);
   const prisma = dependencies.prisma ?? getPrisma();
 
   await prisma.$transaction(async (transaction) => {
     await lockAndScopeProject(transaction, actor, projectId);
     const count = await transaction.projectChecklistItem.count({ where: { projectId } });
-    if (count >= MAX_CHECKLIST_ITEMS) conflict('No se pueden crear más de 30 tareas de checklist.');
-    await transaction.projectChecklistItem.create({ data: { projectId, label: normalizedLabel, position: count } });
+    if (count + labels.length > MAX_CHECKLIST_ITEMS) conflict('No se pueden crear más de 30 tareas de checklist.');
+    await transaction.projectChecklistItem.createMany({
+      data: labels.map((label, index) => ({ projectId, label, position: count + index })),
+    });
   });
 }
 

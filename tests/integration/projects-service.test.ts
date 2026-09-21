@@ -6,7 +6,7 @@ import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { createQuoteVersion, transitionQuoteVersion } from '@/server/modules/quotes/service';
 import { generateQuotePdf } from '@/server/modules/quote-documents/service';
 import { acceptCustomerQuote } from '@/server/modules/quote-documents/acceptance-service';
-import { addProjectChecklistItem, convertQuoteAcceptanceToProject, getProjectWorkspace, listProjectAssignableEmployees, setProjectChecklistItemCompletion, setProjectHandoffStatus, setProjectOwner } from '@/server/modules/projects/service';
+import { addProjectChecklistItems, convertQuoteAcceptanceToProject, getProjectWorkspace, listProjectAssignableEmployees, setProjectChecklistItemCompletion, setProjectHandoffStatus, setProjectOwner } from '@/server/modules/projects/service';
 import type { PrivateStorage } from '@/server/modules/private-files/storage';
 
 class MemoryProjectStorage implements PrivateStorage {
@@ -99,12 +99,20 @@ describe('project handoff service (J1)', () => {
       // Scope fuera del expediente: consultar el workspace tampoco debe funcionar para el outsider.
       await expect(getProjectWorkspace(outsider, project.id, { prisma, now })).rejects.toThrow();
 
-      await addProjectChecklistItem(sales, project.id, 'Entregar copia de la propuesta al equipo de obra', { prisma, now });
+      // U1-05 -- aplicación masiva: varias tareas en una sola llamada (un textarea de una línea
+      // por tarea en el cliente), no una a la vez.
+      await addProjectChecklistItems(sales, project.id, ['Entregar copia de la propuesta al equipo de obra', 'Coordinar con el proveedor de equipo'], { prisma, now });
       const firstItemId = workspace.checklistItems[0].id;
       await setProjectChecklistItemCompletion(sales, project.id, firstItemId, true, { prisma, now });
       const afterChecklist = await getProjectWorkspace(sales, project.id, { prisma, now });
-      expect(afterChecklist.checklistItems).toHaveLength(3);
+      expect(afterChecklist.checklistItems).toHaveLength(4);
       expect(afterChecklist.checklistItems.find((entry) => entry.id === firstItemId)?.completedAt).not.toBeNull();
+      expect(afterChecklist.checklistItems.map((entry) => entry.label)).toEqual(expect.arrayContaining(['Entregar copia de la propuesta al equipo de obra', 'Coordinar con el proveedor de equipo']));
+
+      // El tope de 30 se evalúa contra count + labels.length, no sólo contra labels.length --
+      // ya hay 4, así que 27 más (31 en total) debe rechazarse antes de crear ninguna.
+      await expect(addProjectChecklistItems(sales, project.id, Array.from({ length: 27 }, (_, index) => `Tarea de tope ${index}`), { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(await prisma.projectChecklistItem.count({ where: { projectId: project.id } })).toBe(4);
 
       await setProjectHandoffStatus(sales, project.id, 'COMPLETADO', { prisma, now });
       const completed = await getProjectWorkspace(sales, project.id, { prisma, now });
