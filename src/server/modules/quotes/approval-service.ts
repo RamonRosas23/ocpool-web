@@ -238,37 +238,54 @@ export async function requestQuoteApproval(
 
     const version = await loadVersionForDigest(transaction, versionId);
     const digest = calculateQuoteVersionDigest(version);
+    // `(quoteVersionId, type, digest)` is unique regardless of status: a version whose discount
+    // was REJECTED (now easy to trigger for real from the staff UI, see the reject-reason dialog
+    // added alongside this fix) keeps that REJECTED row on the exact same digest. Re-requesting an
+    // unchanged version used to try to INSERT a second row on that same key and crash with a
+    // Postgres unique-violation 500. Any pre-existing row for this digest — live or not — must be
+    // revived in place instead of a fresh one being created.
     const existing = await transaction.quoteApproval.findFirst({
-      where: {
-        quoteVersionId: versionId,
-        type: normalized.type,
-        digest,
-        status: { in: ['REQUESTED', 'APPROVED'] },
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
+      where: { quoteVersionId: versionId, type: normalized.type, digest },
       orderBy: { requestedAt: 'desc' },
     });
-    if (existing) return serializeApproval(existing as QuoteApprovalResult);
+    if (existing && (existing.status === 'REQUESTED' || existing.status === 'APPROVED') && (existing.expiresAt === null || existing.expiresAt > now)) {
+      return serializeApproval(existing as QuoteApprovalResult);
+    }
 
     await transaction.quoteApproval.updateMany({
-      where: { quoteVersionId: versionId, type: normalized.type, status: { in: ['REQUESTED', 'APPROVED'] } },
+      where: { quoteVersionId: versionId, type: normalized.type, status: { in: ['REQUESTED', 'APPROVED'] }, ...(existing ? { id: { not: existing.id } } : {}) },
       data: { status: 'SUPERSEDED', decidedAt: null, decidedById: null },
     });
-    const approval = await transaction.quoteApproval.create({
-      data: {
-        quoteId: version.quoteId,
-        quoteVersionId: version.id,
-        type: normalized.type,
-        status: 'REQUESTED',
-        policyVersion: normalized.policyVersion,
-        digest,
-        thresholdBps: normalized.thresholdBps,
-        reason: normalized.reason,
-        requestedById: actor.userId,
-        expiresAt: normalized.expiresAt,
-        requestedAt: now,
-      },
-    });
+    const approval = existing
+      ? await transaction.quoteApproval.update({
+          where: { id: existing.id },
+          data: {
+            status: 'REQUESTED',
+            policyVersion: normalized.policyVersion,
+            thresholdBps: normalized.thresholdBps,
+            reason: normalized.reason,
+            requestedById: actor.userId,
+            expiresAt: normalized.expiresAt,
+            requestedAt: now,
+            decidedAt: null,
+            decidedById: null,
+          },
+        })
+      : await transaction.quoteApproval.create({
+          data: {
+            quoteId: version.quoteId,
+            quoteVersionId: version.id,
+            type: normalized.type,
+            status: 'REQUESTED',
+            policyVersion: normalized.policyVersion,
+            digest,
+            thresholdBps: normalized.thresholdBps,
+            reason: normalized.reason,
+            requestedById: actor.userId,
+            expiresAt: normalized.expiresAt,
+            requestedAt: now,
+          },
+        });
     await transaction.auditLog.create({
       data: {
         actorUserId: actor.userId,

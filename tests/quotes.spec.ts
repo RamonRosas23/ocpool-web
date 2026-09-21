@@ -374,6 +374,27 @@ test.describe('staff quote builder opt-in flow', () => {
       await approverPage.goto(`/staff/quotes?request=${requestId}`);
       await expect(approverPage.getByRole('heading', { name: /OCQ-\d{4}-\d{6}/u })).toBeVisible();
       await expect(approverPage.getByRole('button', { name: 'Aprobar descuento' })).toBeVisible({ timeout: 10_000 });
+
+      // H1/UX audit fix: "Rechazar" used to fire on a single click with a client-fabricated reason
+      // string, never asking the manager why. Verify the real confirmation dialog now gates it,
+      // disables confirm until a reason is typed, and persists the reason the manager actually wrote.
+      await approverPage.getByRole('button', { name: 'Rechazar', exact: true }).first().click();
+      const rejectDialog = approverPage.getByRole('dialog', { name: 'Rechazar el descuento' });
+      await expect(rejectDialog).toBeVisible({ timeout: 10_000 });
+      await expect(rejectDialog.getByRole('button', { name: 'Confirmar rechazo' })).toBeDisabled();
+      await rejectDialog.getByLabel('Motivo (obligatorio, queda en el historial)').fill('El 20% supera el tope autorizado para este perfil de cliente.');
+      await expect(rejectDialog.getByRole('button', { name: 'Confirmar rechazo' })).toBeEnabled();
+      await rejectDialog.getByRole('button', { name: 'Confirmar rechazo' }).click();
+      await expect(approverPage.locator('.private-toast').last()).toContainText('Aprobación rechazada', { timeout: 10_000 });
+      await expect(approverPage.getByRole('button', { name: 'Solicitar aprobación', exact: true })).toBeVisible({ timeout: 10_000 });
+
+      // Re-request the now-rejected discount approval as the original salesperson, then approve for real.
+      await page.reload();
+      await expect(page.getByRole('button', { name: 'Solicitar aprobación', exact: true })).toBeVisible({ timeout: 10_000 });
+      await page.getByRole('button', { name: 'Solicitar aprobación', exact: true }).click();
+      await expect(page.locator('.private-toast').last()).toContainText('Aprobación solicitada', { timeout: 10_000 });
+      await approverPage.reload();
+      await expect(approverPage.getByRole('button', { name: 'Aprobar descuento' })).toBeVisible({ timeout: 10_000 });
       await approverPage.getByRole('button', { name: 'Aprobar descuento' }).click();
       await expect(approverPage.locator('.private-toast').last()).toContainText('Descuento aprobado', { timeout: 10_000 });
       await expect(approverPage.getByRole('button', { name: 'Aprobar concepto especial' })).toBeVisible({ timeout: 10_000 });

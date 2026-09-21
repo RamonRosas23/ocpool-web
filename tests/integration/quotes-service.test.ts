@@ -343,6 +343,78 @@ describe('quote pricing and versioning service', () => {
     }
   }, 30_000);
 
+  it('UX audit fix: revives a REJECTED approval on re-request instead of crashing on the digest unique constraint', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-02-12T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-service-${suffix}-reject-revive`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quote reject-revive ${suffix}`, email: `quote-reject-revive-${suffix}@example.test` },
+      detail: { projectType: 'Industrial', location: 'Mazatlán', description: 'Reject-revive fixture', consentAt: now },
+    }, { prisma, now });
+    const requester = await prisma.user.create({
+      data: { email: `quote-reject-revive-requester-${suffix}@example.test`, emailNormalized: `quote-reject-revive-requester-${suffix}@example.test`, displayName: 'Reject-revive requester', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    const approver = await prisma.user.create({
+      data: { email: `quote-reject-revive-approver-${suffix}@example.test`, emailNormalized: `quote-reject-revive-approver-${suffix}@example.test`, displayName: 'Reject-revive approver', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    const category = await prisma.catalogCategory.create({ data: { code: `REJREV-${suffix}`, name: 'Reject-revive service' } });
+    const item = await prisma.catalogItem.create({ data: { code: `REJREV-ITEM-${suffix}`, name: 'Reject-revive item', unit: 'servicio', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `REJREV-PRICE-${suffix}`, name: 'Reject-revive prices', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 10_000n, validFrom: now } });
+    let quoteId: string | null = null;
+
+    const requesterActor = salesActor(requester.id, ['quotes.create', 'quotes.send', 'quotes.apply_discount', 'prices.read']);
+    const approverActor = salesActor(approver.id, ['quotes.read', 'quotes.approve_discount']);
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const created = await createQuoteVersion(requesterActor, {
+        quoteRequestId: request.quoteRequestId,
+        priceListId: priceList.id,
+        lines: [{ catalogItemId: item.id, quantity: '1', discountBasisPoints: 1500 }],
+      }, { prisma, now });
+      quoteId = created.quoteId;
+      await transitionQuoteVersion(requesterActor, created.versionId, 'EN_REVISION', { prisma, now });
+
+      const requested = await requestQuoteApproval(requesterActor, created.versionId, { type: 'DISCOUNT', policyVersion: 'discount-v1', thresholdBps: 500 }, { prisma, now });
+      const rejected = await decideQuoteApproval(approverActor, requested.id, { decision: 'REJECTED', reason: 'El descuento supera lo autorizado para este cliente.' }, { prisma, now });
+      expect(rejected.status).toBe('REJECTED');
+
+      // Same version, same discount, same digest as the rejected row — this used to try to INSERT
+      // a second (quoteVersionId, type, digest) row and crash on the unique constraint instead of
+      // reviving the existing one (a 500 a manager would hit on the very next click after rejecting).
+      const revived = await requestQuoteApproval(requesterActor, created.versionId, { type: 'DISCOUNT', policyVersion: 'discount-v1', thresholdBps: 500 }, { prisma, now });
+      expect(revived.id).toBe(rejected.id);
+      expect(revived.status).toBe('REQUESTED');
+      expect(revived.digest).toBe(rejected.digest);
+      const approvedAgain = await decideQuoteApproval(approverActor, revived.id, { decision: 'APPROVED' }, { prisma, now });
+      expect(approvedAgain.status).toBe('APPROVED');
+      await transitionQuoteVersion(requesterActor, created.versionId, 'ENVIADA', { prisma, now });
+      expect(await prisma.quoteVersion.findUnique({ where: { id: created.versionId }, select: { status: true } })).toMatchObject({ status: 'ENVIADA' });
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      const approvalIds = (await prisma.quoteApproval.findMany({ where: { quoteVersionId: { in: versionIds } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds, ...approvalIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.deleteMany({ where: { id: { in: [requester.id, approver.id] } } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.delete({ where: { id: item.id } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
+
   it('excludes a discounted EN_REVISION version from "listas para publicar" until its approval clears (W1-03)', async () => {
     if (process.env.RUN_DB_TESTS !== '1') {
       throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
