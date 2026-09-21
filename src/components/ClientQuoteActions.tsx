@@ -56,6 +56,8 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
   const [changeDialogOpen, setChangeDialogOpen] = useState(false);
   const signerInputRef = useRef<HTMLInputElement | null>(null);
   const idempotencyKeyRef = useRef<string | null>(null);
+  const versionIdRef = useRef(version.id);
+  useEffect(() => { versionIdRef.current = version.id; }, [version.id]);
 
   // Si el servidor publica una versión nueva mientras el panel sigue montado, la vista previa
   // cacheada de la anterior no debe reaparecer bajo el mismo componente.
@@ -63,16 +65,29 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
 
   // Revisar el PDF sin salir de la página: se incrusta la misma URL firmada que ya usa la descarga,
   // en vez de obligar a abrir una pestaña nueva antes de poder decidir.
+  //
+  // UX audit fix: este componente no se remonta al cambiar de expediente en el portal (no lleva
+  // `key` en ClientPortalPanel.tsx) -- si el cliente abre este diálogo, cambia a otro expediente
+  // antes de que la vista previa resuelva y el diálogo sigue abierto (su estado `dialogOpen` vive
+  // en la misma instancia), la respuesta tardía podía aplicarse igual, mostrando el PDF de una
+  // propuesta distinta a la que el diálogo dice estar mostrando -- grave en un flujo de aceptación
+  // vinculante. `versionIdRef` siempre refleja la versión vigente; sólo se aplica la respuesta si
+  // la versión solicitada sigue siendo la vigente cuando la petición resuelve.
   const loadPreview = async () => {
     if (previewUrl || previewLoading) return;
+    const requestedVersionId = version.id;
     setPreviewLoading(true);
     try {
-      const response = await fetch(`/api/portal/quotes/${quoteId}/pdf?versionId=${encodeURIComponent(version.id)}`, { credentials: 'include', cache: 'no-store' });
+      const response = await fetch(`/api/portal/quotes/${quoteId}/pdf?versionId=${encodeURIComponent(requestedVersionId)}`, { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<{ downloadUrl: string }>(response);
-      setPreviewUrl(data.downloadUrl);
+      if (versionIdRef.current === requestedVersionId) setPreviewUrl(data.downloadUrl);
     } catch (caught) {
-      setAcceptanceError(caught instanceof Error ? caught.message : 'No fue posible cargar la vista previa del PDF.');
+      if (versionIdRef.current === requestedVersionId) setAcceptanceError(caught instanceof Error ? caught.message : 'No fue posible cargar la vista previa del PDF.');
     } finally {
+      // `previewLoading` se limpia siempre, sin importar si la respuesta era de una versión ya
+      // obsoleta -- de lo contrario una respuesta tardía dejaría el guardado `if (previewUrl ||
+      // previewLoading) return;` bloqueado para siempre, impidiendo que la versión vigente cargue
+      // su propia vista previa cuando el diálogo se reabra.
       setPreviewLoading(false);
     }
   };
@@ -192,7 +207,13 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
       {!alreadyAccepted && <button className="client-quote-action client-quote-action--secondary" type="button" onClick={openChangeDialog}>Solicitar cambios</button>}
       {available && <button className="client-quote-action client-quote-action--primary" type="button" onClick={openDialog}>Revisar y aceptar</button>}
       {alreadyAccepted && <span className="client-quote-action-state" role="status"><i aria-hidden="true" />Aceptada</span>}
-      {!available && !alreadyAccepted && validity.expired && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta vencida. Solicita cambios para recibir una versión actualizada.</span>}
+      {/* UX audit fix: RECHAZADA es un estado real y visible para el cliente (CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES
+          en customer-visibility.ts lo incluye explícitamente), pero ninguna de las ramas anteriores lo cubría --
+          el cliente no veía ningún estado ni explicación, sólo "Descargar PDF"/"Solicitar cambios" sin contexto.
+          Se revisa antes que `validity.expired` porque ambas condiciones pueden ser ciertas a la vez (una versión
+          rechazada también puede tener su fecha de vigencia ya pasada) y el motivo real es el rechazo, no la fecha. */}
+      {!available && !alreadyAccepted && version.status === 'RECHAZADA' && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta rechazada por nuestro equipo. Solicita cambios para recibir una versión actualizada.</span>}
+      {!available && !alreadyAccepted && version.status !== 'RECHAZADA' && validity.expired && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta vencida. Solicita cambios para recibir una versión actualizada.</span>}
     </div>
     {pdfError && <p className="client-quote-action-error" role="alert">{pdfError}</p>}
     <PrivateDialog open={dialogOpen} onClose={() => { if (!accepting) setDialogOpen(false); }} className="client-accept-dialog" overlayClassName="client-accept-overlay" labelledBy="client-accept-title" describedBy="client-accept-description" initialFocusRef={signerInputRef}>
