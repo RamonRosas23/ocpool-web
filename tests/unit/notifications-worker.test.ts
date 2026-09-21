@@ -41,6 +41,11 @@ describe('notification worker policies', () => {
     expect(classifyNotificationError(new Error('unknown internal details'))).toEqual({ code: 'CONFIGURATION', retryable: false });
   });
 
+  it('H1-03 SMTP fix: routes the differentiated SMTP error codes to the correct retry policy', () => {
+    expect(classifyNotificationError(Object.assign(new Error('permanent bounce'), { code: 'SMTP_INVALID_RECIPIENT' }))).toEqual({ code: 'INVALID_RECIPIENT', retryable: false });
+    expect(classifyNotificationError(Object.assign(new Error('bad credentials'), { code: 'SMTP_CONFIGURATION_ERROR' }))).toEqual({ code: 'CONFIGURATION', retryable: false });
+  });
+
   it('adds bounded deterministic jitter to exponential retry times', () => {
     const now = new Date('2026-09-08T12:00:00.000Z');
     expect(calculateNotificationRetryAt(now, 1, () => 0)).toEqual(new Date('2026-09-08T12:00:24.000Z'));

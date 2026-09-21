@@ -28,6 +28,8 @@ const PERMANENT_CODES = new Map<string, NotificationFailureClassification>([
   ['INVALID_RECIPIENT', { code: 'INVALID_RECIPIENT', retryable: false }],
   ['TEMPLATE_ERROR', { code: 'TEMPLATE_ERROR', retryable: false }],
   ['CONFIGURATION', { code: 'CONFIGURATION', retryable: false }],
+  ['SMTP_INVALID_RECIPIENT', { code: 'INVALID_RECIPIENT', retryable: false }],
+  ['SMTP_CONFIGURATION_ERROR', { code: 'CONFIGURATION', retryable: false }],
 ]);
 
 export function classifyNotificationError(error: unknown): NotificationFailureClassification {

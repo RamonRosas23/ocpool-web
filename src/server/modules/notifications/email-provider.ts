@@ -27,13 +27,39 @@ export type SmtpEmailProviderConfig = SmtpTransportOptions & {
   replyTo?: string;
 };
 
-export class EmailProviderError extends Error {
-  readonly code = 'SMTP_PROVIDER_ERROR';
+export type EmailProviderErrorCode = 'SMTP_PROVIDER_ERROR' | 'SMTP_CONFIGURATION_ERROR' | 'SMTP_INVALID_RECIPIENT';
 
-  constructor() {
+export class EmailProviderError extends Error {
+  readonly code: EmailProviderErrorCode;
+
+  constructor(code: EmailProviderErrorCode = 'SMTP_PROVIDER_ERROR') {
     super('The email provider could not accept the message.');
     this.name = 'EmailProviderError';
+    this.code = code;
   }
+}
+
+type NodemailerErrorLike = { code?: unknown; command?: unknown; responseCode?: unknown };
+
+/**
+ * Nodemailer's SMTP transport reports a small, documented set of failure shapes (`err.code`,
+ * plus `err.command`/`err.responseCode` when the failure came from an actual server response).
+ * Collapsing all of them into one generic, always-retryable error would retry a broken
+ * credential or a permanently bounced address forever instead of surfacing it. `EENVELOPE`
+ * without a `responseCode` is a local pre-flight rejection (malformed address, never reached
+ * the server) and a 5xx `responseCode` is a permanent server rejection — both mean retrying
+ * won't help. A 4xx `responseCode` (e.g. greylisting) is genuinely temporary and falls through
+ * to the default, retryable classification.
+ */
+function classifySmtpFailure(error: unknown): EmailProviderErrorCode {
+  const err = error as NodemailerErrorLike;
+  const code = typeof err?.code === 'string' ? err.code : undefined;
+  const command = typeof err?.command === 'string' ? err.command : undefined;
+  const responseCode = typeof err?.responseCode === 'number' ? err.responseCode : undefined;
+  if (code === 'EAUTH') return 'SMTP_CONFIGURATION_ERROR';
+  if (code === 'EENVELOPE' && command === 'MAIL FROM') return 'SMTP_CONFIGURATION_ERROR';
+  if (code === 'EENVELOPE' && (responseCode === undefined || responseCode >= 500)) return 'SMTP_INVALID_RECIPIENT';
+  return 'SMTP_PROVIDER_ERROR';
 }
 
 export interface EmailProvider {
@@ -79,8 +105,8 @@ export function createSmtpEmailProvider(input: SmtpEmailProviderConfig, dependen
           ...(config.replyTo ? { replyTo: config.replyTo } : {}),
         });
         return { providerMessageId: info.messageId ?? null };
-      } catch {
-        throw new EmailProviderError();
+      } catch (error) {
+        throw new EmailProviderError(classifySmtpFailure(error));
       }
     },
   };
