@@ -55,6 +55,11 @@ const serverEnvSchema = z.object({
   TRUST_PROXY_HEADERS: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   SESSION_TTL_HOURS: integerEnv(24, 1, 168),
   AUTH_TOKEN_TTL_MINUTES: integerEnv(15, 5, 30),
+  // UX audit fix: a customer deciding whether to review a quote realistically doesn't act on an
+  // email within 15 minutes the way a staff member resetting a password does. Kept separate from
+  // AUTH_TOKEN_TTL_MINUTES (staff password reset) so shortening one never accidentally shortens
+  // the other -- they protect very different things.
+  CUSTOMER_MAGIC_LINK_TTL_MINUTES: integerEnv(1440, 15, 10_080),
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: integerEnv(5, 3, 20),
   AUTH_RATE_LIMIT_WINDOW_MINUTES: integerEnv(15, 1, 60),
   AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: integerEnv(300, 20, 10_000),

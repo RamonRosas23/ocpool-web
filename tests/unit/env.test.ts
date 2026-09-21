@@ -23,6 +23,7 @@ describe('readServerEnv', () => {
       TRUST_PROXY_HEADERS: 'false',
       SESSION_TTL_HOURS: '24',
       AUTH_TOKEN_TTL_MINUTES: '15',
+      CUSTOMER_MAGIC_LINK_TTL_MINUTES: '2880',
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: '5',
       AUTH_RATE_LIMIT_WINDOW_MINUTES: '15',
       AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: '300',
@@ -51,6 +52,7 @@ describe('readServerEnv', () => {
       TRUST_PROXY_HEADERS: false,
       SESSION_TTL_HOURS: 24,
       AUTH_TOKEN_TTL_MINUTES: 15,
+      CUSTOMER_MAGIC_LINK_TTL_MINUTES: 2880,
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: 5,
       AUTH_RATE_LIMIT_WINDOW_MINUTES: 15,
       AUTH_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 300,
@@ -113,5 +115,20 @@ describe('readServerEnv', () => {
 
     expect(readServerEnv({ ...base, APP_TIMEZONE: 'America/Chihuahua' }).APP_TIMEZONE).toBe('America/Chihuahua');
     expect(() => readServerEnv({ ...base, APP_TIMEZONE: 'Invalid/Zone' })).toThrow();
+  });
+
+  it('UX audit fix: gives customer magic links their own, longer-lived TTL than staff password resets', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://ocpool:secret@localhost:55432/ocpool_dev?schema=public',
+      MFA_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+      AUTH_DELIVERY_ENCRYPTION_KEY: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+      NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+      AUDIT_CURSOR_SECRET: 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=',
+    };
+
+    expect(readServerEnv(base).CUSTOMER_MAGIC_LINK_TTL_MINUTES).toBe(1440);
+    expect(readServerEnv({ ...base, CUSTOMER_MAGIC_LINK_TTL_MINUTES: '60' }).CUSTOMER_MAGIC_LINK_TTL_MINUTES).toBe(60);
+    expect(() => readServerEnv({ ...base, CUSTOMER_MAGIC_LINK_TTL_MINUTES: '10' })).toThrow();
+    expect(() => readServerEnv({ ...base, CUSTOMER_MAGIC_LINK_TTL_MINUTES: '20000' })).toThrow();
   });
 });

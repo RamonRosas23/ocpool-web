@@ -88,7 +88,8 @@ async function createDeliveryToken(client: Prisma.TransactionClient, input: {
   rawToken: string;
   redirectRequestId?: string;
 }): Promise<{ tokenId: string; expiresAt: Date }> {
-  const expiresAt = new Date(input.now.getTime() + readServerEnv().AUTH_TOKEN_TTL_MINUTES * 60_000);
+  const ttlMinutes = input.type === 'MAGIC_LINK' ? readServerEnv().CUSTOMER_MAGIC_LINK_TTL_MINUTES : readServerEnv().AUTH_TOKEN_TTL_MINUTES;
+  const expiresAt = new Date(input.now.getTime() + ttlMinutes * 60_000);
   const token = await client.authToken.create({
     data: {
       userId: input.userId,
