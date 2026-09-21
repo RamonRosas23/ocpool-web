@@ -146,7 +146,6 @@ export default function StaffNotificationsPanel() {
       });
       const retryResult = await readApiResponseOrThrow<{ outcome: 'REQUEUED' | 'ALREADY_PENDING' }>(response, 'No fue posible reintentar la entrega.');
       setNotice(retryResult.outcome === 'REQUEUED' ? 'La entrega fue devuelta a la cola.' : 'La entrega ya estaba pendiente y no se duplicó.');
-      setData(null);
       refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible reintentar la entrega.');
@@ -194,9 +193,14 @@ export default function StaffNotificationsPanel() {
           </div>
 
           <div className="staff-notification-list" aria-live="polite">
-            {loading && <div className="staff-notification-loading" role="status"><span /><span /><span /><b>Consultando la cola…</b></div>}
-            {!loading && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>No hay entregas en esta vista.</h2><p>Cuando existan notificaciones con este estado aparecerán aquí con su diagnóstico operativo.</p></div>}
-            {!loading && items.length > 0 && <ul>{items.map((item) => <li className={`staff-notification-row staff-notification-row--${item.status.toLowerCase()}`} key={item.id}>
+            {/* UX audit fix: un reintento individual disparaba setData(null) y esta sección entera
+                se reemplazaba por el esqueleto, perdiendo de vista el resto de la cola por una sola
+                fila. Ahora sólo el primer cargado (sin datos previos) muestra el esqueleto; un
+                refresco de fondo conserva la lista visible mientras "Actualizando…" ya lo indica
+                en la barra de herramientas de arriba. */}
+            {loading && !data && <div className="staff-notification-loading" role="status"><span /><span /><span /><b>Consultando la cola…</b></div>}
+            {!(loading && !data) && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>No hay entregas en esta vista.</h2><p>Cuando existan notificaciones con este estado aparecerán aquí con su diagnóstico operativo.</p></div>}
+            {items.length > 0 && <ul>{items.map((item) => <li className={`staff-notification-row staff-notification-row--${item.status.toLowerCase()}`} key={item.id}>
               <div className="staff-notification-row__identity"><StatusPill status={item.status} /><strong>{item.templateKey}</strong><small>{item.eventType} · {item.aggregateType}</small></div>
               <dl className="staff-notification-row__facts"><div><dt>Intentos</dt><dd>{item.attempts}</dd></div><div><dt>Antigüedad</dt><dd>{formatAge(item.ageSeconds)}</dd></div><div><dt>Actualizada</dt><dd><time dateTime={item.updatedAt}>{formatDate(item.updatedAt)}</time></dd></div><div><dt>Diagnóstico</dt><dd>{errorLabel(item.errorCategory)}</dd></div></dl>
               <div className="staff-notification-row__action">{item.retryable ? <button className="staff-button staff-button--copper" type="button" disabled={retryingId === item.id} onClick={() => void retry(item)}>{retryingId === item.id ? 'Reintentando…' : 'Reintentar entrega'}</button> : <span>{item.status === 'FAILED' ? 'Requiere corrección técnica' : 'Sin acción manual'}</span>}</div>
