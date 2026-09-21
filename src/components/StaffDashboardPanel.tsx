@@ -185,6 +185,7 @@ export default function StaffDashboardPanel() {
   const [readyToPublish, setReadyToPublish] = useState<ReadyToPublish[] | null>(null);
   const [failedNotifications, setFailedNotifications] = useState<{ items: FailedNotification[]; total: number } | null>(null);
   const [queuesLoading, setQueuesLoading] = useState(true);
+  const [queuesError, setQueuesError] = useState<string | null>(null);
 
   // W1-02 (primer corte): "qué atender ahora" reutiliza el mismo endpoint y scope de R1 (mine/sin
   // asignar) — sin score opaco, cada fila es un expediente real con enlace directo al expediente exacto.
@@ -192,6 +193,7 @@ export default function StaffDashboardPanel() {
     const controller = new AbortController();
     const loadQueues = async () => {
       setQueuesLoading(true);
+      setQueuesError(null);
       try {
         // El scope "workspace" (view=mine/unassigned) fija su propio pageSize=20 en el servidor;
         // se toman sólo los primeros 5 para esta lectura compacta y `total` informa el resto.
@@ -225,8 +227,16 @@ export default function StaffDashboardPanel() {
         // W1-03: "fallos de aviso" reutiliza por completo el endpoint ya construido para
         // /staff/notifications -- ningún servicio ni consulta nuevos, sólo esta lectura compacta.
         if (failedNotificationsResult.ok) setFailedNotifications({ items: failedNotificationsResult.data.items, total: failedNotificationsResult.data.total });
+        // Antes, un resultado no-`ok` de cualquiera de las seis peticiones simplemente se ignoraba
+        // (`if (result.ok) setX(...)`) -- esa cola se quedaba en `null` para siempre, indistinguible
+        // de "sin nada pendiente" en tarjetas que sólo se renderizan cuando hay elementos. Un fallo
+        // real (no un 403 esperado, ya cubierto por el comentario de aprobaciones arriba) parecía
+        // entonces una bandeja al día en vez de un dato que no cargó.
+        const failedResults = [mineResult, unassignedResult, approvalsResult, customerRepliedResult, readyToPublishResult, failedNotificationsResult].filter((result) => !result.ok);
+        if (failedResults.length > 0) setQueuesError(failedResults[0].message);
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        setQueuesError(caught instanceof Error ? caught.message : 'No fue posible actualizar qué atender ahora.');
       } finally {
         if (!controller.signal.aborted) setQueuesLoading(false);
       }
@@ -311,6 +321,7 @@ export default function StaffDashboardPanel() {
       {error && <p className="staff-error" role="alert">{error}</p>}
 
       <section className="staff-workqueue" aria-label="Qué atender ahora">
+        {queuesError && <p className="staff-error" role="alert">{queuesError}</p>}
         <div className="staff-workqueue__grid">
           <article className="staff-workqueue__card" aria-labelledby="workqueue-mine-title">
             <div className="staff-workqueue__head"><p className="staff-section-label">Asignado a ti</p><h2 id="workqueue-mine-title">Mi trabajo</h2></div>
