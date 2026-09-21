@@ -287,6 +287,7 @@ export default function StaffQuotesPanel() {
   const [autosaveMessage, setAutosaveMessage] = useState<string | null>(null);
   const [repriceDialogOpen, setRepriceDialogOpen] = useState(false);
   const [publishPreflight, setPublishPreflight] = useState<{ documentStatus: DocumentStatus; contentDigest: string | null; loading: boolean } | null>(null);
+  const deepLinkedIdRef = useRef<string | null>(null);
   const savedSnapshotRef = useRef('');
   const expectedUpdatedAtRef = useRef<string | null>(null);
   const lastAttemptSnapshotRef = useRef('');
@@ -340,7 +341,14 @@ export default function StaffQuotesPanel() {
       setTotalPages(Math.max(1, requestData.totalPages));
       setPriceLists(listData);
       setRestricted(false);
-      setSelectedId((current) => current && requestData.items.some((item) => item.id === current) ? current : requestData.items[0]?.id ?? null);
+      setSelectedId((current) => {
+        // Un expediente abierto por deep link (ej. desde notificaciones o la cola de aprobaciones)
+        // se conserva la primera vez aunque no esté en esta página/lista -- por ejemplo, uno ya
+        // aceptado sale de las 3 categorías "en construcción" de esta lista, pero loadWorkspace lo
+        // trae por su cuenta igual. Mismo patrón que StaffRequestsPanel.tsx (W1-02).
+        if (deepLinkedIdRef.current && current === deepLinkedIdRef.current) { deepLinkedIdRef.current = null; return current; }
+        return current && requestData.items.some((item) => item.id === current) ? current : requestData.items[0]?.id ?? null;
+      });
     } catch (caught) {
       setRestricted(false);
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el constructor.');
@@ -416,7 +424,7 @@ export default function StaffQuotesPanel() {
   useEffect(() => { if (selectedId) void loadWorkspace(selectedId); else setWorkspace(null); }, [loadWorkspace, selectedId]);
   useEffect(() => {
     const requestFromUrl = new URLSearchParams(window.location.search).get('request');
-    if (requestFromUrl) setSelectedId(requestFromUrl);
+    if (requestFromUrl) { deepLinkedIdRef.current = requestFromUrl; setSelectedId(requestFromUrl); }
   }, []);
 
   useEffect(() => {
