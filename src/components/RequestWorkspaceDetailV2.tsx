@@ -107,10 +107,16 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
 }
 
+// UX audit fix: Intl.NumberFormat's `style: 'currency'` renders only the bare symbol ("$1,650.00"),
+// with nothing distinguishing MXN from USD -- a real ambiguity for a Mexican business, not just a
+// cosmetic difference from the other five moneyLabel()-style helpers across the app, which all
+// prefix the currency code explicitly. Matches that same "{code} {amount}" convention here.
 function formatCurrencyMinor(value: string, currencyCode: string): string {
-  const amount = Number(value);
-  if (!Number.isSafeInteger(amount)) return `${currencyCode} ${value}`;
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: currencyCode }).format(amount / 100);
+  if (!/^\d+$/u.test(value)) return `${currencyCode} ${value}`;
+  const amount = BigInt(value);
+  const whole = amount / 100n;
+  const decimals = (amount % 100n).toString().padStart(2, '0');
+  return `${currencyCode} ${whole.toLocaleString('es-MX')}.${decimals}`;
 }
 
 function statusLabel(value: QuoteRequestStatus | null): string {
