@@ -87,7 +87,18 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ token, newPassword: password }),
       });
-      if (!response.ok) throw new Error(await publicError(response));
+      if (!response.ok) {
+        // UX audit fix: a diferencia de `consumeCustomerLink`, este catch nunca marcaba `state`
+        // como 'invalid' -- si el token de recuperación ya expiró o fue usado, el usuario quedaba
+        // atrapado reintentando el mismo formulario de "nueva contraseña" para siempre, sin llegar
+        // nunca a la pantalla "Enlace no disponible" que sí tiene el enlace "Solicitar otro enlace".
+        // Sólo se trata como token inválido el 401 explícito de `consumePasswordRecovery` -- un 400
+        // de validación (p. ej. una contraseña que no pasó `passwordSchema` en el servidor pese a
+        // superar el `minLength` del cliente) es un problema del formulario, no del token, y debe
+        // quedarse en la misma pantalla para corregirse, no mandar a "solicitar otro enlace".
+        if (response.status === 401) setState('invalid');
+        throw new Error(await publicError(response));
+      }
       setState('success');
       setToken(null);
     } catch (caught) {
