@@ -33,6 +33,8 @@ type Capabilities = {
   quotesSend: boolean;
   quotesPdfRead: boolean;
   quotesPdfGenerate: boolean;
+  projectsRead: boolean;
+  projectsCreate: boolean;
 };
 
 type QuoteListItem = {
@@ -994,7 +996,7 @@ export default function StaffQuotesPanel() {
               {hasDiscount && currentVersion?.approvals.length ? <div className="quotes-approval-summary" aria-label="Historial de aprobación de descuento"><strong>Control de descuento</strong>{currentVersion.approvals.filter((approval) => approval.type === 'DISCOUNT').slice(0, 3).map((approval) => <span key={approval.id}>{approvalStatusLabel(approval.status)} · {formatDate(approval.requestedAt)}</span>)}</div> : null}
               {hasSpecialLines && currentVersion?.approvals.length ? <div className="quotes-approval-summary" aria-label="Historial de aprobación de conceptos especiales"><strong>Control de concepto especial</strong>{currentVersion.approvals.filter((approval) => approval.type === 'SPECIAL_CONCEPT').slice(0, 3).map((approval) => <span key={approval.id}>{approvalStatusLabel(approval.status)} · {formatDate(approval.requestedAt)}</span>)}</div> : null}
             </section>
-            {currentVersion && <StaffQuoteDocumentPanel versionId={currentVersion.id} versionNumber={currentVersion.versionNumber} canRead={Boolean(capabilities?.quotesPdfRead)} canGenerate={Boolean(capabilities?.quotesPdfGenerate)} />}
+            {currentVersion && <StaffQuoteDocumentPanel versionId={currentVersion.id} versionNumber={currentVersion.versionNumber} canRead={Boolean(capabilities?.quotesPdfRead)} canGenerate={Boolean(capabilities?.quotesPdfGenerate)} canReadProject={Boolean(capabilities?.projectsRead)} canCreateProject={Boolean(capabilities?.projectsCreate)} />}
             {workspace.request.detail?.description && <section className="quotes-scope"><p className="staff-section-label">Alcance compartido</p><p>{workspace.request.detail.description}</p></section>}
             <section className="quotes-history"><div><p className="staff-section-label">Trazabilidad</p><h3>Historial de versiones</h3></div><ol>{workspace.quote?.versions.map((version) => <li key={version.id}><span className="quotes-history__mark">V{version.versionNumber}</span><div><strong>{statusLabel(version.status)}</strong><span>{moneyLabel(version.totalMinor, version.currencyCode)} · {version.createdBy.displayName}</span><time dateTime={version.createdAt}>{formatDate(version.createdAt)}</time></div></li>) ?? <li className="quotes-history__empty">Todavía no hay versiones guardadas.</li>}</ol></section>
           </>}

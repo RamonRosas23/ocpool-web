@@ -55,6 +55,10 @@ export type QuoteDocumentOperationStatus = Readonly<{
     signerName: string;
     termsVersion: string;
     acceptedAt: Date;
+    /// J1-02: null until "Convertir a proyecto" runs -- the action stays invisible in the UI until
+    /// an acceptance exists, and once a project exists this is how the panel finds its folio/id
+    /// instead of ever re-running the conversion command.
+    project: Readonly<{ id: string; folio: string }> | null;
   }> | null;
   actions: Readonly<{
     canDownload: boolean;
@@ -230,7 +234,7 @@ export async function getQuoteDocumentStatusForVersion(actor: Actor, quoteVersio
           byteSize: true,
           readyAt: true,
           storageObject: { select: { storageKey: true, deletedAt: true, contentType: true, byteSize: true, scanStatus: true } },
-          acceptance: { select: { id: true, signerName: true, termsVersion: true, acceptedAt: true } },
+          acceptance: { select: { id: true, signerName: true, termsVersion: true, acceptedAt: true, project: { select: { id: true, folio: true } } } },
         },
       },
     },
@@ -269,6 +273,7 @@ export async function getQuoteDocumentStatusForVersion(actor: Actor, quoteVersio
       signerName: stored.acceptance.signerName,
       termsVersion: stored.acceptance.termsVersion,
       acceptedAt: stored.acceptance.acceptedAt,
+      project: stored.acceptance.project,
     } : null,
     actions: { canDownload, canGenerate },
   };

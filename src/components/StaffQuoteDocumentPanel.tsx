@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 type DocumentStatus = 'MISSING' | 'PENDING' | 'READY' | 'FAILED' | 'DELETED';
@@ -21,9 +22,12 @@ type DocumentOperation = {
     signerName: string;
     termsVersion: string;
     acceptedAt: string;
+    project: { id: string; folio: string } | null;
   } | null;
   actions: { canDownload: boolean; canGenerate: boolean };
 };
+
+type ProjectSummary = { id: string; folio: string };
 
 type DownloadResponse = {
   downloadUrl: string;
@@ -37,6 +41,8 @@ type Props = Readonly<{
   versionNumber: number;
   canRead: boolean;
   canGenerate: boolean;
+  canReadProject: boolean;
+  canCreateProject: boolean;
 }>;
 
 const STATUS_LABELS: Record<DocumentStatus, string> = {
@@ -71,12 +77,13 @@ async function readResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canRead, canGenerate }: Props) {
+export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canRead, canGenerate, canReadProject, canCreateProject }: Props) {
   const [operation, setOperation] = useState<DocumentOperation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<'download' | 'generate' | null>(null);
+  const [busy, setBusy] = useState<'download' | 'generate' | 'convert' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [project, setProject] = useState<ProjectSummary | null>(null);
 
   const loadOperation = useCallback(async () => {
     if (!canRead) return;
@@ -84,7 +91,9 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
     setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/versions/${versionId}/document`, { credentials: 'include', cache: 'no-store' });
-      setOperation(await readResponse<DocumentOperation>(response));
+      const data = await readResponse<DocumentOperation>(response);
+      setOperation(data);
+      setProject(data.acceptance?.project ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible consultar el documento.');
       setOperation(null);
@@ -127,6 +136,26 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
     }
   };
 
+  // J1-02: idempotente en el servidor -- reintentar tras un error de red nunca crea un segundo
+  // proyecto para la misma aceptación, así que no hace falta protección adicional aquí más allá
+  // de deshabilitar el botón mientras la petición está en curso.
+  const convertToProject = async () => {
+    if (!operation?.acceptance) return;
+    setBusy('convert');
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch('/api/staff/projects', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ quoteAcceptanceId: operation.acceptance.id }) });
+      const created = await readResponse<ProjectSummary>(response);
+      setProject(created);
+      setNotice(`Proyecto ${created.folio} creado.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No fue posible convertir la cotización en proyecto.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (!canRead) return null;
 
   const status = operation?.document.status ?? 'MISSING';
@@ -163,6 +192,8 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
       {operation?.acceptance ? <div className="quote-acceptance-evidence" aria-label="Evidencia de aceptación">
         <div><span className="quote-acceptance-evidence__mark" aria-hidden="true">✓</span><div><p className="staff-section-label">Evidencia registrada</p><strong>Cotización aceptada</strong></div></div>
         <dl><div><dt>Firmante</dt><dd>{operation.acceptance.signerName}</dd></div><div><dt>Términos</dt><dd>{operation.acceptance.termsVersion}</dd></div><div><dt>Fecha</dt><dd>{formatDate(operation.acceptance.acceptedAt)}</dd></div></dl>
+        {project && canReadProject && <Link className="staff-button staff-button--outline" href={`/staff/projects/${project.id}`}>Ver proyecto {project.folio}</Link>}
+        {!project && canCreateProject && <button className="staff-button staff-button--copper" type="button" onClick={() => void convertToProject()} disabled={busy !== null}>{busy === 'convert' ? 'Convirtiendo…' : 'Convertir a proyecto'}</button>}
       </div> : <div className="quote-document-panel__empty"><span>Sin aceptación registrada</span><small>La evidencia aparecerá aquí cuando el cliente acepte esta versión.</small></div>}
     </>}
 

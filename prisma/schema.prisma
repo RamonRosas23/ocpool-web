@@ -194,6 +194,13 @@ enum QuotePublicationStatus {
   SUPERSEDED
 }
 
+/// J1-01: deliberately a two-state flag, not a construction-project state machine -- see the doc
+/// comment on `Project` itself.
+enum ProjectHandoffStatus {
+  EN_TRANSICION
+  COMPLETADO
+}
+
 enum AuthTokenType {
   MAGIC_LINK
   PASSWORD_RESET
@@ -307,6 +314,7 @@ model Client {
   quotes          Quote[]
   conversations   Conversation[]
   fileAttachments FileAttachment[]
+  projects        Project[]
 
   @@index([status, createdAt])
   @@map("clients")
@@ -349,6 +357,9 @@ model User {
   commercialTermsVersionsCreated  CommercialTermsVersion[]  @relation("CommercialTermsCreator")
   quotePublications               QuotePublication[]        @relation("QuotePublicationActor")
   conversationReadStates          ConversationReadState[]
+  projectsOwned                   Project[]                 @relation("ProjectOwner")
+  projectsCreated                 Project[]                 @relation("ProjectCreator")
+  projectChecklistItemsCompleted  ProjectChecklistItem[]     @relation("ProjectChecklistCompletedBy")
   createdAt                       DateTime                  @default(now()) @db.Timestamptz(3)
   updatedAt                       DateTime                  @updatedAt @db.Timestamptz(3)
 
@@ -373,6 +384,7 @@ model ClientContact {
   client          Client         @relation(fields: [clientId], references: [id], onDelete: Restrict)
   user            User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   quoteRequests   QuoteRequest[]
+  projects        Project[]
 
   @@unique([clientId, emailNormalized])
   @@index([clientId, status, createdAt])
@@ -399,6 +411,7 @@ model QuoteRequest {
   statusHistory      RequestStatusHistory[]
   conversation       Conversation?
   fileAttachments    FileAttachment[]
+  project            Project?
 
   @@unique([id, clientId])
   @@index([status, createdAt])
@@ -566,12 +579,63 @@ model QuoteAcceptance {
   quoteVersion         QuoteVersion      @relation(fields: [quoteVersionId, quoteId], references: [id, quoteId], onDelete: Cascade)
   generatedDocument    GeneratedDocument @relation(fields: [generatedDocumentId], references: [id], onDelete: Restrict)
   acceptedBy           User              @relation("QuoteAcceptanceActor", fields: [acceptedById], references: [id], onDelete: Restrict)
+  project              Project?
 
   @@unique([quoteVersionId, quoteId])
   @@unique([acceptedById, idempotencyKeyHash])
   @@index([quoteId, acceptedAt])
   @@index([acceptedById, acceptedAt])
   @@map("quote_acceptances")
+}
+
+/// J1-01: the minimum real handoff model -- "closes the commercial cycle without pretending a full
+/// construction module exists" (§22 of the archived V2 plan, BIZ-13). Deliberately does NOT model a
+/// build schedule, inventory, payments or suppliers; `quoteAcceptanceId` being unique is what
+/// enforces "one acceptance -> at most one project" at the database level, not application logic.
+/// Scope comes from the already-immutable `QuoteVersion` snapshot the acceptance points to -- no
+/// separate "ProjectScopeSnapshot" copy table, since re-copying an already-frozen snapshot into a
+/// second table would only risk drifting from it for zero correctness benefit.
+model Project {
+  id                String               @id @default(uuid()) @db.Uuid
+  folio             String               @unique @db.VarChar(24)
+  quoteAcceptanceId String               @unique @db.Uuid
+  quoteRequestId    String               @unique @db.Uuid
+  clientId          String               @db.Uuid
+  contactId         String               @db.Uuid
+  ownerId           String?              @db.Uuid
+  status            ProjectHandoffStatus @default(EN_TRANSICION)
+  createdById       String               @db.Uuid
+  completedAt       DateTime?            @db.Timestamptz(3)
+  createdAt         DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime             @updatedAt @db.Timestamptz(3)
+  quoteAcceptance   QuoteAcceptance      @relation(fields: [quoteAcceptanceId], references: [id], onDelete: Restrict)
+  quoteRequest      QuoteRequest         @relation(fields: [quoteRequestId], references: [id], onDelete: Restrict)
+  client            Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  contact           ClientContact        @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  owner             User?                @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  createdBy         User                 @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  checklistItems    ProjectChecklistItem[]
+
+  @@index([clientId, createdAt])
+  @@index([ownerId, status])
+  @@map("projects")
+}
+
+/// J1-01: deliberately free-text/staff-authored, not a fixed hardcoded template -- specific handoff
+/// task content is an operational business decision, not one for this codebase to invent on its own.
+model ProjectChecklistItem {
+  id            String    @id @default(uuid()) @db.Uuid
+  projectId     String    @db.Uuid
+  label         String    @db.VarChar(240)
+  position      Int       @default(0)
+  completedAt   DateTime? @db.Timestamptz(3)
+  completedById String?   @db.Uuid
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  completedBy   User?     @relation("ProjectChecklistCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, position])
+  @@map("project_checklist_items")
 }
 
 model QuoteRequestDetail {

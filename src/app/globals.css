@@ -1548,6 +1548,14 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .staff-notification-toolbar__summary { display: grid; gap: 5px; color: var(--staff-deep); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-align: right; text-transform: uppercase; }
 .staff-notification-toolbar__summary small { color: var(--staff-muted); font-size: 10px; font-weight: 400; letter-spacing: 0; text-transform: none; }
 .staff-notification-list > ul { margin: 0; padding: 0; list-style: none; }
+/* J1-03: handoff checklist rows -- reuses the same paper/line/muted tokens as the rest of the
+   staff surfaces instead of inline styles. */
+.staff-checklist { display: grid; gap: 2px; margin: 16px 0 0; padding: 0; list-style: none; }
+.staff-checklist__item { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 4px; border-bottom: 1px solid var(--staff-line); }
+.staff-checklist__item:last-child { border-bottom: 0; }
+.staff-checklist__item label { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--staff-ink); font-size: 12px; }
+.staff-checklist__item.is-complete label span { color: var(--staff-muted); text-decoration: line-through; }
+.staff-checklist__item small { flex-shrink: 0; color: var(--staff-muted); font-size: 10px; }
 .staff-notification-row { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(0, 1.8fr) max-content; gap: 28px; align-items: center; padding: 20px; border-bottom: 1px solid var(--staff-line); }
 .staff-notification-row:last-child { border-bottom: 0; }
 .staff-notification-row__identity { display: grid; min-width: 0; justify-items: start; gap: 8px; }

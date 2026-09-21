@@ -46,6 +46,9 @@ export async function GET(request: NextRequest) {
       auditSecurityRead: hasPermission(actor, 'audit.security.read'),
       identityUsersManage: hasPermission(actor, 'identity.users.manage'),
       customerPortalInvite: hasPermission(actor, 'customer.portal.invite'),
+      projectsRead: hasPermission(actor, 'projects.read'),
+      projectsCreate: hasPermission(actor, 'projects.create'),
+      projectsManage: hasPermission(actor, 'projects.manage'),
     }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);
