@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { ChevronDown } from 'lucide-react';
 import { privateFieldA11y } from './a11y';
@@ -113,14 +113,26 @@ const EMPTY_SELECT_VALUE = '__private_ui_empty__';
 export function PrivateSelect({ id, label, description, error, required, hideLabel, className, value, options, onValueChange, placeholder = 'Selecciona una opción', disabled = false }: PrivateSelectProps) {
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   const selectedValue = value || EMPTY_SELECT_VALUE;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+
+  // Radix portals SelectPrimitive.Content to document.body by default, which escapes the
+  // .private-ui-scope wrapper that defines every --private-color-* token. Without a scoped
+  // container the dropdown's background/border/z-index all resolve to nothing (transparent,
+  // stacked behind page content). Redirecting the portal back into the nearest scope restores
+  // the token cascade without affecting Radix's own fixed-position popper placement.
+  useEffect(() => {
+    setPortalContainer(triggerRef.current?.closest<HTMLElement>('.private-ui-scope') ?? null);
+  }, []);
+
   return (
     <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
       <SelectPrimitive.Root value={selectedValue} onValueChange={(nextValue) => onValueChange(nextValue === EMPTY_SELECT_VALUE ? '' : nextValue)} disabled={disabled}>
-        <SelectPrimitive.Trigger id={id} className={joinClasses('private-control private-select__trigger', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required}>
+        <SelectPrimitive.Trigger ref={triggerRef} id={id} className={joinClasses('private-control private-select__trigger', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required}>
           <SelectPrimitive.Value placeholder={placeholder} />
           <SelectPrimitive.Icon aria-hidden="true"><ChevronDown size={16} /></SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
-        <SelectPrimitive.Portal>
+        <SelectPrimitive.Portal container={portalContainer ?? undefined}>
           <SelectPrimitive.Content className="private-select__content" position="popper" sideOffset={6} collisionPadding={10}>
             <SelectPrimitive.Viewport className="private-select__viewport">
               <SelectPrimitive.Item className="private-select__item" value={EMPTY_SELECT_VALUE}>
