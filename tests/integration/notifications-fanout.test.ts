@@ -66,16 +66,22 @@ describe('transactional notification fan-out', () => {
 
     try {
       const result = await processNotificationFanoutBatch({ prisma, now: workerNow, batchSize: 50, leaseSeconds: 60 });
-      expect(result).toMatchObject({ claimed: 7, materialized: 6, cancelled: 1 });
+      // UX audit fix: QUOTE.ACCEPTED now also reaches the customer (an acceptance confirmation
+      // that never existed before) -- one extra materialized/pending delivery from the same
+      // claimed outbox event, since resolving one event into two recipients doesn't change how
+      // many outbox events were claimed.
+      expect(result).toMatchObject({ claimed: 7, materialized: 7, cancelled: 1 });
 
       const deliveries = await prisma.notificationDelivery.findMany({ where: { outboxEventId: { in: eventIds } }, orderBy: { createdAt: 'asc' } });
-      expect(deliveries.filter((delivery) => delivery.status === 'PENDING')).toHaveLength(6);
+      expect(deliveries.filter((delivery) => delivery.status === 'PENDING')).toHaveLength(7);
       expect(deliveries.find((delivery) => delivery.outboxEventId === assignmentEvent.id)?.recipientUserId).toBe(employee.id);
-      expect(deliveries.find((delivery) => delivery.outboxEventId === acceptedEvent.id)?.recipientUserId).toBe(employee.id);
       expect(deliveries.find((delivery) => delivery.outboxEventId === messageEvent.id)?.recipientUserId).toBe(employee.id);
       expect(deliveries.find((delivery) => delivery.outboxEventId === receivedEvent.id)?.payload).toMatchObject({ folio: request.folio, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
       expect(deliveries.find((delivery) => delivery.outboxEventId === quoteSentEvent.id)?.payload).toMatchObject({ folio: request.folio, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
-      expect(deliveries.find((delivery) => delivery.outboxEventId === acceptedEvent.id)?.payload).toMatchObject({ totalLabel: '1,250.00 MXN', actionPath: '/staff/requests' });
+      const acceptedDeliveries = deliveries.filter((delivery) => delivery.outboxEventId === acceptedEvent.id);
+      expect(acceptedDeliveries).toHaveLength(2);
+      expect(acceptedDeliveries.find((delivery) => delivery.recipientUserId === employee.id)?.payload).toMatchObject({ totalLabel: '1,250.00 MXN', actionPath: '/staff/requests' });
+      expect(acceptedDeliveries.find((delivery) => delivery.recipientUserId === null)?.payload).toMatchObject({ totalLabel: '1,250.00 MXN', folio: request.folio, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
       expect(deliveries.find((delivery) => delivery.outboxEventId === fileEvent.id)?.payload).toMatchObject({ fileName: 'avance.jpg', actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
       expect(deliveries.find((delivery) => delivery.outboxEventId === internalEvent.id)).toMatchObject({ status: 'CANCELLED', cancelReason: 'INTERNAL_VISIBILITY', recipientAddressCiphertext: null });
       expect(await prisma.outboxEvent.count({ where: { id: { in: eventIds }, status: 'SENT' } })).toBe(7);

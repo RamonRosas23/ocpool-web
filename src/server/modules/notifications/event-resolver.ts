@@ -156,14 +156,21 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
       const quoteVersionId = stringValue(payload, 'quoteVersionId');
       const acceptanceId = stringValue(payload, 'acceptanceId');
-      const quote = await prisma.quote.findUnique({ where: { id: event.aggregateId }, include: { quoteRequest: { include: { currentAssignee: true } } } });
+      const quote = await prisma.quote.findUnique({ where: { id: event.aggregateId }, include: { quoteRequest: { include: { currentAssignee: true, client: true, contact: { include: { user: true } } } } } });
       const acceptance = isUuid(acceptanceId) ? await prisma.quoteAcceptance.findUnique({ where: { id: acceptanceId }, select: { quoteId: true, quoteVersionId: true, generatedDocumentId: true, termsVersion: true, quoteVersion: { select: { status: true, totalMinor: true, currencyCode: true } } } }) : null;
       if (!quote || !quoteVersionId || stringValue(payload, 'quoteRequestId') !== quote.quoteRequestId || stringValue(payload, 'folio') !== quote.quoteRequest.folio || !acceptance || acceptance.quoteId !== quote.id || acceptance.quoteVersionId !== quoteVersionId || acceptance.quoteVersion.status !== 'ACEPTADA' || stringValue(payload, 'generatedDocumentId') !== acceptance.generatedDocumentId || stringValue(payload, 'termsVersion') !== acceptance.termsVersion) return cancellation('INVALID_PAYLOAD');
-      const recipient = activeStaff(quote.quoteRequest.currentAssignee);
-      if (!recipient) return cancellation('NO_RECIPIENT');
-      return { kind: 'RECIPIENTS', contexts: [
-        { recipient, actionPath: requestWorkspaceNotificationPath(quote.quoteRequestId, 'summary', flags), totalLabel: totalLabel(acceptance.quoteVersion.totalMinor, acceptance.quoteVersion.currencyCode) },
-      ] };
+      const total = totalLabel(acceptance.quoteVersion.totalMinor, acceptance.quoteVersion.currencyCode);
+      const staffRecipient = activeStaff(quote.quoteRequest.currentAssignee);
+      // UX audit fix: aceptar una cotización sólo avisaba a staff -- el propio cliente nunca
+      // recibía una confirmación de que su aceptación quedó registrada. Se agrega el mismo
+      // destinatario de cliente que ya usa QUOTE.PUBLISHED, sin tocar el aviso a staff existente.
+      const customerRecipient = quote.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(quote.quoteRequest.contact) : null;
+      const contexts: NotificationMappingContext[] = [
+        ...(staffRecipient ? [{ recipient: staffRecipient, actionPath: requestWorkspaceNotificationPath(quote.quoteRequestId, 'summary', flags), totalLabel: total }] : []),
+        ...(customerRecipient ? [{ ...customerContext(customerRecipient, quote.quoteRequestId), totalLabel: total }] : []),
+      ];
+      if (contexts.length === 0) return cancellation('NO_RECIPIENT');
+      return { kind: 'RECIPIENTS', contexts };
     }
     case 'MESSAGE.CREATED': {
       if (event.aggregateType !== 'CONVERSATION' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');

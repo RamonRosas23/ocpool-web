@@ -13,6 +13,7 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   'quote.approval_requested',
   'quote.approval_resolved',
   'quote.accepted',
+  'quote.acceptance_confirmed',
   'message.created',
   'file.available',
 ] as const;
@@ -223,10 +224,15 @@ export function mapNotificationEvent(event: NotificationEventInput, context: Not
       }
       case 'QUOTE.ACCEPTED': {
         const parsed = quoteAcceptedPayload.safeParse(event.payload);
-        const scope = rejectScope(context, 'STAFF');
         if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        const safePayload = { recipientName: context.recipient.displayName, folio: parsed.data.folio, versionNumber: parsed.data.versionNumber, totalLabel: boundedText(context.totalLabel ?? 'Consulta el portal para ver el total', 120, 'total') };
+        // UX audit fix: este evento ahora también llega a un destinatario CUSTOMER (la
+        // confirmación de aceptación que antes no existía) -- cada audiencia usa su propia
+        // plantilla en vez de reutilizar el texto interno pensado para staff.
+        if (context.recipient.audience === 'CUSTOMER') return makeIntent(context, 'quote.acceptance_confirmed', safePayload);
+        const scope = rejectScope(context, 'STAFF');
         if (scope) return scope;
-        return makeIntent(context, 'quote.accepted', { recipientName: context.recipient.displayName, folio: parsed.data.folio, versionNumber: parsed.data.versionNumber, totalLabel: boundedText(context.totalLabel ?? 'Consulta el portal para ver el total', 120, 'total') });
+        return makeIntent(context, 'quote.accepted', safePayload);
       }
       case 'MESSAGE.CREATED': {
         const parsed = messagePayload.safeParse(event.payload);
@@ -383,6 +389,14 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
       const subject = safeHeader(`Cotización aceptada ${folio}`);
       const body = `<p>Hola ${recipientName},</p><p>La cotización ${escapeHtml(folio)}${version} fue aceptada por el cliente.</p>${total ? `<p>Total snapshot: <strong>${total}</strong></p>` : ''}`;
       return { subject, text: `Cotización ${folio}${version} aceptada. ${data.totalLabel ?? ''}`.trim(), html: layout('Cotización aceptada', body, 'Abrir espacio interno', actionUrl) };
+    }
+    case 'quote.acceptance_confirmed': {
+      // UX audit fix: confirma la aceptación al cliente y explica qué sigue -- ninguna acción
+      // pendiente de su parte, el equipo se pondrá en contacto para coordinar el arranque.
+      const subject = safeHeader(`Confirmamos la aceptación de tu cotización ${folio}`);
+      const body = `<p>Hola ${recipientName},</p><p>Confirmamos que tu aceptación de la cotización ${escapeHtml(folio)}${version} quedó registrada correctamente.</p>${total ? `<p>Total: <strong>${total}</strong></p>` : ''}<p>No necesitas hacer nada más por ahora. Nuestro equipo revisará los detalles y te contactará en tu expediente para coordinar los siguientes pasos.</p>`;
+      const text = `Hola ${data.recipientName},\n\nConfirmamos que tu aceptación de la cotización ${folio}${version} quedó registrada correctamente. ${data.totalLabel ?? ''}\n\nNo necesitas hacer nada más por ahora. Nuestro equipo te contactará en tu expediente para coordinar los siguientes pasos.\n\nConsulta tu expediente: ${actionUrl}`.trim();
+      return { subject, text, html: layout('Aceptación confirmada', body, data.actionLabel ?? 'Ver mi expediente', actionUrl) };
     }
     case 'message.created': {
       const subject = safeHeader(`Nuevo mensaje sobre tu expediente ${folio}`);
