@@ -106,6 +106,12 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
   // haya que escribir sin guía dentro del chat general. Reutiliza la mensajería ya existente en vez
   // de inventar un dominio nuevo: nunca edita, rechaza ni oculta la propuesta, sólo la deja intacta
   // y avisa a staff con un mensaje identificable como petición de cambios.
+  //
+  // UX audit fix: ese "igual peso" no se veía reflejado visualmente -- el botón principal usaba la
+  // misma clase `--quiet` que "Cancelar" dentro de los diálogos (una acción de salida menor de
+  // verdad), leyéndose como la opción secundaria frente a "Revisar y aceptar". Ahora usa
+  // `--secondary` (contorno grueso, sin relleno) -- presente sin competir con el primario, distinto
+  // del tratamiento apagado de un botón de cancelar.
   const [changeMessage, setChangeMessage] = useState('');
   const [changeSending, setChangeSending] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
@@ -183,7 +189,7 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
           {pdfLoading ? 'Preparando PDF…' : 'Descargar PDF'}
         </button>
         : <span className="client-quote-action-state client-quote-action-state--muted">PDF en preparación</span>}
-      {!alreadyAccepted && <button className="client-quote-action client-quote-action--quiet" type="button" onClick={openChangeDialog}>Solicitar cambios</button>}
+      {!alreadyAccepted && <button className="client-quote-action client-quote-action--secondary" type="button" onClick={openChangeDialog}>Solicitar cambios</button>}
       {available && <button className="client-quote-action client-quote-action--primary" type="button" onClick={openDialog}>Revisar y aceptar</button>}
       {alreadyAccepted && <span className="client-quote-action-state" role="status"><i aria-hidden="true" />Aceptada</span>}
       {!available && !alreadyAccepted && validity.expired && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta vencida. Solicita cambios para recibir una versión actualizada.</span>}

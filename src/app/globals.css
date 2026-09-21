@@ -1384,6 +1384,8 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .client-quote-action--quiet:hover:not(:disabled), .client-quote-action--quiet:focus-visible:not(:disabled) { border-color: var(--private-color-brand); background: rgba(9,36,51,.06); }
 .client-quote-action--primary { border-color: var(--private-color-brand); background: var(--private-color-brand); color: #f7f2e9; }
 .client-quote-action--primary:hover:not(:disabled), .client-quote-action--primary:focus-visible:not(:disabled) { border-color: #0d4055; background: #0d4055; }
+.client-quote-action--secondary { border: 2px solid var(--private-color-brand); background: transparent; color: var(--private-color-brand); }
+.client-quote-action--secondary:hover:not(:disabled), .client-quote-action--secondary:focus-visible:not(:disabled) { background: rgba(9,36,51,.06); }
 .client-quote-action-state { display: inline-flex; min-height: 28px; align-items: center; gap: 7px; border: 1px solid rgba(58,126,86,.45); padding: 0 10px; color: #37744e; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .client-quote-action-state i { width: 6px; height: 6px; border-radius: 50%; background: #4b9567; }
 .client-quote-action-state--muted { border-color: rgba(24,37,42,.2); color: #56615f; }
