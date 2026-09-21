@@ -85,6 +85,29 @@ function errorLabel(value: string | null): string {
   return value ? (ERROR_LABELS[value] ?? 'Error controlado') : 'Sin error';
 }
 
+const CANCEL_REASON_LABELS: Record<string, string> = {
+  UNSUPPORTED_EVENT: 'Evento no soportado',
+  INVALID_PAYLOAD: 'Datos inválidos',
+  INVALID_RECIPIENT: 'Destinatario inválido',
+  INVALID_RECIPIENT_SCOPE: 'Destinatario fuera de alcance',
+  INTERNAL_VISIBILITY: 'Nota interna, sin envío',
+  NO_RECIPIENT: 'Sin destinatario',
+  CONTACT_EMAIL_CHANGED: 'Correo de contacto corregido',
+};
+
+function cancelReasonLabel(value: string | null): string {
+  return value ? (CANCEL_REASON_LABELS[value] ?? value) : 'Sin motivo registrado';
+}
+
+// Una entrega CANCELLED nunca llega a intentar el envío, así que `errorCategory` siempre es null
+// para ella -- mostrar `errorLabel` ahí daba "Sin error" para las siete causas reales y distintas
+// de cancelación (contacto corregido, evento no soportado, destinatario fuera de alcance, etc.),
+// ocultando exactamente el motivo que el staff necesita para diagnosticar por qué un cliente no
+// recibió un aviso.
+function diagnosisLabel(item: NotificationItem): string {
+  return item.status === 'CANCELLED' ? cancelReasonLabel(item.cancelReason) : errorLabel(item.errorCategory);
+}
+
 
 function formatAge(seconds: number): string {
   if (seconds < 60) return 'Hace menos de un minuto';
@@ -204,7 +227,7 @@ export default function StaffNotificationsPanel() {
             {!(loading && !data) && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>No hay entregas en esta vista.</h2><p>Cuando existan notificaciones con este estado aparecerán aquí con su diagnóstico operativo.</p></div>}
             {items.length > 0 && <ul>{items.map((item) => <li className={`staff-notification-row staff-notification-row--${item.status.toLowerCase()}`} key={item.id}>
               <div className="staff-notification-row__identity"><StatusPill status={item.status} /><strong>{item.templateKey}</strong><small>{item.eventType} · {item.aggregateType}</small></div>
-              <dl className="staff-notification-row__facts"><div><dt>Intentos</dt><dd>{item.attempts}</dd></div><div><dt>Antigüedad</dt><dd>{formatAge(item.ageSeconds)}</dd></div><div><dt>Actualizada</dt><dd><time dateTime={item.updatedAt}>{formatDateTime(item.updatedAt)}</time></dd></div><div><dt>Diagnóstico</dt><dd>{errorLabel(item.errorCategory)}</dd></div></dl>
+              <dl className="staff-notification-row__facts"><div><dt>Intentos</dt><dd>{item.attempts}</dd></div><div><dt>Antigüedad</dt><dd>{formatAge(item.ageSeconds)}</dd></div><div><dt>Actualizada</dt><dd><time dateTime={item.updatedAt}>{formatDateTime(item.updatedAt)}</time></dd></div><div><dt>Diagnóstico</dt><dd>{diagnosisLabel(item)}</dd></div></dl>
               <div className="staff-notification-row__action">{item.retryable ? <button className="staff-button staff-button--copper" type="button" disabled={retryingId === item.id} onClick={() => void retry(item)}>{retryingId === item.id ? 'Reintentando…' : 'Reintentar entrega'}</button> : <span>{item.status === 'FAILED' ? 'Requiere corrección técnica' : 'Sin acción manual'}</span>}</div>
             </li>)}</ul>}
           </div>
