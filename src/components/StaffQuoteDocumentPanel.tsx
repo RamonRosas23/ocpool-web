@@ -81,6 +81,7 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectSummary | null>(null);
+  const [downloadFallbackUrl, setDownloadFallbackUrl] = useState<string | null>(null);
 
   const loadOperation = useCallback(async () => {
     if (!canRead) return;
@@ -105,11 +106,19 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
     setBusy('download');
     setError(null);
     setNotice(null);
+    setDownloadFallbackUrl(null);
     try {
       const response = await fetch(`/api/staff/quotes/versions/${versionId}/pdf`, { credentials: 'include', cache: 'no-store' });
       const result = await readResponse<DownloadResponse>(response);
+      // UX audit fix: `window.open`'s valor de retorno no detecta de forma confiable un popup
+      // bloqueado -- con `noopener` (necesario por seguridad, no se quita) el navegador devuelve
+      // `null` incluso cuando SÍ abrió la pestaña, así que comprobar `=== null` habría marcado
+      // como "bloqueado" prácticamente cada descarga exitosa. En vez de intentar detectar el
+      // bloqueo, se deja siempre un enlace manual de respaldo junto al aviso -- funciona sin
+      // importar si el navegador abrió la pestaña automáticamente o no.
       window.open(result.downloadUrl, '_blank', 'noopener,noreferrer');
-      setNotice('PDF listo para descarga en una nueva pestaña.');
+      setNotice('PDF listo. Si no se abrió una pestaña nueva automáticamente, usa el enlace de abajo.');
+      setDownloadFallbackUrl(result.downloadUrl);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible preparar la descarga.');
     } finally {
@@ -121,6 +130,7 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
     setBusy('generate');
     setError(null);
     setNotice(null);
+    setDownloadFallbackUrl(null);
     try {
       const response = await fetch(`/api/staff/quotes/versions/${versionId}/pdf`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: '{}' });
       await readResponse(response);
@@ -141,6 +151,7 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
     setBusy('convert');
     setError(null);
     setNotice(null);
+    setDownloadFallbackUrl(null);
     try {
       const response = await fetch('/api/staff/projects', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ quoteAcceptanceId: operation.acceptance.id }) });
       const created = await readResponse<ProjectSummary>(response);
@@ -194,7 +205,7 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
       </div> : <div className="quote-document-panel__empty"><span>Sin aceptación registrada</span><small>La evidencia aparecerá aquí cuando el cliente acepte esta versión.</small></div>}
     </>}
 
-    {notice && <p className="staff-notice quote-document-panel__feedback" role="status">{notice}</p>}
+    {notice && <p className="staff-notice quote-document-panel__feedback" role="status">{notice}{downloadFallbackUrl && <> <a href={downloadFallbackUrl} target="_blank" rel="noopener noreferrer">Abrir PDF</a></>}</p>}
     {error && <p className="staff-error quote-document-panel__feedback" role="alert">{error}</p>}
   </section>;
 }
