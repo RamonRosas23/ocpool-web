@@ -29,6 +29,12 @@ export const QUOTE_VERSION_STATUS_LABELS: Record<QuoteVersionStatus, string> = {
 export function fileStatusLabel(file: { status: string; downloadAvailable: boolean }): string {
   if (file.status === 'AVAILABLE' && file.downloadAvailable) return 'Disponible';
   if (file.status === 'PENDING_SCAN') return 'En validación';
+  // REJECTED (failed the content scan, never became available) and DELETED (was available, then
+  // removed) both used to collapse into the same generic "No disponible" -- indistinguishable to
+  // whoever is looking at the file, even though they mean very different things: one might need a
+  // different file re-uploaded, the other is an expected, intentional removal.
+  if (file.status === 'REJECTED') return 'Rechazado';
+  if (file.status === 'DELETED') return 'Eliminado';
   return 'No disponible';
 }
 
