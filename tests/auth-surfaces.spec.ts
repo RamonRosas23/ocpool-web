@@ -123,10 +123,15 @@ test.describe('auth browser surfaces', () => {
     await expect(page.getByRole('status')).toContainText('Si tu cuenta ya está habilitada');
     await expect(page.getByRole('status')).toContainText('Si eres cliente nuevo');
 
+    // UX audit fix: consuming this single-use link now requires an explicit human click (so an
+    // email client's automated "safe link" scanner can't burn it before the real click) instead
+    // of firing on page load.
     await page.goto(`/auth/customer/consume-link?token=${encodeURIComponent(customerToken)}`);
-    await expect(page).toHaveURL(/\/portal\/?$/);
+    await expect(page.getByRole('heading', { name: 'Confirma tu entrada' })).toBeVisible();
     expect(page.url()).not.toContain(customerToken);
     await expect(page.locator('body')).not.toContainText(customerToken);
+    await page.getByRole('button', { name: 'Entrar a mi portal' }).click();
+    await expect(page).toHaveURL(/\/portal\/?$/);
   });
 
   test('requests and consumes password recovery safely', async ({ page }) => {
@@ -149,6 +154,7 @@ test.describe('auth browser surfaces', () => {
 
   test('renders invalid and replayed links as safe non-authenticated states', async ({ page }) => {
     await page.goto('/auth/customer/consume-link?token=invalid-token');
+    await page.getByRole('button', { name: 'Entrar a mi portal' }).click();
     await expect(page.getByRole('heading', { name: 'Enlace no disponible' })).toBeVisible();
     await expect(page.locator('img[alt="OCPOOL"]')).toBeVisible();
     await expect(page.locator('body')).not.toContainText(/UUID|tokenHash|stack|DATABASE_URL/i);

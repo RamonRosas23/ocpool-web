@@ -22,6 +22,7 @@ function removeParamsFromAddress(params: readonly string[]) {
 export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
   const customer = kind === 'customer';
   const [token, setToken] = useState<string | null>(null);
+  const [redirectRequestId, setRedirectRequestId] = useState<string | null>(null);
   const [state, setState] = useState<TokenState>('loading');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -38,25 +39,37 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
       return;
     }
     setToken(rawToken);
-    if (!customer) {
-      setState('ready');
-      return;
-    }
+    setRedirectRequestId(redirectRequestId);
+    setState('ready');
+  }, [customer]);
 
-    void fetch('/api/auth/customer/consume-link', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: rawToken }),
-    }).then(async (response) => {
+  // UX audit fix: consumir el enlace de un solo uso automáticamente al montar el componente lo
+  // hacía vulnerable a los escáneres de "enlaces seguros" de varios clientes de correo
+  // empresariales (Microsoft Defender, Proofpoint, Mimecast), que renderizan la página en un
+  // sandbox -- incluyendo JavaScript -- antes de que la persona haga clic. Eso quemaba el enlace
+  // real sin que el cliente lo supiera. Ahora exige un clic humano explícito antes de consumirlo,
+  // igual que el flujo de recuperación de contraseña ya exige enviar el formulario.
+  const consumeCustomerLink = async () => {
+    if (!token || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/auth/customer/consume-link', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
       if (!response.ok) throw new Error(await publicError(response));
       setState('success');
       window.location.replace(redirectRequestId ? `/portal?request=${encodeURIComponent(redirectRequestId)}` : '/portal');
-    }).catch((caught: unknown) => {
+    } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'El enlace no es válido o ya expiró.');
       setState('invalid');
-    });
-  }, [customer]);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submitRecovery = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -98,6 +111,7 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
       <div className="auth-panel__top"><p className="auth-kicker">{customer ? 'Portal de cliente' : 'Recuperación'}</p><Link href={customer ? '/portal/access' : '/login'} className="auth-panel__back">Volver al acceso</Link></div>
       <div className="auth-panel__body">
         {customer && state === 'loading' && <><h2 id="auth-token-title">Validando tu acceso</h2><p className="auth-panel__intro" role="status">Un momento. Estamos comprobando tu enlace.</p></>}
+        {customer && state === 'ready' && <><h2 id="auth-token-title">Confirma tu entrada</h2><p className="auth-panel__intro">Por tu seguridad, este enlace de un solo uso sólo se activa cuando tú confirmas -- así protegemos tu acceso incluso de escáneres automáticos de correo.</p>{error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}<button className="auth-submit" type="button" disabled={busy} onClick={() => void consumeCustomerLink()}>{busy ? 'Entrando…' : 'Entrar a mi portal'}</button></>}
         {invalid && <><h2 id="auth-token-title">Enlace no disponible</h2><p className="auth-panel__intro" role="alert">{error ?? 'Este enlace no existe, ya fue utilizado o expiró.'}</p><Link className="auth-submit auth-submit--link" href={customer ? '/portal/access' : '/login/recovery'}>{customer ? 'Solicitar otro enlace' : 'Solicitar otro enlace'}</Link></>}
         {!customer && state === 'ready' && <><h2 id="auth-token-title">Define tu contraseña</h2><p className="auth-panel__intro">Usa al menos 12 caracteres con letras y números.</p><form className="auth-form" onSubmit={submitRecovery} noValidate><label><span>Nueva contraseña</span><input type="password" name="newPassword" autoComplete="new-password" minLength={12} required value={password} onChange={(event) => setPassword(event.target.value)} /></label><label><span>Confirmar contraseña</span><input type="password" name="confirmation" autoComplete="new-password" minLength={12} required value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>{error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}<button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Actualizando…' : 'Actualizar contraseña'}</button></form></>}
         {success && !customer && <><h2 id="auth-token-title">Acceso actualizado</h2><p className="auth-feedback auth-feedback--success" role="status">Tu contraseña fue actualizada. Ya puedes iniciar sesión con ella.</p><Link className="auth-submit auth-submit--link" href="/login">Ir al acceso</Link></>}
