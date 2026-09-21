@@ -11,9 +11,18 @@ async function readErrorBody(response: Response): Promise<ErrorResponse> {
   return await response.json().catch(() => ({})) as ErrorResponse;
 }
 
-function errorMessage(response: Response, body: ErrorResponse): string {
+// UX audit fix: el ternario original devolvía el mismo texto fijo en ambas ramas, así que nunca
+// usaba `body.error.message` -- pero incluso corrigiendo sólo eso no habría bastado: el servidor
+// no distingue "contraseña incorrecta" de "código MFA incorrecto" en su mensaje (ambos caen al
+// mismo `AppError('UNAUTHORIZED', 'Correo o contraseña inválidos.')`, por diseño, para no revelar
+// en qué paso falló el intento). Si el intento falla mientras ya se pidió el código MFA, correo y
+// contraseña siguen deshabilitados en el formulario (ver `disabled={mfaRequired}` abajo) -- decirle
+// al usuario "verifica tus datos" ahí apunta a campos que no puede tocar. `mfaRequired` (ya
+// disponible en el cliente) decide el mensaje correcto sin depender de que el servidor lo revele.
+function errorMessage(response: Response, body: ErrorResponse, mfaRequired: boolean): string {
   if (response.status === 429) return 'El acceso está temporalmente limitado. Espera unos minutos y vuelve a intentarlo.';
-  return body.error?.message ? 'No fue posible iniciar sesión. Verifica tus datos.' : 'No fue posible iniciar sesión. Verifica tus datos.';
+  if (mfaRequired) return 'Código incorrecto o expirado. Verifica el código de tu app de autenticación.';
+  return body.error?.message ?? 'No fue posible iniciar sesión. Verifica tus datos.';
 }
 
 export default function EmployeeLoginPanel() {
@@ -58,7 +67,7 @@ export default function EmployeeLoginPanel() {
           setError(null);
           return;
         }
-        throw new Error(errorMessage(response, body));
+        throw new Error(errorMessage(response, body, mfaRequired));
       }
       window.location.assign('/staff');
     } catch (caught) {
