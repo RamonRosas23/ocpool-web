@@ -471,6 +471,15 @@ export default function StaffQuotesPanel() {
   const canPublish = Boolean(capabilities?.quotesSend && capabilities.quotesPdfGenerate);
   const canEdit = Boolean(capabilities?.quotesCreate && workspace && (!currentVersion || currentVersion.status === 'BORRADOR')) && autosaveState !== 'conflict';
   const canStartVersion = Boolean(capabilities?.quotesCreate && workspace && currentVersion && ['ENVIADA', 'EN_NEGOCIACION'].includes(currentVersion.status));
+  // UX audit fix: el preflight de envío nunca revisaba si alcance/condiciones de pago/garantías
+  // (contenido real de la propuesta) estaban vacíos -- sólo el documento y los datos del
+  // destinatario. Ninguno de estos campos es obligatorio a nivel de dato (una propuesta legítima
+  // podría no necesitar garantías, por ejemplo), así que esto es un aviso, no un bloqueo.
+  const emptyContentSections = [
+    !contentFields.scopeText.trim() && 'alcance',
+    !contentFields.paymentTermsText.trim() && 'condiciones de pago',
+    !contentFields.warrantyText.trim() && 'garantías',
+  ].filter((label): label is string => Boolean(label));
   const selectedCurrency = priceListDetail?.currencyCode ?? workspace?.request.detail?.currencyCode ?? 'MXN';
   const selectedTaxProfile = workspace?.taxProfiles.find((profile) => profile.id === selectedTaxProfileId) ?? null;
 
@@ -998,6 +1007,7 @@ export default function StaffQuotesPanel() {
                   <div><dt>Vigencia</dt><dd>{currentVersion.validUntil ? formatDate(currentVersion.validUntil) : 'Sin fecha límite definida'}</dd></div>
                   <div><dt>Documento</dt><dd>{publishPreflight?.loading ? 'Consultando…' : publishPreflight?.documentStatus === 'READY' ? 'Listo, ya generado' : 'Se generará y verificará al confirmar'}</dd></div>
                 </dl>
+                {emptyContentSections.length > 0 && <p className="quotes-action-note">Sin contenido en: {emptyContentSections.join(', ')}. El cliente recibirá la propuesta sin esa sección.</p>}
                 <div className="quotes-preflight-dialog__actions"><button className="staff-button staff-button--outline" type="button" onClick={() => setPublishPreflight(null)}>Cancelar</button><button className="staff-button staff-button--copper" type="button" disabled={saving || publishPreflight?.loading} onClick={() => void confirmPublish()}>{saving ? 'Enviando…' : 'Confirmar y enviar'}</button></div>
               </PrivateDialog>}
               {currentVersion && <PrivateDialog open={returnToDraftDialogOpen} onClose={() => { if (!saving) setReturnToDraftDialogOpen(false); }} className="quotes-preflight-dialog" overlayClassName="quotes-preflight-overlay" labelledBy="quotes-return-draft-title" describedBy="quotes-return-draft-description">
