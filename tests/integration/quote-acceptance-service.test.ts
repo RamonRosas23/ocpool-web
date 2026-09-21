@@ -87,9 +87,12 @@ describe('customer quote acceptance service', () => {
       const winningInput = concurrentInputs.find((candidate) => candidate.idempotencyKey === (accepted.signerName === 'Ana López Rivera' ? `acceptance-key-${suffix}` : `acceptance-key-concurrent-${suffix}`));
       if (!winningInput) throw new Error('The concurrent acceptance winner could not be mapped to its idempotency key.');
       const expectedSigner = winningInput.idempotencyKey === `acceptance-key-${suffix}` ? 'Ana López Rivera' : 'Otro nombre';
+      // H1-02: la reproducción debe reutilizar el mismo firmante/términos que realmente ganó la
+      // carrera -- una llave con datos distintos ahora se rechaza como conflicto en vez de
+      // regresar en silencio la aceptación ganadora.
       const replay = await acceptCustomerQuote(customerActorValue, acceptedQuoteId, {
-        signerName: '  Ana   López Rivera ',
-        termsVersion: ' v1 ',
+        signerName: winningInput.signerName,
+        termsVersion: winningInput.termsVersion,
         idempotencyKey: winningInput.idempotencyKey,
         ipAddress: '203.0.113.10',
         userAgent: 'Acceptance Test Browser',
@@ -106,6 +109,9 @@ describe('customer quote acceptance service', () => {
       expect(persisted).toMatchObject({ id: accepted.id, signerName: 'Ana López Rivera', termsVersion: 'v1', documentSha256: accepted.documentSha256 });
       expect(await prisma.quoteAcceptance.count({ where: { quoteVersionId: created.versionId } })).toBe(1);
       await expect(acceptCustomerQuote(customerActorValue, acceptedQuoteId, { signerName: 'Otro nombre', termsVersion: 'v1', idempotencyKey: `acceptance-key-2-${suffix}` }, { prisma, storage, now: new Date(now.getTime() + 2_000) })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      // H1-02: reutilizar la MISMA llave ganadora con un firmante distinto nunca debe regresar en
+      // silencio la aceptación original.
+      await expect(acceptCustomerQuote(customerActorValue, acceptedQuoteId, { signerName: 'Firmante distinto', termsVersion: winningInput.termsVersion, idempotencyKey: winningInput.idempotencyKey }, { prisma, storage, now: new Date(now.getTime() + 3_000) })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
     } finally {
       const versions = quoteId ? await prisma.quoteVersion.findMany({ where: { quoteId }, select: { id: true } }) : [];
       const documentIds = versions.length ? (await prisma.generatedDocument.findMany({ where: { quoteVersionId: { in: versions.map(({ id }) => id) } }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } })) : [];

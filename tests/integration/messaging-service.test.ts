@@ -45,16 +45,32 @@ describe('transactional messaging service', () => {
 
     try {
       const first = await sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Hola equipo', idempotencyKey: 'message-retry-01' }, { prisma, now, rateLimit });
-      const repeated = await sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Este cuerpo no debe duplicarse', idempotencyKey: 'message-retry-01' }, { prisma, now, rateLimit });
-      expect(repeated).toMatchObject({ id: first.id, body: 'Hola equipo', visibility: 'CUSTOMER' });
+      const repeatedSameBody = await sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Hola equipo', idempotencyKey: 'message-retry-01' }, { prisma, now, rateLimit });
+      expect(repeatedSameBody).toMatchObject({ id: first.id, body: 'Hola equipo', visibility: 'CUSTOMER' });
+      expect(await prisma.conversationMessage.count({ where: { conversationId: first.conversationId } })).toBe(1);
+      // H1-02: reutilizar la misma llave con un cuerpo distinto nunca debe regresar en silencio
+      // el primer mensaje -- se rechaza como conflicto real, no como reintento idéntico.
+      await expect(sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Este cuerpo no debe duplicarse', idempotencyKey: 'message-retry-01' }, { prisma, now, rateLimit })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
       expect(await prisma.conversationMessage.count({ where: { conversationId: first.conversationId } })).toBe(1);
 
-      const concurrent = await Promise.all([
+      // Carrera real (doble clic) con el mismo cuerpo: ambas llamadas deduplican al mismo mensaje.
+      const concurrentSameBody = await Promise.all([
         sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Mensaje concurrente', idempotencyKey: 'concurrent-01' }, { prisma, now, rateLimit }),
-        sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Cuerpo alterno', idempotencyKey: 'concurrent-01' }, { prisma, now, rateLimit }),
+        sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Mensaje concurrente', idempotencyKey: 'concurrent-01' }, { prisma, now, rateLimit }),
       ]);
-      expect(concurrent[0].id).toBe(concurrent[1].id);
+      expect(concurrentSameBody[0].id).toBe(concurrentSameBody[1].id);
       expect(await prisma.conversationMessage.count({ where: { conversationId: first.conversationId } })).toBe(2);
+
+      // Carrera con cuerpos distintos bajo la misma llave: gana quien crea primero, la otra se
+      // rechaza como conflicto en vez de deduplicar dos mensajes realmente distintos.
+      const concurrentDifferentBody = await Promise.allSettled([
+        sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Cuerpo A', idempotencyKey: 'concurrent-02' }, { prisma, now, rateLimit }),
+        sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Cuerpo B', idempotencyKey: 'concurrent-02' }, { prisma, now, rateLimit }),
+      ]);
+      expect(concurrentDifferentBody.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const [rejected] = concurrentDifferentBody.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      expect(rejected.reason).toMatchObject({ code: 'CONFLICT', status: 409 });
+      expect(await prisma.conversationMessage.count({ where: { conversationId: first.conversationId } })).toBe(3);
 
       const response = await sendStaffMessage(staffActor, requestA.quoteRequestId, { body: 'Te compartimos el siguiente avance.', idempotencyKey: 'staff-message-01' }, { prisma, now, rateLimit });
       const note = await createInternalNote(staffActor, requestA.quoteRequestId, { body: 'Validar acabado con ingeniería.', idempotencyKey: 'staff-note-01' }, { prisma, now, rateLimit });
@@ -62,12 +78,12 @@ describe('transactional messaging service', () => {
       expect(note.visibility).toBe('INTERNAL');
 
       const customerView = await listConversationMessages(customerActorA, requestA.quoteRequestId, {}, { prisma });
-      expect(customerView.items).toHaveLength(3);
+      expect(customerView.items).toHaveLength(4);
       expect(JSON.stringify(customerView)).not.toContain('Validar acabado');
       const staffView = await listConversationMessages(staffActor, requestA.quoteRequestId, {}, { prisma });
-      expect(staffView.items).toHaveLength(4);
+      expect(staffView.items).toHaveLength(5);
       const limitedView = await listConversationMessages(limitedStaffActor, requestA.quoteRequestId, {}, { prisma });
-      expect(limitedView.items).toHaveLength(3);
+      expect(limitedView.items).toHaveLength(4);
 
       await expect(sendStaffMessage(noMessagingStaffActor, requestA.quoteRequestId, { body: 'No permitido', idempotencyKey: 'staff-denied-01' }, { prisma, now, rateLimit })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
       await expect(sendCustomerMessage(customerActorA, requestA.quoteRequestId, { body: 'Rate limited', idempotencyKey: 'rate-limited-01' }, { prisma, now, rateLimit: deniedRateLimit })).rejects.toMatchObject({ code: 'RATE_LIMITED', status: 429 });

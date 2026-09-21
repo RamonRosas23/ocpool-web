@@ -84,4 +84,41 @@ describe('quote request transactional service', () => {
     await prisma.clientContact.deleteMany({ where: { id: { in: contacts.map(({ id }) => id) } } });
     await prisma.client.deleteMany({ where: { id: { in: contacts.map(({ clientId }) => clientId) } } });
   }, 20_000);
+
+  it('H1-02: rejects a replayed idempotency key whose detail payload actually differs', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-01-04T12:10:00.000Z');
+    const key = `service-${suffix}-mismatch`;
+    const email = `service-mismatch-${suffix}@example.test`;
+    const baseInput = {
+      idempotencyKey: key,
+      origin: 'PUBLIC_FORM' as const,
+      contact: { displayName: 'Cliente idempotencia', email },
+      detail: { projectType: 'Alberca residencial', location: 'Culiacán', description: 'Solicitud original', consentAt: now },
+    };
+
+    const first = await createQuoteRequest(baseInput, { prisma, now });
+    try {
+      // Misma llave, mismo cuerpo real: sigue siendo un reintento legítimo, no un conflicto.
+      const sameReplay = await createQuoteRequest(baseInput, { prisma, now });
+      expect(sameReplay).toEqual(first);
+
+      // Misma llave, descripción distinta: nunca debe regresar en silencio la solicitud original.
+      await expect(createQuoteRequest({ ...baseInput, detail: { ...baseInput.detail, description: 'Solicitud alterada' } }, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      // Misma llave, ubicación distinta: cualquier campo del detalle cuenta, no sólo la descripción.
+      await expect(createQuoteRequest({ ...baseInput, detail: { ...baseInput.detail, location: 'Mazatlán' } }, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      expect(await prisma.quoteRequest.count({ where: { idempotencyKeyHash: { not: null }, contactId: first.contactId } })).toBe(1);
+    } finally {
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: first.quoteRequestId } });
+      await prisma.auditLog.deleteMany({ where: { entityId: first.quoteRequestId } });
+      await prisma.quoteRequest.delete({ where: { id: first.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: first.contactId } });
+      await prisma.client.delete({ where: { id: first.clientId } });
+    }
+  }, 15_000);
 });

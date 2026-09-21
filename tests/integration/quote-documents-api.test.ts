@@ -175,9 +175,13 @@ describe('quote PDF and acceptance API', () => {
     const acceptedBody = await accepted.json() as Record<string, unknown>;
     expect(acceptedBody).toMatchObject({ quoteId, quoteVersionId: versionId, status: 'ACEPTADA', signerName: 'Ana López Rivera', termsVersion: 'v1' });
     expect(acceptedBody).not.toHaveProperty('documentSha256');
-    const replay = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Otro nombre', termsVersion: 'v1', idempotencyKey: 'api-accept-success-01' }), quoteContext());
+    const replay = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: '  Ana   López Rivera ', termsVersion: ' v1 ', idempotencyKey: 'api-accept-success-01' }), quoteContext());
     expect(replay.status).toBe(200);
     await expect(replay.json()).resolves.toMatchObject({ id: acceptedBody.id, status: 'ACEPTADA' });
+    // H1-02: la misma llave con un firmante distinto nunca debe regresar en silencio la
+    // aceptación original -- se rechaza como conflicto real, no como reintento idéntico.
+    const mismatchedReplay = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Otro nombre', termsVersion: 'v1', idempotencyKey: 'api-accept-success-01' }), quoteContext());
+    expect(mismatchedReplay.status).toBe(409);
     const secondKey = await portalAcceptPost(endpoint(`/api/portal/quotes/${quoteId}/accept`, customerAToken, 'POST', { signerName: 'Otro nombre', termsVersion: 'v1', idempotencyKey: 'api-accept-second-01' }), quoteContext());
     expect(secondKey.status).toBe(409);
     const acceptedStatus = await staffDocumentGet(endpoint(`/api/staff/quotes/versions/${versionId}/document`, salesToken), versionContext());

@@ -126,13 +126,22 @@ function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
-async function findReplay(prisma: PrismaClient, acceptedById: string, idempotencyKeyHash: string, quoteId: string): Promise<QuoteAcceptanceResult | null> {
+function assertSameAcceptance(existing: { quoteId: string; signerName: string; termsVersion: string }, quoteId: string, signerName: string, termsVersion: string): void {
+  // H1-02: reutilizar la llave con una cotización, firmante o versión de términos distintos
+  // nunca debe regresar en silencio la aceptación original -- mismo criterio que sameReservation()
+  // en private-files/service.ts.
+  if (existing.quoteId !== quoteId || existing.signerName !== signerName || existing.termsVersion !== termsVersion) {
+    throw new AppError('CONFLICT', 'La llave de idempotencia ya fue utilizada con datos distintos.', 409);
+  }
+}
+
+async function findReplay(prisma: PrismaClient, acceptedById: string, idempotencyKeyHash: string, quoteId: string, signerName: string, termsVersion: string): Promise<QuoteAcceptanceResult | null> {
   const existing = await prisma.quoteAcceptance.findUnique({
     where: { acceptedById_idempotencyKeyHash: { acceptedById, idempotencyKeyHash } },
     include: { quoteVersion: { select: { versionNumber: true } } },
   });
   if (!existing) return null;
-  if (existing.quoteId !== quoteId) throw new AppError('CONFLICT', 'La llave de idempotencia ya fue utilizada.', 409);
+  assertSameAcceptance(existing, quoteId, signerName, termsVersion);
   return serializeAcceptance(existing);
 }
 
@@ -221,7 +230,7 @@ export async function acceptCustomerQuote(actor: Actor, quoteIdInput: string, in
   const now = dependencies.now ?? new Date();
 
   try {
-    const existingReplay = await findReplay(prisma, actor.userId, normalized.idempotencyKeyHash, quoteId);
+    const existingReplay = await findReplay(prisma, actor.userId, normalized.idempotencyKeyHash, quoteId, normalized.signerName, normalized.termsVersion);
     if (existingReplay) return existingReplay;
 
     const result = await prisma.$transaction(async (transaction) => {
@@ -234,7 +243,7 @@ export async function acceptCustomerQuote(actor: Actor, quoteIdInput: string, in
         include: { quoteVersion: { select: { versionNumber: true } } },
       });
       if (replay) {
-        if (replay.quoteId !== quote.id) throw new AppError('CONFLICT', 'La llave de idempotencia ya fue utilizada.', 409);
+        assertSameAcceptance(replay, quote.id, normalized.signerName, normalized.termsVersion);
         return serializeAcceptance(replay);
       }
 
@@ -315,7 +324,7 @@ export async function acceptCustomerQuote(actor: Actor, quoteIdInput: string, in
     return result;
   } catch (error) {
     if (isUniqueConstraintError(error)) {
-      const replay = await findReplay(prisma, actor.userId, normalized.idempotencyKeyHash, quoteId);
+      const replay = await findReplay(prisma, actor.userId, normalized.idempotencyKeyHash, quoteId, normalized.signerName, normalized.termsVersion);
       if (replay) return replay;
       throw new AppError('CONFLICT', 'La cotización ya fue aceptada o la operación ya no está disponible.', 409);
     }

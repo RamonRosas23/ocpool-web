@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
-import { clonePublishedVersion, createQuoteVersion, listReadyToPublishForActor, rejectQuoteVersion, replaceQuoteDraft, returnQuoteToDraft, submitQuoteForReview, transitionQuoteVersion } from '@/server/modules/quotes/service';
+import { clonePublishedVersion, createQuoteVersion, listReadyToPublishForActor, publishQuoteVersion, rejectQuoteVersion, replaceQuoteDraft, returnQuoteToDraft, submitQuoteForReview, transitionQuoteVersion } from '@/server/modules/quotes/service';
 import { decideQuoteApproval, listPendingQuoteApprovalsForActor, listPendingQuoteApprovalsPageForActor, listQuoteApprovals, requestQuoteApproval } from '@/server/modules/quotes/approval-service';
 import { generateQuotePdf } from '@/server/modules/quote-documents/service';
+import { getQuoteDocumentStatusForVersion } from '@/server/modules/quote-documents/access-service';
 import type { QuotePdfSnapshot, RenderedQuotePdf } from '@/server/modules/quote-documents/pdf-renderer';
 import { getPrisma } from '@/server/db/client';
 import type { Actor } from '@/server/auth/types';
@@ -1059,6 +1060,83 @@ describe('quote pricing and versioning service', () => {
       await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds] } } });
       await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
       await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.delete({ where: { id: item.id } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
+
+  it('H1-02: rejects publishing with a preflight digest that went stale before confirmation', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-09-20T20:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-service-${suffix}-stale-digest`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quote stale digest ${suffix}`, email: `quote-stale-digest-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Culiacán', description: 'Stale preflight digest fixture', consentAt: now },
+    }, { prisma, now });
+    const employee = await prisma.user.create({
+      data: { email: `quote-stale-digest-employee-${suffix}@example.test`, emailNormalized: `quote-stale-digest-employee-${suffix}@example.test`, displayName: 'Quote stale digest employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    const category = await prisma.catalogCategory.create({ data: { code: `STALEDIG-${suffix}`, name: 'Stale digest service' } });
+    const item = await prisma.catalogItem.create({ data: { code: `STALEDIG-ITEM-${suffix}`, name: 'Stale digest item', unit: 'pieza', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `STALEDIG-PRICE-${suffix}`, name: 'Stale digest prices', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: item.id, unitPriceMinor: 10_000n, validFrom: now } });
+    let quoteId: string | null = null;
+    const actor = salesActor(employee.id, ['quotes.create', 'quotes.read', 'quotes.send', 'quotes.pdf.generate', 'quotes.pdf.read', 'prices.read']);
+    const fakeRenderer = async (snapshot: QuotePdfSnapshot): Promise<RenderedQuotePdf> => {
+      const bytes = new TextEncoder().encode(`fake-pdf-total:${snapshot.totalMinor}`);
+      return { bytes, byteSize: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex'), pageCount: 1, templateVersion: 'test-fake' };
+    };
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const created = await createQuoteVersion(actor, { quoteRequestId: request.quoteRequestId, priceListId: priceList.id, lines: [{ catalogItemId: item.id, quantity: '1' }] }, { prisma, now });
+      quoteId = created.quoteId;
+      await submitQuoteForReview(actor, created.versionId, { prisma, now });
+      await generateQuotePdf(actor, created.versionId, { prisma, now, renderer: fakeRenderer });
+
+      // P1-05: la digest que el diálogo de preflight leyó al abrirse -- se queda "vieja" en cuanto
+      // el contenido cambia después, exactamente el escenario que este mecanismo debe detectar.
+      const staleDigest = (await getQuoteDocumentStatusForVersion(actor, created.versionId, { prisma, now })).contentDigest;
+
+      const [line] = await prisma.quoteLineSnapshot.findMany({ where: { quoteVersionId: created.versionId } });
+      if (!line) throw new Error('The stale-digest fixture line was not created.');
+      // Simula otra pestaña/persona editando el contenido mientras el diálogo de confirmación sigue
+      // abierto con la digest ya leída -- sin pasar por status, tal como una repreciación real.
+      await prisma.quoteLineSnapshot.update({ where: { id: line.id }, data: { quantityMilliunits: line.quantityMilliunits * 2n } });
+
+      await expect(publishQuoteVersion(actor, created.versionId, { expectedContentDigest: staleDigest }, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      expect(await prisma.quoteVersion.findUnique({ where: { id: created.versionId }, select: { status: true } })).toMatchObject({ status: 'EN_REVISION' });
+
+      // Control positivo: la MISMA operación con la digest fresca (la que el staff vería si
+      // recargara el preflight) sí debe publicar -- el mecanismo detecta el cambio real, no bloquea
+      // indiscriminadamente.
+      const freshDigest = (await getQuoteDocumentStatusForVersion(actor, created.versionId, { prisma, now })).contentDigest;
+      expect(freshDigest).not.toBe(staleDigest);
+      const published = await publishQuoteVersion(actor, created.versionId, { expectedContentDigest: freshDigest }, { prisma, now });
+      expect(published.toStatus).toBe('ENVIADA');
+      expect(await prisma.quoteVersion.findUnique({ where: { id: created.versionId }, select: { status: true, contentDigest: true } })).toMatchObject({ status: 'ENVIADA', contentDigest: freshDigest });
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      const documents = await prisma.generatedDocument.findMany({ where: { quoteVersionId: { in: versionIds } }, select: { id: true } });
+      await prisma.quotePublication.deleteMany({ where: { documentId: { in: documents.map(({ id }) => id) } } });
+      await prisma.generatedDocument.deleteMany({ where: { quoteVersionId: { in: versionIds } } });
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.user.deleteMany({ where: { clientId: request.clientId, type: 'CUSTOMER' } });
       await prisma.client.delete({ where: { id: request.clientId } });
       await prisma.user.delete({ where: { id: employee.id } });
       await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });

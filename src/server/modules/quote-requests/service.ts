@@ -3,6 +3,7 @@ import type { PrismaClient } from '@/generated/prisma/client';
 import type { QuoteRequestBudgetRange, QuoteRequestProjectStage, QuoteRequestTimeline } from '@/generated/prisma/enums';
 import { fingerprintToken } from '@/server/auth/crypto';
 import { getPrisma } from '@/server/db/client';
+import { AppError } from '@/server/http/errors';
 import {
   formatQuoteRequestFolio,
   normalizeQuoteRequestEmail,
@@ -139,14 +140,60 @@ function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
-async function findByIdempotencyKey(prisma: DbClient, idempotencyKeyHash: string): Promise<QuoteRequestResult | null> {
-  const existing = await prisma.quoteRequest.findUnique({ where: { idempotencyKeyHash } });
-  return existing ? {
+type NormalizedQuoteRequestDetail = {
+  origin: 'PUBLIC_FORM' | 'STAFF_CREATED';
+  projectType: string;
+  location: string;
+  dimensions: string | null;
+  description: string;
+  currencyCode: string;
+  budgetCents: bigint | undefined;
+  projectStage: QuoteRequestProjectStage | null | undefined;
+  timeline: QuoteRequestTimeline | null | undefined;
+  budgetRange: QuoteRequestBudgetRange | null | undefined;
+};
+
+async function findByIdempotencyKey(prisma: DbClient, idempotencyKeyHash: string): Promise<(QuoteRequestResult & NormalizedQuoteRequestDetail) | null> {
+  const existing = await prisma.quoteRequest.findUnique({
+    where: { idempotencyKeyHash },
+    include: { detail: true },
+  });
+  if (!existing || !existing.detail) return null;
+  return {
     quoteRequestId: existing.id,
     folio: existing.folio,
     clientId: existing.clientId,
     contactId: existing.contactId,
-  } : null;
+    origin: existing.origin,
+    projectType: existing.detail.projectType,
+    location: existing.detail.location,
+    dimensions: existing.detail.dimensions,
+    description: existing.detail.description,
+    currencyCode: existing.detail.currencyCode,
+    budgetCents: existing.detail.budgetCents ?? undefined,
+    projectStage: existing.detail.projectStage ?? undefined,
+    timeline: existing.detail.timeline ?? undefined,
+    budgetRange: existing.detail.budgetRange ?? undefined,
+  };
+}
+
+// H1-02: reutilizar la llave de idempotencia con datos distintos nunca debe regresar en silencio
+// la primera solicitud creada -- mismo criterio que sameReservation() en private-files/service.ts.
+function sameQuoteRequest(existing: NormalizedQuoteRequestDetail, candidate: NormalizedQuoteRequestDetail): boolean {
+  return existing.origin === candidate.origin
+    && existing.projectType === candidate.projectType
+    && existing.location === candidate.location
+    && existing.dimensions === candidate.dimensions
+    && existing.description === candidate.description
+    && existing.currencyCode === candidate.currencyCode
+    && existing.budgetCents === candidate.budgetCents
+    && existing.projectStage === candidate.projectStage
+    && existing.timeline === candidate.timeline
+    && existing.budgetRange === candidate.budgetRange;
+}
+
+function toQuoteRequestResult(existing: QuoteRequestResult & NormalizedQuoteRequestDetail): QuoteRequestResult {
+  return { quoteRequestId: existing.quoteRequestId, folio: existing.folio, clientId: existing.clientId, contactId: existing.contactId };
 }
 
 export async function createQuoteRequest(input: CreateQuoteRequestInput, dependencies: QuoteRequestServiceDependencies = {}): Promise<QuoteRequestResult> {
@@ -159,11 +206,28 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput, depende
   const description = normalizeQuoteRequestText(input.detail.description, 10_000);
   const currencyCode = normalizeCurrencyCode(input.detail.currencyCode);
   const budgetCents = normalizeBudgetCents(input.detail.budgetCents);
+  const candidate: NormalizedQuoteRequestDetail = {
+    origin: input.origin,
+    projectType,
+    location,
+    dimensions,
+    description,
+    currencyCode,
+    budgetCents,
+    projectStage: input.detail.projectStage,
+    timeline: input.detail.timeline,
+    budgetRange: input.detail.budgetRange,
+  };
+  const assertReplayMatches = (existing: NormalizedQuoteRequestDetail) => {
+    if (!sameQuoteRequest(existing, candidate)) {
+      throw new AppError('CONFLICT', 'La llave de idempotencia ya fue utilizada con datos distintos.', 409);
+    }
+  };
 
   try {
     return await prisma.$transaction(async (transaction) => {
       const existing = await findByIdempotencyKey(transaction, idempotencyKeyHash);
-      if (existing) return existing;
+      if (existing) { assertReplayMatches(existing); return toQuoteRequestResult(existing); }
 
       const { clientId, contactId } = await resolveClientAndContact(transaction, input.contact, input.contactResolution);
       const folio = await allocateFolio(transaction, now);
@@ -221,7 +285,7 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput, depende
   } catch (error) {
     if (isUniqueConstraintError(error)) {
       const existing = await findByIdempotencyKey(prisma, idempotencyKeyHash);
-      if (existing) return existing;
+      if (existing) { assertReplayMatches(existing); return toQuoteRequestResult(existing); }
     }
     throw error;
   }

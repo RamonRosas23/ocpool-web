@@ -223,7 +223,15 @@ async function writeMessage(
     },
     include: { sender: { select: { id: true, displayName: true, type: true } } },
   });
-  if (existing) return { ...serializeMessage(existing, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE'), idempotent: true };
+  if (existing) {
+    // H1-02: una reutilización de la llave con un cuerpo o visibilidad distintos nunca debe
+    // regresar en silencio el primer mensaje enviado -- mismo criterio ya aplicado por
+    // sameReservation() en private-files/service.ts para reservas de carga.
+    if (existing.body !== normalized.body || existing.visibility !== visibility) {
+      throw new AppError('CONFLICT', 'La llave de idempotencia ya fue utilizada con un contenido distinto.', 409);
+    }
+    return { ...serializeMessage(existing, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE'), idempotent: true };
+  }
 
   const message = await transaction.conversationMessage.create({
     data: {

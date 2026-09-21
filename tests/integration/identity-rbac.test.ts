@@ -308,6 +308,17 @@ describe('identity and RBAC foundation', () => {
     if (login.ok) {
       expect(await getActorFromSession(login.rawToken, { prisma, now })).toMatchObject({ userId: employee.id, type: 'EMPLOYEE' });
     }
+    // H1-02: cada login debe emitir una sesión nueva e independiente, nunca reutilizar o
+    // "adoptar" un identificador previo -- la protección real contra fijación de sesión, ya que
+    // loginEmployee no acepta ningún token/sessionId provisto por el cliente como entrada.
+    const secondLogin = await loginEmployee({ email: employeeEmail, password, context }, { prisma, now: new Date(now.getTime() + 500), sessionTokenGenerator: () => `employee-session-2-${suffix}-abcdefghijklmnopqrstuvwxyz` });
+    expect(secondLogin.ok).toBe(true);
+    if (login.ok && secondLogin.ok) {
+      expect(secondLogin.sessionId).not.toBe(login.sessionId);
+      expect(secondLogin.rawToken).not.toBe(login.rawToken);
+      expect(await getActorFromSession(login.rawToken, { prisma, now })).toMatchObject({ userId: employee.id, type: 'EMPLOYEE' });
+      expect(await getActorFromSession(secondLogin.rawToken, { prisma, now })).toMatchObject({ userId: employee.id, type: 'EMPLOYEE' });
+    }
     expect((await loginEmployee({ email: employeeEmail, password: 'wrong-password', context }, { prisma, now: new Date(now.getTime() + 1), sessionTokenGenerator: () => `wrong-session-${suffix}-abcdefghijklmnopqrstuvwxyz` })).ok).toBe(false);
 
     const enrollment = createMfaEnrollment({ accountLabel: adminEmail });

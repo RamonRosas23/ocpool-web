@@ -54,7 +54,7 @@ describe('public quote request API', () => {
     expect(honeypot.status).toBe(400);
   });
 
-  it('persists a public request and returns only a replay-safe folio', async () => {
+  it('persists a public request, replays an identical retry safely and rejects a mismatched one', async () => {
     if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
 
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -69,9 +69,15 @@ describe('public quote request API', () => {
     expect(payload.error).toBeUndefined();
     createdFolios.push(payload.folio as string);
 
-    const replay = await POST(request({ ...body, description: 'No debe crear otro expediente.' }, { 'idempotency-key': idempotencyKey }));
-    expect(replay.status).toBe(201);
-    await expect(replay.json()).resolves.toEqual(payload);
+    const sameReplay = await POST(request(body, { 'idempotency-key': idempotencyKey }));
+    expect(sameReplay.status).toBe(201);
+    await expect(sameReplay.json()).resolves.toEqual(payload);
+
+    // H1-02: la misma llave con datos realmente distintos nunca debe regresar en silencio el
+    // expediente original -- se rechaza como conflicto real, no como reintento idéntico.
+    const mismatchedReplay = await POST(request({ ...body, description: 'No debe crear otro expediente.' }, { 'idempotency-key': idempotencyKey }));
+    expect(mismatchedReplay.status).toBe(409);
+    await expect(mismatchedReplay.json()).resolves.toMatchObject({ error: { code: 'CONFLICT' } });
 
     const stored = await prisma.quoteRequest.findUnique({ where: { folio: payload.folio }, include: { detail: true, contact: true, client: true } });
     expect(stored).toMatchObject({
