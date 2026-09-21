@@ -109,6 +109,22 @@ export default function StaffRequestsPanel() {
   const [selected, setSelected] = useState<RequestDetail | null>(null);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [statusFilter, setStatusFilter, statusFilterHydrated] = usePersistentState('ocpool.staff.requests.statusFilter', '');
+  // El estado se aplicaba de inmediato al elegirlo mientras la búsqueda de texto, en el mismo
+  // formulario, esperaba a "Aplicar filtros" -- dos temporizaciones distintas para dos controles
+  // del mismo filtro. Se unifican: statusFilterDraft es lo que el select muestra mientras se edita,
+  // y sólo se copia al valor aplicado/persistido (statusFilter) cuando se envía el formulario,
+  // igual que ya ocurre con la búsqueda. Se siembra ajustando el estado durante el render (no en un
+  // efecto aparte): un efecto propio llegaría un render después de que `usePersistentState` ya
+  // hidrató, así que el valor todavía transicionaría sobre el `PrivateSelect` ya montado con la key
+  // "hydrated" -- exactamente el eco espurio de Radix que ya se corrigió en otro panel esta misma
+  // sesión. Ajustar durante el render evita el salto: para cuando la key cambia a "hydrated", el
+  // borrador ya tiene el valor final y el select nunca ve la transición.
+  const [statusFilterDraft, setStatusFilterDraft] = useState('');
+  const statusFilterDraftSeeded = useRef(false);
+  if (statusFilterHydrated && !statusFilterDraftSeeded.current) {
+    statusFilterDraftSeeded.current = true;
+    if (statusFilterDraft !== statusFilter) setStatusFilterDraft(statusFilter);
+  }
   const [searchInput, setSearchInput] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -255,6 +271,7 @@ export default function StaffRequestsPanel() {
     event.preventDefault();
     setPage(1);
     setAppliedSearch(searchInput.trim());
+    setStatusFilter(statusFilterDraft);
   };
 
   const assign = async (targetId = assignmentId) => {
@@ -366,7 +383,7 @@ export default function StaffRequestsPanel() {
           <aside className="staff-inbox">
             <form className="staff-filters" onSubmit={submitSearch}>
               <label><span>Buscar</span><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Folio, cliente o correo" maxLength={100} /></label>
-              <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="requests-status-filter" label="Estado" value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); }} options={STATUS_OPTIONS.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
+              <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="requests-status-filter" label="Estado" value={statusFilterDraft} onValueChange={setStatusFilterDraft} options={STATUS_OPTIONS.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
               <button className="staff-button staff-button--filter" type="submit">Aplicar filtros</button>
             </form>
 
