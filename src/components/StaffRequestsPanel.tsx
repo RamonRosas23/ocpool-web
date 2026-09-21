@@ -251,8 +251,11 @@ export default function StaffRequestsPanel() {
         const response = await fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store' });
         const data = await readApiResponseOrThrow<StaffRequestCapabilities>(response, 'No fue posible validar los permisos.');
         setMessagingCapabilities(data);
-      } catch {
-        // The conversation remains inaccessible in the UI if capabilities cannot be resolved.
+      } catch (caught) {
+        // Sin esto, un fallo de red aquí dejaba `messagingCapabilities` en su default (todo en
+        // falso) sin ninguna señal -- StaffFilesPanel/StaffMessagingPanel entonces mostraban "tu rol
+        // no tiene permiso", indistinguible de una restricción real deliberada.
+        setError(caught instanceof Error ? caught.message : 'No fue posible validar los permisos.');
       } finally {
         setMessagingCapabilitiesLoaded(true);
       }
