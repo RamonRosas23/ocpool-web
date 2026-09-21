@@ -271,7 +271,7 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
         <FileStatusBadge file={file} />
         <div className="client-file__actions">
           {file.downloadAvailable && <button type="button" className="client-file__action" disabled={busyFileId === file.id} onClick={() => void download(file)}>Descargar {file.originalFileName}</button>}
-          {confirmDeleteId === file.id ? <span className="client-file__confirm"><button type="button" className="client-file__action client-file__action--danger" disabled={busyFileId === file.id} onClick={() => void remove(file)}>Confirmar eliminación</button><button type="button" className="client-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(null)}>Cancelar</button></span> : <button type="button" className="client-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(file.id)}>Eliminar archivo</button>}
+          {confirmDeleteId === file.id ? <span className="client-file__confirm"><small className="client-file__confirm-warning">No se puede deshacer.</small><button type="button" className="client-file__action client-file__action--danger" disabled={busyFileId === file.id} onClick={() => void remove(file)}>Confirmar eliminación</button><button type="button" className="client-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(null)}>Cancelar</button></span> : <button type="button" className="client-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(file.id)}>Eliminar archivo</button>}
         </div>
       </li>)}
     </ul>}
