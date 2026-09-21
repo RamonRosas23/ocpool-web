@@ -97,19 +97,29 @@ export default function RequestWorkspaceV2Panel() {
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
   const [capabilitiesRetryToken, setCapabilitiesRetryToken] = useState(0);
+  const [assigneesError, setAssigneesError] = useState<string | null>(null);
 
   useEffect(() => setSearchInput(query.query), [query.query]);
 
   useEffect(() => {
     if (!canAssign || !canReadGlobal) {
       setAssignees([]);
+      setAssigneesError(null);
       return;
     }
     const controller = new AbortController();
+    setAssigneesError(null);
     fetch('/api/staff/quote-requests/assignees', { credentials: 'include', cache: 'no-store', signal: controller.signal })
       .then((response) => readApiResponseOrThrow<AssigneeResponse>(response, 'No fue posible cargar responsables disponibles.'))
       .then((data) => setAssignees(data.items))
-      .catch(() => { if (!controller.signal.aborted) setAssignees([]); });
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+        // Antes esto caía en silencio a `[]`, indistinguible de "sin personal asignable" -- el
+        // selector "Responsable" completo desaparecía (sólo se renderiza con `assignees.length > 0`)
+        // sin ninguna señal de que fue un fallo, mismo defecto ya corregido en StaffProjectWorkspacePanel.
+        setAssignees([]);
+        setAssigneesError(caught instanceof Error ? caught.message : 'No fue posible cargar responsables disponibles.');
+      });
     return () => controller.abort();
   }, [canAssign, canReadGlobal]);
 
@@ -235,6 +245,7 @@ export default function RequestWorkspaceV2Panel() {
           <PrivateSelect id="request-workspace-age" label="Antigüedad" value={query.age} options={REQUEST_WORKSPACE_AGES.map((value) => ({ value, label: AGE_LABELS[value] }))} onValueChange={(value) => updateQuery({ age: normalizeRequestWorkspaceQuery({ age: value }).age, page: 1 })} />
           <PrivateSelect id="request-workspace-sort" label="Orden" value={query.sort} options={REQUEST_WORKSPACE_SORTS.map((value) => ({ value, label: SORT_LABELS[value] }))} onValueChange={(value) => updateQuery({ sort: normalizeRequestWorkspaceQuery({ sort: value }).sort, page: 1 })} />
           {canReadGlobal && assignees.length > 0 && <PrivateSelect id="request-workspace-assignee" label="Responsable" description={query.view !== 'all' ? 'Disponible sólo en la vista "Todas las solicitudes".' : undefined} value={query.assigneeId ?? ''} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} onValueChange={(value) => updateQuery({ assigneeId: normalizeRequestWorkspaceQuery({ assignee: value }).assigneeId, view: 'all', page: 1 })} placeholder="Cualquier responsable" disabled={query.view !== 'all'} />}
+          {canReadGlobal && assignees.length === 0 && assigneesError && <p className="private-status private-status--error" role="alert">{assigneesError}</p>}
           <PrivateButton type="submit" variant="primary">Aplicar búsqueda</PrivateButton>
           {hasFilters && <PrivateButton type="button" variant="quiet" onClick={() => { setSearchInput(''); updateQuery({ view: defaultView, query: '', stage: null, assigneeId: null, age: 'all', sort: 'newest', page: 1 }); }}>Limpiar</PrivateButton>}
         </form>
