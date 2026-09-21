@@ -87,6 +87,95 @@ describe('special concept promotion service (K1-05 parte 2)', () => {
     }
   }, 30_000);
 
+  it('H1-05: counts every occurrence correctly and caps only recentFolios, never occurrences, beyond the display limit', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-04-01T12:00:00.000Z');
+    const manager = actor(`00000000-0000-4000-8000-${suffix.slice(-12).padStart(12, '0')}`, ['catalog.manage', 'quotes.create']);
+    const user = await prisma.user.create({
+      data: { email: `special-scale-${suffix}@example.test`, emailNormalized: `special-scale-${suffix}@example.test`, displayName: 'Special scale employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    manager.userId = user.id;
+    const priceList = await prisma.priceList.create({ data: { code: `SPECIAL-SCALE-${suffix}`, name: 'Special scale prices', currencyCode: 'MXN', validFrom: now } });
+    const requestIds: string[] = [];
+    const clientIds: string[] = [];
+    const quoteIds: string[] = [];
+
+    // Un `take` ingenuo sobre las líneas crudas (ordenadas por antigüedad, como hacía la versión
+    // anterior) habría cortado antes de llegar a estas 7 ocurrencias reales si hubiera suficiente
+    // volumen ajeno por delante en la tabla -- este caso prueba que el conteo real (7) y el límite
+    // de folios recientes (5) son cosas distintas, y que ninguna se trunca en silencio.
+    for (let index = 0; index < 7; index += 1) {
+      const request = await createQuoteRequest({
+        idempotencyKey: `special-scale-${suffix}-${index}`,
+        origin: 'STAFF_CREATED',
+        contact: { displayName: `Special scale ${suffix}-${index}`, email: `special-scale-${suffix}-${index}@example.test` },
+        detail: { projectType: 'Residencial', location: 'Mazatlán', description: 'Special concept scale fixture', consentAt: new Date(now.getTime() + index * 1000) },
+      }, { prisma, now: new Date(now.getTime() + index * 1000) });
+      requestIds.push(request.quoteRequestId);
+      clientIds.push(request.clientId);
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const version = await createQuoteVersion(manager, {
+        quoteRequestId: request.quoteRequestId,
+        priceListId: priceList.id,
+        lines: [{ special: true, name: 'Reparación de domo geodésico', unit: 'servicio', quantity: '1', unitPriceMinor: '5000', reason: 'Fixture de escala' }],
+      }, { prisma, now: new Date(now.getTime() + index * 1000) });
+      quoteIds.push(version.quoteId);
+    }
+    // Un segundo grupo, con un solo integrante, para probar que agrupar por separado no oculta
+    // ni mezcla al primero -- ambos deben aparecer completos en el mismo resultado.
+    const otherRequest = await createQuoteRequest({
+      idempotencyKey: `special-scale-other-${suffix}`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Special scale other ${suffix}`, email: `special-scale-other-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Mazatlán', description: 'Special concept scale fixture (other group)', consentAt: now },
+    }, { prisma, now });
+    requestIds.push(otherRequest.quoteRequestId);
+    clientIds.push(otherRequest.clientId);
+    await prisma.quoteRequest.update({ where: { id: otherRequest.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+    const otherVersion = await createQuoteVersion(manager, {
+      quoteRequestId: otherRequest.quoteRequestId,
+      priceListId: priceList.id,
+      lines: [{ special: true, name: 'Instalación de tobogán a medida', unit: 'servicio', quantity: '1', unitPriceMinor: '5000', reason: 'Fixture de escala' }],
+    }, { prisma, now });
+    quoteIds.push(otherVersion.quoteId);
+
+    try {
+      const groups = await listSpecialConcepts(manager, { prisma });
+      const mainGroup = groups.find((candidate) => candidate.normalizedName === 'reparación de domo geodésico');
+      const otherGroup = groups.find((candidate) => candidate.normalizedName === 'instalación de tobogán a medida');
+      expect(mainGroup).toBeTruthy();
+      expect(mainGroup!.occurrences).toBe(7);
+      expect(mainGroup!.recentFolios).toHaveLength(5);
+      expect(new Set(mainGroup!.recentFolios).size).toBe(5);
+      expect(otherGroup).toBeTruthy();
+      expect(otherGroup!.occurrences).toBe(1);
+      expect(otherGroup!.recentFolios).toHaveLength(1);
+    } finally {
+      for (const quoteId of quoteIds) {
+        const versionIds = (await prisma.quoteVersion.findMany({ where: { quoteId }, select: { id: true } })).map(({ id }) => id);
+        await prisma.outboxEvent.deleteMany({ where: { aggregateId: quoteId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: { in: [quoteId, ...versionIds] } } });
+      }
+      await prisma.quote.deleteMany({ where: { id: { in: quoteIds } } });
+      for (const requestId of requestIds) {
+        await prisma.outboxEvent.deleteMany({ where: { aggregateId: requestId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: requestId } });
+      }
+      const contactIds = requestIds.length ? (await prisma.quoteRequest.findMany({ where: { id: { in: requestIds } }, select: { contactId: true } })).map(({ contactId }) => contactId) : [];
+      await prisma.quoteRequest.deleteMany({ where: { id: { in: requestIds } } });
+      await prisma.clientContact.deleteMany({ where: { id: { in: contactIds } } });
+      await prisma.client.deleteMany({ where: { id: { in: clientIds } } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.user.delete({ where: { id: user.id } });
+    }
+  }, 30_000);
+
   it('promotes a special concept idempotently and dedupes against an existing catalog item (K1-05 parte 2)', async () => {
     if (process.env.RUN_DB_TESTS !== '1') {
       throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
