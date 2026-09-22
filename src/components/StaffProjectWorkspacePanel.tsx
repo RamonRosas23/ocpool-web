@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffTopNav from '@/components/StaffTopNav';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
@@ -94,12 +94,20 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
     return () => controller.abort();
   }, []);
 
+  // UX audit fix: `/staff/projects/[id]` no remonta este componente al navegar entre dos proyectos
+  // distintos (mismo patrón ya confirmado y corregido en el hermano `/staff/requests/[requestId]`,
+  // ver commit a52d6ce) -- sin guardia, una respuesta tardía de `load()` para el proyecto ANTERIOR
+  // podía pisar en silencio el `workspace` ya cargado del proyecto nuevo (totales de dinero,
+  // checklist, responsable) mientras la URL y el encabezado ya mostraban el proyecto correcto.
+  const loadGenerationRef = useRef(0);
   const load = useCallback(async () => {
+    const generation = (loadGenerationRef.current += 1);
     setLoading(true);
     setError(null);
     try {
       const response = await fetch(`/api/staff/projects/${projectId}`, { credentials: 'include', cache: 'no-store' });
       const result = await readApiResponse<ProjectWorkspace>(response, 'No fue posible cargar el proyecto.');
+      if (loadGenerationRef.current !== generation) return;
       if (!result.ok) {
         if (result.kind === 'forbidden') setAccessDenied(true);
         if (result.kind === 'not_found') setNotFound(true);
@@ -109,8 +117,10 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
       setNotFound(false);
       setWorkspace(result.data);
     } catch (caught) {
+      if (loadGenerationRef.current !== generation) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el proyecto.');
     } finally {
+      if (loadGenerationRef.current !== generation) return;
       setLoading(false);
     }
   }, [projectId]);
