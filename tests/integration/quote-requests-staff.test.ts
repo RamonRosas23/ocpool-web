@@ -125,7 +125,7 @@ describe('staff quote request operations', () => {
     }
     await assignQuoteRequest(staffActor(operator.id, ['requests.assign']), requests[1].quoteRequestId, { assignedToId: operator.id }, { prisma, now });
 
-    const operatorActor = staffActor(operator.id, ['requests.read', 'requests.assign']);
+    const operatorActor = staffActor(operator.id, ['requests.read', 'requests.assign', 'requests.status.update']);
     const prefix = 'workspace-query-';
     const sorted = await listStaffQuoteRequests(operatorActor, {
       ...requestWorkspaceQueryToListFilters(normalizeRequestWorkspaceQuery({ query: prefix, sort: 'oldest' }), operator.id, now),
@@ -157,6 +157,29 @@ describe('staff quote request operations', () => {
     ), { prisma, now });
     expect(unassigned.items.map(({ id }) => id)).toEqual(expect.arrayContaining([requests[0].quoteRequestId, requests[2].quoteRequestId]));
     expect(unassigned.items).toHaveLength(2);
+
+    // UX audit fix: `currentAssigneeId` nunca se limpia al llegar a un estado cerrado, así que sin
+    // `activeOnly` el dashboard mostraba expedientes ya rechazados/aceptados/vencidos/convertidos
+    // fijos arriba del orden "más antiguo primero" (`updatedAt` deja de cambiar en un estado
+    // terminal), desplazando el trabajo real que sí necesita atención.
+    const closedRequest = await createRequest(`${prefix}${Date.now()}-closed`);
+    await assignQuoteRequest(staffActor(operator.id, ['requests.assign']), closedRequest.quoteRequestId, { assignedToId: operator.id }, { prisma, now });
+    await transitionQuoteRequest(operatorActor, closedRequest.quoteRequestId, { toStatus: 'EN_REVISION' }, { prisma, now });
+    await transitionQuoteRequest(operatorActor, closedRequest.quoteRequestId, { toStatus: 'RECHAZADA' }, { prisma, now });
+
+    const mineWithClosed = await listStaffQuoteRequests(operatorActor, requestWorkspaceQueryToListFilters(
+      normalizeRequestWorkspaceQuery({ query: prefix, view: 'mine' }),
+      operator.id,
+      now,
+    ), { prisma, now });
+    expect(mineWithClosed.items.map(({ id }) => id)).toEqual(expect.arrayContaining([requests[1].quoteRequestId, closedRequest.quoteRequestId]));
+    expect(mineWithClosed.items).toHaveLength(2);
+
+    const mineActiveOnly = await listStaffQuoteRequests(operatorActor, {
+      ...requestWorkspaceQueryToListFilters(normalizeRequestWorkspaceQuery({ query: prefix, view: 'mine' }), operator.id, now),
+      activeOnly: true,
+    }, { prisma, now });
+    expect(mineActiveOnly.items.map(({ id }) => id)).toEqual([requests[1].quoteRequestId]);
   });
 
   it('limits non-global staff to their own and unassigned requests', async () => {

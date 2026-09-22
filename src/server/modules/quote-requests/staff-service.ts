@@ -28,6 +28,8 @@ import {
 
 export type StaffQuoteRequestListFilters = {
   status?: QuoteRequestStatus;
+  /** Excluye los estados de `CLOSED_QUOTE_REQUEST_STATUSES`; se ignora si `status` ya fija uno explícito. */
+  activeOnly?: boolean;
   assignedToId?: string | null;
   query?: string;
   createdFrom?: Date;
@@ -330,6 +332,11 @@ function projectAvailableActions(actor: Actor, status: QuoteRequestStatus, curre
   return { availableStatusTransitions, availableActions };
 }
 
+// Estados verdaderamente cerrados -- ya no vuelven a cambiar `updatedAt` una vez alcanzados
+// (`STAFF_OPERATIONAL_TRANSITIONS` no ofrece ninguna salida desde ellos), así que un expediente que
+// los alcanza queda congelado para siempre en cualquier orden "más antiguo primero".
+const CLOSED_QUOTE_REQUEST_STATUSES: readonly QuoteRequestStatus[] = ['ACEPTADA', 'RECHAZADA', 'VENCIDA', 'CONVERTIDA_EN_PROYECTO'];
+
 export async function listStaffQuoteRequests(actor: Actor, filters: StaffQuoteRequestListFilters = {}, dependencies: StaffServiceDependencies = {}) {
   requireStaffPermission(actor, 'requests.read');
   const prisma = dependencies.prisma ?? getPrisma();
@@ -347,7 +354,11 @@ export async function listStaffQuoteRequests(actor: Actor, filters: StaffQuoteRe
         ],
       }] : []),
     ],
-    status: normalized.status,
+    // W1-02: "qué atender ahora" (el dashboard, sin `stage` propio) pide `activeOnly` para excluir
+    // estos estados cerrados -- currentAssigneeId nunca se limpia al llegar a un estado terminal
+    // (sigue "asignado" para siempre), así que sin este filtro esas filas quedaban fijas arriba del
+    // orden "más antiguo primero" y desplazaban en silencio el trabajo real que sí necesita atención.
+    status: normalized.status ?? (normalized.activeOnly ? { notIn: [...CLOSED_QUOTE_REQUEST_STATUSES] } : undefined),
     currentAssigneeId: normalized.assignedToId,
     createdAt: normalized.createdFrom || normalized.createdAfter || normalized.createdBefore || normalized.createdBeforeOrEqual || normalized.createdTo ? {
       gte: normalized.createdFrom,
@@ -401,7 +412,6 @@ export type CustomerRepliedSummary = Readonly<{
   lastCustomerMessageAt: Date;
 }>;
 
-const CUSTOMER_REPLIED_EXCLUDED_STATUSES: readonly QuoteRequestStatus[] = ['ACEPTADA', 'RECHAZADA', 'VENCIDA', 'CONVERTIDA_EN_PROYECTO'];
 const CUSTOMER_REPLIED_QUEUE_LIMIT = 20;
 
 /// W1-01: "cliente respondió" is deterministic, not an opaque score --
@@ -431,7 +441,7 @@ export async function listCustomerRepliedForActor(actor: Actor, dependencies: St
       LIMIT 1
     ) lastmsg ON TRUE
     LEFT JOIN "conversation_read_states" crs ON crs."conversationId" = c."id" AND crs."userId" = ${actor.userId}::uuid
-    WHERE qr."status" NOT IN (${Prisma.join(CUSTOMER_REPLIED_EXCLUDED_STATUSES)})
+    WHERE qr."status" NOT IN (${Prisma.join(CLOSED_QUOTE_REQUEST_STATUSES)})
       AND (crs."id" IS NULL OR crs."lastReadAt" < lastmsg."createdAt")
       AND ${scope}
     ORDER BY lastmsg."createdAt" ASC

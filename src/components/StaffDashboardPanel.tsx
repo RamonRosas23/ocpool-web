@@ -198,8 +198,8 @@ export default function StaffDashboardPanel() {
         // El scope "workspace" (view=mine/unassigned) fija su propio pageSize=20 en el servidor;
         // se toman sólo los primeros 5 para esta lectura compacta y `total` informa el resto.
         const [mineResponse, unassignedResponse, approvalsResponse, customerRepliedResponse, readyToPublishResponse, failedNotificationsResponse] = await Promise.all([
-          fetch('/api/staff/quote-requests?view=mine&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
-          fetch('/api/staff/quote-requests?view=unassigned&sort=stale', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
+          fetch('/api/staff/quote-requests?view=mine&sort=stale&activeOnly=1', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
+          fetch('/api/staff/quote-requests?view=unassigned&sort=stale&activeOnly=1', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quotes/approvals/pending', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quote-requests/customer-replied', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quotes/ready-to-publish', { credentials: 'include', cache: 'no-store', signal: controller.signal }),

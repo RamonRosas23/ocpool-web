@@ -6,7 +6,7 @@ import { parseBody, requestId } from '@/server/auth/http';
 import { readServerEnv } from '@/server/env';
 import { AppError, toErrorResponse } from '@/server/http/errors';
 import { QUOTE_REQUEST_BUDGET_RANGES, QUOTE_REQUEST_PROJECT_STAGES, QUOTE_REQUEST_STATUSES, QUOTE_REQUEST_TIMELINES } from '@/server/modules/quote-requests/domain';
-import { createStaffQuoteRequest, listStaffQuoteRequests } from '@/server/modules/quote-requests/staff-service';
+import { createStaffQuoteRequest, listStaffQuoteRequests, type StaffQuoteRequestListFilters } from '@/server/modules/quote-requests/staff-service';
 import {
   normalizeRequestWorkspaceQuery,
   requestWorkspaceQueryToListFilters,
@@ -45,10 +45,15 @@ function idempotencyKey(request: NextRequest): string {
   return value;
 }
 
-function parseQuery(request: NextRequest, actorUserId: string) {
+function parseQuery(request: NextRequest, actorUserId: string): StaffQuoteRequestListFilters {
   const hasWorkspaceState = ['view', 'stage', 'assignee', 'age', 'sort', 'tab'].some((key) => request.nextUrl.searchParams.has(key));
   if (hasWorkspaceState) {
-    return requestWorkspaceQueryToListFilters(normalizeRequestWorkspaceQuery(request.nextUrl.searchParams), actorUserId, new Date());
+    const filters = requestWorkspaceQueryToListFilters(normalizeRequestWorkspaceQuery(request.nextUrl.searchParams), actorUserId, new Date());
+    // W1-02: el dashboard ("qué atender ahora") pide sus colas sin `stage` propio -- `activeOnly`
+    // excluye los estados ya cerrados en vez de que el llamador tenga que enumerarlos. Se ignora si
+    // ya hay un `status` explícito (p.ej. un `stage` real elegido en el inbox general).
+    if (request.nextUrl.searchParams.get('activeOnly') === '1') return { ...filters, activeOnly: true };
+    return filters;
   }
 
   const parsed = querySchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));
