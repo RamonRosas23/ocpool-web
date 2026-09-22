@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { nextRovingTabIndex } from '@/components/private/ui';
 import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
 import { getApiErrorMessage } from '@/lib/api-error-message';
@@ -93,6 +93,16 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
   const [announcement, setAnnouncement] = useState('');
   const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
 
+  // UX audit fix: este componente no se remonta al cambiar de solicitud seleccionada
+  // (StaffRequestsPanel.tsx renderiza `<StaffMessagingPanel requestId={...} />` sin `key`, misma
+  // instancia persiste) -- `sendMessage`/`changeStatus`/`retry`/`loadMore` aplicaban su respuesta
+  // sin comprobar que `requestId` siguiera siendo el mismo cuando la petición resolvía. Si el
+  // staff enviaba un mensaje para la solicitud A y hacía clic en la solicitud B antes de que la
+  // petición resolviera, la respuesta tardía de A podía inyectarse en el hilo de B ya mostrado.
+  const requestIdRef = useRef(requestId);
+  useEffect(() => { requestIdRef.current = requestId; }, [requestId]);
+  const isStale = () => requestIdRef.current !== requestId;
+
   const canRead = capabilities.messagingRead;
   const canSeeInternal = canRead && capabilities.messagingInternalNotesRead;
   const canCompose = mode === 'CUSTOMER' ? capabilities.messagingSend : capabilities.messagingInternalNotesWrite;
@@ -149,8 +159,8 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
   const retry = () => {
     setLoading(true);
     setError(null);
-    void loadMessages().then(applyResponse).catch((caught: unknown) => {
-      setError(caught instanceof Error ? caught.message : 'No fue posible cargar la conversación.');
+    void loadMessages().then((data) => { if (!isStale()) applyResponse(data); }).catch((caught: unknown) => {
+      if (!isStale()) setError(caught instanceof Error ? caught.message : 'No fue posible cargar la conversación.');
     }).finally(() => setLoading(false));
   };
 
@@ -158,11 +168,12 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     void loadMessages(nextCursor).then((data) => {
+      if (isStale()) return;
       setConversation(data.conversation);
       setMessages((current) => mergeMessages(current, data.items));
       setNextCursor(data.nextCursor);
     }).catch((caught: unknown) => {
-      setError(caught instanceof Error ? caught.message : 'No fue posible cargar más mensajes.');
+      if (!isStale()) setError(caught instanceof Error ? caught.message : 'No fue posible cargar más mensajes.');
     }).finally(() => setLoadingMore(false));
   };
 
@@ -182,13 +193,14 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ body, idempotencyKey }),
     }).then(readJson<StaffMessage & { conversation: StaffConversation }>).then((data) => {
+      if (isStale()) return;
       setConversation(data.conversation);
       setMessages((current) => mergeMessages(current, [data]));
       updateDraft('');
       setSendIdempotencyKey(null);
       setAnnouncement(mode === 'CUSTOMER' ? 'Mensaje compartido enviado.' : 'Nota interna guardada.');
     }).catch((caught: unknown) => {
-      setSendError(caught instanceof Error ? caught.message : 'No fue posible enviar el contenido.');
+      if (!isStale()) setSendError(caught instanceof Error ? caught.message : 'No fue posible enviar el contenido.');
     }).finally(() => setSending(false));
   };
 
@@ -204,11 +216,12 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ status: targetStatus }),
     }).then(readJson<StaffConversationStatusResponse>).then((data) => {
+      if (isStale()) return;
       setConversation((current) => current ? { ...current, status: data.status, closedAt: data.closedAt, updatedAt: new Date().toISOString() } : current);
       setConfirmation(null);
       setAnnouncement(targetStatus === 'CLOSED' ? 'Conversación cerrada.' : 'Conversación abierta.');
     }).catch((caught: unknown) => {
-      setStatusError(caught instanceof Error ? caught.message : 'No fue posible cambiar el estado.');
+      if (!isStale()) setStatusError(caught instanceof Error ? caught.message : 'No fue posible cambiar el estado.');
     }).finally(() => setChangingStatus(false));
   };
 
