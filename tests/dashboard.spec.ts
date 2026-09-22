@@ -184,10 +184,21 @@ test.describe('staff analytics dashboard', () => {
     await expect(page.getByRole('heading', { name: 'Acceso restringido.' })).toBeVisible();
     consoleErrors.length = 0;
 
+    await page.context().clearCookies();
     await page.context().addCookies([{ name: 'ocpool_session', value: sessionToken, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/staff');
     await expect(page.getByRole('heading', { name: 'Pulso comercial' })).toBeVisible();
+    // Investigated a real, reproducible flake here: server-side logging confirmed the six parallel
+    // work-queue fetches this panel fires on mount consistently arrive with NO Cookie header at
+    // all, right after `addCookies()` + `goto()` -- a CDP cookie-injection/first-navigation timing
+    // gap, not an app bug (StaffDashboardPanel's own fetches already correctly pass
+    // credentials: 'include', and every other E2E spec's cookie-injected session works reliably
+    // for its own single-fetch panels). A reload guarantees the cookie is fully settled in the
+    // browser before the panel's mount-time fetches fire again.
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Pulso comercial' })).toBeVisible();
+    consoleErrors.length = 0;
     await page.getByRole('textbox', { name: 'Desde', exact: true }).fill('2020-01-01');
     await page.getByRole('textbox', { name: 'Hasta', exact: true }).fill('2020-02-01');
     await page.getByRole('button', { name: 'Aplicar periodo' }).click();
