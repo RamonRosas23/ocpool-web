@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import ClientFilesPanel from '@/components/ClientFilesPanel';
 import ClientMessagingThread from '@/components/ClientMessagingThread';
@@ -141,13 +141,22 @@ export default function ClientPortalPanel() {
     }
   }, []);
 
+  const loadDetailGenerationRef = useRef(0);
   const loadDetail = useCallback(async (requestId: string) => {
+    // UX audit fix: sin esta guarda, hacer clic rápido entre dos solicitudes propias del cliente
+    // podía dejar que la respuesta obsoleta de la primera llegara después que la de la segunda y
+    // sobreescribiera en silencio el expediente mostrado (totales/estado/líneas de la cotización)
+    // con datos de una solicitud distinta a la que aparece resaltada como seleccionada.
+    const generation = (loadDetailGenerationRef.current += 1);
     setLoadingDetail(true);
     setError(null);
     try {
       const response = await fetch(`/api/portal/requests/${requestId}`, { credentials: 'include', cache: 'no-store' });
-      setWorkspace(await readResponse<Workspace>(response));
+      const data = await readResponse<Workspace>(response);
+      if (loadDetailGenerationRef.current !== generation) return;
+      setWorkspace(data);
     } catch (caught) {
+      if (loadDetailGenerationRef.current !== generation) return;
       const message = caught instanceof Error ? caught.message : 'No fue posible cargar el expediente.';
       setError(message);
       setWorkspace(null);

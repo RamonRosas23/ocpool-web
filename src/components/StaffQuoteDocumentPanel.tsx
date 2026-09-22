@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatDateTime } from '@/lib/format-date';
 
 type DocumentStatus = 'MISSING' | 'PENDING' | 'READY' | 'FAILED' | 'DELETED';
@@ -83,16 +83,25 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [downloadFallbackUrl, setDownloadFallbackUrl] = useState<string | null>(null);
 
+  const loadOperationGenerationRef = useRef(0);
   const loadOperation = useCallback(async () => {
     if (!canRead) return;
+    // UX audit fix: este panel no se vuelve a montar al cambiar de cotización (el padre no le pasa
+    // `key`), sólo se vuelve a ejecutar este efecto por el cambio de `versionId` -- sin esta guarda,
+    // cambiar rápido de una versión a otra podía dejar visible el estado del PDF/evidencia de
+    // aceptación de la versión anterior (p.ej. "Listo para compartir" con el firmante de alguien más)
+    // contra la versión recién seleccionada.
+    const generation = (loadOperationGenerationRef.current += 1);
     setLoading(true);
     setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/versions/${versionId}/document`, { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<DocumentOperation>(response);
+      if (loadOperationGenerationRef.current !== generation) return;
       setOperation(data);
       setProject(data.acceptance?.project ?? null);
     } catch (caught) {
+      if (loadOperationGenerationRef.current !== generation) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible consultar el documento.');
       setOperation(null);
     } finally {

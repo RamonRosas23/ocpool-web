@@ -280,6 +280,7 @@ export default function StaffQuotesPanel() {
   const [repriceDialogOpen, setRepriceDialogOpen] = useState(false);
   const [publishPreflight, setPublishPreflight] = useState<{ documentStatus: DocumentStatus; contentDigest: string | null; loading: boolean } | null>(null);
   const deepLinkedIdRef = useRef<string | null>(null);
+  const loadWorkspaceGenerationRef = useRef(0);
   const savedSnapshotRef = useRef('');
   const expectedUpdatedAtRef = useRef<string | null>(null);
   const lastAttemptSnapshotRef = useRef('');
@@ -351,11 +352,17 @@ export default function StaffQuotesPanel() {
   }, []);
 
   const loadWorkspace = useCallback(async (requestId: string) => {
+    // UX audit fix: sin esta guarda, cambiar rápido de una cotización a otra podía dejar que la
+    // respuesta obsoleta de la primera llegara después que la de la segunda y sobreescribiera en
+    // silencio todo el borrador en edición (líneas, lista de precios, vigencia) con datos de la
+    // solicitud equivocada, mientras la UI seguía mostrando la segunda como seleccionada.
+    const generation = (loadWorkspaceGenerationRef.current += 1);
     setLoadingWorkspace(true);
     setError(null);
     try {
       const response = await fetch(`/api/staff/quotes/${requestId}`, { credentials: 'include', cache: 'no-store' });
       const data = await readApiResponseOrThrow<Workspace>(response, 'No fue posible cargar el expediente de cotización.');
+      if (loadWorkspaceGenerationRef.current !== generation) return;
       setWorkspace(data);
       const currentVersion = data.quote?.currentVersion;
       const preferredList = data.priceLists.find((list) => list.currencyCode === (currentVersion?.currencyCode ?? data.request.detail?.currencyCode)) ?? data.priceLists[0];
@@ -405,6 +412,7 @@ export default function StaffQuotesPanel() {
       setAutosaveState('saved');
       setAutosaveMessage(null);
     } catch (caught) {
+      if (loadWorkspaceGenerationRef.current !== generation) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el expediente de cotización.');
       setWorkspace(null);
     } finally {
