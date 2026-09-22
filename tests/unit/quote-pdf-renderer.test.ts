@@ -3,9 +3,11 @@ import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import {
   QUOTE_PDF_TEMPLATE_VERSION,
+  formatQuotePdfValidUntil,
   renderQuotePdf,
   type QuotePdfSnapshot,
 } from '@/server/modules/quote-documents/pdf-renderer';
+import { zonedCalendarDateEndOfDayToUtc } from '@/lib/calendar-timezone';
 
 const snapshot: QuotePdfSnapshot = {
   folio: 'OCQ-2026-000123',
@@ -28,6 +30,16 @@ const snapshot: QuotePdfSnapshot = {
 };
 
 describe('quote PDF renderer', () => {
+  it('prints VIGENCIA in the business timezone, not the UTC calendar day', () => {
+    // `validUntil` se guarda como el instante UTC de fin del día local elegido (ver
+    // `zonedCalendarDateEndOfDayToUtc`) -- ese instante cae en el día calendario UTC siguiente, así
+    // que leerlo con getUTCDate()/getUTCMonth() imprimía la vigencia un día tarde.
+    expect(formatQuotePdfValidUntil(zonedCalendarDateEndOfDayToUtc('2026-10-15'))).toBe('15 de octubre de 2026');
+    expect(formatQuotePdfValidUntil(zonedCalendarDateEndOfDayToUtc('2026-01-31'))).toBe('31 de enero de 2026');
+    expect(formatQuotePdfValidUntil(null)).toBe('Sin fecha de vencimiento');
+  });
+
+
   it('renders a deterministic, paginated PDF from the frozen quote snapshot', async () => {
     const first = await renderQuotePdf(snapshot);
     const second = await renderQuotePdf({ ...snapshot, lines: [...snapshot.lines] });

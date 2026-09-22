@@ -3,6 +3,7 @@ import type { PrismaClient } from '@/generated/prisma/client';
 import type { QuoteRequestBudgetRange, QuoteRequestProjectStage, QuoteRequestTimeline } from '@/generated/prisma/enums';
 import { fingerprintToken } from '@/server/auth/crypto';
 import { getPrisma } from '@/server/db/client';
+import { BUSINESS_TIMEZONE, timeZoneParts } from '@/lib/calendar-timezone';
 import { AppError } from '@/server/http/errors';
 import {
   formatQuoteRequestFolio,
@@ -98,7 +99,10 @@ async function allocateFolio(transaction: Prisma.TransactionClient, now: Date): 
     where: { key: FOLIO_SEQUENCE_KEY },
     data: { nextValue: { increment: 1 } },
   });
-  return formatQuoteRequestFolio(now.getUTCFullYear(), sequence);
+  // El prefijo de año del folio debe reflejar el año calendario de negocio (America/Chihuahua), no
+  // el año UTC -- en las últimas horas de cada 31 de diciembre en hora local, `getUTCFullYear()` ya
+  // había rodado al año siguiente y el folio mostraba un año que todavía no era el actual localmente.
+  return formatQuoteRequestFolio(timeZoneParts(now, BUSINESS_TIMEZONE).year, sequence);
 }
 
 async function resolveClientAndContact(transaction: Prisma.TransactionClient, input: CreateQuoteRequestInput['contact'], resolution: CreateQuoteRequestInput['contactResolution'] = { type: 'automatic' }) {

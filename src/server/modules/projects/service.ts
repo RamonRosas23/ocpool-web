@@ -4,6 +4,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { BUSINESS_TIMEZONE, timeZoneParts } from '@/lib/calendar-timezone';
 import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 import { formatProjectFolio, normalizeChecklistLabel, type ProjectHandoffStatus } from '@/server/modules/projects/domain';
 
@@ -47,7 +48,9 @@ async function allocateProjectFolio(transaction: Prisma.TransactionClient, now: 
   const sequence = rows[0]?.nextValue;
   if (!sequence) throw new Error('Project folio sequence is unavailable.');
   await transaction.folioSequence.update({ where: { key: FOLIO_SEQUENCE_KEY }, data: { nextValue: { increment: 1 } } });
-  return formatProjectFolio(now.getUTCFullYear(), sequence);
+  // Mismo ajuste que `allocateFolio` de quote-requests/service.ts: el prefijo de año debe venir del
+  // año calendario de negocio (America/Chihuahua), no del año UTC.
+  return formatProjectFolio(timeZoneParts(now, BUSINESS_TIMEZONE).year, sequence);
 }
 
 async function findExistingProjectByAcceptance(prisma: PrismaClient | Prisma.TransactionClient, quoteAcceptanceId: string): Promise<ProjectSummary | null> {

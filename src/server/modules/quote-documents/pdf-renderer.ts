@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
+import { BUSINESS_TIMEZONE, timeZoneParts } from '@/lib/calendar-timezone';
 
 export const QUOTE_PDF_TEMPLATE_VERSION = 'quote-pdf-v2';
 
@@ -88,10 +89,15 @@ function formatQuantity(quantityMilliunits: bigint): string {
   return `${negative ? '-' : ''}${whole.toString()}${fraction ? `.${fraction}` : ''}`;
 }
 
-function formatDate(date: Date | null): string {
+// `validUntil` se guarda como el instante UTC de las 23:59:59.999 en America/Chihuahua del día
+// elegido (ver `zonedCalendarDateEndOfDayToUtc`) -- por estar Chihuahua detrás de UTC, ese instante
+// siempre cae en el día calendario UTC SIGUIENTE, así que leer `getUTCDate()`/`getUTCMonth()`
+// directamente imprimía la "VIGENCIA" de la propuesta un día después del que el equipo configuró.
+export function formatQuotePdfValidUntil(date: Date | null): string {
   if (!date) return 'Sin fecha de vencimiento';
   const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  return `${date.getUTCDate().toString().padStart(2, '0')} de ${months[date.getUTCMonth()]} de ${date.getUTCFullYear()}`;
+  const parts = timeZoneParts(date, BUSINESS_TIMEZONE);
+  return `${parts.day.toString().padStart(2, '0')} de ${months[parts.month - 1]} de ${parts.year}`;
 }
 
 function wrapText(value: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -141,7 +147,7 @@ function drawFirstPageHeader(page: PDFPage, snapshot: QuotePdfSnapshot, regular:
   const valueSize = 9.5;
   const rows = [
     ['CLIENTE', cleanText(snapshot.clientName), 'PROYECTO', cleanText(snapshot.projectType)],
-    ['UBICACIÓN', cleanText(snapshot.location), 'VIGENCIA', formatDate(snapshot.validUntil)],
+    ['UBICACIÓN', cleanText(snapshot.location), 'VIGENCIA', formatQuotePdfValidUntil(snapshot.validUntil)],
   ];
   rows.forEach(([leftLabel, leftValue, rightLabel, rightValue], index) => {
     const y = panelTop - 25 - (index * 31);

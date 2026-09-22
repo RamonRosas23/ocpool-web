@@ -48,6 +48,7 @@ export default function QuoteForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<FormFeedback | null>(null);
   const idempotencyKeyRef = useRef<string | null>(null);
+  const honeypotRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const mountedRef = useRef(false);
@@ -158,7 +159,11 @@ export default function QuoteForm() {
           budgetRange: formData.budgetRange || undefined,
           description: formData.mensaje,
           consent: acceptTerms,
-          website: '',
+          // UX audit fix: este campo señuelo se leía como un string vacío fijo en vez del valor
+          // real del input oculto -- un bot que automatiza el DOM (el caso que el señuelo busca
+          // atrapar) sí lo llenaba, pero ese valor nunca se enviaba al servidor, así que la
+          // comprobación anti-spam del backend (`if (body.website) ...`) nunca podía activarse.
+          website: honeypotRef.current?.value ?? '',
         }),
       });
       const data = await response.json() as { accepted?: boolean; folio?: string; error?: { message?: string } };
@@ -283,7 +288,7 @@ export default function QuoteForm() {
             </label>
           </div>}
 
-          <input className="quote-form__honeypot" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" />
+          <input ref={honeypotRef} className="quote-form__honeypot" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" />
 
           {step === 2 && <label className="consent-row">
             <input id="quote-consent" name="consent" type="checkbox" checked={acceptTerms} onChange={(event) => { setAcceptTerms(event.target.checked); setErrors((current) => { const next = { ...current }; delete next.consent; return next; }); idempotencyKeyRef.current = null; setFeedback(null); }} aria-invalid={Boolean(errors.consent)} aria-describedby={errors.consent ? 'quote-consent-error' : undefined} />
