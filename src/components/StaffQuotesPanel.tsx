@@ -7,6 +7,7 @@ import { AlertTriangle, ChevronDown, ChevronUp, Inbox, X } from 'lucide-react';
 import StaffQuoteDocumentPanel from '@/components/StaffQuoteDocumentPanel';
 import CatalogItemSearchCombobox, { type CatalogSearchResultItem } from '@/components/CatalogItemSearchCombobox';
 import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
+import { zonedCalendarDateEndOfDayToUtc } from '@/lib/calendar-timezone';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffTopNav from '@/components/StaffTopNav';
@@ -576,7 +577,11 @@ export default function StaffQuotesPanel() {
         priceListId: selectedPriceListId,
         lines: buildLinesPayload(draftLines, draftSections),
         sections: buildSectionsPayload(draftSections),
-        ...(validUntil ? { validUntil: new Date(`${validUntil}T23:59:59.999Z`).toISOString() } : {}),
+        // `${validUntil}T23:59:59.999Z` trataba la fecha local elegida como si ya fuera UTC -- en
+        // America/Chihuahua (UTC-6/-7) eso adelantaba el vencimiento varias horas respecto a la
+        // medianoche local real, así que una cotización "válida hasta" cierto día ya aparecía
+        // vencida esa misma tarde para el cliente.
+        ...(validUntil ? { validUntil: zonedCalendarDateEndOfDayToUtc(validUntil).toISOString() } : {}),
         ...(selectedTaxProfileId ? { taxProfileId: selectedTaxProfileId } : {}),
         scopeText: contentFields.scopeText || null,
         exclusionsText: contentFields.exclusionsText || null,
@@ -718,7 +723,7 @@ export default function StaffQuotesPanel() {
           priceListId: selectedPriceListId,
           lines: buildLinesPayload(draftLines, draftSections),
           sections: buildSectionsPayload(draftSections),
-          ...(validUntil ? { validUntil: new Date(`${validUntil}T23:59:59.999Z`).toISOString() } : {}),
+          ...(validUntil ? { validUntil: zonedCalendarDateEndOfDayToUtc(validUntil).toISOString() } : {}),
           ...(selectedTaxProfileId ? { taxProfileId: selectedTaxProfileId } : {}),
           ...(isDraftUpdate && expectedUpdatedAtRef.current ? { expectedUpdatedAt: expectedUpdatedAtRef.current } : {}),
           scopeText: contentFields.scopeText || null,

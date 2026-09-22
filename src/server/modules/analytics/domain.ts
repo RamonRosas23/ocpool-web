@@ -1,3 +1,5 @@
+import { addCalendarDays, calendarSerial, timeZoneParts, zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
+
 const DEFAULT_DASHBOARD_TIMEZONE = 'America/Chihuahua';
 const MAX_RANGE_DAYS = 93;
 const DEFAULT_RANGE_DAYS = 30;
@@ -72,8 +74,6 @@ export type DashboardResponse = {
   };
 };
 
-const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
-
 function assertTimezone(timezone: string): string {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format();
@@ -83,63 +83,9 @@ function assertTimezone(timezone: string): string {
   return timezone;
 }
 
-function timeZoneParts(value: Date, timezone: string): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    calendar: 'gregory',
-    numberingSystem: 'latn',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(value);
-  const values = new Map(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]));
-  return {
-    year: values.get('year') ?? 0,
-    month: values.get('month') ?? 0,
-    day: values.get('day') ?? 0,
-    hour: values.get('hour') ?? 0,
-    minute: values.get('minute') ?? 0,
-    second: values.get('second') ?? 0,
-  };
-}
-
 function calendarDateFor(value: Date, timezone: string): string {
   const parts = timeZoneParts(value, timezone);
   return [parts.year, parts.month, parts.day].map((part, index) => index === 0 ? String(part).padStart(4, '0') : String(part).padStart(2, '0')).join('-');
-}
-
-function addCalendarDays(value: string, days: number): string {
-  const match = DATE_ONLY_PATTERN.exec(value);
-  if (!match) throw new Error('La fecha no es válida.');
-  const shifted = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days));
-  return shifted.toISOString().slice(0, 10);
-}
-
-function calendarSerial(value: string): number {
-  const match = DATE_ONLY_PATTERN.exec(value);
-  if (!match) throw new Error('La fecha no es válida.');
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const serial = Date.UTC(year, month - 1, day);
-  const check = new Date(serial);
-  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) throw new Error('La fecha no es válida.');
-  return serial;
-}
-
-function zonedCalendarDateToUtc(value: string, timezone: string): Date {
-  const naiveUtc = calendarSerial(value);
-  let candidate = new Date(naiveUtc);
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const parts = timeZoneParts(candidate, timezone);
-    const wallClockUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
-    candidate = new Date(naiveUtc - (wallClockUtc - candidate.getTime()));
-  }
-  return candidate;
 }
 
 export function normalizeDashboardQuery(input: DashboardQueryInput = {}): DashboardQuery {

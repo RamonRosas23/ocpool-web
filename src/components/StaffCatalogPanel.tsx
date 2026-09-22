@@ -9,6 +9,7 @@ import StaffTopNav from '@/components/StaffTopNav';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateMoneyField, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import { formatDate } from '@/lib/format-date';
+import { zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
 import { moneyLabel } from '@/lib/money';
 import { parseMoneyInput } from '@/lib/money-input';
 import { usePersistentState } from '@/lib/use-persistent-state';
@@ -320,7 +321,10 @@ export default function StaffCatalogPanel() {
         body: JSON.stringify({
           catalogItemId: priceForm.catalogItemId,
           unitPriceMinor,
-          effectiveFrom: new Date(`${priceForm.effectiveFrom}T00:00:00.000Z`).toISOString(),
+          // `${effectiveFrom}T00:00:00.000Z` trataba la fecha local elegida como si ya fuera UTC --
+          // en America/Chihuahua (UTC-6/-7) eso activaba el precio nuevo varias horas antes de la
+          // medianoche local del día programado.
+          effectiveFrom: zonedCalendarDateToUtc(priceForm.effectiveFrom).toISOString(),
           ...(priceForm.reason.trim() ? { reason: priceForm.reason.trim() } : {}),
         }),
       }), 'No fue posible completar la operación.');
