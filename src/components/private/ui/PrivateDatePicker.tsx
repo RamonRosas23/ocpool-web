@@ -10,6 +10,10 @@ function joinClasses(...values: Array<string | undefined>): string {
   return values.filter(Boolean).join(' ');
 }
 
+function focusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('button:not([disabled]), select:not([disabled]), input:not([disabled])'));
+}
+
 export type PrivateDatePickerProps = Omit<PrivateFieldChromeProps, 'children'> & {
   value: string;
   onValueChange: (value: string) => void;
@@ -66,8 +70,26 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-      if (event.key === 'Escape') triggerRef.current?.focus();
+      if (event.key === 'Escape') { setOpen(false); triggerRef.current?.focus(); return; }
+      // UX audit fix: este popover ya es `role="dialog"` pero nunca atrapaba Tab -- a diferencia de
+      // todo `PrivateDialog` de la app, un usuario de teclado que tabulaba fuera del calendario
+      // (p.ej. más allá del selector de año en `captionLayout="dropdown"`) movía el foco a otra
+      // parte de la página mientras el calendario seguía visiblemente abierto. Mismo patrón de
+      // "sólo intervenir en los bordes" que ya usa `PrivateDialog.tsx`.
+      if (event.key !== 'Tab') return;
+      const container = popoverRef.current;
+      if (!container) return;
+      const elements = focusableElements(container);
+      if (elements.length === 0) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
