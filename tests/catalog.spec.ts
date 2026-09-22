@@ -144,7 +144,13 @@ test.describe('staff catalog operations', () => {
     await effectiveFrom.fill('');
     await page.getByRole('textbox', { name: 'Importe', exact: true }).fill('990.00');
     await page.getByRole('button', { name: 'Programar precio' }).click();
-    await expect(page.locator('p[role="alert"]')).toContainText('Selecciona la fecha desde la que aplica el precio.');
+    // K1-03/UX audit fix: "Vigente desde" ahora lleva el atributo `required` nativo (antes sólo
+    // alimentaba `aria-required`, ver PrivateDatePicker.tsx) -- el navegador bloquea el envío del
+    // formulario ANTES de que `schedulePriceForItem` llegue a ejecutarse, así que el mensaje
+    // personalizado de la app para este caso concreto ("Selecciona la fecha...", todavía presente
+    // como defensa en el propio handler) ya no es alcanzable por esta vía. Se confirma en su lugar
+    // la validación nativa del campo y que la petición nunca llegó al servidor.
+    expect(await effectiveFrom.evaluate((element) => (element as HTMLInputElement).validity.valueMissing)).toBe(true);
 
     // Hardcoded as a literal calendar date this went stale the moment real time caught up to it --
     // computed relative to whenever the test actually runs so "Programados" stays genuinely future.

@@ -81,7 +81,10 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
     <PrivateField id={id} label={label} description={description} error={effectiveError} required={required} hideLabel={hideLabel}>
       <div className={joinClasses('private-date-field', className)} ref={rootRef}>
         <div className="private-date-field__control">
-          <input id={id} className="private-control private-date-field__input" type="text" inputMode="numeric" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
+          {/* UX audit fix: `required` sólo alimentaba `aria-required` -- el mismo hueco ya
+              encontrado y corregido en PrivateTextField/PrivateTextArea/PrivateMoneyField, aquí
+              en el cuarto y último campo del kit que lo tenía. */}
+          <input id={id} className="private-control private-date-field__input" type="text" inputMode="numeric" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} required={required} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
           <button ref={triggerRef} className="private-date-field__trigger" type="button" aria-label={`Abrir calendario: ${label}`} aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)}>
             <span className="private-date-field__icon" aria-hidden="true">▣</span>
           </button>

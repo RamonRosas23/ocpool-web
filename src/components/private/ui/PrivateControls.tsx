@@ -55,7 +55,12 @@ export function PrivateTextField({ id, label, description, error, required, clas
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   return (
     <PrivateField id={id} label={label} description={description} error={error} required={required}>
-      <input {...props} id={id} className={joinClasses('private-control', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} />
+      {/* UX audit fix: `required` se destructura arriba (para calcular `a11y.required`) y por lo
+          tanto queda fuera de `...props` -- nunca llegaba al elemento real, así que la validación
+          nativa del navegador (bloquear el envío, enfocar el campo vacío) nunca se activaba en
+          ningún formulario del kit privado que no use `noValidate` (todos, salvo los públicos que
+          ya tienen su propia validación manual). */}
+      <input {...props} id={id} required={required} className={joinClasses('private-control', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} />
     </PrivateField>
   );
 }
@@ -66,7 +71,7 @@ export function PrivateTextArea({ id, label, description, error, required, class
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   return (
     <PrivateField id={id} label={label} description={description} error={error} required={required}>
-      <textarea {...props} id={id} className={joinClasses('private-control private-control--area', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} />
+      <textarea {...props} id={id} required={required} className={joinClasses('private-control private-control--area', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} />
     </PrivateField>
   );
 }
@@ -89,7 +94,7 @@ export function PrivateMoneyField({ id, label, description, error, required, hid
     <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
       <div className={joinClasses('private-money-field', className)}>
         <span className="private-money-field__prefix" aria-hidden="true">$</span>
-        <input id={id} className="private-control private-money-field__input" type="text" inputMode="decimal" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
+        <input id={id} className="private-control private-money-field__input" type="text" inputMode="decimal" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} required={required} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
       </div>
     </PrivateField>
   );
