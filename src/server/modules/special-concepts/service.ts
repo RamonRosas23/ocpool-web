@@ -157,12 +157,20 @@ export async function listSpecialConcepts(actor: Actor, dependencies: SpecialCon
   const namesInGroups = new Set(groupRows.map((group) => group.normalizedName));
   const matchingItems = namesInGroups.size ? await prisma.catalogItem.findMany({
     where: { status: 'ACTIVE' },
-    select: { id: true, code: true, name: true },
+    select: { id: true, code: true, name: true, unit: true },
   }) : [];
-  const matchingByName = new Map<string, { id: string; code: string; name: string }>();
+  // La clave de identidad de un grupo (y de `SpecialConceptPromotion`) es nombre+unidad, no sólo
+  // nombre -- dos conceptos especiales pueden compartir nombre con unidades distintas ("Ajuste de
+  // terreno" en m2 vs. en servicio). Antes de esta corrección, esta coincidencia comparaba sólo el
+  // nombre, así que un grupo podía marcarse "MATCHES_EXISTING" contra un ítem de catálogo activo
+  // con el mismo nombre pero una unidad distinta, y el botón "Vincular" del panel (que no muestra la
+  // unidad del ítem coincidente) lo habría enlazado en silencio.
+  const matchingByKey = new Map<string, { id: string; code: string; name: string }>();
   for (const item of matchingItems) {
-    const normalized = normalizeConceptKey(item.name);
-    if (namesInGroups.has(normalized) && !matchingByName.has(normalized)) matchingByName.set(normalized, item);
+    const normalizedName = normalizeConceptKey(item.name);
+    if (!namesInGroups.has(normalizedName)) continue;
+    const key = `${normalizedName}::${normalizeConceptKey(item.unit)}`;
+    if (!matchingByKey.has(key)) matchingByKey.set(key, { id: item.id, code: item.code, name: item.name });
   }
 
   return groupRows.map((group) => {
@@ -170,7 +178,7 @@ export async function listSpecialConcepts(actor: Actor, dependencies: SpecialCon
     const promoted = promotionByKey.get(key);
     const base = { normalizedName: group.normalizedName, unit: group.unit, name: group.name, occurrences: Number(group.occurrences), recentFolios: group.recentFolios };
     if (promoted) return { ...base, status: 'PROMOTED' as const, matchingCatalogItem: promoted };
-    const matching = matchingByName.get(group.normalizedName);
+    const matching = matchingByKey.get(key);
     if (matching) return { ...base, status: 'MATCHES_EXISTING' as const, matchingCatalogItem: matching };
     return { ...base, status: 'PENDING' as const, matchingCatalogItem: null };
   });
@@ -211,8 +219,10 @@ export async function promoteSpecialConcept(actor: Actor, input: PromoteSpecialC
   });
   if (existingPromotion) return { catalogItem: existingPromotion.catalogItem, alreadyPromoted: true };
 
+  // Mismo hallazgo que `listSpecialConcepts`: enlazar por nombre sin filtrar por unidad podía
+  // vincular un concepto especial a un ítem de catálogo activo homónimo pero de unidad distinta.
   const existingItem = await prisma.catalogItem.findFirst({
-    where: { status: 'ACTIVE', name: { equals: name, mode: 'insensitive' } },
+    where: { status: 'ACTIVE', name: { equals: name, mode: 'insensitive' }, unit: { equals: unit, mode: 'insensitive' } },
     select: { id: true, code: true, name: true },
   });
   const catalogItem = existingItem ?? await createCatalogItem(actor, { code: input.code, name, description, unit, categoryId }, { prisma });

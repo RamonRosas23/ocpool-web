@@ -190,6 +190,7 @@ describe('special concept promotion service (K1-05 parte 2)', () => {
     manager.userId = user.id;
     let firstPromotedItemId = '';
     let preexistingItemId = '';
+    let mismatchedUnitItemId = '';
 
     try {
       const first = await promoteSpecialConcept(manager, { name: `Concepto promovido ${suffix}`, unit: 'servicio' }, { prisma });
@@ -214,9 +215,19 @@ describe('special concept promotion service (K1-05 parte 2)', () => {
       expect(await prisma.catalogItem.count({ where: { id: preexisting.id } })).toBe(1);
       expect(await prisma.specialConceptPromotion.count({ where: { catalogItemId: preexisting.id } })).toBe(1);
 
+      // Mismo nombre que `preexisting`, unidad distinta ("hora" vs. "pieza") -- la identidad real de
+      // un concepto especial es nombre+unidad (mismo par que la llave única de
+      // `SpecialConceptPromotion`), así que esto NO debe enlazarse al ítem de unidad distinta, sino
+      // crear uno nuevo propio.
+      const mismatchedUnit = await promoteSpecialConcept(manager, { name: `concepto preexistente ${suffix}`, unit: 'hora' }, { prisma });
+      expect(mismatchedUnit.alreadyPromoted).toBe(false);
+      expect(mismatchedUnit.catalogItem.id).not.toBe(preexisting.id);
+      mismatchedUnitItemId = mismatchedUnit.catalogItem.id;
+      expect(await prisma.specialConceptPromotion.count({ where: { catalogItemId: preexisting.id } })).toBe(1);
+
       await prisma.catalogCategory.delete({ where: { id: category.id } });
     } finally {
-      await prisma.specialConceptPromotion.deleteMany({ where: { catalogItemId: { in: [firstPromotedItemId, preexistingItemId].filter(Boolean) } } });
+      await prisma.specialConceptPromotion.deleteMany({ where: { catalogItemId: { in: [firstPromotedItemId, preexistingItemId, mismatchedUnitItemId].filter(Boolean) } } });
       if (firstPromotedItemId) {
         await prisma.outboxEvent.deleteMany({ where: { aggregateId: firstPromotedItemId } });
         await prisma.auditLog.deleteMany({ where: { entityId: firstPromotedItemId } });
@@ -226,6 +237,11 @@ describe('special concept promotion service (K1-05 parte 2)', () => {
         await prisma.outboxEvent.deleteMany({ where: { aggregateId: preexistingItemId } });
         await prisma.auditLog.deleteMany({ where: { entityId: preexistingItemId } });
         await prisma.catalogItem.delete({ where: { id: preexistingItemId } });
+      }
+      if (mismatchedUnitItemId) {
+        await prisma.outboxEvent.deleteMany({ where: { aggregateId: mismatchedUnitItemId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: mismatchedUnitItemId } });
+        await prisma.catalogItem.delete({ where: { id: mismatchedUnitItemId } });
       }
       await prisma.user.delete({ where: { id: user.id } });
     }
