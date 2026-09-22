@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, KeyboardEvent, useCallback, useEffect, useId, useState } from 'react';
+import { ChangeEvent, KeyboardEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { nextRovingTabIndex, PrivateSelect } from '@/components/private/ui';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
@@ -108,7 +108,13 @@ export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPA
   const [visibility, setVisibility] = useState<FileVisibility>('CUSTOMER');
   const [category, setCategory] = useState<FileCategory>('CLIENT_DOCUMENT');
 
+  // UX audit fix: mismo defecto ya encontrado y corregido en el hermano `ClientFilesPanel.tsx` --
+  // `loadFiles` se llama desde el montaje, "Ver más" con cursor, y los refrescos tras subir/borrar
+  // un archivo, sin ninguna guarda de orden. Una respuesta sin cursor tardía (post-subida/borrado)
+  // podía reemplazar `items` por completo, descartando en silencio la lista ya paginada con "Ver más".
+  const loadRequestIdRef = useRef(0);
   const loadFiles = useCallback(async (cursor?: string) => {
+    const requestGeneration = (loadRequestIdRef.current += 1);
     if (!capabilities.filesRead) {
       setLoading(false);
       setItems([]);
@@ -122,12 +128,15 @@ export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPA
       if (cursor) params.set('cursor', cursor);
       const response = await fetch(endpoint(requestId, `?${params.toString()}`), { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<FilesResponse>(response);
+      if (loadRequestIdRef.current !== requestGeneration) return;
       setItems((current) => cursor ? mergeFiles(current, data.items) : data.items);
       setNextCursor(data.nextCursor);
       setError(null);
     } catch (caught) {
+      if (loadRequestIdRef.current !== requestGeneration) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar los archivos.');
     } finally {
+      if (loadRequestIdRef.current !== requestGeneration) return;
       if (cursor) setLoadingMore(false);
       else setLoading(false);
     }
