@@ -108,6 +108,9 @@ describe('project handoff service (J1)', () => {
       expect(afterChecklist.checklistItems).toHaveLength(4);
       expect(afterChecklist.checklistItems.find((entry) => entry.id === firstItemId)?.completedAt).not.toBeNull();
       expect(afterChecklist.checklistItems.map((entry) => entry.label)).toEqual(expect.arrayContaining(['Entregar copia de la propuesta al equipo de obra', 'Coordinar con el proveedor de equipo']));
+      // Antes de este hallazgo, agregar/completar tareas del checklist no dejaba rastro en
+      // `activity` -- a diferencia de toda otra mutación de este archivo (handoff, responsable).
+      expect(afterChecklist.activity.map((entry) => entry.action)).toEqual(expect.arrayContaining(['project.checklist_items_added', 'project.checklist_item_completed']));
 
       // El tope de 30 se evalúa contra count + labels.length, no sólo contra labels.length --
       // ya hay 4, así que 27 más (31 en total) debe rechazarse antes de crear ninguna.

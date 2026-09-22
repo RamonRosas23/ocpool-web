@@ -57,6 +57,9 @@ const ACTIVITY_LABELS: Record<string, string> = {
   'project.completed': 'Handoff marcado como completado.',
   'project.reopened': 'Handoff reabierto para seguir en transición.',
   'project.owner_changed': 'Responsable actualizado.',
+  'project.checklist_items_added': 'Se agregaron tareas al checklist.',
+  'project.checklist_item_completed': 'Se marcó una tarea del checklist como completada.',
+  'project.checklist_item_reopened': 'Se reabrió una tarea del checklist.',
 };
 
 function quantityLabel(milliunits: string): string {

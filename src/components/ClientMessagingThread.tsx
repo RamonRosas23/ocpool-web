@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useId, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
@@ -58,6 +58,16 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
   const [announcement, setAnnouncement] = useState('');
   const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
 
+  // UX audit fix: `retry`/`loadMore` no tenían ninguna guarda contra respuesta obsoleta, a diferencia
+  // del efecto de montaje (que sí usa `AbortController`) -- como este componente no se vuelve a montar
+  // al cambiar de folio (el padre lo mantiene con `key={messagingRefreshKey}`, no `key={requestId}`),
+  // pedir "Ver más mensajes" o "Reintentar" para la solicitud A y cambiar a la solicitud B antes de
+  // que la petición resolviera podía mezclar los mensajes de A dentro de la conversación mostrada de
+  // B. Mismo patrón ya usado en `StaffMessagingPanel.tsx`.
+  const requestIdRef = useRef(requestId);
+  useEffect(() => { requestIdRef.current = requestId; }, [requestId]);
+  const isStale = () => requestIdRef.current !== requestId;
+
   const loadMessages = useCallback(async (cursor?: string, signal?: AbortSignal) => {
     const query = cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=30` : '?limit=30';
     const response = await fetch(`/api/portal/requests/${requestId}/messages${query}`, { credentials: 'include', cache: 'no-store', signal });
@@ -91,11 +101,12 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     setLoading(true);
     setError(null);
     void loadMessages().then((data) => {
+      if (isStale()) return;
       setConversation(data.conversation);
       setMessages(data.items);
       setNextCursor(data.nextCursor);
     }).catch((caught: unknown) => {
-      setError(caught instanceof Error ? caught.message : 'No fue posible cargar la conversación.');
+      if (!isStale()) setError(caught instanceof Error ? caught.message : 'No fue posible cargar la conversación.');
     }).finally(() => setLoading(false));
   };
 
@@ -103,6 +114,7 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     void loadMessages(nextCursor).then((data) => {
+      if (isStale()) return;
       setConversation(data.conversation);
       setMessages((current) => {
         const known = new Set(current.map((message) => message.id));
@@ -110,7 +122,7 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
       });
       setNextCursor(data.nextCursor);
     }).catch((caught: unknown) => {
-      setError(caught instanceof Error ? caught.message : 'No fue posible cargar más mensajes.');
+      if (!isStale()) setError(caught instanceof Error ? caught.message : 'No fue posible cargar más mensajes.');
     }).finally(() => setLoadingMore(false));
   };
 
@@ -129,13 +141,14 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ body, idempotencyKey }),
     }).then(readJson<PortalMessage & { conversation: PortalConversation }>).then((data) => {
+      if (isStale()) return;
       setConversation(data.conversation);
       setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data]);
       setDraft('');
       setSendIdempotencyKey(null);
       setAnnouncement('Mensaje enviado.');
     }).catch((caught: unknown) => {
-      setSendError(caught instanceof Error ? caught.message : 'No fue posible enviar el mensaje.');
+      if (!isStale()) setSendError(caught instanceof Error ? caught.message : 'No fue posible enviar el mensaje.');
     }).finally(() => setSending(false));
   };
 

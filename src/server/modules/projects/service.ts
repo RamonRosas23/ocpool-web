@@ -295,6 +295,19 @@ export async function addProjectChecklistItems(actor: Actor, projectIdInput: str
     await transaction.projectChecklistItem.createMany({
       data: labels.map((label, index) => ({ projectId, label, position: count + index })),
     });
+    // Mismo patrón que `setProjectHandoffStatus`/`setProjectOwner` -- sin esta entrada, el checklist
+    // era la única mutación de este archivo invisible en el feed "Actividad" del expediente
+    // (`getProjectWorkspace`'s `activity`, que lee directamente de `auditLog`).
+    await transaction.auditLog.create({
+      data: {
+        actorUserId: actor.userId,
+        action: 'project.checklist_items_added',
+        entityType: 'project',
+        entityId: projectId,
+        outcome: 'SUCCESS',
+        metadata: { labels, count: labels.length },
+      },
+    });
   });
 }
 
@@ -307,11 +320,21 @@ export async function setProjectChecklistItemCompletion(actor: Actor, projectIdI
 
   await prisma.$transaction(async (transaction) => {
     await lockAndScopeProject(transaction, actor, projectId);
-    const item = await transaction.projectChecklistItem.findUnique({ where: { id: itemId }, select: { projectId: true } });
+    const item = await transaction.projectChecklistItem.findUnique({ where: { id: itemId }, select: { projectId: true, label: true } });
     if (!item || item.projectId !== projectId) throw new AppError('NOT_FOUND', 'La tarea no existe.', 404);
     await transaction.projectChecklistItem.update({
       where: { id: itemId },
       data: completed ? { completedAt: now, completedById: actor.userId } : { completedAt: null, completedById: null },
+    });
+    await transaction.auditLog.create({
+      data: {
+        actorUserId: actor.userId,
+        action: completed ? 'project.checklist_item_completed' : 'project.checklist_item_reopened',
+        entityType: 'project',
+        entityId: projectId,
+        outcome: 'SUCCESS',
+        metadata: { itemId, label: item.label },
+      },
     });
   });
 }
