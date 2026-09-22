@@ -159,8 +159,15 @@ export default function StaffRequestsPanel() {
   const [messagingCapabilitiesLoaded, setMessagingCapabilitiesLoaded] = useState(false);
   const [customerAccessBusy, setCustomerAccessBusy] = useState(false);
   const deepLinkedIdRef = useRef<string | null>(null);
+  const loadListGenerationRef = useRef(0);
+  const loadDetailGenerationRef = useRef(0);
 
   const loadList = useCallback(async (currentPage: number, currentStatus: string, query: string) => {
+    // UX audit fix: cambiar de filtro/página rápido (o volver a escribir en el buscador) podía dejar
+    // que la respuesta obsoleta de una combinación anterior llegara después que la vigente y
+    // sobreescribiera en silencio la lista/paginación/selección con datos que ya no corresponden a
+    // los filtros mostrados.
+    const generation = (loadListGenerationRef.current += 1);
     setLoadingList(true);
     setError(null);
     try {
@@ -169,6 +176,7 @@ export default function StaffRequestsPanel() {
       if (query) params.set('query', query);
       const response = await fetch(`/api/staff/quote-requests?${params.toString()}`, { credentials: 'include', cache: 'no-store' });
       const result = await readApiResponse<ListResponse>(response, 'No fue posible cargar el inbox.');
+      if (loadListGenerationRef.current !== generation) return;
       if (!result.ok) {
         setAccessDenied(result.kind === 'forbidden');
         setError(result.message);
@@ -188,6 +196,7 @@ export default function StaffRequestsPanel() {
         return current && data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null;
       });
     } catch (caught) {
+      if (loadListGenerationRef.current !== generation) return;
       setAccessDenied(false);
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el inbox.');
       setItems([]);
@@ -198,15 +207,22 @@ export default function StaffRequestsPanel() {
   }, []);
 
   const loadDetail = useCallback(async (id: string) => {
+    // UX audit fix: hacer clic rápido entre dos expedientes de la lista podía dejar que la respuesta
+    // obsoleta del primero llegara después que la del segundo y sobreescribiera en silencio el panel
+    // de detalle (y por tanto el destino real de "Guardar responsable"/"Actualizar estado") con datos
+    // de un expediente distinto al resaltado como seleccionado.
+    const generation = (loadDetailGenerationRef.current += 1);
     setLoadingDetail(true);
     setError(null);
     try {
       const response = await fetch(`/api/staff/quote-requests/${id}`, { credentials: 'include', cache: 'no-store' });
       const data = await readApiResponseOrThrow<RequestDetail>(response, 'No fue posible cargar el expediente.');
+      if (loadDetailGenerationRef.current !== generation) return;
       setSelected(data);
       setAssignmentId(data.currentAssignee?.id ?? '');
       setNextStatus(withInformationRequestOption(data.availableStatusTransitions, data.availableActions)[0] ?? '');
     } catch (caught) {
+      if (loadDetailGenerationRef.current !== generation) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el expediente.');
     } finally {
       setLoadingDetail(false);

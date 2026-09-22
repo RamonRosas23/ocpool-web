@@ -275,6 +275,15 @@ export async function completePrivateFile(actor: Actor, quoteRequestId: string, 
     await markRejected(actor, pending.id, quoteRequestId, 'OBJECT_NOT_FOUND', dependencies, pending.storageObject.storageKey);
     throw new AppError('VALIDATION_ERROR', 'El archivo no está disponible para validación.', 400);
   }
+  // La URL prefirmada de subida no impone un límite de tamaño (S3 no lo soporta sin una condición
+  // de política explícita), así que quien sube el archivo puede mandar un objeto arbitrariamente
+  // grande sin importar el `byteSize` declarado al reservar -- rechazar aquí con el `contentLength`
+  // barato de HEAD evita cargar en memoria un objeto de varios GB sólo para descubrir después, ya
+  // con todo leído, que `scanPrivateFile` lo iba a rechazar por el mismo motivo (`SIZE_MISMATCH`).
+  if (head.contentLength !== Number(pending.storageObject.byteSize)) {
+    await markRejected(actor, pending.id, quoteRequestId, 'SIZE_MISMATCH', dependencies, pending.storageObject.storageKey);
+    throw new AppError('VALIDATION_ERROR', 'El archivo no superó la validación.', 400);
+  }
   let scanResult: ReturnType<typeof scanPrivateFile>;
   try {
     const bytes = await storage.read(pending.storageObject.storageKey);

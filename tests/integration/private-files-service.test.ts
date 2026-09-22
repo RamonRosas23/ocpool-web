@@ -17,6 +17,7 @@ import type { PrivateStorage } from '@/server/modules/private-files/storage';
 class MemoryPrivateStorage implements PrivateStorage {
   private readonly objects = new Map<string, { body: Uint8Array; contentType: string }>();
   private readonly tokens = new Map<string, string>();
+  readCallCount = 0;
 
   async ensureBucket(): Promise<void> {}
 
@@ -38,6 +39,7 @@ class MemoryPrivateStorage implements PrivateStorage {
   }
 
   async read(key: string): Promise<Uint8Array> {
+    this.readCallCount += 1;
     const object = this.objects.get(key);
     if (!object) throw new Error('missing');
     return object.body;
@@ -255,6 +257,44 @@ describe('private file transactional service', () => {
         await prisma.auditLog.deleteMany({ where: { entityId: fileId } });
       }
       await prisma.user.deleteMany({ where: { id: { in: [rivalUser.id, outsiderUser.id] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+    }
+  }, 30_000);
+
+  it('rejects an upload whose real size does not match the reservation without ever reading its body', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    const prisma = getPrisma();
+    const storage = new MemoryPrivateStorage();
+    const suffix = `${Date.now()}-size-mismatch`;
+    const now = new Date('2026-09-08T09:50:00.000Z');
+    const request = await createQuoteRequest({ idempotencyKey: `private-files-size-mismatch-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: `Private size mismatch ${suffix}`, email: `private-size-mismatch-${suffix}@example.test` }, detail: { projectType: 'Residencial', location: 'Culiacán', description: 'Private size mismatch fixture', consentAt: now } }, { prisma, now });
+    const user = await prisma.user.create({ data: { email: `private-size-mismatch-user-${suffix}@example.test`, emailNormalized: `private-size-mismatch-user-${suffix}@example.test`, displayName: 'Private size mismatch user', type: 'CUSTOMER', status: 'ACTIVE', clientId: request.clientId } });
+    const customer = actor(user.id, 'CUSTOMER', request.clientId, ['customer']);
+    let fileId: string | undefined;
+
+    try {
+      // Declara 5 bytes al reservar, pero la URL prefirmada no impone ningún límite real de tamaño
+      // -- sube un objeto mucho más grande, simulando lo que un cliente malicioso podría hacer para
+      // forzar al servidor a cargar en memoria un archivo arbitrariamente grande antes de rechazarlo.
+      const reserved = await reservePrivateFile(customer, { quoteRequestId: request.quoteRequestId, originalFileName: 'oversized.pdf', contentType: 'application/pdf', byteSize: 5, category: 'TECHNICAL_DOCUMENT', visibility: 'CUSTOMER', idempotencyKey: `size-mismatch-${suffix}` }, { prisma, storage, now });
+      fileId = reserved.file.id;
+      storage.put(reserved.uploadUrl!, new Uint8Array(10_000), 'application/pdf');
+
+      await expect(completePrivateFile(customer, request.quoteRequestId, reserved.file.id, { prisma, storage, now })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+      expect(storage.readCallCount).toBe(0);
+      const files = await listPrivateFiles(customer, request.quoteRequestId, {}, { prisma });
+      expect(files).toMatchObject([{ id: reserved.file.id, status: 'REJECTED', downloadAvailable: false }]);
+    } finally {
+      const storageObjects = await prisma.fileAttachment.findMany({ where: { quoteRequestId: request.quoteRequestId }, select: { storageObjectId: true } });
+      await prisma.fileAttachment.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.storageObject.deleteMany({ where: { id: { in: storageObjects.map(({ storageObjectId }) => storageObjectId) } } });
+      if (fileId) {
+        await prisma.outboxEvent.deleteMany({ where: { aggregateId: fileId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: fileId } });
+      }
+      await prisma.user.delete({ where: { id: user.id } });
       await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
       await prisma.clientContact.delete({ where: { id: request.contactId } });
       await prisma.client.delete({ where: { id: request.clientId } });

@@ -280,6 +280,7 @@ export default function StaffQuotesPanel() {
   const [repriceDialogOpen, setRepriceDialogOpen] = useState(false);
   const [publishPreflight, setPublishPreflight] = useState<{ documentStatus: DocumentStatus; contentDigest: string | null; loading: boolean } | null>(null);
   const deepLinkedIdRef = useRef<string | null>(null);
+  const loadBaseGenerationRef = useRef(0);
   const loadWorkspaceGenerationRef = useRef(0);
   const savedSnapshotRef = useRef('');
   const expectedUpdatedAtRef = useRef<string | null>(null);
@@ -300,6 +301,10 @@ export default function StaffQuotesPanel() {
   const { showToast } = usePrivateToast();
 
   const loadBase = useCallback(async (currentPage: number, query: string) => {
+    // UX audit fix: mismo patrón que `loadWorkspace` -- paginar o volver a buscar rápido podía dejar
+    // que la respuesta obsoleta de una combinación anterior de página/búsqueda sobreescribiera en
+    // silencio la lista/paginación/selección con datos que ya no corresponden a lo mostrado.
+    const generation = (loadBaseGenerationRef.current += 1);
     setLoading(true);
     setError(null);
     try {
@@ -311,6 +316,7 @@ export default function StaffQuotesPanel() {
         fetch('/api/staff/catalog/price-lists?status=ACTIVE', { credentials: 'include', cache: 'no-store' }),
       ]);
       const capabilitiesResult = await readApiResponse<Capabilities>(capabilitiesResponse, 'No fue posible cargar el constructor.');
+      if (loadBaseGenerationRef.current !== generation) return;
       if (!capabilitiesResult.ok) {
         setRestricted(capabilitiesResult.kind === 'forbidden');
         setError(capabilitiesResult.message);
@@ -328,6 +334,7 @@ export default function StaffQuotesPanel() {
         readApiResponseOrThrow<{ items: QuoteListItem[]; page: number; total: number; totalPages: number }>(requestsResponse, 'No fue posible cargar el constructor.'),
         readApiResponseOrThrow<PriceList[]>(listsResponse, 'No fue posible cargar el constructor.'),
       ]);
+      if (loadBaseGenerationRef.current !== generation) return;
       setCapabilities(currentCapabilities);
       setRequests(requestData.items);
       setTotal(requestData.total);
@@ -343,6 +350,7 @@ export default function StaffQuotesPanel() {
         return current && requestData.items.some((item) => item.id === current) ? current : requestData.items[0]?.id ?? null;
       });
     } catch (caught) {
+      if (loadBaseGenerationRef.current !== generation) return;
       setRestricted(false);
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el constructor.');
       setRequests([]);
