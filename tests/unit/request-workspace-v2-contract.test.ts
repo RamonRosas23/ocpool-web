@@ -255,6 +255,17 @@ describe('request workspace V2 route contract', () => {
       hasMissingInformation: false,
       capabilities: { requestsAssign: false, requestsStatusUpdate: false, messagingSend: false },
     })).toMatchObject({ key: 'quote.open', kind: 'quote', label: 'Abrir constructor' });
+
+    // UX audit fix: en EN_ELABORACION con la información ya completa, INFORMACION_REQUERIDA se
+    // excluye de `availableStatusTransitions` (tiene su propio flujo dedicado), dejando RECHAZADA
+    // como la única transición de estado -- nunca debe elegirse como la acción primaria de un clic
+    // sin confirmación mientras exista `quote.open` (el caso normal de una solicitud en curso).
+    expect(getRequestWorkspacePrimaryAction({
+      availableActions: ['request.status:RECHAZADA', 'quote.open'],
+      availableStatusTransitions: ['RECHAZADA'],
+      hasMissingInformation: false,
+      capabilities: { requestsAssign: false, requestsStatusUpdate: true, messagingSend: false },
+    })).toMatchObject({ key: 'quote.open', kind: 'quote', label: 'Abrir constructor' });
   });
 
   it('composes one contextual detail header with an accessible secondary action menu', () => {

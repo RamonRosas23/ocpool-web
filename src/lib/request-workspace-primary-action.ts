@@ -57,7 +57,15 @@ export function getRequestWorkspacePrimaryAction(input: PrimaryActionInput): Req
     return { key: 'request.information', kind: 'information', label: 'Solicitar información', description: 'Pide al cliente los datos que faltan para avanzar.' };
   }
 
-  const nextStatus = availableStatusTransitions[0];
+  // UX audit fix: RECHAZADA nunca debe ser LA acción primaria sugerida -- es un cierre negativo y
+  // terminal, no un paso natural hacia adelante. Antes, en EN_ELABORACION (el estado normal mientras
+  // el equipo ya tiene la información completa y está armando la cotización), RECHAZADA quedaba
+  // como la ÚNICA transición de estado disponible para staff (INFORMACION_REQUERIDA se excluye de
+  // `availableStatusTransitions` porque tiene su propio flujo dedicado), así que este paso elegía
+  // "Rechazar solicitud" como el botón primario de un clic sin confirmación -- para el caso más
+  // común de una solicitud en curso, activamente cotizándose.
+  const positiveStatusTransitions = availableStatusTransitions.filter((status) => status !== 'RECHAZADA');
+  const nextStatus = positiveStatusTransitions[0];
   if (capabilities.requestsStatusUpdate && nextStatus) {
     return { key: `request.status:${nextStatus}`, kind: 'status', targetStatus: nextStatus, label: STATUS_ACTION_LABELS[nextStatus], description: STATUS_ACTION_DESCRIPTIONS[nextStatus] };
   }
