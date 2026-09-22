@@ -19,17 +19,26 @@ export type PrivateDatePickerProps = Omit<PrivateFieldChromeProps, 'children'> &
   max?: string;
 };
 
-function parseDate(value: string): Date | undefined {
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return undefined;
-  const date = new Date(`${value}T12:00:00`);
-  return Number.isNaN(date.getTime()) ? undefined : date;
-}
-
 function formatValue(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+// `new Date('2026-02-30T12:00:00')` no produce `Invalid Date` -- rueda en silencio al 2 de marzo.
+// Sin el chequeo de ida y vuelta (`formatValue(date) === value`), un calendario inexistente escrito
+// a mano (p.ej. una fecha límite de "Vigencia hasta" en StaffQuotesPanel) se aceptaba como si fuera
+// un día real y distinto al que la persona tecleó, sin ningún aviso.
+function parseDate(value: string): Date | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return undefined;
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return formatValue(date) === value ? date : undefined;
+}
+
+function isMalformedCalendarDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/u.test(value) && parseDate(value) === undefined;
 }
 
 export function PrivateDatePicker({ id, label, description, error, required, hideLabel, className, value, onValueChange, placeholder = 'Selecciona una fecha', disabled = false, min, max }: PrivateDatePickerProps) {
@@ -40,7 +49,11 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
   const selected = parseDate(value);
   const minDate = parseDate(min ?? '');
   const maxDate = parseDate(max ?? '');
-  const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
+  // Sólo se agrega cuando el consumidor no trae ya su propio `error` -- una validación externa más
+  // específica (p.ej. una fecha fuera de rango de negocio) siempre tiene precedencia sobre este
+  // aviso genérico de "esta fecha no existe en el calendario".
+  const effectiveError = error ?? (isMalformedCalendarDate(value) ? 'Esa fecha no existe en el calendario.' : undefined);
+  const a11y = privateFieldA11y(id, Boolean(description), Boolean(effectiveError), required);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -65,7 +78,7 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
   }, [open]);
 
   return (
-    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
+    <PrivateField id={id} label={label} description={description} error={effectiveError} required={required} hideLabel={hideLabel}>
       <div className={joinClasses('private-date-field', className)} ref={rootRef}>
         <div className="private-date-field__control">
           <input id={id} className="private-control private-date-field__input" type="text" inputMode="numeric" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
