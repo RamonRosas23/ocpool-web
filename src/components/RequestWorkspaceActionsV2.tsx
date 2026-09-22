@@ -105,7 +105,7 @@ const RequestWorkspaceActionsV2 = forwardRef<RequestWorkspaceActionsHandle, Requ
     return () => controller.abort();
   }, [canReassign]);
 
-  const run = useCallback(async (action: string, path: string, body: unknown, successMessage: string, after?: () => void | Promise<void>) => {
+  const run = useCallback(async (action: string, path: string, body: unknown, successMessage: string, after?: () => void | Promise<void>): Promise<boolean> => {
     setBusyAction(action);
     setNotice(null);
     setError(null);
@@ -120,24 +120,35 @@ const RequestWorkspaceActionsV2 = forwardRef<RequestWorkspaceActionsHandle, Requ
       setNotice(successMessage);
       await onUpdated();
       await after?.();
+      return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible completar la operación.');
       if (action === 'take' || action === 'reassign') await onUpdated().catch(() => undefined);
+      return false;
     } finally {
       setBusyAction(null);
     }
   }, [onUpdated]);
 
   const take = useCallback(() => run('take', `/api/staff/quote-requests/${encodeURIComponent(requestId)}/take`, {}, 'Solicitud tomada.'), [requestId, run]);
-  const reassign = useCallback(() => {
+  const reassign = useCallback(async () => {
     if (!selectedAssigneeId || !assignmentReason.trim()) {
       setError('Selecciona un responsable e indica el motivo de la reasignación.');
       setNotice(null);
       return;
     }
-    return run('reassign', `/api/staff/quote-requests/${encodeURIComponent(requestId)}/assign`, { assignedToId: selectedAssigneeId, reason: assignmentReason.trim() }, 'Solicitud reasignada.');
+    // UX audit fix: sin esto, el motivo y el responsable elegido se quedaban visibles en el
+    // formulario después de una reasignación exitosa -- una segunda reasignación poco después
+    // podía enviarse sin querer con el motivo de la anterior, ya obsoleto, adjunto al historial
+    // de una acción distinta. Sólo se limpia si la petición realmente tuvo éxito, para no borrar
+    // lo que el staff tecleó si falló y quiere reintentar.
+    const succeeded = await run('reassign', `/api/staff/quote-requests/${encodeURIComponent(requestId)}/assign`, { assignedToId: selectedAssigneeId, reason: assignmentReason.trim() }, 'Solicitud reasignada.');
+    if (succeeded) { setSelectedAssigneeId(''); setAssignmentReason(''); }
   }, [assignmentReason, requestId, run, selectedAssigneeId]);
-  const transition = useCallback((toStatus: QuoteRequestStatus) => run(`status:${toStatus}`, `/api/staff/quote-requests/${encodeURIComponent(requestId)}/status`, { toStatus, reason: statusReason.trim() || undefined }, 'Estado actualizado.', toStatus === 'EN_ELABORACION' ? onQuoteReady : undefined), [onQuoteReady, requestId, run, statusReason]);
+  const transition = useCallback(async (toStatus: QuoteRequestStatus) => {
+    const succeeded = await run(`status:${toStatus}`, `/api/staff/quote-requests/${encodeURIComponent(requestId)}/status`, { toStatus, reason: statusReason.trim() || undefined }, 'Estado actualizado.', toStatus === 'EN_ELABORACION' ? onQuoteReady : undefined);
+    if (succeeded) setStatusReason('');
+  }, [onQuoteReady, requestId, run, statusReason]);
 
   const openInformation = useCallback(() => {
     setInformationOpen(true);
