@@ -9,6 +9,7 @@ import { nextRovingTabIndex, PrivateBlockingState, PrivateEmptyState, PrivateSke
 import RequestWorkspaceActionsV2 from '@/components/RequestWorkspaceActionsV2';
 import type { RequestWorkspaceActionsHandle } from '@/components/RequestWorkspaceActionsV2';
 import RequestWorkspaceEditV2 from '@/components/RequestWorkspaceEditV2';
+import type { RequestWorkspaceEditHandle } from '@/components/RequestWorkspaceEditV2';
 import RequestWorkspaceHeaderV2, { type RequestWorkspaceHeaderAction } from '@/components/RequestWorkspaceHeaderV2';
 import type { StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import type { StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
@@ -251,6 +252,7 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
   const [capabilitiesRetryToken, setCapabilitiesRetryToken] = useState(0);
   const [conversationDraft, setConversationDraft] = useState('');
   const actionsRef = useRef<RequestWorkspaceActionsHandle>(null);
+  const editRef = useRef<RequestWorkspaceEditHandle>(null);
   const documentTitle = `${activeTabLabel} · ${detail?.folio ?? 'Expediente'} | OCPOOL Operaciones`;
 
   // UX audit fix: `refreshDetail` (usado por la acción "Guardar" del panel de edición y por
@@ -358,7 +360,11 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
       actions.push({ key: 'quote.open', label: 'Abrir constructor', description: 'Continúa la propuesta comercial.', href: `/staff/quotes?request=${encodeURIComponent(requestId)}` });
     }
     if (capabilities.requestsEdit) {
-      actions.push({ key: 'request.edit', label: 'Editar expediente', description: 'Corrige datos con trazabilidad.', href: '#request-workspace-v2-edit' });
+      // UX audit fix: antes esto era un `href` que sólo hacía scroll hasta la sección "Datos
+      // corregibles" sin abrir su formulario -- el staff tenía que buscar y hacer clic en OTRO
+      // botón con la misma etiqueta "Editar expediente" para realmente empezar a editar. Ahora
+      // abre el panel de verdad (vía `editRef`) y además hace scroll hasta ahí, en vez de sólo lo segundo.
+      actions.push({ key: 'request.edit', label: 'Editar expediente', description: 'Corrige datos con trazabilidad.', onActivate: () => { editRef.current?.open(); document.getElementById('request-workspace-v2-edit')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
     }
     return actions.filter((action) => action.key !== primaryAction?.key);
   }, [activateAction, capabilities, detail, primaryAction?.key, requestId]);
@@ -404,7 +410,7 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
             {REQUEST_WORKSPACE_TABS.map((tab) => <Link key={tab} role="tab" tabIndex={query.tab === tab ? 0 : -1} aria-selected={query.tab === tab} aria-controls="request-workspace-v2-tabpanel" className={query.tab === tab ? 'is-active' : ''} href={tabHref(requestId, tab, query)} onKeyDown={handleTabKeyDown}>{TAB_LABELS[tab]}</Link>)}
           </nav>
           {capabilitiesError && <PrivateBlockingState title="No fue posible validar las acciones." onRetry={() => setCapabilitiesRetryToken((current) => current + 1)}>{capabilitiesError}</PrivateBlockingState>}
-          {capabilities && <RequestWorkspaceEditV2 data={{ id: detail.id, updatedAt: detail.updatedAt, status: detail.status, contact: detail.contact, detail: detail.detail }} canEdit={capabilities.requestsEdit} onUpdated={refreshDetail} />}
+          {capabilities && <RequestWorkspaceEditV2 ref={editRef} data={{ id: detail.id, updatedAt: detail.updatedAt, status: detail.status, contact: detail.contact, detail: detail.detail }} canEdit={capabilities.requestsEdit} onUpdated={refreshDetail} />}
           {capabilities && <RequestWorkspaceActionsV2 ref={actionsRef} requestId={detail.id} status={detail.status} contact={detail.contact} suggestedMissingFields={suggestedMissingFields} currentAssignee={detail.currentAssignee} availableActions={detail.availableActions} availableStatusTransitions={detail.availableStatusTransitions} capabilities={{ requestsAssign: capabilities.requestsAssign, requestsReassign: capabilities.requestsReassign, requestsStatusUpdate: capabilities.requestsStatusUpdate, messagingSend: capabilities.messagingSend, identityUsersManage: capabilities.identityUsersManage }} onUpdated={refreshDetail} onQuoteReady={openQuote} primaryActionKey={primaryAction?.key} compact={query.tab !== 'summary'} />}
           <section id="request-workspace-v2-tabpanel" role="tabpanel" aria-label={TAB_LABELS[query.tab]} className="request-workspace-v2__tabpanel">
             {renderTab()}

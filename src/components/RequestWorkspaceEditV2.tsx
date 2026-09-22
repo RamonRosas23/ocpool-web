@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, FormEvent, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { PrivateBlockingState, PrivateButton, PrivateSelect, PrivateTextArea, PrivateTextField } from '@/components/private/ui';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import {
@@ -62,12 +62,23 @@ async function readResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-export default function RequestWorkspaceEditV2({ data, canEdit, onUpdated }: { data: RequestWorkspaceEditData; canEdit: boolean; onUpdated: () => Promise<void> }) {
+export type RequestWorkspaceEditHandle = { open: () => void };
+
+const RequestWorkspaceEditV2 = forwardRef<RequestWorkspaceEditHandle, { data: RequestWorkspaceEditData; canEdit: boolean; onUpdated: () => Promise<void> }>(function RequestWorkspaceEditV2({ data, canEdit, onUpdated }, ref) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<EditForm>(() => toForm(data));
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // UX audit fix: el menú "Más acciones" del encabezado tenía su propia entrada "Editar expediente"
+  // que sólo hacía scroll hasta esta sección (`href="#request-workspace-v2-edit"`, ver
+  // RequestWorkspaceDetailV2.tsx) sin abrir el formulario -- el staff llegaba al resumen "Datos
+  // corregibles" colapsado y tenía que encontrar y hacer clic en ESTE OTRO botón, con la misma
+  // etiqueta, para realmente empezar a editar. Exponer `open()` deja que el encabezado abra el
+  // panel de verdad, con el mismo patrón `forwardRef`/`useImperativeHandle` que ya usa
+  // RequestWorkspaceActionsV2 en el mismo archivo padre.
+  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
 
   // UX audit fix: navegar a un expediente distinto NO remonta este componente (Next.js reutiliza
   // la misma instancia entre navegaciones de un segmento dinámico) -- si el panel de edición se
@@ -140,4 +151,6 @@ export default function RequestWorkspaceEditV2({ data, canEdit, onUpdated }: { d
       <div className="request-workspace-v2__edit-actions"><PrivateButton type="submit" busy={busy}>Guardar cambios</PrivateButton></div>
     </form>}
   </section>;
-}
+});
+
+export default RequestWorkspaceEditV2;
