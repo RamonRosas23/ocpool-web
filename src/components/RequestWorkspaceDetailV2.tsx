@@ -253,12 +253,21 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
   const actionsRef = useRef<RequestWorkspaceActionsHandle>(null);
   const documentTitle = `${activeTabLabel} · ${detail?.folio ?? 'Expediente'} | OCPOOL Operaciones`;
 
+  // UX audit fix: `refreshDetail` (usado por la acción "Guardar" del panel de edición y por
+  // RequestWorkspaceActionsV2 tras cada acción) llama `loadDetail` sin `AbortSignal` -- si el
+  // staff dispara un refresco y navega a OTRO expediente antes de que resuelva, la respuesta
+  // tardía (para el expediente ANTERIOR) pisaba en silencio el `detail` ya cargado del expediente
+  // nuevo. `loadGenerationRef` distingue la llamada más reciente sin importar quién la haya
+  // iniciado, así que una respuesta obsoleta nunca sobreescribe el expediente que se está viendo.
+  const loadGenerationRef = useRef(0);
   const loadDetail = useCallback(async (signal?: AbortSignal, showLoading = true) => {
+    const generation = (loadGenerationRef.current += 1);
     if (showLoading) setLoading(true);
     setError(null);
     try {
       const response = await fetch(`/api/staff/quote-requests/${encodeURIComponent(requestId)}`, { credentials: 'include', cache: 'no-store', signal });
       const result = await readApiResponse<RequestDetail>(response, 'No fue posible cargar el expediente.');
+      if (loadGenerationRef.current !== generation) return;
       if (result.ok) {
         setDetail(result.data);
       } else {
@@ -267,8 +276,10 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
       }
     } catch (caught: unknown) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return;
+      if (loadGenerationRef.current !== generation) return;
       setError({ kind: 'transient', message: caught instanceof Error ? caught.message : 'No fue posible cargar el expediente.' });
     } finally {
+      if (loadGenerationRef.current !== generation) return;
       if (showLoading && !signal?.aborted) setLoading(false);
     }
   }, [requestId]);

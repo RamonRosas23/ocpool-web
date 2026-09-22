@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { PrivateBlockingState, PrivateButton, PrivateSelect, PrivateTextArea, PrivateTextField } from '@/components/private/ui';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import {
@@ -69,7 +69,22 @@ export default function RequestWorkspaceEditV2({ data, canEdit, onUpdated }: { d
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // UX audit fix: navegar a un expediente distinto NO remonta este componente (Next.js reutiliza
+  // la misma instancia entre navegaciones de un segmento dinámico) -- si el panel de edición se
+  // quedaba abierto, `form` seguía mostrando los campos del expediente ANTERIOR mientras `data.id`
+  // (usado en la URL del PATCH) ya apuntaba al expediente nuevo, arriesgando que los datos de un
+  // contacto/proyecto se guardaran sobre el folio equivocado. `lastDataIdRef` distingue un cambio
+  // real de expediente (fuerza cierre + resincronización, sin importar `open`) de una simple
+  // actualización de contenido del mismo expediente (p.ej. tras guardar), que conserva el
+  // comportamiento original de sólo resincronizar cuando el panel está cerrado.
+  const lastDataIdRef = useRef(data.id);
   useEffect(() => {
+    if (data.id !== lastDataIdRef.current) {
+      lastDataIdRef.current = data.id;
+      setOpen(false);
+      setForm(toForm(data));
+      return;
+    }
     if (!open) setForm(toForm(data));
   }, [data, open]);
 
