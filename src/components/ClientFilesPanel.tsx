@@ -85,7 +85,16 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // UX audit fix: `loadFiles` se llama desde cinco lugares independientes (montaje, "Ver más" con
+  // cursor, tres refrescos tras subir/eliminar) sin ninguna guarda de orden -- si el cliente hace
+  // clic en "Ver más" justo cuando un refresco sin cursor (post-subida/eliminación) también está en
+  // vuelo, la respuesta que resuelva al final ganaba en silencio: una respuesta sin cursor tardía
+  // reemplaza `items` por completo (sólo la primera página), descartando la lista ya paginada con
+  // "Ver más" sin ningún aviso. `loadRequestIdRef` sólo deja aplicar el resultado de la llamada más
+  // reciente que se haya iniciado.
+  const loadRequestIdRef = useRef(0);
   const loadFiles = useCallback(async (cursor?: string) => {
+    const requestGeneration = (loadRequestIdRef.current += 1);
     if (cursor) setLoadingMore(true);
     else setLoading(true);
     try {
@@ -93,12 +102,15 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
       if (cursor) params.set('cursor', cursor);
       const response = await fetch(fileEndpoint(requestId, `?${params.toString()}`), { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<FilesResponse>(response);
+      if (loadRequestIdRef.current !== requestGeneration) return;
       setItems((current) => cursor ? mergeFiles(current, data.items) : data.items);
       setNextCursor(data.nextCursor);
       setError(null);
     } catch (caught) {
+      if (loadRequestIdRef.current !== requestGeneration) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar los archivos del expediente.');
     } finally {
+      if (loadRequestIdRef.current !== requestGeneration) return;
       if (cursor) setLoadingMore(false);
       else setLoading(false);
     }
