@@ -126,7 +126,17 @@ async function lockQuoteRequest(transaction: Prisma.TransactionClient, quoteRequ
   return rows[0] ?? null;
 }
 
-function serializeFile(attachment: AttachmentWithObject, includeInternal: boolean) {
+// UX audit fix: `files.delete` sólo autoriza borrar archivos PROPIOS (ver su descripción en
+// `auth/constants.ts`) -- `deletePrivateFile` ya lo exige (`canManage || uploadedById === actor.userId`),
+// pero el archivo serializado nunca traía esa información, así que tanto el panel de staff como el
+// del cliente mostraban "Eliminar archivo" en CUALQUIER fila con sólo tener el permiso, sin importar
+// quién lo subió -- un callejón sin salida garantizado (confirmación irreversible seguida de un 403)
+// para cualquier rol sin `files.manage` (el rol "Ventas" por defecto, y todo cliente) en cuanto
+// intentaran borrar un archivo ajeno. `canDelete` se calcula aquí, con la misma regla exacta que el
+// borrado real, en vez de exponer `uploadedById` crudo al cliente.
+function serializeFile(attachment: AttachmentWithObject, actor: Actor, includeInternal: boolean) {
+  const canManage = actor.type === 'EMPLOYEE' && actor.permissionKeys.has('files.manage');
+  const canDelete = actor.permissionKeys.has('files.delete') && (canManage || attachment.uploadedById === actor.userId);
   return {
     id: attachment.id,
     originalFileName: attachment.originalFileName,
@@ -139,6 +149,7 @@ function serializeFile(attachment: AttachmentWithObject, includeInternal: boolea
     createdAt: attachment.createdAt,
     updatedAt: attachment.updatedAt,
     downloadAvailable: attachment.status === 'AVAILABLE' && attachment.storageObject.scanStatus === 'PASSED',
+    canDelete,
   };
 }
 
@@ -224,10 +235,10 @@ export async function reservePrivateFile(actor: Actor, input: ReservePrivateFile
   });
 
   if (attachment.status === 'AVAILABLE') {
-    return { file: serializeFile(attachment, actor.type === 'EMPLOYEE'), uploadUrl: null, uploadExpiresAt: null };
+    return { file: serializeFile(attachment, actor, actor.type === 'EMPLOYEE'), uploadUrl: null, uploadExpiresAt: null };
   }
   const uploadUrl = await storage.createUploadUrl({ key: attachment.storageObject.storageKey, contentType: attachment.storageObject.contentType, expiresInSeconds: UPLOAD_URL_TTL_SECONDS });
-  return { file: serializeFile(attachment, actor.type === 'EMPLOYEE'), uploadUrl, uploadExpiresAt: new Date(now.getTime() + UPLOAD_URL_TTL_SECONDS * 1000) };
+  return { file: serializeFile(attachment, actor, actor.type === 'EMPLOYEE'), uploadUrl, uploadExpiresAt: new Date(now.getTime() + UPLOAD_URL_TTL_SECONDS * 1000) };
 }
 
 async function markRejected(actor: Actor, attachmentId: string, quoteRequestId: string, reason: string, dependencies: PrivateFilesServiceDependencies, storageKey: string) {
@@ -260,7 +271,7 @@ export async function completePrivateFile(actor: Actor, quoteRequestId: string, 
   if (!scopedRequest) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
   const pending = await prisma.fileAttachment.findFirst({ where: { id: fileId, quoteRequestId, ...(clientId ? { clientId } : {}), deletedAt: null }, include: { storageObject: true } });
   if (!pending) throw new AppError('NOT_FOUND', 'El archivo no existe.', 404);
-  if (pending.status === 'AVAILABLE') return { file: serializeFile(pending, actor.type === 'EMPLOYEE') };
+  if (pending.status === 'AVAILABLE') return { file: serializeFile(pending, actor, actor.type === 'EMPLOYEE') };
   if (pending.status !== 'PENDING_SCAN') throw new AppError('CONFLICT', 'El archivo ya no puede completarse.', 409);
   if (pending.reservationExpiresAt && pending.reservationExpiresAt < now) {
     await prisma.$transaction(async (transaction) => {
@@ -310,7 +321,7 @@ export async function completePrivateFile(actor: Actor, quoteRequestId: string, 
     try { await storage.delete(result.storageObject.storageKey); } catch { /* cleanup can retry */ }
     throw new AppError('VALIDATION_ERROR', 'El archivo no superó la validación.', 400);
   }
-  return { file: serializeFile(result, actor.type === 'EMPLOYEE') };
+  return { file: serializeFile(result, actor, actor.type === 'EMPLOYEE') };
 }
 
 export async function listPrivateFilesPage(actor: Actor, quoteRequestId: string, filters: PrivateFileListFilters = {}, dependencies: PrivateFilesServiceDependencies = {}) {
@@ -346,7 +357,7 @@ export async function listPrivateFilesPage(actor: Actor, quoteRequestId: string,
     take: limit + 1,
   });
   const hasNext = files.length > limit;
-  const items = (hasNext ? files.slice(0, limit) : files).map((file) => serializeFile(file, actor.type === 'EMPLOYEE'));
+  const items = (hasNext ? files.slice(0, limit) : files).map((file) => serializeFile(file, actor, actor.type === 'EMPLOYEE'));
   return { items, nextCursor: hasNext ? encodeCursor(files[limit - 1]) : null };
 }
 
@@ -373,7 +384,7 @@ export async function getPrivateFileDownload(actor: Actor, quoteRequestId: strin
   if (!file) throw new AppError('NOT_FOUND', 'El archivo no existe.', 404);
   const downloadUrl = await storage.createDownloadUrl({ key: file.storageObject.storageKey, expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS });
   await prisma.auditLog.create({ data: { actorUserId: actor.userId, action: 'file.download_url_created', entityType: 'file_attachment', entityId: file.id, outcome: 'SUCCESS', metadata: { quoteRequestId, category: file.category } } });
-  return { file: serializeFile(file, actor.type === 'EMPLOYEE'), downloadUrl, expiresAt: new Date((dependencies.now ?? new Date()).getTime() + DOWNLOAD_URL_TTL_SECONDS * 1000) };
+  return { file: serializeFile(file, actor, actor.type === 'EMPLOYEE'), downloadUrl, expiresAt: new Date((dependencies.now ?? new Date()).getTime() + DOWNLOAD_URL_TTL_SECONDS * 1000) };
 }
 
 export async function deletePrivateFile(actor: Actor, quoteRequestId: string, fileId: string, dependencies: PrivateFilesServiceDependencies = {}) {
