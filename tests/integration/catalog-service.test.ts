@@ -258,4 +258,69 @@ describe('catalog and price list service', () => {
       await prisma.user.delete({ where: { id: user.id } });
     }
   }, 30_000);
+
+  it('round 10 audit fix: never leaves an active category hanging off an archived parent when create/reparent races an archive', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const manager = actor(`00000000-0000-4000-8000-${suffix.slice(-12).padStart(12, '0')}`, ['catalog.read', 'catalog.manage']);
+    const user = await prisma.user.create({
+      data: { email: `catalog-category-race-${suffix}@example.test`, emailNormalized: `catalog-category-race-${suffix}@example.test`, displayName: 'Catalog category race employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    manager.userId = user.id;
+    let parentId = '';
+    let childId = '';
+    let targetId = '';
+    let otherParentId = '';
+    let moverId = '';
+
+    try {
+      // Same operator archives a category at the exact moment a second tab creates a child under it
+      // (e.g. two open staff sessions). Without the `FOR UPDATE` lock added in this fix, both could read
+      // "parent is ACTIVE" / "no active children yet" before either commits, leaving an active category
+      // hanging off an archived parent -- invisible in the tree by default (it only lists status=ACTIVE).
+      const parent = await createCatalogCategory(manager, { code: `RACE-P-${suffix}`, name: 'Padre de carrera' }, { prisma });
+      parentId = parent.id;
+      const [createResult, archiveResult] = await Promise.allSettled([
+        createCatalogCategory(manager, { code: `RACE-C-${suffix}`, name: 'Hijo de carrera', parentId: parent.id }, { prisma }),
+        updateCatalogCategory(manager, parent.id, { status: 'ARCHIVED' }, { prisma }),
+      ]);
+      if (createResult.status === 'fulfilled') childId = createResult.value.id;
+
+      const parentAfter = await prisma.catalogCategory.findUnique({ where: { id: parent.id }, select: { status: true } });
+      const activeChildrenAfter = await prisma.catalogCategory.count({ where: { parentId: parent.id, status: 'ACTIVE' } });
+      if (parentAfter?.status === 'ARCHIVED') expect(activeChildrenAfter).toBe(0);
+      // Exactly one side of the race should have won; the other must have failed with a clean, typed error.
+      expect([createResult.status, archiveResult.status].filter((status) => status === 'fulfilled')).toHaveLength(1);
+
+      // Same shape of race, but for reparenting an existing category into the target instead of creating
+      // a fresh child under it -- a distinct code path (updateCatalogCategory's own parentId reassignment)
+      // that shares the same lock now, but didn't before this fix.
+      const target = await createCatalogCategory(manager, { code: `RACE-T-${suffix}`, name: 'Objetivo de carrera' }, { prisma });
+      targetId = target.id;
+      const otherParent = await createCatalogCategory(manager, { code: `RACE-O-${suffix}`, name: 'Otro padre' }, { prisma });
+      otherParentId = otherParent.id;
+      const mover = await createCatalogCategory(manager, { code: `RACE-M-${suffix}`, name: 'Categoría a mover', parentId: otherParent.id }, { prisma });
+      moverId = mover.id;
+      const [reparentResult, targetArchiveResult] = await Promise.allSettled([
+        updateCatalogCategory(manager, mover.id, { parentId: target.id }, { prisma }),
+        updateCatalogCategory(manager, target.id, { status: 'ARCHIVED' }, { prisma }),
+      ]);
+
+      const targetAfter = await prisma.catalogCategory.findUnique({ where: { id: target.id }, select: { status: true } });
+      const activeUnderTargetAfter = await prisma.catalogCategory.count({ where: { parentId: target.id, status: 'ACTIVE' } });
+      if (targetAfter?.status === 'ARCHIVED') expect(activeUnderTargetAfter).toBe(0);
+      expect([reparentResult.status, targetArchiveResult.status].filter((status) => status === 'fulfilled')).toHaveLength(1);
+    } finally {
+      if (moverId) await prisma.catalogCategory.deleteMany({ where: { id: moverId } });
+      if (otherParentId) await prisma.catalogCategory.deleteMany({ where: { id: otherParentId } });
+      if (targetId) await prisma.catalogCategory.deleteMany({ where: { id: targetId } });
+      if (childId) await prisma.catalogCategory.deleteMany({ where: { id: childId } });
+      if (parentId) await prisma.catalogCategory.deleteMany({ where: { id: parentId } });
+      await prisma.user.delete({ where: { id: user.id } });
+    }
+  }, 30_000);
 });

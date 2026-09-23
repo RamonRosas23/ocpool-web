@@ -137,7 +137,13 @@ export async function createCatalogCategory(actor: Actor, input: { code?: string
   try {
     return await prisma.$transaction(async (transaction) => {
       if (parentId) {
-        const parent = await transaction.catalogCategory.findUnique({ where: { id: parentId }, select: { id: true, status: true } });
+        // Bloquea la fila del padre para serializar contra un archivado concurrente (updateCatalogCategory
+        // toma este mismo candado antes de contar hijos/conceptos activos) -- sin esto, el padre podía
+        // archivarse entre esta lectura y el INSERT de abajo, dejando una subcategoría activa colgando de
+        // un padre archivado: invisible en el árbol por defecto, que sólo pide categorías con status=ACTIVE.
+        const [parent] = await transaction.$queryRaw<Array<{ status: CatalogStatus }>>(
+          Prisma.sql`SELECT "status" FROM "catalog_categories" WHERE "id" = ${parentId} FOR UPDATE`,
+        );
         if (!parent || parent.status !== 'ACTIVE') throw new AppError('VALIDATION_ERROR', 'La categoría padre no está disponible.', 400);
       }
       const finalCode = code ?? await allocateCatalogCode(transaction, 'catalog_category', 'CAT');
@@ -166,12 +172,13 @@ export async function updateCatalogCategory(actor: Actor, categoryId: string, in
     data.sortOrder = input.sortOrder;
   }
   if (input.status !== undefined) data.status = normalizeStatus(input.status, 'ACTIVE');
+  let newParentId: string | null | undefined;
   if (input.parentId !== undefined) {
-    const newParentId = input.parentId ? requireUuid(input.parentId, 'La categoría padre no es válida.') : null;
+    newParentId = input.parentId ? requireUuid(input.parentId, 'La categoría padre no es válida.') : null;
     if (newParentId === id) throw new AppError('VALIDATION_ERROR', 'Una categoría no puede ser su propio padre.', 400);
     if (newParentId) {
-      const parent = await prisma.catalogCategory.findUnique({ where: { id: newParentId }, select: { status: true, parentId: true } });
-      if (!parent || parent.status !== 'ACTIVE') throw new AppError('VALIDATION_ERROR', 'La categoría padre no está disponible.', 400);
+      const parent = await prisma.catalogCategory.findUnique({ where: { id: newParentId }, select: { parentId: true } });
+      if (!parent) throw new AppError('VALIDATION_ERROR', 'La categoría padre no está disponible.', 400);
       let cursor: string | null = parent.parentId;
       const seen = new Set<string>([newParentId]);
       while (cursor) {
@@ -185,16 +192,27 @@ export async function updateCatalogCategory(actor: Actor, categoryId: string, in
   }
   if (Object.keys(data).length === 0) throw new AppError('VALIDATION_ERROR', 'No hay cambios para guardar.', 400);
 
-  if (data.status === 'ARCHIVED') {
-    const [activeChildren, activeItems] = await Promise.all([
-      prisma.catalogCategory.count({ where: { parentId: id, status: 'ACTIVE' } }),
-      prisma.catalogItem.count({ where: { categoryId: id, status: 'ACTIVE' } }),
-    ]);
-    if (activeChildren > 0 || activeItems > 0) conflict('No puedes archivar una categoría con conceptos o subcategorías activas; reasígnalos o archívalos primero.');
-  }
-
   try {
     return await prisma.$transaction(async (transaction) => {
+      // Candados dentro de la misma transacción que el UPDATE (el de archivado vivía antes como dos
+      // consultas sueltas fuera de cualquier transacción). Ambos toman el mismo `SELECT ... FOR UPDATE`
+      // que createCatalogCategory usa sobre el padre, así que las tres operaciones (crear hijo, reparentar,
+      // archivar) se serializan entre sí y ninguna puede dejar una categoría activa colgando de un padre
+      // archivado a mitad de una carrera entre transacciones concurrentes.
+      if (newParentId) {
+        const [lockedParent] = await transaction.$queryRaw<Array<{ status: CatalogStatus }>>(
+          Prisma.sql`SELECT "status" FROM "catalog_categories" WHERE "id" = ${newParentId} FOR UPDATE`,
+        );
+        if (!lockedParent || lockedParent.status !== 'ACTIVE') throw new AppError('VALIDATION_ERROR', 'La categoría padre no está disponible.', 400);
+      }
+      if (data.status === 'ARCHIVED') {
+        await transaction.$queryRaw(Prisma.sql`SELECT "id" FROM "catalog_categories" WHERE "id" = ${id} FOR UPDATE`);
+        const [activeChildren, activeItems] = await Promise.all([
+          transaction.catalogCategory.count({ where: { parentId: id, status: 'ACTIVE' } }),
+          transaction.catalogItem.count({ where: { categoryId: id, status: 'ACTIVE' } }),
+        ]);
+        if (activeChildren > 0 || activeItems > 0) conflict('No puedes archivar una categoría con conceptos o subcategorías activas; reasígnalos o archívalos primero.');
+      }
       const category = await transaction.catalogCategory.update({ where: { id }, data });
       await audit(transaction, actor, 'catalog.category.updated', 'catalog_category', category.id, { code: category.code, status: category.status });
       await outbox(transaction, 'CATALOG.CATEGORY_UPDATED', 'CATALOG_CATEGORY', category.id, { categoryId: category.id, status: category.status });
