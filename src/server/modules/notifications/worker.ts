@@ -82,6 +82,13 @@ export async function defaultRenderNotification(delivery: ClaimedNotificationDel
     ...(stringValue(payload, 'preview') ? { preview: stringValue(payload, 'preview') } : {}),
     ...(stringValue(payload, 'fileName') ? { fileName: stringValue(payload, 'fileName') } : {}),
     ...(numberValue(payload, 'expiresMinutes') !== undefined ? { expiresMinutes: numberValue(payload, 'expiresMinutes') } : {}),
+    // UX audit fix: `NotificationTemplateData` ya declaraba estos dos campos y
+    // `renderNotificationTemplate` ya los lee (quote.approval_requested/_resolved), pero nunca se
+    // copiaban del payload persistido -- así que todo correo de aprobación de cotización mostraba
+    // "Tipo: ajuste de precio" sin importar el tipo real, y todo correo de resolución mostraba
+    // "Aprobación rechazada" incluso cuando se acababa de aprobar.
+    ...(stringValue(payload, 'approvalType') ? { approvalType: stringValue(payload, 'approvalType') } : {}),
+    ...(stringValue(payload, 'approvalStatus') ? { approvalStatus: stringValue(payload, 'approvalStatus') } : {}),
   };
   const rendered = renderNotificationTemplate({ templateKey: delivery.templateKey, templateVersion: delivery.templateVersion, data: templateData });
   return { to: recipient, subject: rendered.subject, text: rendered.text, html: rendered.html };

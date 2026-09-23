@@ -32,6 +32,32 @@ function fakeMagicLinkDelivery(outboxPayload: Record<string, unknown>): ClaimedN
   };
 }
 
+function fakeApprovalDelivery(templateKey: 'quote.approval_requested' | 'quote.approval_resolved', payload: Record<string, unknown>): ClaimedNotificationDelivery {
+  const now = new Date('2026-09-17T12:00:00.000Z');
+  return {
+    id: 'delivery-approval-1',
+    outboxEventId: 'outbox-approval-1',
+    recipientUserId: 'staff-1',
+    recipientAddressCiphertext: encryptSecret('manager@example.test', readServerEnv().NOTIFICATION_RECIPIENT_ENCRYPTION_KEY),
+    recipientAddressHash: null,
+    templateKey,
+    templateVersion: 'v1',
+    subjectSnapshot: null,
+    payload,
+    status: 'PROCESSING',
+    attempts: 0,
+    availableAt: now,
+    processingStartedAt: now,
+    processedAt: null,
+    lastErrorCode: null,
+    cancelReason: null,
+    providerMessageId: null,
+    createdAt: now,
+    updatedAt: now,
+    outboxEvent: { eventType: 'QUOTE.APPROVAL_REQUESTED', aggregateType: 'QUOTE', aggregateId: 'quote-1', payload: {} },
+  };
+}
+
 describe('notification worker policies', () => {
   it('classifies provider failures without retaining raw error text', () => {
     expect(classifyNotificationError(Object.assign(new Error('SMTP secret response must not persist'), { code: 'SMTP_PROVIDER_ERROR' }))).toEqual({ code: 'TEMPORARY_PROVIDER', retryable: true });
@@ -86,5 +112,29 @@ describe('notification worker policies', () => {
     const withoutRequest = await defaultRenderNotification(fakeMagicLinkDelivery({ tokenCiphertext, tokenType: 'MAGIC_LINK' }));
     expect(withoutRequest.text).toContain(`/auth/customer/consume-link?token=${encodeURIComponent(rawToken)}`);
     expect(withoutRequest.text).not.toContain('request=');
+  });
+
+  it('UX audit fix: threads the persisted approvalType/approvalStatus into the rendered email instead of dropping them', async () => {
+    const requested = await defaultRenderNotification(fakeApprovalDelivery('quote.approval_requested', {
+      recipientName: 'Gerencia',
+      folio: 'OCQ-2026-000003',
+      versionNumber: 2,
+      approvalType: 'SPECIAL_CONCEPT',
+      actionPath: '/staff/quotes',
+    }));
+    expect(requested.text).toContain('concepto especial');
+    expect(requested.text).not.toContain('ajuste de precio');
+
+    const resolved = await defaultRenderNotification(fakeApprovalDelivery('quote.approval_resolved', {
+      recipientName: 'Gerencia',
+      folio: 'OCQ-2026-000003',
+      versionNumber: 2,
+      approvalType: 'DISCOUNT',
+      approvalStatus: 'APPROVED',
+      actionPath: '/staff/quotes',
+    }));
+    expect(resolved.subject).toContain('Aprobación autorizada');
+    expect(resolved.text).toContain('fue autorizada');
+    expect(resolved.text).not.toContain('fue rechazada');
   });
 });

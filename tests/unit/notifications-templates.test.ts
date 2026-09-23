@@ -108,6 +108,60 @@ describe('notification mappers and templates', () => {
     expect(mapNotificationEvent({ eventType: 'QUOTE.APPROVAL_REQUESTED', aggregateType: 'QUOTE', aggregateId: payload.quoteId, payload }, { recipient }).kind).toBe('REJECTED');
   });
 
+  it('UX audit fix: accepts SPECIAL_CONCEPT approvals instead of silently cancelling them, and carries the type/status through the safe payload', () => {
+    const staffRecipient = { userId: '00000000-0000-4000-8000-000000000010', email: 'manager@example.test', displayName: 'Gerencia', audience: 'STAFF' as const };
+    const payload = {
+      quoteId: '00000000-0000-4000-8000-000000000011',
+      quoteVersionId: '00000000-0000-4000-8000-000000000012',
+      quoteRequestId: '00000000-0000-4000-8000-000000000013',
+      folio: 'OCQ-2026-000003',
+      versionNumber: 2,
+      approvalId: '00000000-0000-4000-8000-000000000014',
+      type: 'SPECIAL_CONCEPT',
+    } as const;
+
+    const requested = mapNotificationEvent({ eventType: 'QUOTE.APPROVAL_REQUESTED', aggregateType: 'QUOTE', aggregateId: payload.quoteId, payload }, { recipient: staffRecipient });
+    expect(requested.kind).toBe('INTENT');
+    if (requested.kind === 'INTENT') expect(requested.safePayload.approvalType).toBe('SPECIAL_CONCEPT');
+
+    const resolved = mapNotificationEvent({ eventType: 'QUOTE.APPROVAL_RESOLVED', aggregateType: 'QUOTE', aggregateId: payload.quoteId, payload: { ...payload, status: 'REJECTED' } }, { recipient: staffRecipient });
+    expect(resolved.kind).toBe('INTENT');
+    if (resolved.kind === 'INTENT') {
+      expect(resolved.safePayload.approvalType).toBe('SPECIAL_CONCEPT');
+      expect(resolved.safePayload.approvalStatus).toBe('REJECTED');
+    }
+
+    // PRICE_OVERRIDE sigue bloqueado del lado de negocio (approval-service.ts), pero el esquema de
+    // notificación en sí ya lo acepta como forma de payload válida -- el bloqueo real no vive aquí.
+    const priceOverride = mapNotificationEvent({ eventType: 'QUOTE.APPROVAL_REQUESTED', aggregateType: 'QUOTE', aggregateId: payload.quoteId, payload: { ...payload, type: 'PRICE_OVERRIDE' } }, { recipient: staffRecipient });
+    expect(priceOverride.kind).toBe('INTENT');
+  });
+
+  it('UX audit fix: renders the real approval type and outcome instead of always defaulting to "ajuste de precio"/"rechazada"', () => {
+    const base = {
+      appUrl: 'http://localhost:3000',
+      recipientName: 'Gerencia',
+      folio: 'OCQ-2026-000003',
+      versionNumber: 2,
+      actionUrl: 'http://localhost:3000/staff/quotes',
+    };
+
+    const specialRequested = renderNotificationTemplate({ templateKey: 'quote.approval_requested', templateVersion: 'v1', data: { ...base, approvalType: 'SPECIAL_CONCEPT' } });
+    expect(specialRequested.text).toContain('concepto especial');
+    expect(specialRequested.html).toContain('concepto especial');
+
+    const discountApproved = renderNotificationTemplate({ templateKey: 'quote.approval_resolved', templateVersion: 'v1', data: { ...base, approvalType: 'DISCOUNT', approvalStatus: 'APPROVED' } });
+    expect(discountApproved.subject).toContain('Aprobación autorizada');
+    expect(discountApproved.text).toContain('descuento');
+    expect(discountApproved.text).toContain('fue autorizada');
+    expect(discountApproved.text).not.toContain('fue rechazada');
+
+    const specialRejected = renderNotificationTemplate({ templateKey: 'quote.approval_resolved', templateVersion: 'v1', data: { ...base, approvalType: 'SPECIAL_CONCEPT', approvalStatus: 'REJECTED' } });
+    expect(specialRejected.subject).toContain('Aprobación rechazada');
+    expect(specialRejected.text).toContain('concepto especial');
+    expect(specialRejected.text).toContain('fue rechazada');
+  });
+
   it('allows templates to render an explicit fallback action label safely', () => {
     const rendered = renderNotificationTemplate({
       templateKey: 'request.received',

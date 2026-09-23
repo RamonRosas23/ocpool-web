@@ -96,7 +96,13 @@ const requestReceivedPayload = z.object({ quoteRequestId: uuid, folio, origin: z
 const requestAssignedPayload = z.object({ quoteRequestId: uuid, folio, assignedToId: uuid }).passthrough();
 const quoteStatusPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, fromStatus: z.string().min(1).max(40), toStatus: z.literal('ENVIADA') }).passthrough();
 const quotePublishedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio }).passthrough();
-const quoteApprovalRequestedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, versionNumber: z.number().int().positive(), approvalId: uuid, type: z.enum(['DISCOUNT', 'PRICE_OVERRIDE']) }).passthrough();
+// UX audit fix: `PRICE_OVERRIDE` es el único tipo de `QUOTE_APPROVAL_TYPES` (approval-service.ts)
+// todavía bloqueado como "no habilitado" -- `SPECIAL_CONCEPT` sí es un flujo real y activo
+// (`requestSpecialApproval`/`decideSpecialApproval` en StaffQuotesPanel.tsx), pero faltaba aquí, así
+// que su evento de notificación se rechazaba por payload inválido y quedaba cancelado en silencio
+// -- ni el correo se enviaba, ni aparecía en la cola de fallos del tablero (que sólo lista `FAILED`,
+// nunca `CANCELLED`), así que nadie se enteraba de que faltaba avisar una aprobación pendiente.
+const quoteApprovalRequestedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, versionNumber: z.number().int().positive(), approvalId: uuid, type: z.enum(['DISCOUNT', 'PRICE_OVERRIDE', 'SPECIAL_CONCEPT']) }).passthrough();
 const quoteApprovalResolvedPayload = quoteApprovalRequestedPayload.extend({ status: z.enum(['APPROVED', 'REJECTED']) });
 const quoteAcceptedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, versionNumber: z.number().int().positive(), acceptanceId: uuid, generatedDocumentId: uuid, termsVersion: z.string().min(1).max(64) }).passthrough();
 const messagePayload = z.object({ conversationId: uuid, quoteRequestId: uuid, clientId: uuid, messageId: uuid, visibility: z.enum(['CUSTOMER', 'INTERNAL']), folio }).passthrough();
@@ -328,7 +334,7 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
   const actionUrl = validateActionUrl(data.appUrl, data.actionUrl);
   const folio = data.folio ? safeHeader(data.folio) : '';
   const version = data.versionNumber ? ` versión ${data.versionNumber}` : '';
-  const approvalType = data.approvalType === 'DISCOUNT' ? 'descuento' : 'ajuste de precio';
+  const approvalType = data.approvalType === 'DISCOUNT' ? 'descuento' : data.approvalType === 'SPECIAL_CONCEPT' ? 'concepto especial' : 'ajuste de precio';
   const total = data.totalLabel ? escapeHtml(data.totalLabel) : '';
   const sender = escapeHtml(data.senderName ?? 'Tu equipo OCPOOL');
   const preview = data.preview ?? '';
