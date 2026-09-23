@@ -282,6 +282,7 @@ export default function StaffQuotesPanel() {
   const deepLinkedIdRef = useRef<string | null>(null);
   const loadBaseGenerationRef = useRef(0);
   const loadWorkspaceGenerationRef = useRef(0);
+  const persistDraftGenerationRef = useRef(0);
   const savedSnapshotRef = useRef('');
   const expectedUpdatedAtRef = useRef<string | null>(null);
   const lastAttemptSnapshotRef = useRef('');
@@ -744,6 +745,17 @@ export default function StaffQuotesPanel() {
       if (snapshotToPersist === savedSnapshotRef.current) return true;
       if (snapshotToPersist !== lastAttemptSnapshotRef.current) errorRetryCountRef.current = 0;
       lastAttemptSnapshotRef.current = snapshotToPersist;
+      // UX audit fix: agregar conceptos rápido (varias líneas en pocos segundos, cada una
+      // reprogramando el debounce de 800ms) podía dejar dos invocaciones de `persistDraft` en vuelo
+      // a la vez -- si la respuesta de la MÁS VIEJA llegaba DESPUÉS que la de la más nueva,
+      // `savedSnapshotRef.current` (escrito sin ninguna guarda) se sobreescribía de vuelta a un
+      // snapshot ya obsoleto. El efecto de autoguardado entonces reintentaba, pero mientras tanto
+      // `snapshotUnitPriceMinor` de líneas ya agregadas podía quedar sin re-congelarse -- y
+      // `checkReprice()` excluye cualquier línea con `snapshotUnitPriceMinor === null` de la
+      // comparación, así que "Verificar precios vigentes" reportaba en silencio "ya están
+      // actualizados" en vez de detectar el cambio real. Sólo la generación más reciente puede
+      // ahora actualizar el snapshot guardado o el estado visible de autoguardado.
+      const generation = (persistDraftGenerationRef.current += 1);
       setAutosaveState('saving');
       setAutosaveMessage(null);
       try {
@@ -763,16 +775,22 @@ export default function StaffQuotesPanel() {
         };
         const response = await fetch(isDraftUpdate ? `/api/staff/quotes/versions/${currentVersion!.id}` : `/api/staff/quotes/${workspace.request.id}`, { method: isDraftUpdate ? 'PATCH' : 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
         if (response.status === 409) {
-          const body = await response.json().catch(() => ({}));
-          setAutosaveMessage(getApiErrorMessage(body, 'La versión cambió desde la última lectura. Recarga el borrador antes de guardar.'));
-          setAutosaveState('conflict');
+          if (persistDraftGenerationRef.current === generation) {
+            const body = await response.json().catch(() => ({}));
+            setAutosaveMessage(getApiErrorMessage(body, 'La versión cambió desde la última lectura. Recarga el borrador antes de guardar.'));
+            setAutosaveState('conflict');
+          }
           return false;
         }
         const result = await readApiResponse(response, 'No fue posible guardar la cotización.');
-        if (!result.ok) { errorRetryCountRef.current += 1; setAutosaveMessage(result.message); setAutosaveState('error'); return false; }
+        if (!result.ok) {
+          if (persistDraftGenerationRef.current === generation) { errorRetryCountRef.current += 1; setAutosaveMessage(result.message); setAutosaveState('error'); }
+          return false;
+        }
+        const [freshVersion] = await Promise.all([syncQuoteVersionMetadata(workspace.request.id), loadBase(page, appliedSearch)]);
+        if (persistDraftGenerationRef.current !== generation) return true;
         errorRetryCountRef.current = 0;
         savedSnapshotRef.current = snapshotToPersist;
-        const [freshVersion] = await Promise.all([syncQuoteVersionMetadata(workspace.request.id), loadBase(page, appliedSearch)]);
         // Re-congela el precio snapshot (fidelidad S0-02) sólo si nada cambió localmente durante el round-trip;
         // si el usuario ya siguió editando, dejamos sus ediciones intactas — el próximo ciclo las persistirá.
         if (freshVersion && draftSnapshotKey(selectedPriceListIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current, draftSectionsRef.current) === snapshotToPersist) {
@@ -795,10 +813,12 @@ export default function StaffQuotesPanel() {
         setAutosaveState('saved');
         return true;
       } catch (caught) {
-        if (typeof navigator !== 'undefined' && !navigator.onLine) { setAutosaveState('offline'); return false; }
-        errorRetryCountRef.current += 1;
-        setAutosaveMessage(caught instanceof Error ? caught.message : 'No fue posible guardar la cotización.');
-        setAutosaveState('error');
+        if (persistDraftGenerationRef.current === generation) {
+          if (typeof navigator !== 'undefined' && !navigator.onLine) { setAutosaveState('offline'); return false; }
+          errorRetryCountRef.current += 1;
+          setAutosaveMessage(caught instanceof Error ? caught.message : 'No fue posible guardar la cotización.');
+          setAutosaveState('error');
+        }
         return false;
       }
     }
