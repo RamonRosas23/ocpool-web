@@ -128,6 +128,24 @@ describe('staff audit API', () => {
     }
   });
 
+  it('round 11 audit fix: links a request-level event straight to the staff page that opens it', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const folio = `OCQ-LINK-${suffix}`;
+    const requestId = '00000000-0000-4000-8000-0000000000aa';
+    const freshRow = await prisma.auditLog.create({
+      data: { actorUserId: null, action: 'quote_request.created', entityType: 'quote_request', entityId: requestId, outcome: 'SUCCESS', metadata: { folio, origin: 'PUBLIC_FORM' }, createdAt: new Date() },
+    });
+    try {
+      const response = await auditGet(endpoint('/api/staff/audit', managerToken));
+      expect(response.status).toBe(200);
+      const body = await response.json() as { items: Array<{ entityLink: { href: string } | null; details: Array<{ label: string; value: string }> }> };
+      const item = body.items.find((entry) => entry.details.some((detail) => detail.value === folio));
+      expect(item?.entityLink).toEqual({ href: `/staff/requests?request=${requestId}` });
+    } finally {
+      await prisma.auditLog.delete({ where: { id: freshRow.id } });
+    }
+  });
+
   afterAll(async () => {
     if (process.env.RUN_DB_TESTS !== '1') return;
     await prisma.authRateLimit.deleteMany({ where: { scope: 'audit-read', keyHash: { in: userIds.map((id) => fingerprintToken(id)) } } });

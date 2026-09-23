@@ -21,6 +21,7 @@ export type OperationalAuditRow = {
   actorUserId: string | null;
   action: string;
   entityType: string;
+  entityId: string | null;
   outcome: AuditOutcome;
   metadata: Prisma.JsonValue | null;
   createdAt: Date;
@@ -73,7 +74,7 @@ export async function readAuditPage(prisma: PrismaClient, query: AuditRepository
       where,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: query.limit + 1,
-      select: { id: true, actorUserId: true, action: true, entityType: true, outcome: true, metadata: true, createdAt: true },
+      select: { id: true, actorUserId: true, action: true, entityType: true, entityId: true, outcome: true, metadata: true, createdAt: true },
     });
     const pageRows = rows.slice(0, query.limit).map((row) => ({ ...row, source: 'operational' as const, outcome: row.outcome as AuditOutcome }));
     return {

@@ -1911,6 +1911,7 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .audit-entry__top time { color: var(--staff-muted); font-size: 10px; }
 .audit-entry h3 { margin: 0; color: var(--staff-deep); font-size: 14px; line-height: 1.25; }
 .audit-entry__main p { margin: 6px 0 0; color: var(--staff-muted); font-size: 11px; line-height: 1.4; }
+.audit-entry__entity-link { color: var(--staff-water); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
 .audit-outcome { display: inline-flex; align-items: center; min-height: 23px; border: 1px solid rgba(27,82,102,.32); padding: 0 8px; color: var(--staff-water); font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .audit-outcome--success { border-color: rgba(39,107,73,.38); color: #276b49; }
 .audit-outcome--denied, .audit-outcome--failure { border-color: rgba(145,62,53,.4); color: #913e35; }

@@ -293,7 +293,10 @@ export async function requestQuoteApproval(
         entityType: 'quote_approval',
         entityId: approval.id,
         outcome: 'SUCCESS',
-        metadata: { quoteId: version.quoteId, quoteVersionId: version.id, type: normalized.type, policyVersion: normalized.policyVersion, digest },
+        // `quoteRequestId` is not surfaced in the Audit Log's displayed details for this action (see
+        // AUDIT_ACTION_DEFINITIONS), but it's what lets the log link this entry to the actual request
+        // (/staff/quotes?request=<id> is the only staff surface that can reach an approval today).
+        metadata: { quoteId: version.quoteId, quoteVersionId: version.id, quoteRequestId: row.quoteRequestId, type: normalized.type, policyVersion: normalized.policyVersion, digest },
       },
     });
     await transaction.outboxEvent.create({
@@ -359,7 +362,10 @@ export async function decideQuoteApproval(
         entityType: 'quote_approval',
         entityId: approval.id,
         outcome: 'SUCCESS',
-        metadata: { quoteId: row.quoteId, quoteVersionId: row.quoteVersionId, type: row.type, digest: row.digest },
+        // `quoteRequestId` is not surfaced in the Audit Log's displayed details for this action (see
+        // AUDIT_ACTION_DEFINITIONS), but it's what lets the log link this entry to the actual request
+        // (/staff/quotes?request=<id> is the only staff surface that can reach an approval today).
+        metadata: { quoteId: row.quoteId, quoteVersionId: row.quoteVersionId, quoteRequestId: quoteContext.quoteRequestId, type: row.type, digest: row.digest },
       },
     });
     await transaction.outboxEvent.create({

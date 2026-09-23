@@ -6,6 +6,7 @@ import { readServerEnv } from '@/server/env';
 import { AppError } from '@/server/http/errors';
 import {
   auditActionLabel,
+  auditEntryLink,
   authEventActionLabel,
   classifyAuditAction,
   classifyAuthEvent,
@@ -69,6 +70,7 @@ function projectRow(row: AuditRow, users: Map<string, { id: string; displayName:
       actorLabel: actor.actorLabel,
       actorKey: actor.actorKey,
       entityLabel: entityLabelForType(row.entityType),
+      entityLink: auditEntryLink(row.entityType, row.entityId, row.metadata),
       details: projectAuditMetadata(row.action, row.metadata),
     };
   }
@@ -85,6 +87,7 @@ function projectRow(row: AuditRow, users: Map<string, { id: string; displayName:
     actorLabel: actor.actorLabel,
     actorKey: actor.actorKey,
     entityLabel: entityLabelForType('auth_event'),
+    entityLink: null,
     details: [],
   };
 }

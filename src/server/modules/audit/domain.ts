@@ -83,6 +83,44 @@ export const AUDIT_ACTION_DEFINITIONS: Record<string, AuditActionDefinition> = {
   'notification.retry': { category: 'notifications', label: 'Notificación reintentada', details: [detail('previousStatus', 'Estado anterior'), detail('previousErrorCode', 'Código anterior'), detail('templateKey', 'Plantilla'), detail('eventType', 'Evento')] },
 };
 
+export type AuditEntityLink = { href: string };
+
+type AuditLinkTarget = 'quote_request' | 'quote_workspace' | 'project';
+
+// `idSource: 'entityId'` means the audit row's own entity IS the record to open. `idSource:
+// 'quoteRequestId'` means entityId refers to a child record (a quote version, an approval, a
+// file, a conversation) for which the only reachable staff surface today deep-links by its parent
+// request instead -- that id lives in the row's persisted metadata, not in its (unrelated) displayed
+// details allowlist. Catalog/pricing entities are deliberately left unlinked: `StaffCatalogPanel.tsx`
+// has no URL-based selection to link into yet (a separate, larger piece of work).
+const AUDIT_LINK_RULES: Partial<Record<string, { target: AuditLinkTarget; idSource: 'entityId' | 'quoteRequestId' }>> = {
+  quote_request: { target: 'quote_request', idSource: 'entityId' },
+  project: { target: 'project', idSource: 'entityId' },
+  quote_version: { target: 'quote_workspace', idSource: 'quoteRequestId' },
+  quote_approval: { target: 'quote_workspace', idSource: 'quoteRequestId' },
+  conversation: { target: 'quote_request', idSource: 'quoteRequestId' },
+  conversation_message: { target: 'quote_request', idSource: 'quoteRequestId' },
+  file_attachment: { target: 'quote_request', idSource: 'quoteRequestId' },
+};
+
+function auditLinkHref(target: AuditLinkTarget, id: string): string {
+  switch (target) {
+    case 'quote_request': return `/staff/requests?request=${id}`;
+    case 'quote_workspace': return `/staff/quotes?request=${id}`;
+    case 'project': return `/staff/projects/${id}`;
+  }
+}
+
+export function auditEntryLink(entityType: string, entityId: string | null, metadata: unknown): AuditEntityLink | null {
+  const rule = AUDIT_LINK_RULES[entityType];
+  if (!rule) return null;
+  const id = rule.idSource === 'entityId'
+    ? entityId
+    : (metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? (metadata as Record<string, unknown>)[rule.idSource] : null);
+  if (typeof id !== 'string' || !UUID_PATTERN.test(id)) return null;
+  return { href: auditLinkHref(rule.target, id) };
+}
+
 const AUTH_EVENT_LABELS: Record<string, string> = {
   LOGIN_SUCCESS: 'Inicio de sesión exitoso',
   LOGIN_FAILURE: 'Intento de inicio de sesión fallido',
@@ -142,6 +180,7 @@ export type AuditEntry = {
   actorLabel: string;
   actorKey: string | null;
   entityLabel: string;
+  entityLink: AuditEntityLink | null;
   details: AuditDetail[];
 };
 

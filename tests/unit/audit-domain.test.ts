@@ -4,6 +4,7 @@ import {
   AUDIT_DEFAULT_LIMIT,
   AUDIT_MAX_LIMIT,
   auditActionsForCategory,
+  auditEntryLink,
   auditRangeUpperBound,
   classifyAuditAction,
   decodeAuditCursor,
@@ -170,5 +171,31 @@ describe('audit domain contracts', () => {
     }
     expect(entityLabelForType('project')).toBe('Proyecto');
     expect(entityLabelForType('quote_approval')).toBe('Aprobación comercial');
+  });
+
+  it('round 11 audit fix: links entity labels to the staff page that can actually open them', () => {
+    const ownId = '00000000-0000-4000-8000-000000000001';
+    const parentId = '00000000-0000-4000-8000-000000000002';
+
+    // Own id: the row's entityId IS the record to open.
+    expect(auditEntryLink('quote_request', ownId, { folio: 'OCQ-2026-000001' })).toEqual({ href: `/staff/requests?request=${ownId}` });
+    expect(auditEntryLink('project', ownId, {})).toEqual({ href: `/staff/projects/${ownId}` });
+
+    // Child records: only the parent quoteRequestId (carried in metadata, not entityId) can be reached.
+    expect(auditEntryLink('quote_version', ownId, { quoteRequestId: parentId, folio: 'OCQ-2026-000001' })).toEqual({ href: `/staff/quotes?request=${parentId}` });
+    expect(auditEntryLink('quote_approval', ownId, { quoteRequestId: parentId, type: 'DISCOUNT' })).toEqual({ href: `/staff/quotes?request=${parentId}` });
+    expect(auditEntryLink('conversation', ownId, { quoteRequestId: parentId })).toEqual({ href: `/staff/requests?request=${parentId}` });
+    expect(auditEntryLink('conversation_message', ownId, { quoteRequestId: parentId })).toEqual({ href: `/staff/requests?request=${parentId}` });
+    expect(auditEntryLink('file_attachment', ownId, { quoteRequestId: parentId })).toEqual({ href: `/staff/requests?request=${parentId}` });
+
+    // No rule for this entityType (e.g. catalog/pricing -- StaffCatalogPanel has no URL-based selection yet).
+    expect(auditEntryLink('catalog_category', ownId, {})).toBeNull();
+    expect(auditEntryLink('auth_event', ownId, {})).toBeNull();
+
+    // Missing/malformed id never produces a broken or unsafe link.
+    expect(auditEntryLink('quote_request', null, {})).toBeNull();
+    expect(auditEntryLink('quote_version', ownId, {})).toBeNull();
+    expect(auditEntryLink('quote_version', ownId, { quoteRequestId: 'not-a-uuid' })).toBeNull();
+    expect(auditEntryLink('quote_version', ownId, null)).toBeNull();
   });
 });

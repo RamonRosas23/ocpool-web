@@ -23,6 +23,7 @@ type AuditEntry = {
   actorLabel: string;
   actorKey: string | null;
   entityLabel: string;
+  entityLink: { href: string } | null;
   details: Array<{ label: string; value: string }>;
 };
 
@@ -164,7 +165,7 @@ export default function StaffAuditPanel() {
         <div className="audit-workspace__head"><div><p className="staff-section-label">{isSecurity ? 'Acceso y sesiones' : 'Registro consultable'}</p><h2>{isSecurity ? 'Eventos de seguridad' : 'Auditoría operativa'}</h2></div><div className="audit-workspace__meta"><span>{loading ? 'Consultando…' : `${items.length} evento${items.length === 1 ? '' : 's'} visibles`}</span><small>Los eventos históricos no son editables desde esta vista.</small></div></div>
         {loading && !data && <div className="audit-loading" role="status" aria-live="polite"><span /><span /><span /><strong>Consultando trazabilidad…</strong></div>}
         {!loading && data && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>No hay eventos en este periodo.</h2><p>Prueba con otro rango o retira algún filtro para ampliar la lectura.</p></div>}
-        {items.length > 0 && <ul className="audit-list" aria-live="polite">{items.map((item) => <li className="audit-entry" data-testid="audit-entry" key={item.eventKey}><div className="audit-entry__main"><div className="audit-entry__top"><span className={outcomeClass(item.outcome)}>{OUTCOME_LABELS[item.outcome]}</span><time dateTime={item.occurredAt}>{formatDate(item.occurredAt, data?.meta.timezone ?? 'America/Chihuahua')}</time></div><h3>{item.action}</h3><p>{item.entityLabel} · {item.actorLabel}</p></div>{item.details.length > 0 && <dl className="audit-entry__details">{item.details.map((detail) => <div key={detail.label}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)}</dl>}</li>)}</ul>}
+        {items.length > 0 && <ul className="audit-list" aria-live="polite">{items.map((item) => <li className="audit-entry" data-testid="audit-entry" key={item.eventKey}><div className="audit-entry__main"><div className="audit-entry__top"><span className={outcomeClass(item.outcome)}>{OUTCOME_LABELS[item.outcome]}</span><time dateTime={item.occurredAt}>{formatDate(item.occurredAt, data?.meta.timezone ?? 'America/Chihuahua')}</time></div><h3>{item.action}</h3><p>{item.entityLink ? <Link className="audit-entry__entity-link" href={item.entityLink.href}>{item.entityLabel}</Link> : item.entityLabel} · {item.actorLabel}</p></div>{item.details.length > 0 && <dl className="audit-entry__details">{item.details.map((detail) => <div key={detail.label}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)}</dl>}</li>)}</ul>}
         {!loading && data?.nextCursor && <div className="audit-load-more"><button className="staff-button" type="button" onClick={loadPrevious}>Cargar eventos anteriores</button><span aria-live="polite">Se conservan los filtros actuales.</span></div>}
       </section>
     </div>
