@@ -3,9 +3,12 @@ import {
   AUDIT_ACTION_DEFINITIONS,
   AUDIT_DEFAULT_LIMIT,
   AUDIT_MAX_LIMIT,
+  auditActionsForCategory,
+  auditRangeUpperBound,
   classifyAuditAction,
   decodeAuditCursor,
   encodeAuditCursor,
+  entityLabelForType,
   normalizeAuditQuery,
   projectAuditMetadata,
   type AuditCursor,
@@ -39,6 +42,26 @@ describe('audit domain contracts', () => {
       limit: AUDIT_DEFAULT_LIMIT,
       cursor: null,
     });
+  });
+
+  it('round 11 audit fix: the DB query bound extends through the end of the "hasta" day, not just its start', () => {
+    // Regression for a bug where `readAuditPage`'s `dateWhere` filtered directly on `query.to` (the
+    // START of the "hasta" calendar day) as an exclusive upper bound -- since that start is always <=
+    // any later timestamp the same day, EVERY event from the "hasta" day itself was silently excluded,
+    // including all of today whenever `to` defaulted to today (there is no way to pick "tomorrow" as a
+    // workaround; future dates are rejected). `auditRangeUpperBound` is the calendar-safe fix, kept
+    // separate from `query.to` so the date picker / cursor still round-trip the exact requested day.
+    const query = normalizeAuditQuery({ from: '2026-09-01', to: '2026-09-08' }, { now, timezone: 'UTC' });
+    const upperBound = auditRangeUpperBound(query.to, query.timezone);
+    expect(upperBound).toEqual(new Date('2026-09-09T00:00:00.000Z'));
+    const lastMomentOfHastaDay = new Date('2026-09-08T23:59:59.999Z');
+    expect(upperBound.getTime()).toBeGreaterThan(lastMomentOfHastaDay.getTime());
+
+    // Same check across the DST-adjacent business timezone, where a flat +24h offset (instead of
+    // calendar-safe day arithmetic) would land an hour off on a transition day.
+    const zonedQuery = normalizeAuditQuery({}, { now, timezone: 'America/Chihuahua' });
+    const zonedUpperBound = auditRangeUpperBound(zonedQuery.to, zonedQuery.timezone);
+    expect(zonedUpperBound.getTime()).toBeGreaterThan(now.getTime());
   });
 
   it('rejects future, inverted, oversized and malformed ranges', () => {
@@ -109,5 +132,43 @@ describe('audit domain contracts', () => {
     expect(() => decodeAuditCursor('not-a-cursor', secret, baseCursor)).toThrow();
     expect(() => encodeAuditCursor({ ...baseCursor, version: 2 as 1 }, secret)).toThrow();
     expect(() => encodeAuditCursor({ ...baseCursor, id: '' }, secret)).toThrow();
+  });
+
+  it('round 11 audit fix: registers every real write-site action so it is not silently invisible from the Audit Log', () => {
+    // Regression for a whitelist-drift bug: readAuditPage always filters by
+    // `action: { in: auditActionsForCategory(category) }`, even with no category selected
+    // (auditActionsForCategory(null) returns the full whitelist, not "no filter"). Any action string
+    // written by a service that was never added here could never be returned by the API, with no error
+    // anywhere -- the row exists in the DB, it just never surfaces. These are real action strings from
+    // real `auditLog.create`/`audit(...)` call sites that were missing before this fix.
+    const realWriteSiteActions = [
+      'catalog.category.updated',
+      'prices.list.updated',
+      'prices.item.scheduled',
+      'catalog.special_concept.promoted',
+      'quote_request.updated',
+      'quote_request.information_requested',
+      'quote_request.customer_response_reviewed',
+      'quote.version.submitted',
+      'quote.version.returned_to_draft',
+      'quote.version.rejected',
+      'quote.version.published',
+      'quote.approval.requested',
+      'quote.approval.approved',
+      'quote.approval.rejected',
+      'project.created',
+      'project.checklist_items_added',
+      'project.checklist_item_completed',
+      'project.checklist_item_reopened',
+      'project.completed',
+      'project.reopened',
+      'project.owner_changed',
+    ];
+    for (const action of realWriteSiteActions) {
+      expect(classifyAuditAction(action), `expected ${action} to be registered`).not.toBeNull();
+      expect(auditActionsForCategory(null)).toContain(action);
+    }
+    expect(entityLabelForType('project')).toBe('Proyecto');
+    expect(entityLabelForType('quote_approval')).toBe('Aprobación comercial');
   });
 });

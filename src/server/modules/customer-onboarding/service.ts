@@ -126,6 +126,21 @@ export async function provisionCustomerPortalAccess(
       select: { id: true },
     });
     if (pending) {
+      // Round 11 audit fix: este retorno anticipado se saltaba por completo el `auditLog.create` de
+      // abajo -- como el enlace vigente dura hasta `CUSTOMER_MAGIC_LINK_TTL_MINUTES` (24h por defecto),
+      // cualquier "reenviar acceso" repetido en ese lapso (soporte reintentando a petición del cliente,
+      // o la provisión automática de `publishQuoteVersion` disparándose de nuevo) no dejaba ningún
+      // rastro de que se solicitó, aunque la función está pensada para auditar cada resultado exitoso.
+      await transaction.auditLog.create({
+        data: {
+          actorUserId: actor.userId,
+          action: 'customer_access.invited',
+          entityType: 'quote_request',
+          entityId: request.id,
+          outcome: 'SUCCESS',
+          metadata: { folio: request.folio, outcome: 'ALREADY_PENDING' },
+        },
+      });
       return { quoteRequestId: request.id, folio: request.folio, status: 'ALREADY_PENDING', email: contact.email };
     }
 

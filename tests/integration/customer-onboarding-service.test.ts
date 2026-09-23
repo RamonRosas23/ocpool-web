@@ -95,6 +95,13 @@ describe('customer onboarding service', () => {
     expect(first.status).toBe('INVITED');
     expect(second).toMatchObject({ status: 'ALREADY_PENDING', email: `onboarding-${suffix}@example.test` });
     expect(await prisma.authToken.count({ where: { user: { contactProfile: { id: request.contactId } }, type: 'MAGIC_LINK', consumedAt: null } })).toBe(1);
+
+    // Round 11 audit fix: the "already pending" resend used to return before writing any audit row,
+    // so a repeated resend during the token's TTL left no trace at all. Both attempts must now be audited.
+    const auditRows = await prisma.auditLog.findMany({ where: { entityId: request.quoteRequestId, action: 'customer_access.invited' }, orderBy: { createdAt: 'asc' } });
+    expect(auditRows).toHaveLength(2);
+    expect(auditRows[0]).toMatchObject({ outcome: 'SUCCESS', metadata: { folio: request.folio, outcome: 'INVITED' } });
+    expect(auditRows[1]).toMatchObject({ outcome: 'SUCCESS', metadata: { folio: request.folio, outcome: 'ALREADY_PENDING' } });
   });
 
   it('does not attach an identity already owned by another client or an employee', async () => {

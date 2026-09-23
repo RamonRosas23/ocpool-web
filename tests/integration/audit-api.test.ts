@@ -107,6 +107,27 @@ describe('staff audit API', () => {
     }
   });
 
+  it('round 11 audit fix: a request with no explicit range still surfaces an event created moments ago today', async () => {
+    // Regression for a bug where the default (and even an explicit "hasta hoy") range's exclusive upper
+    // bound resolved to the START of today, so the Audit Log could never show anything from today itself
+    // -- confirmed live in the browser during this fix: a just-performed staff action was completely
+    // absent from the default view. This proves the fix through the real HTTP route, not just the date
+    // math in isolation.
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const folio = `OCQ-TODAY-${suffix}`;
+    const freshRow = await prisma.auditLog.create({
+      data: { actorUserId: null, action: 'quote_request.created', entityType: 'quote_request', entityId: null, outcome: 'SUCCESS', metadata: { folio, origin: 'PUBLIC_FORM' }, createdAt: new Date() },
+    });
+    try {
+      const response = await auditGet(endpoint('/api/staff/audit', managerToken));
+      expect(response.status).toBe(200);
+      const body = await response.json() as { items: Array<{ details: Array<{ label: string; value: string }> }> };
+      expect(body.items.some((item) => item.details.some((detail) => detail.value === folio))).toBe(true);
+    } finally {
+      await prisma.auditLog.delete({ where: { id: freshRow.id } });
+    }
+  });
+
   afterAll(async () => {
     if (process.env.RUN_DB_TESTS !== '1') return;
     await prisma.authRateLimit.deleteMany({ where: { scope: 'audit-read', keyHash: { in: userIds.map((id) => fingerprintToken(id)) } } });

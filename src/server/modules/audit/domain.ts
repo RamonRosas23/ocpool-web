@@ -1,10 +1,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { addCalendarDays, calendarSerial, timeZoneParts, zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
 
 const DEFAULT_AUDIT_TIMEZONE = 'America/Chihuahua';
 const DEFAULT_RANGE_DAYS = 30;
 const MAX_RANGE_DAYS = 93;
 const DAY_MS = 86_400_000;
-const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const MAX_DETAIL_LENGTH = 160;
 
@@ -34,20 +34,41 @@ const detail = (key: string, label: string): DetailDefinition => ({ key, label }
 
 export const AUDIT_ACTION_DEFINITIONS: Record<string, AuditActionDefinition> = {
   'catalog.category.created': { category: 'commercial', label: 'Categoría de catálogo creada', details: [detail('code', 'Código'), detail('name', 'Nombre')] },
+  'catalog.category.updated': { category: 'commercial', label: 'Categoría de catálogo actualizada', details: [detail('code', 'Código'), detail('status', 'Estado')] },
   'catalog.item.created': { category: 'commercial', label: 'Concepto de catálogo creado', details: [detail('code', 'Código'), detail('name', 'Nombre')] },
   'catalog.item.updated': { category: 'commercial', label: 'Concepto de catálogo actualizado', details: [detail('code', 'Código'), detail('status', 'Estado')] },
+  'catalog.special_concept.promoted': { category: 'commercial', label: 'Concepto especial promovido a catálogo', details: [detail('normalizedName', 'Concepto'), detail('unit', 'Unidad')] },
   'prices.list.created': { category: 'commercial', label: 'Lista de precios creada', details: [detail('code', 'Código'), detail('currencyCode', 'Moneda')] },
+  'prices.list.updated': { category: 'commercial', label: 'Lista de precios actualizada', details: [detail('code', 'Código'), detail('status', 'Estado')] },
   'prices.item.created': { category: 'commercial', label: 'Precio creado', details: [detail('currencyCode', 'Moneda'), detail('unitPriceMinor', 'Importe mínimo')] },
   'prices.item.updated': { category: 'commercial', label: 'Precio actualizado', details: [detail('currencyCode', 'Moneda'), detail('unitPriceMinor', 'Importe mínimo')] },
+  'prices.item.scheduled': { category: 'commercial', label: 'Precio programado', details: [detail('unitPriceMinor', 'Importe mínimo'), detail('effectiveFrom', 'Vigente desde'), detail('reason', 'Motivo')] },
   'quote_request.created': { category: 'commercial', label: 'Solicitud creada', details: [detail('folio', 'Folio'), detail('origin', 'Origen')] },
+  'quote_request.updated': { category: 'commercial', label: 'Solicitud actualizada', details: [detail('folio', 'Folio')] },
   'customer_access.invited': { category: 'commercial', label: 'Acceso de cliente habilitado', details: [detail('folio', 'Folio'), detail('outcome', 'Resultado')] },
   'quote_request.assigned': { category: 'commercial', label: 'Solicitud asignada', details: [detail('folio', 'Folio')] },
   'quote_request.status_changed': { category: 'commercial', label: 'Estado de solicitud actualizado', details: [detail('folio', 'Folio'), detail('fromStatus', 'Estado anterior'), detail('toStatus', 'Estado nuevo'), detail('source', 'Origen del cambio')] },
+  'quote_request.information_requested': { category: 'commercial', label: 'Información solicitada al cliente', details: [detail('folio', 'Folio'), detail('fromStatus', 'Estado anterior'), detail('toStatus', 'Estado nuevo')] },
+  'quote_request.customer_response_reviewed': { category: 'commercial', label: 'Respuesta del cliente revisada', details: [detail('folio', 'Folio'), detail('fromStatus', 'Estado anterior'), detail('toStatus', 'Estado nuevo')] },
   'quote.version.created': { category: 'commercial', label: 'Versión de cotización creada', details: [detail('folio', 'Folio'), detail('versionNumber', 'Versión'), detail('currencyCode', 'Moneda')] },
   'quote.version.updated': { category: 'commercial', label: 'Borrador de cotización actualizado', details: [detail('folio', 'Folio'), detail('versionNumber', 'Versión')] },
   'quote.version.status_changed': { category: 'commercial', label: 'Estado de cotización actualizado', details: [detail('folio', 'Folio'), detail('fromStatus', 'Estado anterior'), detail('toStatus', 'Estado nuevo'), detail('reason', 'Motivo')] },
+  'quote.version.submitted': { category: 'commercial', label: 'Versión de cotización enviada a revisión', details: [detail('folio', 'Folio'), detail('fromStatus', 'Estado anterior'), detail('toStatus', 'Estado nuevo'), detail('reason', 'Motivo')] },
+  'quote.version.returned_to_draft': { category: 'commercial', label: 'Versión de cotización devuelta a borrador', details: [detail('folio', 'Folio'), detail('fromStatus', 'Estado anterior'), detail('toStatus', 'Estado nuevo'), detail('reason', 'Motivo')] },
+  'quote.version.rejected': { category: 'commercial', label: 'Versión de cotización rechazada', details: [detail('folio', 'Folio'), detail('fromStatus', 'Estado anterior'), detail('toStatus', 'Estado nuevo'), detail('reason', 'Motivo')] },
+  'quote.version.published': { category: 'commercial', label: 'Versión de cotización enviada al cliente', details: [detail('folio', 'Folio'), detail('fromStatus', 'Estado anterior'), detail('toStatus', 'Estado nuevo'), detail('reason', 'Motivo')] },
+  'quote.approval.requested': { category: 'commercial', label: 'Aprobación comercial solicitada', details: [detail('type', 'Tipo')] },
+  'quote.approval.approved': { category: 'commercial', label: 'Aprobación comercial autorizada', details: [detail('type', 'Tipo')] },
+  'quote.approval.rejected': { category: 'commercial', label: 'Aprobación comercial rechazada', details: [detail('type', 'Tipo')] },
   'quote.accepted': { category: 'commercial', label: 'Cotización aceptada', details: [detail('folio', 'Folio'), detail('versionNumber', 'Versión'), detail('termsVersion', 'Términos')] },
   'quote.acceptance.created': { category: 'commercial', label: 'Evidencia de aceptación registrada', details: [detail('versionNumber', 'Versión'), detail('termsVersion', 'Términos')] },
+  'project.created': { category: 'commercial', label: 'Proyecto creado', details: [detail('folio', 'Folio')] },
+  'project.checklist_items_added': { category: 'commercial', label: 'Tareas de checklist agregadas', details: [detail('count', 'Cantidad')] },
+  'project.checklist_item_completed': { category: 'commercial', label: 'Tarea de checklist completada', details: [detail('label', 'Tarea')] },
+  'project.checklist_item_reopened': { category: 'commercial', label: 'Tarea de checklist reabierta', details: [detail('label', 'Tarea')] },
+  'project.completed': { category: 'commercial', label: 'Proyecto completado', details: [detail('status', 'Estado')] },
+  'project.reopened': { category: 'commercial', label: 'Proyecto reabierto', details: [detail('status', 'Estado')] },
+  'project.owner_changed': { category: 'commercial', label: 'Responsable de proyecto actualizado', details: [] },
   'quote.pdf.download_url_created': { category: 'documents', label: 'Descarga de cotización preparada', details: [detail('versionNumber', 'Versión'), detail('expiresInSeconds', 'Vigencia en segundos')] },
   'quote.pdf.generated': { category: 'documents', label: 'PDF de cotización generado', details: [detail('templateVersion', 'Plantilla'), detail('byteSize', 'Tamaño en bytes')] },
   'quote.pdf.generation_failed': { category: 'documents', label: 'Generación de PDF fallida', details: [detail('failureCode', 'Código de fallo')] },
@@ -152,60 +173,17 @@ function assertTimezone(timezone: string): string {
   }
 }
 
-function timeZoneParts(value: Date, timezone: string): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    calendar: 'gregory',
-    numberingSystem: 'latn',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(value);
-  const values = new Map(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]));
-  return {
-    year: values.get('year') ?? 0,
-    month: values.get('month') ?? 0,
-    day: values.get('day') ?? 0,
-    hour: values.get('hour') ?? 0,
-    minute: values.get('minute') ?? 0,
-    second: values.get('second') ?? 0,
-  };
-}
-
 function calendarDateFor(value: Date, timezone: string): string {
   const parts = timeZoneParts(value, timezone);
   return [parts.year, parts.month, parts.day].map((part, index) => index === 0 ? String(part).padStart(4, '0') : String(part).padStart(2, '0')).join('-');
 }
 
-function calendarSerial(value: string): number {
-  const match = DATE_ONLY_PATTERN.exec(value);
-  if (!match) throw new Error('La fecha no es válida.');
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const serial = Date.UTC(year, month - 1, day);
-  const check = new Date(serial);
-  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) throw new Error('La fecha no es válida.');
-  return serial;
-}
-
-function addCalendarDays(value: string, days: number): string {
-  return new Date(calendarSerial(value) + (days * DAY_MS)).toISOString().slice(0, 10);
-}
-
-function zonedCalendarDateToUtc(value: string, timezone: string): Date {
-  const naiveUtc = calendarSerial(value);
-  let candidate = new Date(naiveUtc);
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const parts = timeZoneParts(candidate, timezone);
-    const wallClockUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
-    candidate = new Date(naiveUtc - (wallClockUtc - candidate.getTime()));
-  }
-  return candidate;
+// The DB-query-only counterpart to `AuditQuery.to` (see the comment on its computation in
+// `normalizeAuditQuery`): the start of the calendar day AFTER `to`, computed calendar-safely (not a flat
+// +24h offset, which would land an hour off on a DST-transition day) so an exclusive `lt` comparison
+// against it correctly includes every event up through the end of the requested "hasta" day.
+export function auditRangeUpperBound(to: Date, timezone: string): Date {
+  return zonedCalendarDateToUtc(addCalendarDays(calendarDateFor(to, timezone), 1), timezone);
 }
 
 function assertCategory(value: unknown): AuditCategory | null {
@@ -247,6 +225,15 @@ export function normalizeAuditQuery(input: AuditQueryInput = {}, options: AuditQ
     version: 1,
     source,
     from: zonedCalendarDateToUtc(fromCalendarDate, timezone).toISOString(),
+    // `to` is deliberately the START of `toCalendarDate` (midnight), not its end -- this is what's
+    // round-tripped back into the "hasta" date picker (`meta.to` in service.ts) and signed into the
+    // pagination cursor, so it must stay the calendar day the caller actually asked for. The DB query
+    // itself needs an END-of-day-inclusive bound instead; see `auditRangeUpperBound` in this module,
+    // used only by `readAuditPage`'s `dateWhere` (repository.ts) -- kept as a separate derivation
+    // specifically so this field can stay display-accurate. (Round 11 audit fix: before this split
+    // existed, `to` was reused directly as the DB filter's exclusive upper bound, which excluded every
+    // event from the "hasta" day itself -- including all of today whenever `to` defaulted to today, so
+    // the Audit Log could never show today's own activity.)
     to: zonedCalendarDateToUtc(toCalendarDate, timezone).toISOString(),
     category,
     outcome,
@@ -366,6 +353,8 @@ export function entityLabelForType(entityType: string | null | undefined): strin
     case 'quote': return 'Cotización';
     case 'quote_version': return 'Versión de cotización';
     case 'quote_acceptance': return 'Aceptación';
+    case 'quote_approval': return 'Aprobación comercial';
+    case 'project': return 'Proyecto';
     case 'conversation':
     case 'conversation_message': return 'Conversación';
     case 'file_attachment': return 'Archivo privado';

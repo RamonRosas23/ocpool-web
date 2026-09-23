@@ -3,6 +3,7 @@ import type { AuthEventType } from '@/generated/prisma/enums';
 import type { PrismaClient } from '@/generated/prisma/client';
 import {
   auditActionsForCategory,
+  auditRangeUpperBound,
   knownAuthEventTypes,
   type AuditCategory,
   type AuditOutcome,
@@ -53,7 +54,7 @@ function cursorWhere(query: AuditRepositoryQuery): Prisma.AuditLogWhereInput[] {
 }
 
 function dateWhere(query: AuditRepositoryQuery): { createdAt: { gte: Date; lt: Date } } {
-  return { createdAt: { gte: query.from, lt: query.to } };
+  return { createdAt: { gte: query.from, lt: auditRangeUpperBound(query.to, query.timezone) } };
 }
 
 function actionFilter(category: AuditCategory | null): { in: string[] } {
