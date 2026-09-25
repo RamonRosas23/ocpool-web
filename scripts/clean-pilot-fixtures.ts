@@ -62,6 +62,11 @@ async function main(): Promise<void> {
   await prisma.authToken.deleteMany({ where: { id: { in: manifest.tokenIds } } });
   await prisma.authEvent.deleteMany({ where: { userId: { in: manifest.userIds } } });
   await prisma.session.deleteMany({ where: { userId: { in: manifest.userIds } } });
+  // RequestAssignment.assignedToId/assignedById son onDelete: Restrict -- el cascade de
+  // QuoteRequest sólo retira las asignaciones de sus propias peticiones; una asignación
+  // que sobreviva (p. ej. de una corrida previa no limpiada del todo) bloquearía el borrado
+  // de estos usuarios si no se retira aquí explícitamente.
+  await prisma.requestAssignment.deleteMany({ where: { OR: [{ assignedToId: { in: manifest.userIds } }, { assignedById: { in: manifest.userIds } }] } });
   // Los usuarios cliente creados para los enlaces mágicos referencian Client vía clientId --
   // deben retirarse antes que los propios clientes, o la FK lo rechaza. Publicar una cotización
   // puede además aprovisionar en automático un usuario de portal adicional (mismo efecto de P1)

@@ -299,7 +299,7 @@ export default function StaffDashboardPanel() {
 
   if (accessDenied) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Necesitas una cuenta de empleado autorizada para consultar las métricas operativas.</PrivateBlockingState></PrivateSurfaceRoot>;
 
-  if (error && !data) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="No fue posible cargarlo." onRetry={() => { setError(null); setReloadToken((current) => current + 1); }}>{error}</PrivateBlockingState></PrivateSurfaceRoot>;
+  if (error && !data) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="No fue posible cargarlo." onRetry={() => { setError(null); setQuery({}); setSelectedPreset('30'); rangeInitialized.current = false; rangeEdited.current = false; setReloadToken((current) => current + 1); }}>{error}</PrivateBlockingState></PrivateSurfaceRoot>;
 
   const dashboard = data;
   const pipeline = dashboard?.requests.byStatus.map((item) => ({ label: labelForStatus(item.status), count: item.count })) ?? [];
