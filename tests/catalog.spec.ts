@@ -128,19 +128,34 @@ test.describe('staff catalog operations', () => {
     await expectNoSeriousA11yViolations(page);
 
     await page.getByRole('button', { name: 'Nuevo concepto' }).click();
-    await page.getByRole('checkbox', { name: 'Especificar clave manualmente' }).check();
-    await page.getByLabel('Clave', { exact: true }).fill(createdItemCode);
-    await page.getByLabel('Nombre', { exact: true }).fill(`Nuevo concepto ${suffix}`);
-    await page.getByRole('combobox', { name: 'Unidad', exact: true }).click();
+    const createDialog = page.getByRole('dialog', { name: 'Nuevo concepto' });
+    await expect(createDialog).toBeVisible();
+    await createDialog.getByRole('checkbox', { name: 'Especificar clave manualmente' }).check();
+    await createDialog.getByLabel('Clave', { exact: true }).fill(createdItemCode);
+    await createDialog.getByLabel('Nombre', { exact: true }).fill(`Nuevo concepto ${suffix}`);
+    await createDialog.getByRole('combobox', { name: 'Unidad', exact: true }).click();
     await page.getByRole('option', { name: 'servicio', exact: true }).click();
-    await page.getByLabel('Descripción', { exact: true }).fill('Concepto creado desde el flujo de catálogo.');
-    await page.getByRole('combobox', { name: 'Categoría' }).click();
+    await createDialog.getByLabel('Descripción', { exact: true }).fill('Concepto creado desde el flujo de catálogo.');
+    await createDialog.getByRole('combobox', { name: 'Categoría' }).click();
     await page.getByRole('option', { name: `E2E categoría ${suffix}`, exact: true }).click();
-    await page.getByRole('button', { name: 'Guardar concepto' }).click();
+    await createDialog.getByRole('button', { name: 'Continuar' }).click();
     await expect(page.getByRole('status')).toContainText(`Concepto ${createdItemCode} creado.`);
+    createdItemId = (await prisma.catalogItem.findUniqueOrThrow({ where: { code: createdItemCode }, select: { id: true } })).id;
+
+    // K1-03/UX audit: alta guiada -- crear un concepto ofrece asignarle su primer precio en el
+    // mismo flujo, sin cambiar de pestaña. El fixture ya tiene una lista de precios activa
+    // (`priceListCode`), así que el paso 2 del wizard debe aparecer.
+    const priceStepDialog = page.getByRole('dialog', { name: `Precio inicial de Nuevo concepto ${suffix}` });
+    await expect(priceStepDialog).toBeVisible();
+    await priceStepDialog.getByRole('combobox', { name: 'Lista de precios' }).click();
+    await page.getByRole('option', { name: `Lista E2E ${suffix} · MXN` }).click();
+    await priceStepDialog.getByRole('textbox', { name: 'Importe', exact: true }).fill('300.00');
+    await priceStepDialog.getByRole('textbox', { name: 'Vigente desde', exact: true }).fill(new Date().toISOString().slice(0, 10));
+    await priceStepDialog.getByRole('button', { name: 'Guardar precio y cerrar' }).click();
+    await expect(page.getByRole('status')).toContainText(`Concepto ${createdItemCode} creado y precio asignado.`);
+    await expect(priceStepDialog).not.toBeVisible();
     const createdRow = page.getByRole('button', { name: new RegExp(createdItemCode) });
     await expect(createdRow).toBeVisible();
-    createdItemId = (await prisma.catalogItem.findUniqueOrThrow({ where: { code: createdItemCode }, select: { id: true } })).id;
 
     const itemActions = page.locator('.catalog-main__top .catalog-main__actions');
     await itemActions.getByRole('button', { name: 'Archivar' }).click();
@@ -183,12 +198,15 @@ test.describe('staff catalog operations', () => {
 
     await fixtureItemRow.click();
     await itemActions.getByRole('button', { name: 'Editar' }).click();
+    const editItemDialog = page.getByRole('dialog', { name: 'Editar concepto' });
+    await expect(editItemDialog).toBeVisible();
     const editedItemName = `Concepto E2E editado ${suffix}`;
-    await page.getByLabel('Nombre', { exact: true }).fill(editedItemName);
-    await page.getByRole('combobox', { name: 'Unidad', exact: true }).click();
+    await editItemDialog.getByLabel('Nombre', { exact: true }).fill(editedItemName);
+    await editItemDialog.getByRole('combobox', { name: 'Unidad', exact: true }).click();
     await page.getByRole('option', { name: 'lote', exact: true }).click();
-    await page.getByRole('button', { name: 'Guardar cambios' }).click();
+    await editItemDialog.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(page.getByRole('status')).toContainText('Concepto actualizado.');
+    await expect(editItemDialog).not.toBeVisible();
     await expect(fixtureItemRow).toContainText(editedItemName);
 
     await itemActions.getByRole('button', { name: 'Archivar' }).click();
@@ -212,22 +230,25 @@ test.describe('staff catalog operations', () => {
     await expect(page.getByRole('table', { name: 'Precios vigentes' })).toContainText('MXN 1,250.00');
     await expectNoSeriousA11yViolations(page);
 
-    const effectiveFrom = page.getByRole('textbox', { name: 'Vigente desde', exact: true });
-    await page.getByRole('combobox', { name: 'Concepto' }).click();
+    await page.getByRole('button', { name: 'Programar precio' }).click();
+    const scheduleDialog = page.getByRole('dialog', { name: 'Programar precio' });
+    await expect(scheduleDialog).toBeVisible();
+    const effectiveFrom = scheduleDialog.getByRole('textbox', { name: 'Vigente desde', exact: true });
+    await scheduleDialog.getByRole('combobox', { name: 'Concepto' }).click();
     await page.getByRole('option', { name: new RegExp(`^${itemCode} ·`) }).click();
-    await expect(page.locator('.catalog-form__preview')).toContainText('Se cerrará el precio vigente de MXN 1,250.00');
+    await expect(scheduleDialog.locator('.catalog-form__preview')).toContainText('Se cerrará el precio vigente de MXN 1,250.00');
 
     // K1-03 parte 2: an intermediate schedule (already in the past relative to "now") so that,
     // once the schedule below closes it out too, the price table exercises all three
     // actuales/futuros/históricos buckets from a single fixture.
-    await page.getByRole('textbox', { name: 'Importe', exact: true }).fill('1100.00');
+    await scheduleDialog.getByRole('textbox', { name: 'Importe', exact: true }).fill('1100.00');
     await effectiveFrom.fill('2026-02-01');
-    await page.getByRole('button', { name: 'Programar precio' }).click();
+    await scheduleDialog.getByRole('button', { name: 'Programar precio' }).click();
     await expect(page.getByRole('status')).toContainText('Precio programado.');
 
     await effectiveFrom.fill('');
-    await page.getByRole('textbox', { name: 'Importe', exact: true }).fill('990.00');
-    await page.getByRole('button', { name: 'Programar precio' }).click();
+    await scheduleDialog.getByRole('textbox', { name: 'Importe', exact: true }).fill('990.00');
+    await scheduleDialog.getByRole('button', { name: 'Programar precio' }).click();
     // K1-03/UX audit fix: "Vigente desde" ahora lleva el atributo `required` nativo (antes sólo
     // alimentaba `aria-required`, ver PrivateDatePicker.tsx) -- el navegador bloquea el envío del
     // formulario ANTES de que `schedulePriceForItem` llegue a ejecutarse, así que el mensaje
@@ -240,8 +261,10 @@ test.describe('staff catalog operations', () => {
     // computed relative to whenever the test actually runs so "Programados" stays genuinely future.
     const scheduledFrom = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     await effectiveFrom.fill(scheduledFrom);
-    await page.getByRole('button', { name: 'Programar precio' }).click();
+    await scheduleDialog.getByRole('button', { name: 'Programar precio' }).click();
     await expect(page.getByRole('status')).toContainText('Precio programado.');
+    await scheduleDialog.getByRole('button', { name: 'Cerrar' }).click();
+    await expect(scheduleDialog).not.toBeVisible();
 
     await expect(page.locator('.catalog-price-group', { hasText: 'Históricos' })).toContainText('MXN 1,250.00');
     await expect(page.locator('.catalog-price-group', { hasText: 'Vigentes' })).toContainText('MXN 1,100.00');
@@ -249,10 +272,13 @@ test.describe('staff catalog operations', () => {
 
     const priceListActions = page.locator('.catalog-price-summary .catalog-main__actions');
     await priceListActions.getByRole('button', { name: 'Editar' }).click();
+    const editListDialog = page.getByRole('dialog', { name: 'Editar lista' });
+    await expect(editListDialog).toBeVisible();
     const editedPriceListName = `Lista E2E editada ${suffix}`;
-    await page.getByLabel('Nombre', { exact: true }).fill(editedPriceListName);
-    await page.getByRole('button', { name: 'Guardar cambios' }).click();
+    await editListDialog.getByLabel('Nombre', { exact: true }).fill(editedPriceListName);
+    await editListDialog.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(page.getByRole('status')).toContainText('Lista actualizada.');
+    await expect(editListDialog).not.toBeVisible();
     await expect(fixturePriceList).toContainText(editedPriceListName);
 
     await priceListActions.getByRole('button', { name: 'Archivar' }).click();
