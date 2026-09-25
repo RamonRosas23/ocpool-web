@@ -2,15 +2,19 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Inbox } from 'lucide-react';
-import { PrivatePagination, PrivateSelect } from '@/components/private/ui';
+import { PrivateDatePicker, PrivateDialog, PrivateMoneyField, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import StaffCatalogCategoryDialog from '@/components/StaffCatalogCategoryDialog';
 import { formatDate } from '@/lib/format-date';
+import { zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
+import { parseMoneyInput } from '@/lib/money-input';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { buildCategoryTreeOrder, type CatalogCapabilities, type CatalogItem, type CatalogListResponse, type Category } from '@/lib/staff-catalog-types';
 
 const CATALOG_UNIT_OPTIONS = ['pieza', 'servicio', 'hora', 'visita', 'm²', 'm³', 'lote', 'kit', 'mes'] as const;
 const CATALOG_UNIT_CUSTOM = '__otra__';
+
+type WizardPriceList = { id: string; code: string; name: string; currencyCode: string };
 
 export type StaffCatalogConceptsTabProps = { capabilities: CatalogCapabilities };
 
@@ -29,12 +33,19 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
   const [accessDenied, setAccessDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [showItemForm, setShowItemForm] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [showArchived, setShowArchived, showArchivedHydrated] = usePersistentState('ocpool.staff.catalog.items.showArchived', false);
-  const [itemForm, setItemForm] = useState({ code: '', useManualCode: false, name: '', unitPreset: 'pieza', unitCustom: '', description: '', categoryId: '' });
+  const emptyItemForm = { code: '', useManualCode: false, name: '', unitPreset: 'pieza', unitCustom: '', description: '', categoryId: '' };
+  const [itemForm, setItemForm] = useState(emptyItemForm);
   const [editingItem, setEditingItem] = useState(false);
   const [itemEditForm, setItemEditForm] = useState({ name: '', description: '', unitPreset: 'pieza', unitCustom: '', categoryId: '' });
+
+  // Alta guiada: 'form' = paso 1 (datos del concepto), 'price' = paso 2 (precio inicial opcional), null = cerrado.
+  const [createStep, setCreateStep] = useState<'form' | 'price' | null>(null);
+  const [createdItem, setCreatedItem] = useState<CatalogItem | null>(null);
+  const [wizardPriceLists, setWizardPriceLists] = useState<WizardPriceList[]>([]);
+  const emptyWizardPriceForm = { priceListId: '', amountInput: '', effectiveFrom: '' };
+  const [wizardPriceForm, setWizardPriceForm] = useState(emptyWizardPriceForm);
 
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId]);
   const categoryTreeOrder = useMemo(() => buildCategoryTreeOrder(categories), [categories]);
@@ -87,14 +98,76 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
 
   const selectCategory = (categoryId: string | null) => { setPage(1); setSelectedCategoryId(categoryId); };
 
+  const openCreateDialog = () => {
+    setItemForm({ ...emptyItemForm, categoryId: selectedCategoryId ?? '' });
+    setCreatedItem(null);
+    setWizardPriceForm(emptyWizardPriceForm);
+    setError(null);
+    setCreateStep('form');
+  };
+
+  const closeCreateDialog = () => {
+    setCreateStep(null);
+    setCreatedItem(null);
+    setItemForm(emptyItemForm);
+    setWizardPriceForm(emptyWizardPriceForm);
+  };
+
+  // Se pide fresco en el momento en que hace falta (justo tras crear el concepto), no al abrir el
+  // diálogo -- así nunca compite en una carrera contra lo rápido que el usuario llene el paso 1.
+  const loadWizardPriceLists = async (): Promise<WizardPriceList[]> => {
+    try {
+      const response = await fetch('/api/staff/catalog/price-lists?status=ACTIVE', { credentials: 'include', cache: 'no-store' });
+      const lists = await readApiResponseOrThrow<WizardPriceList[]>(response, 'No fue posible cargar las listas de precio.');
+      setWizardPriceLists(lists);
+      return lists;
+    } catch {
+      setWizardPriceLists([]);
+      return [];
+    }
+  };
+
   const createItem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSaving(true); setError(null); setNotice(null);
     try {
       const unit = itemForm.unitPreset === CATALOG_UNIT_CUSTOM ? itemForm.unitCustom.trim() : itemForm.unitPreset;
       const response = await fetch('/api/staff/catalog/items', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: itemForm.useManualCode ? itemForm.code : undefined, name: itemForm.name, unit, description: itemForm.description || undefined, categoryId: itemForm.categoryId || undefined }) });
       const created = await readApiResponseOrThrow<CatalogItem>(response, 'No fue posible completar la operación.');
-      setNotice(`Concepto ${created.code} creado.`); setItemForm({ code: '', useManualCode: false, name: '', unitPreset: 'pieza', unitCustom: '', description: '', categoryId: '' }); setShowItemForm(false); await refresh(); setSelectedItemId(created.id);
+      setNotice(`Concepto ${created.code} creado.`);
+      await refresh();
+      setSelectedItemId(created.id);
+      if (capabilities.pricesManage) {
+        const lists = await loadWizardPriceLists();
+        if (lists.length > 0) {
+          setCreatedItem(created);
+          setCreateStep('price');
+          return;
+        }
+        setNotice(`Concepto ${created.code} creado. Crea una lista de precio para poder asignarle un precio.`);
+      }
+      closeCreateDialog();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible crear el concepto.'); }
+    finally { setSaving(false); }
+  };
+
+  const saveWizardPrice = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!createdItem) return;
+    if (!wizardPriceForm.priceListId) { setError('Selecciona una lista de precio.'); return; }
+    if (!wizardPriceForm.effectiveFrom) { setError('Selecciona la fecha desde la que aplica el precio.'); return; }
+    const unitPriceMinor = parseMoneyInput(wizardPriceForm.amountInput);
+    if (!unitPriceMinor) { setError('Escribe un importe válido, por ejemplo 1250.00.'); return; }
+    setSaving(true); setError(null);
+    try {
+      await readApiResponseOrThrow(await fetch(`/api/staff/catalog/price-lists/${wizardPriceForm.priceListId}/schedule`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ catalogItemId: createdItem.id, unitPriceMinor, effectiveFrom: zonedCalendarDateToUtc(wizardPriceForm.effectiveFrom).toISOString() }),
+      }), 'No fue posible completar la operación.');
+      setNotice(`Concepto ${createdItem.code} creado y precio asignado.`);
+      closeCreateDialog();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible asignar el precio.'); }
     finally { setSaving(false); }
   };
 
@@ -137,22 +210,10 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
     <div className="catalog-concepts">
       <div className="catalog-concepts__toolbar">
         <p className="catalog-tab-intro">Cada concepto es un producto o servicio que después podrás agregar a una propuesta con su precio.</p>
-        {capabilities.catalogManage && <button className="staff-button staff-button--copper" type="button" onClick={() => setShowItemForm((current) => !current)}>{showItemForm ? 'Cerrar' : 'Nuevo concepto'}</button>}
+        {capabilities.catalogManage && <button className="staff-button staff-button--copper" type="button" onClick={openCreateDialog}>Nuevo concepto</button>}
       </div>
       {notice && <p className="staff-notice" role="status">{notice}</p>}
-      {error && <p className="staff-error" role="alert">{error}</p>}
-      {showItemForm && capabilities.catalogManage && (
-        <form className="catalog-form" onSubmit={createItem}>
-          <label className="catalog-filters__toggle"><input type="checkbox" checked={itemForm.useManualCode} onChange={(event) => setItemForm({ ...itemForm, useManualCode: event.target.checked })} /><span>Especificar clave manualmente</span></label>
-          {itemForm.useManualCode && <label><span>Clave</span><input required value={itemForm.code} onChange={(event) => setItemForm({ ...itemForm, code: event.target.value })} placeholder="EQUIPO-001" maxLength={64} /></label>}
-          <label><span>Nombre</span><input required value={itemForm.name} onChange={(event) => setItemForm({ ...itemForm, name: event.target.value })} placeholder="Bomba de filtrado" maxLength={180} /></label>
-          <PrivateSelect id="catalog-item-new-unit" label="Unidad" required value={itemForm.unitPreset} onValueChange={(value) => setItemForm({ ...itemForm, unitPreset: value })} options={[...CATALOG_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit })), { value: CATALOG_UNIT_CUSTOM, label: 'Otra…' }]} disabled={saving} />
-          {itemForm.unitPreset === CATALOG_UNIT_CUSTOM && <label><span>Unidad personalizada</span><input required value={itemForm.unitCustom} onChange={(event) => setItemForm({ ...itemForm, unitCustom: event.target.value })} maxLength={40} /></label>}
-          <PrivateSelect id="catalog-item-new-category" label="Categoría" value={itemForm.categoryId} onValueChange={(value) => setItemForm({ ...itemForm, categoryId: value })} options={categories.filter((category) => category.status === 'ACTIVE').map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} />
-          <label><span>Descripción</span><textarea rows={3} value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} maxLength={2000} /></label>
-          <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar concepto</button>
-        </form>
-      )}
+      {error && !createStep && <p className="staff-error" role="alert">{error}</p>}
       <div className="catalog-concepts__body">
         <aside className="catalog-concepts__categories" aria-label="Filtrar por categoría">
           <p className="staff-section-label">Categorías</p>
@@ -178,7 +239,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
                 <span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span>
                 <h2>Todavía no tienes conceptos en tu catálogo</h2>
                 <p>Cada concepto es un producto o servicio que después podrás agregar a una propuesta con su precio.</p>
-                {capabilities.catalogManage && <button className="staff-button staff-button--copper" type="button" onClick={() => setShowItemForm(true)}>Crear el primer concepto</button>}
+                {capabilities.catalogManage && <button className="staff-button staff-button--copper" type="button" onClick={openCreateDialog}>Crear el primer concepto</button>}
               </div>
             )}
             {isEmptyFromFilter && (
@@ -212,7 +273,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
             )}
           </div>
           {!selectedItem && <div className="staff-empty staff-empty--detail"><h2>Selecciona un concepto de la lista para ver su detalle.</h2></div>}
-          {selectedItem && !editingItem && (
+          {selectedItem && (
             <div className="catalog-detail">
               <p>{selectedItem.description ?? 'Este concepto todavía no tiene descripción.'}</p>
               <dl>
@@ -221,21 +282,67 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
               </dl>
             </div>
           )}
-          {selectedItem && editingItem && (
-            <form className="catalog-form" onSubmit={saveItemEdit}>
-              <label><span>Nombre</span><input required value={itemEditForm.name} onChange={(event) => setItemEditForm({ ...itemEditForm, name: event.target.value })} maxLength={180} /></label>
-              <PrivateSelect id="catalog-item-edit-unit" label="Unidad" required value={itemEditForm.unitPreset} onValueChange={(value) => setItemEditForm({ ...itemEditForm, unitPreset: value })} options={[...CATALOG_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit })), { value: CATALOG_UNIT_CUSTOM, label: 'Otra…' }]} disabled={saving} />
-              {itemEditForm.unitPreset === CATALOG_UNIT_CUSTOM && <label><span>Unidad personalizada</span><input required value={itemEditForm.unitCustom} onChange={(event) => setItemEditForm({ ...itemEditForm, unitCustom: event.target.value })} maxLength={40} /></label>}
-              <PrivateSelect id="catalog-item-edit-category" label="Categoría" value={itemEditForm.categoryId} onValueChange={(value) => setItemEditForm({ ...itemEditForm, categoryId: value })} options={categories.filter((category) => category.status === 'ACTIVE').map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} />
-              <label><span>Descripción</span><textarea rows={3} value={itemEditForm.description} onChange={(event) => setItemEditForm({ ...itemEditForm, description: event.target.value })} maxLength={2000} /></label>
-              <div className="catalog-form__actions">
-                <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar cambios</button>
-                <button className="staff-button" type="button" disabled={saving} onClick={() => setEditingItem(false)}>Cancelar</button>
-              </div>
-            </form>
-          )}
         </section>
       </div>
+
+      {createStep === 'form' && (
+        <PrivateDialog open onClose={closeCreateDialog} labelledBy="catalog-item-create-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
+          <div className="catalog-category-dialog__head">
+            <h2 id="catalog-item-create-title">Nuevo concepto</h2>
+            <button className="staff-button" type="button" onClick={closeCreateDialog}>Cerrar</button>
+          </div>
+          {error && <p className="staff-error" role="alert">{error}</p>}
+          <form className="catalog-form" onSubmit={createItem}>
+            <label className="catalog-filters__toggle"><input type="checkbox" checked={itemForm.useManualCode} onChange={(event) => setItemForm({ ...itemForm, useManualCode: event.target.checked })} /><span>Especificar clave manualmente</span></label>
+            {itemForm.useManualCode && <label><span>Clave</span><input required value={itemForm.code} onChange={(event) => setItemForm({ ...itemForm, code: event.target.value })} placeholder="EQUIPO-001" maxLength={64} /></label>}
+            <label><span>Nombre</span><input required value={itemForm.name} onChange={(event) => setItemForm({ ...itemForm, name: event.target.value })} placeholder="Bomba de filtrado" maxLength={180} /></label>
+            <PrivateSelect id="catalog-item-new-unit" label="Unidad" required value={itemForm.unitPreset} onValueChange={(value) => setItemForm({ ...itemForm, unitPreset: value })} options={[...CATALOG_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit })), { value: CATALOG_UNIT_CUSTOM, label: 'Otra…' }]} disabled={saving} />
+            {itemForm.unitPreset === CATALOG_UNIT_CUSTOM && <label><span>Unidad personalizada</span><input required value={itemForm.unitCustom} onChange={(event) => setItemForm({ ...itemForm, unitCustom: event.target.value })} maxLength={40} /></label>}
+            <PrivateSelect id="catalog-item-new-category" label="Categoría" value={itemForm.categoryId} onValueChange={(value) => setItemForm({ ...itemForm, categoryId: value })} options={categories.filter((category) => category.status === 'ACTIVE').map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} />
+            <label><span>Descripción</span><textarea rows={3} value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} maxLength={2000} /></label>
+            <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Continuar</button>
+          </form>
+        </PrivateDialog>
+      )}
+
+      {createStep === 'price' && createdItem && (
+        <PrivateDialog open onClose={closeCreateDialog} labelledBy="catalog-item-price-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
+          <div className="catalog-category-dialog__head">
+            <h2 id="catalog-item-price-title">Precio inicial de {createdItem.name}</h2>
+            <button className="staff-button" type="button" onClick={closeCreateDialog}>Cerrar</button>
+          </div>
+          <p className="catalog-tab-intro">Concepto creado. Opcional: asígnale su primer precio sin salir de aquí.</p>
+          {error && <p className="staff-error" role="alert">{error}</p>}
+          <form className="catalog-form catalog-form--price" onSubmit={saveWizardPrice}>
+            <PrivateSelect id="catalog-item-price-list" label="Lista de precios" required value={wizardPriceForm.priceListId} onValueChange={(value) => setWizardPriceForm({ ...wizardPriceForm, priceListId: value })} options={wizardPriceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currencyCode}` }))} placeholder="Selecciona una lista" disabled={saving} />
+            <PrivateMoneyField id="catalog-item-price-amount" label="Importe" value={wizardPriceForm.amountInput} onValueChange={(value) => setWizardPriceForm({ ...wizardPriceForm, amountInput: value })} placeholder="1,250.00" required disabled={saving} />
+            <PrivateDatePicker id="catalog-item-price-effective-from" label="Vigente desde" required value={wizardPriceForm.effectiveFrom} onValueChange={(value) => setWizardPriceForm({ ...wizardPriceForm, effectiveFrom: value })} disabled={saving} />
+            <div className="catalog-form__actions">
+              <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar precio y cerrar</button>
+              <button className="staff-button" type="button" disabled={saving} onClick={closeCreateDialog}>Omitir por ahora</button>
+            </div>
+          </form>
+        </PrivateDialog>
+      )}
+
+      {selectedItem && editingItem && (
+        <PrivateDialog open onClose={() => setEditingItem(false)} labelledBy="catalog-item-edit-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
+          <div className="catalog-category-dialog__head">
+            <h2 id="catalog-item-edit-title">Editar concepto</h2>
+            <button className="staff-button" type="button" onClick={() => setEditingItem(false)}>Cerrar</button>
+          </div>
+          {error && <p className="staff-error" role="alert">{error}</p>}
+          <form className="catalog-form" onSubmit={saveItemEdit}>
+            <label><span>Nombre</span><input required value={itemEditForm.name} onChange={(event) => setItemEditForm({ ...itemEditForm, name: event.target.value })} maxLength={180} /></label>
+            <PrivateSelect id="catalog-item-edit-unit" label="Unidad" required value={itemEditForm.unitPreset} onValueChange={(value) => setItemEditForm({ ...itemEditForm, unitPreset: value })} options={[...CATALOG_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit })), { value: CATALOG_UNIT_CUSTOM, label: 'Otra…' }]} disabled={saving} />
+            {itemEditForm.unitPreset === CATALOG_UNIT_CUSTOM && <label><span>Unidad personalizada</span><input required value={itemEditForm.unitCustom} onChange={(event) => setItemEditForm({ ...itemEditForm, unitCustom: event.target.value })} maxLength={40} /></label>}
+            <PrivateSelect id="catalog-item-edit-category" label="Categoría" value={itemEditForm.categoryId} onValueChange={(value) => setItemEditForm({ ...itemEditForm, categoryId: value })} options={categories.filter((category) => category.status === 'ACTIVE').map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} />
+            <label><span>Descripción</span><textarea rows={3} value={itemEditForm.description} onChange={(event) => setItemEditForm({ ...itemEditForm, description: event.target.value })} maxLength={2000} /></label>
+            <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar cambios</button>
+          </form>
+        </PrivateDialog>
+      )}
+
       <StaffCatalogCategoryDialog
         open={showCategoryDialog}
         onClose={() => setShowCategoryDialog(false)}
