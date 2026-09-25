@@ -388,6 +388,13 @@
 .private-money-field__input { padding-left: 26px; }
 .private-money-field__prefix { position: absolute; top: 0; left: 12px; z-index: 1; display: flex; height: 100%; align-items: center; color: var(--private-color-ink-muted); font-size: 13px; font-weight: 700; pointer-events: none; }
 
+.private-combobox { position: relative; min-width: 0; }
+.private-combobox__input { cursor: text; }
+.private-combobox__listbox { position: absolute; z-index: var(--private-z-popover); top: calc(100% + 6px); left: 0; right: 0; max-height: min(280px, 45vh); overflow-y: auto; margin: 0; padding: var(--private-space-1); list-style: none; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-popover); }
+.private-combobox__status { padding: 8px 10px; color: var(--private-color-ink-muted); font-size: 12px; }
+.private-combobox__option { display: flex; min-height: 40px; align-items: center; border-radius: var(--private-radius-control); padding: 8px 10px; color: var(--private-color-ink); cursor: pointer; font-size: 12px; }
+.private-combobox__option.is-active { background: var(--private-color-brand); color: #fff; }
+
 .private-date-field { position: relative; min-width: 0; }
 .private-date-field__control { display: flex; min-width: 0; gap: var(--private-space-2); }
 .private-date-field__input { flex: 1 1 auto; min-width: 0; }

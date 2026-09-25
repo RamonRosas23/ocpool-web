@@ -12,8 +12,9 @@ export {
   PrivateMoneyField,
   PrivatePercentField,
   PrivateSelect,
+  PrivateCombobox,
 } from './PrivateControls';
-export type { PrivateButtonProps, PrivateIconButtonProps, PrivateLinkButtonProps, PrivateSelectOption, PrivateSelectProps, PrivateMoneyFieldProps } from './PrivateControls';
+export type { PrivateButtonProps, PrivateIconButtonProps, PrivateLinkButtonProps, PrivateSelectOption, PrivateSelectProps, PrivateMoneyFieldProps, PrivateComboboxProps } from './PrivateControls';
 export { PrivateDatePicker } from './PrivateDatePicker';
 export type { PrivateDatePickerProps } from './PrivateDatePicker';
 export { PrivateDialog } from './PrivateDialog';

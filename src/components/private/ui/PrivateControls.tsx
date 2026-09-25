@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent, type ReactNode } from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { ChevronDown } from 'lucide-react';
 import { privateFieldA11y } from './a11y';
@@ -153,6 +153,116 @@ export function PrivateSelect({ id, label, description, error, required, hideLab
           </SelectPrimitive.Content>
         </SelectPrimitive.Portal>
       </SelectPrimitive.Root>
+    </PrivateField>
+  );
+}
+
+export type PrivateComboboxProps = Omit<PrivateFieldChromeProps, 'children'> & {
+  value: string;
+  options: readonly PrivateSelectOption[];
+  onValueChange: (value: string) => void;
+  placeholder?: string;
+  noResultsLabel?: string;
+  disabled?: boolean;
+};
+
+export function PrivateCombobox({ id, label, description, error, required, hideLabel, className, value, options, onValueChange, placeholder = 'Escribe para buscar…', noResultsLabel = 'Sin coincidencias', disabled = false }: PrivateComboboxProps) {
+  const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
+  const listboxId = `${id}-listbox`;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const selectedOption = options.find((option) => option.value === value) ?? null;
+  const [term, setTerm] = useState(selectedOption?.label ?? '');
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  useEffect(() => {
+    if (!open) setTerm(selectedOption?.label ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo debe re-sincronizar cuando cambia el valor seleccionado externamente, no en cada tecleo
+  }, [value]);
+
+  // Al abrir (clic, foco o flecha abajo) se limpia el término de búsqueda para mostrar TODAS las
+  // opciones de inmediato -- si en su lugar se precargara con la etiqueta ya seleccionada, abrir
+  // el combobox filtraría de entrada a un solo resultado y el usuario no podría explorar el resto
+  // sin borrar primero. Cerrar sin elegir restaura la etiqueta de la selección vigente.
+  const openDropdown = () => { setTerm(''); setOpen(true); setActiveIndex(-1); };
+  const closeDropdown = () => { setOpen(false); setTerm(selectedOption?.label ?? ''); setActiveIndex(-1); };
+
+  const visibleOptions = options.filter((option) => !option.disabled && (!term.trim() || option.label.toLowerCase().includes(term.trim().toLowerCase())));
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: MouseEvent) => { if (!containerRef.current?.contains(event.target as Node)) closeDropdown(); };
+    window.addEventListener('mousedown', closeOnOutsideClick);
+    return () => window.removeEventListener('mousedown', closeOnOutsideClick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeDropdown lee selectedOption ya vigente en cada render; no hace falta re-suscribir el listener por eso
+  }, [open]);
+
+  const choose = (option: PrivateSelectOption) => {
+    onValueChange(option.value);
+    setTerm(option.label);
+    setOpen(false);
+    setActiveIndex(-1);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (!open) { openDropdown(); return; }
+      setActiveIndex((current) => visibleOptions.length ? (current + 1) % visibleOptions.length : -1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveIndex((current) => visibleOptions.length ? (current - 1 + visibleOptions.length) % visibleOptions.length : -1);
+    } else if (event.key === 'Enter') {
+      if (activeIndex >= 0 && visibleOptions[activeIndex]) { event.preventDefault(); choose(visibleOptions[activeIndex]); }
+    } else if (event.key === 'Escape') {
+      if (open) { event.preventDefault(); closeDropdown(); }
+    }
+  };
+
+  return (
+    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
+      <div className={joinClasses('private-combobox', className)} ref={containerRef}>
+        <input
+          id={id}
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-autocomplete="list"
+          aria-activedescendant={activeIndex >= 0 && visibleOptions[activeIndex] ? `${id}-option-${activeIndex}` : undefined}
+          aria-describedby={a11y.describedBy}
+          aria-invalid={a11y.invalid}
+          aria-labelledby={a11y.labelId}
+          aria-required={a11y.required}
+          autoComplete="off"
+          className="private-control private-combobox__input"
+          placeholder={placeholder}
+          value={term}
+          disabled={disabled}
+          onFocus={openDropdown}
+          onClick={openDropdown}
+          onChange={(event) => { setTerm(event.target.value); setActiveIndex(-1); if (!open) setOpen(true); }}
+          onKeyDown={handleKeyDown}
+        />
+        {open && (
+          <ul id={listboxId} role="listbox" aria-label={label} className="private-combobox__listbox">
+            {visibleOptions.length === 0 && <li className="private-combobox__status">{noResultsLabel}</li>}
+            {visibleOptions.map((option, index) => (
+              <li
+                key={option.value}
+                id={`${id}-option-${index}`}
+                role="option"
+                aria-selected={option.value === value}
+                className={`private-combobox__option${index === activeIndex ? ' is-active' : ''}`}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseDown={(event) => { event.preventDefault(); choose(option); }}
+              >
+                {option.label}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </PrivateField>
   );
 }
