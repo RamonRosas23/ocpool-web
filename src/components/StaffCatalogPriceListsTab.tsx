@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { PrivateDatePicker, PrivateDialog, PrivateMoneyField, PrivateSelect } from '@/components/private/ui';
+import { PrivateCombobox, PrivateDatePicker, PrivateDialog, PrivateMoneyField } from '@/components/private/ui';
 import { formatDate } from '@/lib/format-date';
 import { zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
 import { moneyLabel } from '@/lib/money';
@@ -32,16 +32,10 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
   const [priceForm, setPriceForm] = useState({ catalogItemId: '', amountInput: '', effectiveFrom: '', reason: '' });
   const [editingPriceList, setEditingPriceList] = useState(false);
   const [priceListEditForm, setPriceListEditForm] = useState({ name: '' });
-  const [conceptFilter, setConceptFilter] = useState('');
   const [tableFilter, setTableFilter] = useState('');
 
   const previewItem = useMemo(() => priceListDetail?.items.find((price) => price.catalogItemId === priceForm.catalogItemId && price.validUntil === null) ?? null, [priceListDetail, priceForm.catalogItemId]);
   const previewText = !priceForm.catalogItemId ? '' : previewItem ? `Se cerrará el precio vigente de ${moneyLabel(previewItem.unitPriceMinor, priceListDetail!.currencyCode)} (desde ${formatDate(previewItem.validFrom)}) el día que elijas abajo.` : 'Este concepto no tiene un precio vigente en esta lista; se creará el primero.';
-  const filteredPricableItems = useMemo(() => {
-    const query = conceptFilter.trim().toLowerCase();
-    if (!query) return pricableItems;
-    return pricableItems.filter((item) => item.code.toLowerCase().includes(query) || item.name.toLowerCase().includes(query));
-  }, [pricableItems, conceptFilter]);
   const priceGroups = useMemo(() => {
     const groups = { actuales: [] as PriceListDetail['items'], futuros: [] as PriceListDetail['items'], historicos: [] as PriceListDetail['items'] };
     if (!priceListDetail) return groups;
@@ -170,7 +164,6 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
 
   const openScheduleDialogForItem = (catalogItemId: string) => {
     setPriceForm({ catalogItemId, amountInput: '', effectiveFrom: '', reason: '' });
-    setConceptFilter('');
     setShowScheduleDialog(true);
   };
 
@@ -211,7 +204,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
                 <span>{priceListDetail.name}{priceListDetail.status === 'ARCHIVED' ? ' · Archivada' : ''}</span>
                 <strong>{priceListDetail.items.length} precios</strong>
                 <div className="catalog-main__actions">
-                  {capabilities.pricesManage && priceListDetail.status === 'ACTIVE' && <button className="staff-button" type="button" disabled={saving} onClick={() => { setConceptFilter(''); setShowScheduleDialog(true); }}>Programar precio</button>}
+                  {capabilities.pricesManage && priceListDetail.status === 'ACTIVE' && <button className="staff-button" type="button" disabled={saving} onClick={() => setShowScheduleDialog(true)}>Programar precio</button>}
                   {capabilities.pricesManage && (
                     <>
                       <button className="staff-button" type="button" disabled={saving} onClick={startEditPriceList}>Editar</button>
@@ -298,8 +291,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
           </div>
           {error && <p className="staff-error" role="alert">{error}</p>}
           <form className="catalog-form catalog-form--price" onSubmit={schedulePriceForItem}>
-            <label className="catalog-form__concept-filter"><span>Buscar concepto</span><input value={conceptFilter} onChange={(event) => setConceptFilter(event.target.value)} placeholder="Clave o nombre" maxLength={100} disabled={saving} /></label>
-            <PrivateSelect id="catalog-price-item" label="Concepto" required value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={filteredPricableItems.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder={filteredPricableItems.length === 0 ? 'Sin coincidencias' : 'Selecciona un concepto'} disabled={saving} />
+            <PrivateCombobox id="catalog-price-item" label="Concepto" required value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={pricableItems.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder="Escribe la clave o el nombre del concepto" disabled={saving} />
             <PrivateMoneyField id="catalog-price-amount" label="Importe" value={priceForm.amountInput} onValueChange={(value) => setPriceForm({ ...priceForm, amountInput: value })} placeholder="1,250.00" required disabled={saving} />
             <PrivateDatePicker id="catalog-price-effective-from" label="Vigente desde" required value={priceForm.effectiveFrom} onValueChange={(value) => setPriceForm({ ...priceForm, effectiveFrom: value })} disabled={saving} />
             <label><span>Motivo opcional</span><input value={priceForm.reason} onChange={(event) => setPriceForm({ ...priceForm, reason: event.target.value })} placeholder="Ajuste de proveedor" maxLength={300} /></label>
