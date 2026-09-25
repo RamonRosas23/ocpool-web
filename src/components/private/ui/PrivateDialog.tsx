@@ -41,7 +41,12 @@ export function PrivateDialog({ open, onClose, modal = true, id, labelledBy, des
   useEffect(() => {
     if (!open) return;
     const previousOverflow = document.body.style.overflow;
-    if (modal) document.body.style.overflow = 'hidden';
+    const previousPaddingRight = document.body.style.paddingRight;
+    if (modal) {
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      document.body.style.overflow = 'hidden';
+      if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         onClose();
@@ -64,7 +69,10 @@ export function PrivateDialog({ open, onClose, modal = true, id, labelledBy, des
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => {
-      if (modal) document.body.style.overflow = previousOverflow;
+      if (modal) {
+        document.body.style.overflow = previousOverflow;
+        document.body.style.paddingRight = previousPaddingRight;
+      }
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [modal, onClose, open]);
