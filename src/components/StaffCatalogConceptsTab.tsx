@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Inbox } from 'lucide-react';
+import { Inbox, X } from 'lucide-react';
 import { PrivateDatePicker, PrivateDialog, PrivateMoneyField, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import StaffCatalogCategoryDialog from '@/components/StaffCatalogCategoryDialog';
 import { formatDate } from '@/lib/format-date';
@@ -289,7 +289,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
         <PrivateDialog open onClose={closeCreateDialog} labelledBy="catalog-item-create-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
           <div className="catalog-category-dialog__head">
             <h2 id="catalog-item-create-title">Nuevo concepto</h2>
-            <button className="staff-button" type="button" onClick={closeCreateDialog}>Cerrar</button>
+            <button className="staff-dialog-close" type="button" onClick={closeCreateDialog} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
           </div>
           {error && <p className="staff-error" role="alert">{error}</p>}
           <form className="catalog-form" onSubmit={createItem}>
@@ -309,7 +309,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
         <PrivateDialog open onClose={closeCreateDialog} labelledBy="catalog-item-price-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
           <div className="catalog-category-dialog__head">
             <h2 id="catalog-item-price-title">Precio inicial de {createdItem.name}</h2>
-            <button className="staff-button" type="button" onClick={closeCreateDialog}>Cerrar</button>
+            <button className="staff-dialog-close" type="button" onClick={closeCreateDialog} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
           </div>
           <p className="catalog-tab-intro">Concepto creado. Opcional: asígnale su primer precio sin salir de aquí.</p>
           {error && <p className="staff-error" role="alert">{error}</p>}
@@ -329,7 +329,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
         <PrivateDialog open onClose={() => setEditingItem(false)} labelledBy="catalog-item-edit-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
           <div className="catalog-category-dialog__head">
             <h2 id="catalog-item-edit-title">Editar concepto</h2>
-            <button className="staff-button" type="button" onClick={() => setEditingItem(false)}>Cerrar</button>
+            <button className="staff-dialog-close" type="button" onClick={() => setEditingItem(false)} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
           </div>
           {error && <p className="staff-error" role="alert">{error}</p>}
           <form className="catalog-form" onSubmit={saveItemEdit}>

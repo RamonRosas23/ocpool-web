@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
+import { X } from 'lucide-react';
 import { PrivateDialog, PrivateSelect } from '@/components/private/ui';
 import { readApiResponseOrThrow } from '@/lib/api-response-error';
 import { buildCategoryTreeOrder, categoryDescendantIds, type Category } from '@/lib/staff-catalog-types';
@@ -66,7 +67,7 @@ export default function StaffCatalogCategoryDialog({ open, onClose, categories, 
     <PrivateDialog open={open} onClose={onClose} labelledBy="catalog-category-dialog-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
       <div className="catalog-category-dialog__head">
         <h2 id="catalog-category-dialog-title">Categorías del catálogo</h2>
-        <button className="staff-button" type="button" onClick={onClose}>Cerrar</button>
+        <button className="staff-dialog-close" type="button" onClick={onClose} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
       </div>
       {notice && <p className="staff-notice" role="status">{notice}</p>}
       {error && <p className="staff-error" role="alert">{error}</p>}

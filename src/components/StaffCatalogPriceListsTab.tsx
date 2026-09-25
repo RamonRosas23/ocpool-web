@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { PrivateDatePicker, PrivateDialog, PrivateMoneyField, PrivateSelect } from '@/components/private/ui';
 import { formatDate } from '@/lib/format-date';
 import { zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
@@ -31,14 +32,23 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
   const [priceForm, setPriceForm] = useState({ catalogItemId: '', amountInput: '', effectiveFrom: '', reason: '' });
   const [editingPriceList, setEditingPriceList] = useState(false);
   const [priceListEditForm, setPriceListEditForm] = useState({ name: '' });
+  const [conceptFilter, setConceptFilter] = useState('');
+  const [tableFilter, setTableFilter] = useState('');
 
   const previewItem = useMemo(() => priceListDetail?.items.find((price) => price.catalogItemId === priceForm.catalogItemId && price.validUntil === null) ?? null, [priceListDetail, priceForm.catalogItemId]);
   const previewText = !priceForm.catalogItemId ? '' : previewItem ? `Se cerrará el precio vigente de ${moneyLabel(previewItem.unitPriceMinor, priceListDetail!.currencyCode)} (desde ${formatDate(previewItem.validFrom)}) el día que elijas abajo.` : 'Este concepto no tiene un precio vigente en esta lista; se creará el primero.';
+  const filteredPricableItems = useMemo(() => {
+    const query = conceptFilter.trim().toLowerCase();
+    if (!query) return pricableItems;
+    return pricableItems.filter((item) => item.code.toLowerCase().includes(query) || item.name.toLowerCase().includes(query));
+  }, [pricableItems, conceptFilter]);
   const priceGroups = useMemo(() => {
     const groups = { actuales: [] as PriceListDetail['items'], futuros: [] as PriceListDetail['items'], historicos: [] as PriceListDetail['items'] };
     if (!priceListDetail) return groups;
+    const query = tableFilter.trim().toLowerCase();
     const now = Date.now();
     for (const price of priceListDetail.items) {
+      if (query && !price.catalogItem.code.toLowerCase().includes(query) && !price.catalogItem.name.toLowerCase().includes(query)) continue;
       const from = new Date(price.validFrom).getTime();
       const until = price.validUntil ? new Date(price.validUntil).getTime() : null;
       if (from > now) groups.futuros.push(price);
@@ -47,7 +57,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
     }
     groups.futuros = [...groups.futuros].reverse();
     return groups;
-  }, [priceListDetail]);
+  }, [priceListDetail, tableFilter]);
 
   const loadPriceLists = useCallback(async () => {
     setLoading(true); setError(null);
@@ -90,7 +100,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
 
   useEffect(() => { if (showArchivedHydrated) void loadPriceLists(); }, [loadPriceLists, showArchivedHydrated]);
   useEffect(() => { void loadPricableItems(); }, [loadPricableItems]);
-  useEffect(() => { if (selectedPriceListId) void loadPriceListDetail(selectedPriceListId); else setPriceListDetail(null); }, [loadPriceListDetail, selectedPriceListId]);
+  useEffect(() => { setTableFilter(''); if (selectedPriceListId) void loadPriceListDetail(selectedPriceListId); else setPriceListDetail(null); }, [loadPriceListDetail, selectedPriceListId]);
   useEffect(() => { if (!priceForm.catalogItemId && pricableItems[0]) setPriceForm((current) => ({ ...current, catalogItemId: pricableItems[0].id })); }, [pricableItems, priceForm.catalogItemId]);
 
   const createPriceList = async (event: FormEvent<HTMLFormElement>) => {
@@ -158,6 +168,12 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
     finally { setSaving(false); }
   };
 
+  const openScheduleDialogForItem = (catalogItemId: string) => {
+    setPriceForm({ catalogItemId, amountInput: '', effectiveFrom: '', reason: '' });
+    setConceptFilter('');
+    setShowScheduleDialog(true);
+  };
+
   return (
     <div className="catalog-pricelists">
       <div className="catalog-concepts__toolbar">
@@ -195,7 +211,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
                 <span>{priceListDetail.name}{priceListDetail.status === 'ARCHIVED' ? ' · Archivada' : ''}</span>
                 <strong>{priceListDetail.items.length} precios</strong>
                 <div className="catalog-main__actions">
-                  {capabilities.pricesManage && priceListDetail.status === 'ACTIVE' && <button className="staff-button" type="button" disabled={saving} onClick={() => setShowScheduleDialog(true)}>Programar precio</button>}
+                  {capabilities.pricesManage && priceListDetail.status === 'ACTIVE' && <button className="staff-button" type="button" disabled={saving} onClick={() => { setConceptFilter(''); setShowScheduleDialog(true); }}>Programar precio</button>}
                   {capabilities.pricesManage && (
                     <>
                       <button className="staff-button" type="button" disabled={saving} onClick={startEditPriceList}>Editar</button>
@@ -204,22 +220,34 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
                   )}
                 </div>
               </div>
+              {priceListDetail.items.length > 8 && (
+                <label className="staff-filters catalog-pricelists__table-filter"><span>Buscar en esta lista</span><input value={tableFilter} onChange={(event) => setTableFilter(event.target.value)} placeholder="Clave o nombre del concepto" maxLength={100} /></label>
+              )}
               {[
-                { key: 'actuales', label: 'Vigentes', items: priceGroups.actuales },
-                { key: 'futuros', label: 'Programados', items: priceGroups.futuros },
-                { key: 'historicos', label: 'Históricos', items: priceGroups.historicos },
+                { key: 'actuales', label: 'Vigentes', items: priceGroups.actuales, allowReschedule: true },
+                { key: 'futuros', label: 'Programados', items: priceGroups.futuros, allowReschedule: true },
+                { key: 'historicos', label: 'Históricos', items: priceGroups.historicos, allowReschedule: false },
               ].map((group) => (
                 <div className="catalog-price-group" key={group.key}>
                   <div className="catalog-price-group__head"><span>{group.label}</span><span>{group.items.length}</span></div>
                   {group.items.length === 0 && <p className="catalog-price-group__empty">Sin precios en este grupo.</p>}
                   {group.items.length > 0 && (
-                    <div className="catalog-price-table" role="table" aria-label={`Precios ${group.label.toLowerCase()}`}>
-                      <div className="catalog-price-table__head" role="row"><span role="columnheader">Concepto</span><span role="columnheader">Importe</span><span role="columnheader">Vigencia</span></div>
+                    <div className={`catalog-price-table${group.allowReschedule ? ' catalog-price-table--actionable' : ''}`} role="table" aria-label={`Precios ${group.label.toLowerCase()}`}>
+                      <div className="catalog-price-table__head" role="row">
+                        <span role="columnheader">Concepto</span><span role="columnheader">Importe</span><span role="columnheader">Vigencia</span>
+                        {group.allowReschedule && <span role="columnheader" aria-hidden="true" />}
+                      </div>
                       {group.items.map((price) => (
                         <div className="catalog-price-table__row" role="row" key={price.id}>
                           <span role="cell"><strong>{price.catalogItem.name}</strong><small>{price.catalogItem.code} · {price.catalogItem.unit}</small></span>
                           <b role="cell">{moneyLabel(price.unitPriceMinor, priceListDetail.currencyCode)}</b>
                           <small role="cell">{formatDate(price.validFrom)}{price.validUntil ? ` — ${formatDate(price.validUntil)}` : ' — abierta'}</small>
+                          {group.allowReschedule && capabilities.pricesManage && (
+                            <span role="cell">
+                              <button className="staff-button staff-button--outline catalog-price-table__action" type="button" onClick={() => openScheduleDialogForItem(price.catalogItemId)}>Reprogramar</button>
+                            </span>
+                          )}
+                          {group.allowReschedule && !capabilities.pricesManage && <span role="cell" aria-hidden="true" />}
                         </div>
                       ))}
                     </div>
@@ -236,7 +264,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
         <PrivateDialog open onClose={() => setShowPriceListForm(false)} labelledBy="catalog-pricelist-create-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
           <div className="catalog-category-dialog__head">
             <h2 id="catalog-pricelist-create-title">Nueva lista</h2>
-            <button className="staff-button" type="button" onClick={() => setShowPriceListForm(false)}>Cerrar</button>
+            <button className="staff-dialog-close" type="button" onClick={() => setShowPriceListForm(false)} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
           </div>
           {error && <p className="staff-error" role="alert">{error}</p>}
           <form className="catalog-form" onSubmit={createPriceList}>
@@ -252,7 +280,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
         <PrivateDialog open onClose={() => setEditingPriceList(false)} labelledBy="catalog-pricelist-edit-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
           <div className="catalog-category-dialog__head">
             <h2 id="catalog-pricelist-edit-title">Editar lista</h2>
-            <button className="staff-button" type="button" onClick={() => setEditingPriceList(false)}>Cerrar</button>
+            <button className="staff-dialog-close" type="button" onClick={() => setEditingPriceList(false)} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
           </div>
           {error && <p className="staff-error" role="alert">{error}</p>}
           <form className="catalog-form" onSubmit={savePriceListEdit}>
@@ -266,11 +294,12 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
         <PrivateDialog open onClose={() => setShowScheduleDialog(false)} labelledBy="catalog-schedule-price-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
           <div className="catalog-category-dialog__head">
             <h2 id="catalog-schedule-price-title">Programar precio</h2>
-            <button className="staff-button" type="button" onClick={() => setShowScheduleDialog(false)}>Cerrar</button>
+            <button className="staff-dialog-close" type="button" onClick={() => setShowScheduleDialog(false)} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
           </div>
           {error && <p className="staff-error" role="alert">{error}</p>}
           <form className="catalog-form catalog-form--price" onSubmit={schedulePriceForItem}>
-            <PrivateSelect id="catalog-price-item" label="Concepto" required value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={pricableItems.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder="Selecciona un concepto" disabled={saving} />
+            <label className="catalog-form__concept-filter"><span>Buscar concepto</span><input value={conceptFilter} onChange={(event) => setConceptFilter(event.target.value)} placeholder="Clave o nombre" maxLength={100} disabled={saving} /></label>
+            <PrivateSelect id="catalog-price-item" label="Concepto" required value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={filteredPricableItems.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder={filteredPricableItems.length === 0 ? 'Sin coincidencias' : 'Selecciona un concepto'} disabled={saving} />
             <PrivateMoneyField id="catalog-price-amount" label="Importe" value={priceForm.amountInput} onValueChange={(value) => setPriceForm({ ...priceForm, amountInput: value })} placeholder="1,250.00" required disabled={saving} />
             <PrivateDatePicker id="catalog-price-effective-from" label="Vigente desde" required value={priceForm.effectiveFrom} onValueChange={(value) => setPriceForm({ ...priceForm, effectiveFrom: value })} disabled={saving} />
             <label><span>Motivo opcional</span><input value={priceForm.reason} onChange={(event) => setPriceForm({ ...priceForm, reason: event.target.value })} placeholder="Ajuste de proveedor" maxLength={300} /></label>
