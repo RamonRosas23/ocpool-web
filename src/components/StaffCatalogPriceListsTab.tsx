@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { PrivateDatePicker, PrivateMoneyField, PrivateSelect } from '@/components/private/ui';
+import { PrivateDatePicker, PrivateDialog, PrivateMoneyField, PrivateSelect } from '@/components/private/ui';
 import { formatDate } from '@/lib/format-date';
 import { zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
 import { moneyLabel } from '@/lib/money';
@@ -25,6 +25,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showPriceListForm, setShowPriceListForm] = useState(false);
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [showArchived, setShowArchived, showArchivedHydrated] = usePersistentState('ocpool.staff.catalog.priceLists.showArchived', false);
   const [priceListForm, setPriceListForm] = useState({ code: '', name: '', currencyCode: 'MXN' });
   const [priceForm, setPriceForm] = useState({ catalogItemId: '', amountInput: '', effectiveFrom: '', reason: '' });
@@ -161,23 +162,21 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
     <div className="catalog-pricelists">
       <div className="catalog-concepts__toolbar">
         <p className="catalog-tab-intro">Cada lista es un conjunto de precios (por ejemplo, por moneda o por zona) que puedes asignar a una propuesta.</p>
-        {capabilities.pricesManage && <button className="staff-button staff-button--copper" type="button" onClick={() => setShowPriceListForm((current) => !current)}>{showPriceListForm ? 'Cerrar' : 'Nueva lista'}</button>}
+        {capabilities.pricesManage && <button className="staff-button staff-button--copper" type="button" onClick={() => setShowPriceListForm(true)}>Nueva lista</button>}
       </div>
       {notice && <p className="staff-notice" role="status">{notice}</p>}
-      {error && <p className="staff-error" role="alert">{error}</p>}
-      {showPriceListForm && capabilities.pricesManage && (
-        <form className="catalog-form" onSubmit={createPriceList}>
-          <label><span>Clave</span><input required value={priceListForm.code} onChange={(event) => setPriceListForm({ ...priceListForm, code: event.target.value })} placeholder="LISTA-MXN" maxLength={64} /></label>
-          <label><span>Nombre</span><input required value={priceListForm.name} onChange={(event) => setPriceListForm({ ...priceListForm, name: event.target.value })} placeholder="Lista residencial" maxLength={180} /></label>
-          <label><span>Moneda</span><input required value={priceListForm.currencyCode} onChange={(event) => setPriceListForm({ ...priceListForm, currencyCode: event.target.value.toUpperCase() })} maxLength={3} /></label>
-          <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Crear lista</button>
-        </form>
-      )}
+      {error && !showPriceListForm && !showScheduleDialog && !editingPriceList && <p className="staff-error" role="alert">{error}</p>}
       <div className="catalog-pricelists__body">
         <aside className="catalog-rail">
           <label className="catalog-filters__toggle catalog-pricelists__archived"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>Mostrar archivadas</span></label>
           {loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}
-          {!loading && priceLists.length === 0 && <div className="staff-empty staff-empty--compact"><h2>Todavía no tienes listas de precio</h2><p>Crea una lista para empezar a programar precios de tus conceptos.</p></div>}
+          {!loading && priceLists.length === 0 && (
+            <div className="staff-empty staff-empty--compact">
+              <h2>Todavía no tienes listas de precio</h2>
+              <p>Crea una lista para empezar a programar precios de tus conceptos.</p>
+              {capabilities.pricesManage && <button className="staff-button staff-button--copper" type="button" onClick={() => setShowPriceListForm(true)}>Crear la primera lista</button>}
+            </div>
+          )}
           <div className="catalog-list-picker">
             {priceLists.map((list) => (
               <button className={`catalog-list-row${selectedPriceListId === list.id ? ' is-selected' : ''}`} type="button" key={list.id} onClick={() => setSelectedPriceListId(list.id)}>
@@ -195,22 +194,16 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
               <div className="catalog-price-summary">
                 <span>{priceListDetail.name}{priceListDetail.status === 'ARCHIVED' ? ' · Archivada' : ''}</span>
                 <strong>{priceListDetail.items.length} precios</strong>
-                {capabilities.pricesManage && !editingPriceList && (
-                  <div className="catalog-main__actions">
-                    <button className="staff-button" type="button" disabled={saving} onClick={startEditPriceList}>Editar</button>
-                    <button className="staff-button" type="button" disabled={saving} onClick={() => void togglePriceListStatus()}>{priceListDetail.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'}</button>
-                  </div>
-                )}
+                <div className="catalog-main__actions">
+                  {capabilities.pricesManage && priceListDetail.status === 'ACTIVE' && <button className="staff-button" type="button" disabled={saving} onClick={() => setShowScheduleDialog(true)}>Programar precio</button>}
+                  {capabilities.pricesManage && (
+                    <>
+                      <button className="staff-button" type="button" disabled={saving} onClick={startEditPriceList}>Editar</button>
+                      <button className="staff-button" type="button" disabled={saving} onClick={() => void togglePriceListStatus()}>{priceListDetail.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'}</button>
+                    </>
+                  )}
+                </div>
               </div>
-              {editingPriceList && (
-                <form className="catalog-form catalog-form--inline" onSubmit={savePriceListEdit}>
-                  <label><span>Nombre</span><input required value={priceListEditForm.name} onChange={(event) => setPriceListEditForm({ name: event.target.value })} maxLength={180} /></label>
-                  <div className="catalog-form__actions">
-                    <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar cambios</button>
-                    <button className="staff-button" type="button" disabled={saving} onClick={() => setEditingPriceList(false)}>Cancelar</button>
-                  </div>
-                </form>
-              )}
               {[
                 { key: 'actuales', label: 'Vigentes', items: priceGroups.actuales },
                 { key: 'futuros', label: 'Programados', items: priceGroups.futuros },
@@ -233,22 +226,59 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
                   )}
                 </div>
               ))}
-              {capabilities.pricesManage && priceListDetail.status === 'ACTIVE' && (
-                <form className="catalog-form catalog-form--price" onSubmit={schedulePriceForItem}>
-                  <p className="staff-section-label">Programar precio</p>
-                  <PrivateSelect id="catalog-price-item" label="Concepto" required value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={pricableItems.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder="Selecciona un concepto" disabled={saving} />
-                  <PrivateMoneyField id="catalog-price-amount" label="Importe" value={priceForm.amountInput} onValueChange={(value) => setPriceForm({ ...priceForm, amountInput: value })} placeholder="1,250.00" required disabled={saving} />
-                  <PrivateDatePicker id="catalog-price-effective-from" label="Vigente desde" required value={priceForm.effectiveFrom} onValueChange={(value) => setPriceForm({ ...priceForm, effectiveFrom: value })} disabled={saving} />
-                  <label><span>Motivo opcional</span><input value={priceForm.reason} onChange={(event) => setPriceForm({ ...priceForm, reason: event.target.value })} placeholder="Ajuste de proveedor" maxLength={300} /></label>
-                  {previewText && <p className="catalog-form__preview" aria-live="polite">{previewText}</p>}
-                  <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Programar precio</button>
-                </form>
-              )}
               {capabilities.pricesManage && priceListDetail.status === 'ARCHIVED' && <p className="catalog-form__note">Esta lista está archivada. Reactívala para poder programar nuevos precios.</p>}
             </>
           )}
         </section>
       </div>
+
+      {showPriceListForm && (
+        <PrivateDialog open onClose={() => setShowPriceListForm(false)} labelledBy="catalog-pricelist-create-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
+          <div className="catalog-category-dialog__head">
+            <h2 id="catalog-pricelist-create-title">Nueva lista</h2>
+            <button className="staff-button" type="button" onClick={() => setShowPriceListForm(false)}>Cerrar</button>
+          </div>
+          {error && <p className="staff-error" role="alert">{error}</p>}
+          <form className="catalog-form" onSubmit={createPriceList}>
+            <label><span>Clave</span><input required value={priceListForm.code} onChange={(event) => setPriceListForm({ ...priceListForm, code: event.target.value })} placeholder="LISTA-MXN" maxLength={64} /></label>
+            <label><span>Nombre</span><input required value={priceListForm.name} onChange={(event) => setPriceListForm({ ...priceListForm, name: event.target.value })} placeholder="Lista residencial" maxLength={180} /></label>
+            <label><span>Moneda</span><input required value={priceListForm.currencyCode} onChange={(event) => setPriceListForm({ ...priceListForm, currencyCode: event.target.value.toUpperCase() })} maxLength={3} /></label>
+            <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Crear lista</button>
+          </form>
+        </PrivateDialog>
+      )}
+
+      {editingPriceList && priceListDetail && (
+        <PrivateDialog open onClose={() => setEditingPriceList(false)} labelledBy="catalog-pricelist-edit-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
+          <div className="catalog-category-dialog__head">
+            <h2 id="catalog-pricelist-edit-title">Editar lista</h2>
+            <button className="staff-button" type="button" onClick={() => setEditingPriceList(false)}>Cerrar</button>
+          </div>
+          {error && <p className="staff-error" role="alert">{error}</p>}
+          <form className="catalog-form" onSubmit={savePriceListEdit}>
+            <label><span>Nombre</span><input required value={priceListEditForm.name} onChange={(event) => setPriceListEditForm({ name: event.target.value })} maxLength={180} /></label>
+            <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar cambios</button>
+          </form>
+        </PrivateDialog>
+      )}
+
+      {showScheduleDialog && priceListDetail && (
+        <PrivateDialog open onClose={() => setShowScheduleDialog(false)} labelledBy="catalog-schedule-price-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
+          <div className="catalog-category-dialog__head">
+            <h2 id="catalog-schedule-price-title">Programar precio</h2>
+            <button className="staff-button" type="button" onClick={() => setShowScheduleDialog(false)}>Cerrar</button>
+          </div>
+          {error && <p className="staff-error" role="alert">{error}</p>}
+          <form className="catalog-form catalog-form--price" onSubmit={schedulePriceForItem}>
+            <PrivateSelect id="catalog-price-item" label="Concepto" required value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={pricableItems.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder="Selecciona un concepto" disabled={saving} />
+            <PrivateMoneyField id="catalog-price-amount" label="Importe" value={priceForm.amountInput} onValueChange={(value) => setPriceForm({ ...priceForm, amountInput: value })} placeholder="1,250.00" required disabled={saving} />
+            <PrivateDatePicker id="catalog-price-effective-from" label="Vigente desde" required value={priceForm.effectiveFrom} onValueChange={(value) => setPriceForm({ ...priceForm, effectiveFrom: value })} disabled={saving} />
+            <label><span>Motivo opcional</span><input value={priceForm.reason} onChange={(event) => setPriceForm({ ...priceForm, reason: event.target.value })} placeholder="Ajuste de proveedor" maxLength={300} /></label>
+            {previewText && <p className="catalog-form__preview" aria-live="polite">{previewText}</p>}
+            <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Programar precio</button>
+          </form>
+        </PrivateDialog>
+      )}
     </div>
   );
 }
