@@ -2,12 +2,12 @@
 
 Esta carpeta contiene la documentación vigente que gobierna la reconstrucción de las superficies privadas de OCPOOL. Es la referencia de trabajo actual; no incluye la landing pública, que permanece congelada.
 
-## Documento principal
+## Estado (2026-09-25)
 
-- [`plans/2026-09-19-ocpool-commercial-v3-continuacion.md`](plans/2026-09-19-ocpool-commercial-v3-continuacion.md) — plan vigente, autocontenido: estado real, D1 objetivo y backlog ordenado hasta el rollout.
+`plans/` está vacía: el plan V3 ([`2026-09-19-ocpool-commercial-v3-continuacion.md`](../historicos/plans/2026-09-19-ocpool-commercial-v3-continuacion.md)) cerró su backlog completo para alcance local el 2026-09-20 y quedó archivado en [`../historicos/plans/`](../historicos/plans/) junto con el plan V2 que reemplazó. Lo único abierto de ese plan es T1 (piloto de usabilidad humano — coordinación externa, protocolo en [`../runbooks/pilot-usability-protocol.md`](../runbooks/pilot-usability-protocol.md)); no reactivar decisiones de los planes archivados sin ADR nuevo.
 
-El plan/spec/review V2 originales (2026-09-10) quedaron archivados en [`../historicos/`](../historicos/) — sólo aportan contexto de auditoría inicial, no reactivan decisiones ya sustituidas. Los ADR de gobierno, política, primitives y aceptación relacionados viven en [`../adr/`](../adr/), incluyendo el [ADR de resolución de política v2](../adr/2026-09-19-commercial-policy-v2-resolution.md) que cierra BIZ-03/04/06/07/09/10/13.
+Los ADR de gobierno, política, primitives y aceptación relacionados viven en [`../adr/`](../adr/), incluyendo el [ADR de resolución de política v2](../adr/2026-09-19-commercial-policy-v2-resolution.md) que cierra BIZ-03/04/06/07/09/10/13.
 
 ## Regla de uso
 
-Para trabajo nuevo se consulta primero el plan vigente de esta carpeta, después los ADR relacionados y finalmente [`PROJECT_STATUS.md`](../../PROJECT_STATUS.md) para el detalle exacto de evidencia por commit.
+Mientras no exista un nuevo plan vigente en esta carpeta, la fuente operativa de trabajo es [`PROJECT_STATUS.md`](../../PROJECT_STATUS.md) (bitácora exacta de cada slice, con commit y conteo de pruebas) más los ADR relacionados. Un plan nuevo se agrega aquí en `plans/` cuando arranque la siguiente iniciativa.

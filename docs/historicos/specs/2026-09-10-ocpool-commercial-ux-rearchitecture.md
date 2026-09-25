@@ -1,8 +1,9 @@
 # OCPOOL — Especificación normativa de experiencia comercial V2
 
 > **ARCHIVADO 2026-09-19:** documento histórico. Ver
-> [`docs/ocpool-commercial-v2/plans/2026-09-19-ocpool-commercial-v3-continuacion.md`](../../ocpool-commercial-v2/plans/2026-09-19-ocpool-commercial-v3-continuacion.md)
-> para el norte y el alcance vigentes.
+> [`docs/historicos/plans/2026-09-19-ocpool-commercial-v3-continuacion.md`](../plans/2026-09-19-ocpool-commercial-v3-continuacion.md)
+> (también archivado, backlog cerrado 2026-09-20) para el norte que sucedió a este; fuente
+> operativa vigente: `PROJECT_STATUS.md`.
 
 **Fecha:** 2026-09-10
 **Versión:** 2.0

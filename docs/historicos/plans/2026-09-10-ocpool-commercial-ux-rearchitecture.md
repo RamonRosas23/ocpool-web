@@ -1,11 +1,12 @@
 # OCPOOL — Plan maestro integrado de rearquitectura comercial V2
 
-> **ARCHIVADO 2026-09-19:** este plan queda como historial. El plan vigente es
-> [`docs/ocpool-commercial-v2/plans/2026-09-19-ocpool-commercial-v3-continuacion.md`](../../ocpool-commercial-v2/plans/2026-09-19-ocpool-commercial-v3-continuacion.md),
-> que resume el estado real alcanzado (tablero/evidencia de este documento
-> quedaron desactualizados frente a `PROJECT_STATUS.md` durante la ejecución) y
-> continúa la secuencia con D1 real, BIZ resueltas y el resto del backlog. No
-> reactivar decisiones de aquí sin ADR nuevo.
+> **ARCHIVADO 2026-09-19:** este plan queda como historial. Le sucedió
+> [`2026-09-19-ocpool-commercial-v3-continuacion.md`](2026-09-19-ocpool-commercial-v3-continuacion.md)
+> (también archivado desde 2026-09-25, backlog cerrado), que resumió el estado real alcanzado
+> (tablero/evidencia de este documento quedaron desactualizados frente a `PROJECT_STATUS.md`
+> durante la ejecución) y continuó la secuencia con D1 real, BIZ resueltas y el resto del
+> backlog. No reactivar decisiones de aquí sin ADR nuevo; fuente operativa vigente:
+> `PROJECT_STATUS.md`.
 
 > **Versión del plan:** 2.0
 > **Estado:** plan revisado; G0 sigue abierto y se permite implementar verticales de integridad local cuando reducen un bloqueo P0 sin activar flags ni tocar la landing.

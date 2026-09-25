@@ -2,8 +2,9 @@
 
 > **ARCHIVADO 2026-09-19:** documento histórico, conservado como evidencia de
 > la auditoría original. Ver
-> [`docs/ocpool-commercial-v2/plans/2026-09-19-ocpool-commercial-v3-continuacion.md`](../../ocpool-commercial-v2/plans/2026-09-19-ocpool-commercial-v3-continuacion.md)
-> para el estado y el plan vigentes.
+> [`docs/historicos/plans/2026-09-19-ocpool-commercial-v3-continuacion.md`](../plans/2026-09-19-ocpool-commercial-v3-continuacion.md)
+> (también archivado, backlog cerrado 2026-09-20) para el estado que sucedió a este; fuente
+> operativa vigente: `PROJECT_STATUS.md`.
 
 **Fecha:** 2026-09-10
 **Especificación revisada:** `docs/ocpool-commercial-v2/specs/2026-09-10-ocpool-commercial-ux-rearchitecture.md`

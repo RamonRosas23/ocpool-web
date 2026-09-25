@@ -778,7 +778,7 @@ Se considera terminada porque la base instala desde cero, levanta servicios repr
 
 ## Planes vigentes
 
-- `docs/ocpool-commercial-v2/plans/2026-09-19-ocpool-commercial-v3-continuacion.md` — **plan operativo vigente**, autocontenido: estado real por rama, D1 objetivo detallado y backlog ordenado hasta rollout. Reemplaza al plan V2 del 2026-09-10 como fuente de trabajo.
+- `docs/historicos/plans/2026-09-19-ocpool-commercial-v3-continuacion.md` — plan V3, autocontenido (estado real por rama, D1 objetivo detallado y backlog ordenado hasta rollout); archivado 2026-09-25 porque su backlog completo (D1 a J1, deuda técnica §6, hardening H1-01 a H1-07) cerró para alcance local el 2026-09-20 (ver "Próximo paso autorizado" abajo). Reemplazó al plan V2 del 2026-09-10 como fuente de trabajo; hoy no hay plan activo — la fuente operativa es esta bitácora hasta que arranque una nueva iniciativa.
 - `docs/adr/2026-09-19-commercial-policy-v2-resolution.md` — ADR que cierra BIZ-03/04/06/07/09/10/13 con decisión directa de producto (perfiles fiscales IVA general 16%/frontera 8% seleccionables, sin RFC inventado; umbral de descuento 10%; firmante = contacto autenticado; términos/privacidad redactados en `docs/legal/terminos-y-privacidad-comercial.md`; J1 confirmado sin cambio de alcance).
 - `docs/adr/2026-09-10-commercial-lifecycle-v2.md` — ADR de ciclo canónico V2, sigue vigente sin cambio.
 - `docs/adr/2026-09-10-commercial-policy-v1.md` — histórico; sus filas pendientes quedaron cerradas por el ADR del 2026-09-19 de arriba.
