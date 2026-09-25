@@ -1052,7 +1052,7 @@ a:hover .arrow, button:hover .arrow { transform: translate(3px, -3px); }
 .catalog-detail-loading span { height: 16px; background: rgba(24,37,42,.08); animation: staff-shimmer 1.4s ease-in-out infinite; }
 .catalog-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin-top: 18px; padding: 18px; border: 1px solid var(--staff-line); background: rgba(239,235,226,.6); }
 .catalog-form label { display: grid; gap: 6px; }
-.catalog-form label span, .catalog-form > p { color: var(--staff-muted); font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.catalog-form label span, .catalog-form > p { color: var(--staff-muted); font-size: 11px; font-weight: 700; letter-spacing: normal; text-transform: none; }
 .catalog-form input:not(.private-control):not([type="checkbox"]), .catalog-form select, .catalog-form textarea:not(.private-control) { width: 100%; min-height: 40px; border: 1px solid var(--staff-line); border-radius: 0; padding: 8px 10px; background: var(--staff-paper); color: var(--staff-ink); font-size: 12px; outline: none; }
 .catalog-form textarea { resize: vertical; }
 .catalog-form button, .catalog-form > p, .catalog-form__pair, .catalog-form__concept-filter { grid-column: 1 / -1; }
