@@ -119,9 +119,93 @@ test.describe('staff catalog operations', () => {
 
     await expect(page.getByRole('heading', { name: 'Catálogo', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Volver al dashboard' })).toHaveAttribute('href', '/staff');
+    await expect(page.getByRole('tab', { name: 'Conceptos' })).toHaveAttribute('aria-selected', 'true');
+
+    // --- Pestaña Conceptos: alta, edición, archivado/reactivado ---
     const fixtureItemRow = page.getByRole('button', { name: new RegExp(itemCode) });
     await expect(fixtureItemRow).toBeVisible();
     await fixtureItemRow.click();
+    await expectNoSeriousA11yViolations(page);
+
+    await page.getByRole('button', { name: 'Nuevo concepto' }).click();
+    await page.getByRole('checkbox', { name: 'Especificar clave manualmente' }).check();
+    await page.getByLabel('Clave', { exact: true }).fill(createdItemCode);
+    await page.getByLabel('Nombre', { exact: true }).fill(`Nuevo concepto ${suffix}`);
+    await page.getByRole('combobox', { name: 'Unidad', exact: true }).click();
+    await page.getByRole('option', { name: 'servicio', exact: true }).click();
+    await page.getByLabel('Descripción', { exact: true }).fill('Concepto creado desde el flujo de catálogo.');
+    await page.getByRole('combobox', { name: 'Categoría' }).click();
+    await page.getByRole('option', { name: `E2E categoría ${suffix}`, exact: true }).click();
+    await page.getByRole('button', { name: 'Guardar concepto' }).click();
+    await expect(page.getByRole('status')).toContainText(`Concepto ${createdItemCode} creado.`);
+    const createdRow = page.getByRole('button', { name: new RegExp(createdItemCode) });
+    await expect(createdRow).toBeVisible();
+    createdItemId = (await prisma.catalogItem.findUniqueOrThrow({ where: { code: createdItemCode }, select: { id: true } })).id;
+
+    const itemActions = page.locator('.catalog-main__top .catalog-main__actions');
+    await itemActions.getByRole('button', { name: 'Archivar' }).click();
+    await expect(page.getByRole('status')).toContainText('Concepto archivado.');
+    await expect(page.getByRole('button', { name: new RegExp(createdItemCode) })).toHaveCount(0);
+
+    // Categorías ahora viven en el diálogo "Gestionar categorías".
+    await page.getByRole('button', { name: 'Gestionar categorías' }).click();
+    const categoryDialog = page.getByRole('dialog', { name: 'Categorías del catálogo' });
+    await expect(categoryDialog).toBeVisible();
+    await categoryDialog.getByRole('button', { name: 'Nueva categoría' }).click();
+    await categoryDialog.getByLabel('Nombre', { exact: true }).fill(`Categoría nueva ${suffix}`);
+    await categoryDialog.getByRole('button', { name: 'Crear categoría' }).click();
+    const categoryNotice = await categoryDialog.getByRole('status').innerText();
+    const categoryMatch = /Categoría (CAT-\d{6}) creada\./.exec(categoryNotice);
+    expect(categoryMatch).not.toBeNull();
+    const newCategoryCode = categoryMatch![1];
+    newCategoryId = (await prisma.catalogCategory.findUniqueOrThrow({ where: { code: newCategoryCode }, select: { id: true } })).id;
+    await expect(categoryDialog.locator('.catalog-category-row', { hasText: newCategoryCode })).toBeVisible();
+
+    await categoryDialog.getByRole('button', { name: 'Nueva categoría' }).click();
+    await categoryDialog.getByLabel('Nombre', { exact: true }).fill(`Subcategoría E2E ${suffix}`);
+    await categoryDialog.getByRole('combobox', { name: 'Categoría padre' }).click();
+    await page.getByRole('option', { name: `Categoría nueva ${suffix}`, exact: true }).click();
+    await categoryDialog.getByRole('button', { name: 'Crear categoría' }).click();
+    const childNotice = await categoryDialog.getByRole('status').innerText();
+    const childMatch = /Categoría (CAT-\d{6}) creada\./.exec(childNotice);
+    expect(childMatch).not.toBeNull();
+    const childCategoryCode = childMatch![1];
+    childCategoryId = (await prisma.catalogCategory.findUniqueOrThrow({ where: { code: childCategoryCode }, select: { id: true } })).id;
+    await expect(categoryDialog.locator('.catalog-category-row', { hasText: childCategoryCode })).toContainText(`en Categoría nueva ${suffix}`);
+    await categoryDialog.getByRole('button', { name: 'Cerrar' }).click();
+    await expect(categoryDialog).not.toBeVisible();
+
+    // El árbol de categorías filtra la lista de conceptos.
+    await page.getByRole('button', { name: `Categoría nueva ${suffix}` }).click();
+    await expect(page.getByRole('button', { name: new RegExp(itemCode) })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Todos' }).click();
+    await expect(fixtureItemRow).toBeVisible();
+
+    await fixtureItemRow.click();
+    await itemActions.getByRole('button', { name: 'Editar' }).click();
+    const editedItemName = `Concepto E2E editado ${suffix}`;
+    await page.getByLabel('Nombre', { exact: true }).fill(editedItemName);
+    await page.getByRole('combobox', { name: 'Unidad', exact: true }).click();
+    await page.getByRole('option', { name: 'lote', exact: true }).click();
+    await page.getByRole('button', { name: 'Guardar cambios' }).click();
+    await expect(page.getByRole('status')).toContainText('Concepto actualizado.');
+    await expect(fixtureItemRow).toContainText(editedItemName);
+
+    await itemActions.getByRole('button', { name: 'Archivar' }).click();
+    await expect(page.getByRole('status')).toContainText('Concepto archivado.');
+    await expect(page.getByRole('button', { name: new RegExp(itemCode) })).toHaveCount(0);
+
+    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).check();
+    await expect(fixtureItemRow).toBeVisible();
+    await expect(fixtureItemRow).toContainText('Archivado');
+    await fixtureItemRow.click();
+    await itemActions.getByRole('button', { name: 'Reactivar' }).click();
+    await expect(page.getByRole('status')).toContainText('Concepto reactivado.');
+    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).uncheck();
+
+    // --- Pestaña Listas de precio ---
+    await page.getByRole('tab', { name: 'Listas de precio' }).click();
+    await expect(page.getByRole('tab', { name: 'Listas de precio' })).toHaveAttribute('aria-selected', 'true');
     const fixturePriceList = page.getByRole('button', { name: new RegExp(priceListCode) });
     await expect(fixturePriceList).toBeVisible();
     await fixturePriceList.click();
@@ -163,76 +247,7 @@ test.describe('staff catalog operations', () => {
     await expect(page.locator('.catalog-price-group', { hasText: 'Vigentes' })).toContainText('MXN 1,100.00');
     await expect(page.locator('.catalog-price-group', { hasText: 'Programados' })).toContainText('MXN 990.00');
 
-    await page.getByRole('button', { name: 'Agregar concepto' }).click();
-    await page.getByRole('checkbox', { name: 'Especificar clave manualmente' }).check();
-    await page.getByLabel('Clave', { exact: true }).fill(createdItemCode);
-    await page.getByLabel('Nombre', { exact: true }).fill(`Nuevo concepto ${suffix}`);
-    await page.getByRole('combobox', { name: 'Unidad', exact: true }).click();
-    await page.getByRole('option', { name: 'servicio', exact: true }).click();
-    await page.getByLabel('Descripción', { exact: true }).fill('Concepto creado desde el flujo de catálogo.');
-    await page.getByRole('combobox', { name: 'Categoría' }).click();
-    await page.getByRole('option', { name: `E2E categoría ${suffix}`, exact: true }).click();
-    await page.getByRole('button', { name: 'Guardar concepto' }).click();
-    await expect(page.getByRole('status')).toContainText(`Concepto ${createdItemCode} creado.`);
-    const createdRow = page.getByRole('button', { name: new RegExp(createdItemCode) });
-    await expect(createdRow).toBeVisible();
-    createdItemId = (await prisma.catalogItem.findUniqueOrThrow({ where: { code: createdItemCode }, select: { id: true } })).id;
-
-    const itemActions = page.locator('.catalog-main__top .catalog-main__actions');
-    await itemActions.getByRole('button', { name: 'Archivar' }).click();
-    await expect(page.getByRole('status')).toContainText('Concepto archivado.');
-    await expect(page.getByRole('button', { name: new RegExp(createdItemCode) })).toHaveCount(0);
-
-    // K1-03: create a category from the UI (previously impossible), then edit/archive/reactivate
-    // the fixture item and price list, using "Mostrar archivados" to see them reappear.
-    // K1-03 parte 2: the code is left to autogenerate (read back from the success notice) and a
-    // second category is created as its child via the new "Categoría padre" picker.
-    await page.getByRole('button', { name: 'Nueva categoría' }).click();
-    await page.getByLabel('Nombre', { exact: true }).fill(`Categoría nueva ${suffix}`);
-    await page.getByRole('button', { name: 'Crear categoría' }).click();
-    const categoryNotice = await page.getByRole('status').innerText();
-    const categoryMatch = /Categoría (CAT-\d{6}) creada\./.exec(categoryNotice);
-    expect(categoryMatch).not.toBeNull();
-    const newCategoryCode = categoryMatch![1];
-    newCategoryId = (await prisma.catalogCategory.findUniqueOrThrow({ where: { code: newCategoryCode }, select: { id: true } })).id;
-    await expect(page.locator('.catalog-category-row', { hasText: newCategoryCode })).toBeVisible();
-
-    await page.getByRole('button', { name: 'Nueva categoría' }).click();
-    await page.getByLabel('Nombre', { exact: true }).fill(`Subcategoría E2E ${suffix}`);
-    await page.getByRole('combobox', { name: 'Categoría padre' }).click();
-    await page.getByRole('option', { name: `Categoría nueva ${suffix}`, exact: true }).click();
-    await page.getByRole('button', { name: 'Crear categoría' }).click();
-    const childNotice = await page.getByRole('status').innerText();
-    const childMatch = /Categoría (CAT-\d{6}) creada\./.exec(childNotice);
-    expect(childMatch).not.toBeNull();
-    const childCategoryCode = childMatch![1];
-    childCategoryId = (await prisma.catalogCategory.findUniqueOrThrow({ where: { code: childCategoryCode }, select: { id: true } })).id;
-    await expect(page.locator('.catalog-category-row', { hasText: childCategoryCode })).toContainText(`en Categoría nueva ${suffix}`);
-
-    await fixtureItemRow.click();
-    await itemActions.getByRole('button', { name: 'Editar' }).click();
-    const editedItemName = `Concepto E2E editado ${suffix}`;
-    await page.getByLabel('Nombre', { exact: true }).fill(editedItemName);
-    await page.getByRole('combobox', { name: 'Unidad', exact: true }).click();
-    await page.getByRole('option', { name: 'lote', exact: true }).click();
-    await page.getByRole('button', { name: 'Guardar cambios' }).click();
-    await expect(page.getByRole('status')).toContainText('Concepto actualizado.');
-    await expect(fixtureItemRow).toContainText(editedItemName);
-
-    await itemActions.getByRole('button', { name: 'Archivar' }).click();
-    await expect(page.getByRole('status')).toContainText('Concepto archivado.');
-    await expect(page.getByRole('button', { name: new RegExp(itemCode) })).toHaveCount(0);
-
-    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).check();
-    await expect(fixtureItemRow).toBeVisible();
-    await expect(fixtureItemRow).toContainText('Archivado');
-    await fixtureItemRow.click();
-    await itemActions.getByRole('button', { name: 'Reactivar' }).click();
-    await expect(page.getByRole('status')).toContainText('Concepto reactivado.');
-    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).uncheck();
-
     const priceListActions = page.locator('.catalog-price-summary .catalog-main__actions');
-    await fixturePriceList.click();
     await priceListActions.getByRole('button', { name: 'Editar' }).click();
     const editedPriceListName = `Lista E2E editada ${suffix}`;
     await page.getByLabel('Nombre', { exact: true }).fill(editedPriceListName);
@@ -244,16 +259,16 @@ test.describe('staff catalog operations', () => {
     await expect(page.getByRole('status')).toContainText('Lista archivada.');
     await expect(page.getByText('Esta lista está archivada.')).toBeVisible();
 
-    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).check();
+    await page.getByRole('checkbox', { name: 'Mostrar archivadas' }).check();
     await expect(fixturePriceList).toContainText('Archivada');
     await priceListActions.getByRole('button', { name: 'Reactivar' }).click();
     await expect(page.getByRole('status')).toContainText('Lista reactivada.');
-    await page.getByRole('checkbox', { name: 'Mostrar archivados' }).uncheck();
+    await page.getByRole('checkbox', { name: 'Mostrar archivadas' }).uncheck();
 
-    // K1-05 parte 2: promote a special quote-line concept (no catalogItemId) into a real
-    // catalog item, linking it to the category created earlier in this same test.
-    await page.getByRole('button', { name: 'Ver conceptos especiales' }).click();
-    const specialRow = page.locator('.catalog-category-row', { hasText: specialConceptName });
+    // --- Pestaña Por revisar ---
+    await page.getByRole('tab', { name: 'Por revisar' }).click();
+    await expect(page.getByRole('tab', { name: 'Por revisar' })).toHaveAttribute('aria-selected', 'true');
+    const specialRow = page.locator('.catalog-review-row', { hasText: specialConceptName });
     await expect(specialRow).toBeVisible();
     await specialRow.getByRole('combobox').click();
     await page.getByRole('option', { name: `Categoría nueva ${suffix}`, exact: true }).click();
@@ -261,6 +276,7 @@ test.describe('staff catalog operations', () => {
     await expect(page.getByRole('status')).toContainText('vinculado.');
     await expect(specialRow).toContainText('Promovido a');
 
+    await page.getByRole('tab', { name: 'Conceptos' }).click();
     await page.getByLabel('Buscar concepto', { exact: true }).fill(specialConceptName);
     await page.getByRole('button', { name: 'Buscar', exact: true }).click();
     await expect(page.getByRole('button', { name: new RegExp(specialConceptName) })).toBeVisible();
