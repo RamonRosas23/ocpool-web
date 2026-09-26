@@ -71,12 +71,38 @@ async function main(): Promise<void> {
   await prisma.client.deleteMany({ where: { id: { in: manifest.clientIds } } });
 
   console.log('Retirando catálogo y precios…');
-  await prisma.priceListItem.deleteMany({ where: { priceListId: { in: manifest.priceListIds } } });
+  // Además de los precios de las listas del piloto, cualquier precio que otra lista le haya puesto
+  // después a un concepto del piloto: sin esto, la FK de price_list_items impedía borrar el concepto
+  // (pasó con una lista de pruebas que había programado precios a PILOTO-ITEM-07/09/10).
+  await prisma.priceListItem.deleteMany({ where: { OR: [{ priceListId: { in: manifest.priceListIds } }, { catalogItemId: { in: manifest.itemIds } }] } });
   await prisma.priceList.deleteMany({ where: { id: { in: manifest.priceListIds } } });
-  await prisma.catalogItem.deleteMany({ where: { id: { in: manifest.itemIds } } });
-  await prisma.catalogCategory.deleteMany({ where: { id: { in: manifest.categoryIds } } });
+
+  // Un concepto del piloto usado por una cotización o una promoción AJENA al piloto no se puede borrar
+  // sin romper ese historial. En vez de fallar, se archiva y se libera su clave (las líneas de
+  // cotización guardan su propia copia de la clave, así que su historial no cambia): el siguiente
+  // `pilot:seed` vuelve a poder crear PILOTO-ITEM-xx.
+  const referencedItemIds = new Set([
+    ...(await prisma.quoteLineSnapshot.findMany({ where: { catalogItemId: { in: manifest.itemIds } }, select: { catalogItemId: true }, distinct: ['catalogItemId'] })).flatMap(({ catalogItemId }) => catalogItemId ? [catalogItemId] : []),
+    ...(await prisma.specialConceptPromotion.findMany({ where: { catalogItemId: { in: manifest.itemIds } }, select: { catalogItemId: true }, distinct: ['catalogItemId'] })).map(({ catalogItemId }) => catalogItemId),
+  ]);
+  await prisma.catalogItem.deleteMany({ where: { id: { in: manifest.itemIds.filter((id) => !referencedItemIds.has(id)) } } });
+  const retiredSuffix = `-RETIRADO-${Date.now().toString(36).toUpperCase()}`;
+  const keptItems = await prisma.catalogItem.findMany({ where: { id: { in: [...referencedItemIds] } }, select: { id: true, code: true } });
+  for (const item of keptItems) {
+    await prisma.catalogItem.update({ where: { id: item.id }, data: { status: 'ARCHIVED', code: `${item.code}${retiredSuffix}`.slice(0, 64) } });
+  }
+
+  // Igual para las categorías: sólo se borran las que ya no tienen conceptos ni subcategorías.
+  const keptCategories = await prisma.catalogCategory.findMany({ where: { id: { in: manifest.categoryIds }, OR: [{ items: { some: {} } }, { children: { some: {} } }] }, select: { id: true, code: true } });
+  await prisma.catalogCategory.deleteMany({ where: { id: { in: manifest.categoryIds.filter((id) => !keptCategories.some((category) => category.id === id)) } } });
+  for (const category of keptCategories) {
+    await prisma.catalogCategory.update({ where: { id: category.id }, data: { status: 'ARCHIVED', code: `${category.code}${retiredSuffix}`.slice(0, 64) } });
+  }
 
   await rm(MANIFEST_PATH, { force: true });
+  if (keptItems.length || keptCategories.length) {
+    console.warn(`\nAviso: ${keptItems.length} concepto(s) y ${keptCategories.length} categoría(s) del piloto siguen en uso fuera del piloto; se archivaron con la clave liberada (sufijo ${retiredSuffix}) en vez de borrarse.`);
+  }
   console.log('\nPiloto retirado por completo.');
   await prisma.$disconnect();
 }
