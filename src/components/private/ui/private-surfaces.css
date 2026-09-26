@@ -954,11 +954,12 @@
 .analytics-period strong { color: var(--private-color-brand); font-size: 15px; font-weight: 700; }
 .analytics-period span { font-size: 12px; }
 .analytics-controls { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 14px 24px; margin-bottom: 20px; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); padding: 14px 16px; background: var(--private-color-surface-muted); }
-.analytics-presets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.analytics-presets { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.analytics-presets__track { display: inline-flex; gap: 2px; border: 1px solid var(--private-color-border); border-radius: 999px; padding: 3px; background: var(--private-color-surface-sunken); }
 .analytics-presets > span { margin-right: 4px; color: var(--private-color-ink); font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
-.analytics-presets button { min-height: 38px; border: 1px solid var(--private-color-border-control); border-radius: 999px; padding: 0 16px; background: #fff; color: var(--private-color-ink); cursor: pointer; font-size: 13px; font-weight: 650; transition: background var(--private-motion-standard), border-color var(--private-motion-standard), color var(--private-motion-standard); }
-.analytics-presets button:hover:not(:disabled) { border-color: var(--private-color-border-strong); background: var(--private-color-surface); }
-.analytics-presets button.is-selected { border-color: var(--private-color-brand); background: var(--private-color-brand); color: #fff; }
+.analytics-presets button { min-height: 38px; border: 1px solid transparent; border-radius: 999px; padding: 0 16px; background: transparent; color: var(--private-color-ink-muted); cursor: pointer; font-size: 13px; font-weight: 650; transition: background var(--private-motion-standard), color var(--private-motion-standard), box-shadow var(--private-motion-standard); }
+.analytics-presets button:hover:not(:disabled):not(.is-selected) { background: rgba(20, 35, 42, .05); color: var(--private-color-brand); }
+.analytics-presets button.is-selected { border-color: rgba(9, 36, 51, .08); background: #fff; color: var(--private-color-brand); box-shadow: 0 1px 2px rgba(9, 36, 51, .08), 0 4px 12px -6px rgba(9, 36, 51, .22); }
 .analytics-presets button:disabled { cursor: not-allowed; opacity: .45; }
 .analytics-date-form { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; }
 .analytics-date-form > .private-field { width: 200px; }
@@ -1573,3 +1574,23 @@ a.staff-workqueue__more:hover { background: var(--private-color-surface-muted); 
   .staff-inbox .staff-filters { grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; align-items: end; }
   .staff-inbox .staff-filters .staff-button--filter { width: auto; }
 }
+
+/* Password reveal on the employee login. */
+.auth-password { position: relative; display: block; }
+.auth-password input { padding-right: 52px; }
+.auth-password__toggle { position: absolute; top: 50%; right: 6px; display: inline-grid; width: 40px; height: 40px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--private-color-ink-muted); cursor: pointer; transform: translateY(-50%); transition: background var(--private-motion-standard), color var(--private-motion-standard); }
+.auth-password__toggle:hover:not(:disabled) { background: var(--private-color-surface-muted); color: var(--private-color-brand); }
+.auth-password__toggle:disabled { cursor: not-allowed; opacity: .4; }
+.handoff-contact__name { color: var(--private-color-brand); font-size: 15px; font-weight: 650; }
+
+/* Staff 404 */
+.staff-not-found { display: grid; min-height: calc(100vh - var(--staff-header-height) - 120px); place-items: center; }
+.staff-not-found__card { display: grid; width: min(100%, 520px); justify-items: start; gap: 4px; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-dialog); padding: clamp(28px, 5vw, 40px); background: var(--private-color-surface); box-shadow: var(--private-shadow-raised); }
+.staff-not-found__card .staff-kicker { margin: 4px 0 0; }
+.staff-not-found__card h1 { margin: 0; color: var(--private-color-brand); font-size: clamp(24px, 3vw, 30px); font-weight: 750; letter-spacing: -.025em; }
+.staff-not-found__card > p:not(.staff-kicker) { max-width: 420px; margin: 6px 0 0; color: var(--private-color-ink-muted); font-size: 14.5px; line-height: 1.6; }
+.staff-not-found__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+/* Reflow at 200% zoom (WCAG 1.4.10): large headings may break inside long words instead of
+   pushing the page sideways — Manrope is wider than the system font these sizes were tuned for. */
+.client-hero h1, .client-restricted h1, .client-detail__intro h2, .auth-panel h2, .staff-not-found__card h1, .catalog-main__top h2, .staff-empty h2, .client-empty h2 { overflow-wrap: anywhere; }

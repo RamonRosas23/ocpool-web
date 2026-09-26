@@ -792,7 +792,8 @@ export default function StaffQuotesPanel() {
         savedSnapshotRef.current = snapshotToPersist;
         // Re-congela el precio snapshot (fidelidad S0-02) sólo si nada cambió localmente durante el round-trip;
         // si el usuario ya siguió editando, dejamos sus ediciones intactas — el próximo ciclo las persistirá.
-        if (freshVersion && draftSnapshotKey(selectedPriceListIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current, draftSectionsRef.current) === snapshotToPersist) {
+        const localUnchanged = draftSnapshotKey(selectedPriceListIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current, draftSectionsRef.current) === snapshotToPersist;
+        if (freshVersion && localUnchanged) {
           const persistedByItem = new Map(freshVersion.lines.filter((line) => line.catalogItemId !== null).map((line) => [line.catalogItemId as string, line]));
           setDraftLines((lines) => lines.map((line) => {
             if (line.special || !line.catalogItemId) return line;
@@ -809,7 +810,11 @@ export default function StaffQuotesPanel() {
             };
           }));
         }
-        setAutosaveState('saved');
+        // Si el borrador cambió durante el viaje de ida y vuelta, lo persistido ya no es lo que se ve
+        // (y el precio de las líneas nuevas todavía no se re-congeló): mostrar "Guardado" era una
+        // señal falsa. Con 'dirty' el efecto de autoguardado programa el siguiente ciclo, y sólo ése
+        // -- cuando lo guardado coincide con la pantalla -- vuelve a marcar "Guardado".
+        setAutosaveState(localUnchanged ? 'saved' : 'dirty');
         return true;
       } catch (caught) {
         if (persistDraftGenerationRef.current === generation) {

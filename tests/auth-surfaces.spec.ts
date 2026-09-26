@@ -76,7 +76,9 @@ test.describe('auth browser surfaces', () => {
     await page.getByLabel('Correo').fill(`unknown-${suffix}@example.test`);
     await page.getByLabel('Contraseña').fill('WrongAuthSurface123!');
     await page.getByRole('button', { name: 'Entrar' }).click();
-    await expect(page.locator('.auth-feedback--error')).toContainText('No fue posible iniciar sesión.');
+    // Desde b13414e el formulario muestra el mensaje genérico del servidor (no revela si falló el
+    // correo o la contraseña); la prueba se había quedado con el texto de respaldo anterior.
+    await expect(page.locator('.auth-feedback--error')).toContainText('Correo o contraseña inválidos.');
     await expect(page.locator('body')).not.toContainText(/no existe|no registrado|inactivo/i);
     await expectNoSeriousA11yViolations(page);
 
@@ -108,8 +110,11 @@ test.describe('auth browser surfaces', () => {
     await page.goto('/login');
     await page.getByLabel('Correo').fill(adminEmail);
     await page.getByLabel('Contraseña').fill(adminPassword);
-    await page.getByLabel('Código de autenticación').fill(generateTotpCode(employeeMfa.secret, Date.now()));
+    // Login de dos pasos (U1): el campo de código sólo aparece después de que el servidor responde
+    // MFA_REQUIRED a una contraseña correcta -- la versión anterior de esta prueba lo buscaba antes.
     await page.getByRole('button', { name: 'Entrar' }).click();
+    await page.getByLabel('Código de autenticación').fill(generateTotpCode(employeeMfa.secret, Date.now()));
+    await page.getByRole('button', { name: 'Verificar código' }).click();
     await expect(page).toHaveURL(/\/staff\/?$/);
   });
 

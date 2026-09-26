@@ -214,6 +214,10 @@ test.describe('staff catalog operations', () => {
     await expect(page.getByRole('button', { name: new RegExp(itemCode) })).toHaveCount(0);
 
     await page.getByRole('checkbox', { name: 'Mostrar archivados' }).check();
+    // Con archivados incluidos el catálogo puede pasar de una página (p. ej. con fixtures del
+    // piloto cargados); se acota por clave para no depender del volumen de datos del entorno.
+    await page.getByLabel('Buscar concepto', { exact: true }).fill(itemCode);
+    await page.getByRole('button', { name: 'Buscar', exact: true }).click();
     await expect(fixtureItemRow).toBeVisible();
     await expect(fixtureItemRow).toContainText('Archivado');
     await fixtureItemRow.click();

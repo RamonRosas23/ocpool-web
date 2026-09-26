@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { PrivateCombobox, PrivateDatePicker, PrivateDialog, PrivateMoneyField } from '@/components/private/ui';
 import { formatDate } from '@/lib/format-date';
@@ -26,6 +26,13 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
   const [priceListDetail, setPriceListDetail] = useState<PriceListDetail | null>(null);
   const [pricableItems, setPricableItems] = useState<PricableItem[]>([]);
   const [selectedPriceListId, setSelectedPriceListId] = useState<string | null>(null);
+  // Una lista recién archivada (con "Mostrar archivadas" apagado) se queda seleccionada y visible en
+  // el rail hasta que el usuario elija otra lista o cambie el filtro. Antes desaparecía al instante y
+  // la selección saltaba a otra lista mientras dos cargas de detalle competían: el usuario perdía de
+  // vista lo que acababa de archivar y el aviso "Reactívala…" casi nunca llegaba a mostrarse.
+  const [pinnedArchivedId, setPinnedArchivedId] = useState<string | null>(null);
+  const pinnedArchivedIdRef = useRef<string | null>(null);
+  const pinArchived = (id: string | null) => { pinnedArchivedIdRef.current = id; setPinnedArchivedId(id); };
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,6 +55,11 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
     : priceDialogMode === 'programado' && editingConceptName ? `Reprogramar precio de ${editingConceptName}`
     : 'Programar precio';
   const priceDialogSubmitLabel = priceDialogMode === 'vigente' ? 'Actualizar precio' : priceDialogMode === 'programado' ? 'Reprogramar precio' : 'Programar precio';
+  const railPriceLists = useMemo(() => {
+    if (!pinnedArchivedId || priceListDetail?.id !== pinnedArchivedId || priceLists.some((list) => list.id === pinnedArchivedId)) return priceLists;
+    const { items, ...summary } = priceListDetail;
+    return [...priceLists, { ...summary, _count: summary._count ?? { items: items.length } }];
+  }, [pinnedArchivedId, priceListDetail, priceLists]);
   const priceGroups = useMemo(() => {
     const groups = { actuales: [] as PriceListDetail['items'], futuros: [] as PriceListDetail['items'], historicos: [] as PriceListDetail['items'] };
     if (!priceListDetail) return groups;
@@ -72,7 +84,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
       const response = await fetch(`/api/staff/catalog/price-lists${statusSuffix}`, { credentials: 'include', cache: 'no-store' });
       const lists = await readApiResponseOrThrow<PriceList[]>(response, 'No fue posible cargar las listas de precio.');
       setPriceLists(lists);
-      setSelectedPriceListId((current) => (current && lists.some((list) => list.id === current) ? current : lists[0]?.id ?? null));
+      setSelectedPriceListId((current) => (current && (lists.some((list) => list.id === current) || current === pinnedArchivedIdRef.current) ? current : lists[0]?.id ?? null));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar las listas de precio.');
       setPriceLists([]);
@@ -143,6 +155,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
     try {
       await readApiResponseOrThrow(await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: nextStatus }) }), 'No fue posible completar la operación.');
       setNotice(nextStatus === 'ARCHIVED' ? 'Lista archivada.' : 'Lista reactivada.');
+      pinArchived(nextStatus === 'ARCHIVED' && !showArchived ? selectedPriceListId : null);
       await loadPriceLists(); await loadPriceListDetail(selectedPriceListId);
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible actualizar la lista.'); }
     finally { setSaving(false); }
@@ -190,7 +203,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
       {error && !showPriceListForm && !showScheduleDialog && !editingPriceList && <p className="staff-error" role="alert">{error}</p>}
       <div className="catalog-pricelists__body">
         <aside className="catalog-rail">
-          <label className="catalog-filters__toggle catalog-pricelists__archived"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>Mostrar archivadas</span></label>
+          <label className="catalog-filters__toggle catalog-pricelists__archived"><input type="checkbox" checked={showArchived} onChange={(event) => { pinArchived(null); setShowArchived(event.target.checked); }} /><span>Mostrar archivadas</span></label>
           {loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}
           {!loading && priceLists.length === 0 && (
             <div className="staff-empty staff-empty--compact">
@@ -200,8 +213,8 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
             </div>
           )}
           <div className="catalog-list-picker">
-            {priceLists.map((list) => (
-              <button className={`catalog-list-row${selectedPriceListId === list.id ? ' is-selected' : ''}`} type="button" key={list.id} onClick={() => setSelectedPriceListId(list.id)}>
+            {railPriceLists.map((list) => (
+              <button className={`catalog-list-row${selectedPriceListId === list.id ? ' is-selected' : ''}`} type="button" key={list.id} onClick={() => { if (list.id !== pinnedArchivedId) pinArchived(null); setSelectedPriceListId(list.id); }}>
                 <span><strong>{list.name}</strong><small>{list.code} · {list.currencyCode} · {list._count.items} conceptos{list.status === 'ARCHIVED' ? ' · Archivada' : ''}</small></span>
                 <b>{formatDate(list.validFrom)}</b>
               </button>

@@ -265,7 +265,8 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
               </section>
 
               <section className="handoff-card handoff-contact" aria-label="Contacto del cliente">
-                <header className="handoff-card__head"><div><p className="staff-section-label">Contacto</p><h2>{workspace.contact.displayName}</h2></div></header>
+                <header className="handoff-card__head"><div><p className="staff-section-label">Cliente</p><h2>Contacto</h2></div></header>
+                <strong className="handoff-contact__name">{workspace.contact.displayName}</strong>
                 <a href={`mailto:${workspace.contact.email}`}>{workspace.contact.email}</a>
                 {workspace.contact.phone && <a href={`tel:${workspace.contact.phone}`}>{workspace.contact.phone}</a>}
               </section>

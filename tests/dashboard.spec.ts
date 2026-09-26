@@ -236,7 +236,8 @@ test.describe('staff analytics dashboard', () => {
     const approvalsCard = page.locator('.staff-workqueue__card', { has: page.getByRole('heading', { name: 'Aprobaciones' }) });
     await expect(approvalsCard.getByText(approvalFolio)).toBeVisible({ timeout: 10_000 });
     await expect(approvalsCard.getByText(`Dashboard queue approval ${suffix}`)).toBeVisible();
-    await expect(approvalsCard.getByText('Descuento')).toBeVisible();
+    // Acotado a la fila de ESTA aprobación: la cola puede traer otras (p. ej. fixtures del piloto).
+    await expect(approvalsCard.getByRole('link', { name: new RegExp(approvalFolio) }).getByText(/Descuento/u)).toBeVisible();
     await approvalsCard.getByText(approvalFolio).click();
     await expect(page).toHaveURL(new RegExp(`/staff/quotes\\?request=${approvalRequestId}$`));
     await expect(page.getByRole('heading', { name: approvalFolio })).toBeVisible({ timeout: 10_000 });
