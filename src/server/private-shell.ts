@@ -51,6 +51,8 @@ function staffCapabilities(subject: { permissionKeys: ReadonlySet<string> }): Pr
     notificationsRead: hasPermission(subject, 'notifications.read'),
     auditRead: hasPermission(subject, 'audit.read'),
     approvalsRead: hasPermission(subject, 'quotes.approve_discount'),
+    projectsRead: hasPermission(subject, 'projects.read'),
+    projectsManage: hasPermission(subject, 'projects.manage'),
   };
 }
 

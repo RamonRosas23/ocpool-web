@@ -542,7 +542,7 @@ export default function StaffRequestsPanel() {
           <aside className="staff-inbox">
             <form className="staff-filters" onSubmit={submitSearch} role="search" aria-label="Filtrar solicitudes">
               <div className="staff-views" role="group" aria-label="Vista de la bandeja">{INBOX_VIEWS.map((option) => <button key={option.value} type="button" className={view === option.value ? 'is-selected' : undefined} aria-pressed={view === option.value} onClick={() => applyView(option.value)}>{option.label}</button>)}</div>
-              <label><span>Buscar</span><span className="staff-search"><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Folio, cliente o correo" maxLength={100} />{searchInput && <button type="button" className="staff-search__clear" aria-label="Limpiar búsqueda" onClick={() => setSearchInput('')}><X size={15} aria-hidden="true" /></button>}</span></label>
+              <label><span>Buscar</span><span className="staff-search"><input aria-label="Buscar" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Folio, cliente o correo" maxLength={100} />{searchInput && <button type="button" className="staff-search__clear" aria-label="Limpiar búsqueda" onClick={() => setSearchInput('')}><X size={15} aria-hidden="true" /></button>}</span></label>
               <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="requests-status-filter" optionalHint={false} label="Estado" value={statusFilterDraft} onValueChange={applyStatusFilter} options={STATUS_OPTIONS.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
             </form>
 

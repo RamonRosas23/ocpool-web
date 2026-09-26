@@ -49,6 +49,10 @@ export function PrivateDialog({ open, onClose, modal = true, id, labelledBy, des
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // Un control anidado (combobox, calendario, select) que ya consumió Escape para cerrar su
+        // propio desplegable lo marca con preventDefault: ese Escape no debe cerrar además el diálogo
+        // y tirar lo que el usuario llevaba capturado.
+        if (event.defaultPrevented) return;
         onClose();
         return;
       }

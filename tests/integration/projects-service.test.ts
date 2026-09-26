@@ -6,7 +6,7 @@ import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { createQuoteVersion, transitionQuoteVersion } from '@/server/modules/quotes/service';
 import { generateQuotePdf } from '@/server/modules/quote-documents/service';
 import { acceptCustomerQuote } from '@/server/modules/quote-documents/acceptance-service';
-import { addProjectChecklistItems, convertQuoteAcceptanceToProject, getProjectWorkspace, listProjectAssignableEmployees, setProjectChecklistItemCompletion, setProjectHandoffStatus, setProjectOwner } from '@/server/modules/projects/service';
+import { addProjectChecklistItems, convertQuoteAcceptanceToProject, getProjectWorkspace, listProjectAssignableEmployees, listProjects, setProjectChecklistItemCompletion, setProjectHandoffStatus, setProjectOwner } from '@/server/modules/projects/service';
 import type { PrivateStorage } from '@/server/modules/private-files/storage';
 
 class MemoryProjectStorage implements PrivateStorage {
@@ -83,6 +83,16 @@ describe('project handoff service (J1)', () => {
       const replay = await convertQuoteAcceptanceToProject(sales, acceptance.id, {}, { prisma, now });
       expect(replay.id).toBe(project.id);
       expect(await prisma.project.count({ where: { quoteAcceptanceId: acceptance.id } })).toBe(1);
+
+      // Índice de proyectos: mismo alcance que el workspace -- el responsable del expediente lo ve (y
+      // lo encuentra por folio del proyecto o del expediente), el outsider no, y sin permiso se bloquea.
+      const listed = await listProjects(sales, { query: project.folio }, { prisma, now });
+      expect(listed.items.map((entry) => entry.id)).toEqual([project.id]);
+      expect(listed.items[0]).toMatchObject({ status: 'EN_TRANSICION', quoteRequest: { folio: request.folio, projectType: 'Residencial' }, acceptedTotal: { totalMinor: '116000', currencyCode: 'MXN' }, checklist: { total: 2, completed: 0 } });
+      expect((await listProjects(sales, { query: request.folio }, { prisma, now })).items.map((entry) => entry.id)).toContain(project.id);
+      expect((await listProjects(sales, { query: project.folio, status: 'COMPLETADO' }, { prisma, now })).items).toHaveLength(0);
+      expect((await listProjects(outsider, { query: project.folio }, { prisma, now })).items).toHaveLength(0);
+      await expect(listProjects(employeeActor(salesUser.id, []), {}, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
       const workspace = await getProjectWorkspace(sales, project.id, { prisma, now });
       expect(workspace).toMatchObject({

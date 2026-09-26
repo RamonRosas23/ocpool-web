@@ -8,6 +8,8 @@ export type PrivateStaffCapabilities = Readonly<{
   notificationsRead?: boolean;
   auditRead?: boolean;
   approvalsRead?: boolean;
+  projectsRead?: boolean;
+  projectsManage?: boolean;
 }>;
 
 export type PrivateNavigationItem = {
@@ -27,6 +29,7 @@ export const STAFF_NAVIGATION: readonly PrivateNavigationItem[] = Object.freeze(
   { key: 'dashboard', href: '/staff', label: 'Dashboard', capability: 'metricsRead' },
   { key: 'requests', href: '/staff/requests', label: 'Solicitudes', capability: 'requestsRead' },
   { key: 'quotes', href: '/staff/quotes', label: 'Cotizaciones', capability: 'quotesRead' },
+  { key: 'projects', href: '/staff/projects', label: 'Proyectos', capability: 'projectsRead' },
   { key: 'catalog', href: '/staff/catalog', label: 'Catálogo', capability: 'catalogRead' },
   { key: 'notifications', href: '/staff/notifications', label: 'Notificaciones', capability: 'notificationsRead' },
   { key: 'audit', href: '/staff/audit', label: 'Auditoría', capability: 'auditRead' },

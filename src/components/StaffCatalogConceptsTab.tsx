@@ -1,11 +1,12 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Inbox, X } from 'lucide-react';
 import { PrivateDatePicker, PrivateDialog, PrivateMoneyField, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import StaffCatalogCategoryDialog from '@/components/StaffCatalogCategoryDialog';
 import { formatDate } from '@/lib/format-date';
-import { zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
+import { BUSINESS_TIMEZONE, timeZoneParts, zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
+import { moneyLabel } from '@/lib/money';
 import { parseMoneyInput } from '@/lib/money-input';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { usePersistentState } from '@/lib/use-persistent-state';
@@ -15,6 +16,12 @@ const CATALOG_UNIT_OPTIONS = ['pieza', 'servicio', 'hora', 'visita', 'm²', 'm³
 const CATALOG_UNIT_CUSTOM = '__otra__';
 
 type WizardPriceList = { id: string; code: string; name: string; currencyCode: string };
+type ItemPricesState = { itemId: string; status: 'loading' | 'ready' | 'error'; prices: Array<{ list: WizardPriceList; unitPriceMinor: string | null }> };
+
+function todayInBusinessTimeZone(): string {
+  const { year, month, day } = timeZoneParts(new Date(), BUSINESS_TIMEZONE);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
 
 export type StaffCatalogConceptsTabProps = { capabilities: CatalogCapabilities };
 
@@ -46,6 +53,12 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
   const [wizardPriceLists, setWizardPriceLists] = useState<WizardPriceList[]>([]);
   const emptyWizardPriceForm = { priceListId: '', amountInput: '', effectiveFrom: '' };
   const [wizardPriceForm, setWizardPriceForm] = useState(emptyWizardPriceForm);
+  // El mismo diálogo de precio sirve para el alta guiada (concepto recién creado) y para asignar o
+  // actualizar el precio de un concepto existente desde su detalle, sin cambiar de pestaña.
+  const [priceForExisting, setPriceForExisting] = useState(false);
+  const [itemPrices, setItemPrices] = useState<ItemPricesState | null>(null);
+  const [pricesReloadKey, setPricesReloadKey] = useState(0);
+  const activeListsRef = useRef<WizardPriceList[] | null>(null);
 
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId]);
   const categoryTreeOrder = useMemo(() => buildCategoryTreeOrder(categories), [categories]);
@@ -96,6 +109,52 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setPage(1); setAppliedSearch(search.trim()); };
 
+  // Búsqueda instantánea al dejar de escribir (Enter la aplica al momento).
+  useEffect(() => {
+    const trimmed = search.trim();
+    if (trimmed === appliedSearch) return;
+    const timer = window.setTimeout(() => { setPage(1); setAppliedSearch(trimmed); }, 350);
+    return () => window.clearTimeout(timer);
+  }, [appliedSearch, search]);
+
+  // Precio del concepto seleccionado en cada lista activa: responde "¿cuánto cuesta esto?" sin ir a
+  // revisar lista por lista. Usa la búsqueda por lista que ya usa el constructor (precio vigente hoy).
+  const selectedPriceKey = selectedItem && capabilities.pricesRead ? `${selectedItem.id}|${selectedItem.code}|${selectedItem.status}` : null;
+  useEffect(() => {
+    if (!selectedPriceKey) { setItemPrices(null); return; }
+    const [itemId, code, status] = selectedPriceKey.split('|');
+    if (status !== 'ACTIVE') { setItemPrices({ itemId, status: 'ready', prices: [] }); return; }
+    let cancelled = false;
+    setItemPrices({ itemId, status: 'loading', prices: [] });
+    (async () => {
+      try {
+        if (!activeListsRef.current) {
+          const listsResponse = await fetch('/api/staff/catalog/price-lists?status=ACTIVE', { credentials: 'include', cache: 'no-store' });
+          activeListsRef.current = await readApiResponseOrThrow<WizardPriceList[]>(listsResponse, 'No fue posible cargar las listas de precio.');
+        }
+        const prices = await Promise.all(activeListsRef.current.map(async (list) => {
+          const response = await fetch(`/api/staff/catalog/price-lists/${list.id}/search?${new URLSearchParams({ query: code, limit: '50' }).toString()}`, { credentials: 'include', cache: 'no-store' });
+          const result = await readApiResponseOrThrow<{ items: Array<{ id: string; price: { unitPriceMinor: string } | null }> }>(response, 'No fue posible consultar los precios.');
+          return { list, unitPriceMinor: result.items.find((entry) => entry.id === itemId)?.price?.unitPriceMinor ?? null };
+        }));
+        if (!cancelled) setItemPrices({ itemId, status: 'ready', prices });
+      } catch {
+        if (!cancelled) setItemPrices({ itemId, status: 'error', prices: [] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pricesReloadKey, selectedPriceKey]);
+
+  const openPriceForExisting = (list: WizardPriceList) => {
+    if (!selectedItem) return;
+    setWizardPriceLists(activeListsRef.current ?? [list]);
+    setWizardPriceForm({ priceListId: list.id, amountInput: '', effectiveFrom: todayInBusinessTimeZone() });
+    setCreatedItem(selectedItem);
+    setPriceForExisting(true);
+    setError(null);
+    setCreateStep('price');
+  };
+
   const selectCategory = (categoryId: string | null) => { setPage(1); setSelectedCategoryId(categoryId); };
 
   const openCreateDialog = () => {
@@ -108,6 +167,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
 
   const closeCreateDialog = () => {
     setCreateStep(null);
+    setPriceForExisting(false);
     setCreatedItem(null);
     setItemForm(emptyItemForm);
     setWizardPriceForm(emptyWizardPriceForm);
@@ -165,8 +225,9 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ catalogItemId: createdItem.id, unitPriceMinor, effectiveFrom: zonedCalendarDateToUtc(wizardPriceForm.effectiveFrom).toISOString() }),
       }), 'No fue posible completar la operación.');
-      setNotice(`Concepto ${createdItem.code} creado y precio asignado.`);
+      setNotice(priceForExisting ? `Precio de ${createdItem.code} guardado.` : `Concepto ${createdItem.code} creado y precio asignado.`);
       closeCreateDialog();
+      setPricesReloadKey((current) => current + 1);
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible asignar el precio.'); }
     finally { setSaving(false); }
   };
@@ -226,10 +287,9 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
           {capabilities.catalogManage && <button type="button" className="catalog-tree-manage" onClick={() => setShowCategoryDialog(true)}>Gestionar categorías</button>}
         </aside>
         <div className="catalog-concepts__list">
-          <form className="staff-filters" onSubmit={submitSearch}>
-            <label><span>Buscar concepto</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Clave o nombre" maxLength={100} /></label>
+          <form className="staff-filters" onSubmit={submitSearch} role="search" aria-label="Buscar conceptos">
+            <label><span>Buscar concepto</span><span className="staff-search"><input aria-label="Buscar concepto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Clave o nombre" maxLength={100} />{search && <button type="button" className="staff-search__clear" aria-label="Limpiar búsqueda" onClick={() => setSearch('')}><X size={15} aria-hidden="true" /></button>}</span></label>
             <label className="catalog-filters__toggle"><input type="checkbox" checked={showArchived} onChange={(event) => { setPage(1); setShowArchived(event.target.checked); }} /><span>Mostrar archivados</span></label>
-            <button className="staff-button staff-button--filter" type="submit">Buscar</button>
           </form>
           <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `Mostrando ${items.length} de ${total}`}</span></div>
           <div className="catalog-item-list" aria-live="polite">
@@ -247,6 +307,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
                 <span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span>
                 <h2>Sin conceptos que coincidan</h2>
                 <p>Prueba otra búsqueda o quita el filtro de categoría.</p>
+                <button className="staff-button" type="button" onClick={() => { setSearch(''); setAppliedSearch(''); selectCategory(null); }}>Quitar filtros</button>
               </div>
             )}
             {!loading && items.map((item) => (
@@ -283,6 +344,23 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
               </dl>
             </div>
           )}
+          {selectedItem && itemPrices && itemPrices.itemId === selectedItem.id && (
+            <section className="catalog-item-prices" aria-labelledby="catalog-item-prices-title">
+              <h3 id="catalog-item-prices-title">Precio vigente por lista</h3>
+              {itemPrices.status === 'loading' && <p className="catalog-item-prices__state">Consultando precios…</p>}
+              {itemPrices.status === 'error' && <p className="catalog-item-prices__state catalog-item-prices__state--error">No fue posible consultar los precios. <button type="button" className="quotes-retry-link" onClick={() => setPricesReloadKey((current) => current + 1)}>Reintentar</button></p>}
+              {itemPrices.status === 'ready' && selectedItem.status !== 'ACTIVE' && <p className="catalog-item-prices__state">Un concepto archivado no se puede agregar a propuestas. Reactívalo para volver a cotizarlo.</p>}
+              {itemPrices.status === 'ready' && selectedItem.status === 'ACTIVE' && itemPrices.prices.length === 0 && <p className="catalog-item-prices__state">Todavía no hay listas de precio activas. Crea una en «Listas de precio» para poder cotizar este concepto.</p>}
+              {itemPrices.status === 'ready' && itemPrices.prices.length > 0 && <>
+                <ul>{itemPrices.prices.map((entry) => <li key={entry.list.id} className={entry.unitPriceMinor ? undefined : 'is-missing'}>
+                  <span><strong>{entry.list.name}</strong><small>{entry.list.code} · {entry.list.currencyCode}</small></span>
+                  {entry.unitPriceMinor ? <b>{moneyLabel(entry.unitPriceMinor, entry.list.currencyCode)}</b> : <em>Sin precio</em>}
+                  {capabilities.pricesManage && <button className="staff-button staff-button--outline catalog-item-prices__action" type="button" aria-label={`${entry.unitPriceMinor ? 'Actualizar precio' : 'Asignar precio'} en ${entry.list.name}`} disabled={saving} onClick={() => openPriceForExisting(entry.list)}>{entry.unitPriceMinor ? 'Actualizar' : 'Asignar precio'}</button>}
+                </li>)}</ul>
+                {itemPrices.prices.some((entry) => !entry.unitPriceMinor) && <p className="catalog-item-prices__hint">Sin precio en una lista, este concepto no aparece como cotizable en las propuestas que usan esa lista.</p>}
+              </>}
+            </section>
+          )}
         </section>
       </div>
 
@@ -309,18 +387,18 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
       {createStep === 'price' && createdItem && (
         <PrivateDialog open onClose={closeCreateDialog} labelledBy="catalog-item-price-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
           <div className="catalog-category-dialog__head">
-            <h2 id="catalog-item-price-title">Precio inicial de {createdItem.name}</h2>
+            <h2 id="catalog-item-price-title">{priceForExisting ? `Precio de ${createdItem.name}` : `Precio inicial de ${createdItem.name}`}</h2>
             <button className="staff-dialog-close" type="button" onClick={closeCreateDialog} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
           </div>
-          <p className="catalog-tab-intro">Concepto creado. Opcional: asígnale su primer precio sin salir de aquí.</p>
+          <p className="catalog-tab-intro">{priceForExisting ? 'El precio vigente en esa lista (si lo hay) se cierra el día que elijas y el nuevo aplica desde entonces.' : 'Concepto creado. Opcional: asígnale su primer precio sin salir de aquí.'}</p>
           {error && <p className="staff-error" role="alert">{error}</p>}
           <form className="catalog-form catalog-form--price" onSubmit={saveWizardPrice}>
             <PrivateSelect id="catalog-item-price-list" label="Lista de precios" required value={wizardPriceForm.priceListId} onValueChange={(value) => setWizardPriceForm({ ...wizardPriceForm, priceListId: value })} options={wizardPriceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currencyCode}` }))} placeholder="Selecciona una lista" disabled={saving} />
             <PrivateMoneyField id="catalog-item-price-amount" label="Importe" value={wizardPriceForm.amountInput} onValueChange={(value) => setWizardPriceForm({ ...wizardPriceForm, amountInput: value })} placeholder="1,250.00" required disabled={saving} />
             <PrivateDatePicker id="catalog-item-price-effective-from" label="Vigente desde" required value={wizardPriceForm.effectiveFrom} onValueChange={(value) => setWizardPriceForm({ ...wizardPriceForm, effectiveFrom: value })} disabled={saving} />
             <div className="catalog-form__actions">
-              <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Guardar precio y cerrar</button>
-              <button className="staff-button" type="button" disabled={saving} onClick={closeCreateDialog}>Omitir por ahora</button>
+              <button className="staff-button staff-button--dark" type="submit" disabled={saving}>{priceForExisting ? 'Guardar precio' : 'Guardar precio y cerrar'}</button>
+              <button className="staff-button" type="button" disabled={saving} onClick={closeCreateDialog}>{priceForExisting ? 'Cancelar' : 'Omitir por ahora'}</button>
             </div>
           </form>
         </PrivateDialog>

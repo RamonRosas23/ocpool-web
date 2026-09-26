@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useId, useRef, useState, type MouseEvent } from 'react';
-import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, Inbox, LayoutDashboard, LogOut, Menu, ScrollText, X, type LucideIcon } from 'lucide-react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
+import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, HardHat, Inbox, LayoutDashboard, LogOut, Menu, ScrollText, X, type LucideIcon } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import { usePrivateShellContext } from '@/components/private/PrivateShellContext';
 import StaffQuickFind from '@/components/staff/StaffQuickFind';
@@ -17,6 +17,7 @@ const SECTIONS: readonly Section[] = [
   { href: '/staff', label: 'Dashboard', icon: LayoutDashboard, capability: 'metricsRead' },
   { href: '/staff/requests', label: 'Solicitudes', icon: Inbox, capability: 'requestsRead' },
   { href: '/staff/quotes', label: 'Cotizaciones', icon: FileText, capability: 'quotesRead' },
+  { href: '/staff/projects', label: 'Proyectos', icon: HardHat, capability: 'projectsRead' },
   { href: '/staff/catalog', label: 'Catálogo', icon: BookOpen, capability: 'catalogRead' },
   { href: '/staff/approvals', label: 'Aprobaciones', icon: BadgeCheck, capability: 'approvalsRead' },
   { href: '/staff/notifications', label: 'Notificaciones', icon: Bell, capability: 'notificationsRead' },
@@ -51,12 +52,39 @@ export default function StaffHeader({ onNavigate }: Props) {
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileToggleRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLElement>(null);
+  const navRef = useRef<HTMLElement>(null);
   const accountMenuId = useId();
+  // Densidad según lo que realmente cabe (cada rol ve un número distinto de secciones): 0 completo,
+  // 1 sin íconos, 2 sin subtítulos ni etiquetas auxiliares, 3 navegación dentro del menú.
+  const [density, setDensity] = useState(0);
+  const [measureKey, setMeasureKey] = useState(0);
 
   const sections = session ? SECTIONS.filter((section) => session.capabilities[section.capability] !== false) : SECTIONS;
   const homeHref = sections[0]?.href ?? '/staff';
 
   useEffect(() => { setMobileOpen(false); setAccountOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    let lastWidth = header.clientWidth;
+    const remeasure = () => { setDensity(0); setMeasureKey((current) => current + 1); };
+    const observer = new ResizeObserver(() => {
+      if (header.clientWidth === lastWidth) return;
+      lastWidth = header.clientWidth;
+      remeasure();
+    });
+    observer.observe(header);
+    // Manrope llega después del primer render: al cargar cambia el ancho real de cada enlace.
+    void document.fonts?.ready.then(remeasure);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav || density >= 3 || window.getComputedStyle(nav).display === 'none') return;
+    if (nav.scrollWidth > nav.clientWidth + 1) setDensity((current) => Math.min(current + 1, 3));
+  }, [density, measureKey, sections.length]);
 
   useEffect(() => {
     if (!accountOpen && !mobileOpen) return;
@@ -121,10 +149,10 @@ export default function StaffHeader({ onNavigate }: Props) {
 
   return (
     <>
-      <header className="staff-header" ref={headerRef}>
+      <header className={`staff-header${density >= 1 ? ' is-compact' : ''}${density >= 2 ? ' is-condensed' : ''}${density >= 3 ? ' is-collapsed' : ''}`} ref={headerRef}>
         <div className="staff-header__inner">
           <WorkspaceBrand className="staff-brand" subtitle="Operaciones" href={homeHref} ariaLabel="OCPOOL, volver al dashboard" onClick={onNavigate ? (event) => onNavigate(event, homeHref) : undefined} />
-          <nav className="staff-top-nav" aria-label="Navegación de operaciones">{navLinks('bar')}</nav>
+          <nav className="staff-top-nav" ref={navRef} aria-label="Navegación de operaciones">{navLinks('bar')}</nav>
           <div className="staff-header__tools">
             <StaffQuickFind sections={sections} onNavigate={onNavigate} />
             {session && (

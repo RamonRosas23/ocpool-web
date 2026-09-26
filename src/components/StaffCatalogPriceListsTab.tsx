@@ -47,6 +47,48 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
   const [editingPriceList, setEditingPriceList] = useState(false);
   const [priceListEditForm, setPriceListEditForm] = useState({ name: '' });
   const [tableFilter, setTableFilter] = useState('');
+  // Selector de concepto con búsqueda remota: antes sólo ofrecía los primeros 50 conceptos activos
+  // precargados, así que un catálogo más grande dejaba conceptos imposibles de programar desde aquí.
+  const [conceptQuery, setConceptQuery] = useState('');
+  const [conceptResults, setConceptResults] = useState<PricableItem[] | null>(null);
+  const [searchingConcepts, setSearchingConcepts] = useState(false);
+  const [seenItems, setSeenItems] = useState<PricableItem[]>([]);
+
+  useEffect(() => {
+    const term = conceptQuery.trim();
+    if (!term) { setConceptResults(null); setSearchingConcepts(false); return; }
+    const controller = new AbortController();
+    setSearchingConcepts(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ status: 'ACTIVE', query: term, pageSize: '20' });
+        const response = await fetch(`/api/staff/catalog/items?${params.toString()}`, { credentials: 'include', cache: 'no-store', signal: controller.signal });
+        const result = await readApiResponseOrThrow<{ items: PricableItem[] }>(response, 'No fue posible buscar conceptos.');
+        setConceptResults(result.items);
+        setSeenItems((current) => [...current, ...result.items.filter((item) => !current.some((seen) => seen.id === item.id))]);
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        setConceptResults([]);
+      } finally {
+        if (!controller.signal.aborted) setSearchingConcepts(false);
+      }
+    }, 220);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [conceptQuery]);
+
+  const conceptOptions = useMemo(() => {
+    const known = new Map<string, PricableItem>();
+    for (const price of priceListDetail?.items ?? []) known.set(price.catalogItemId, { id: price.catalogItemId, code: price.catalogItem.code, name: price.catalogItem.name });
+    for (const item of [...pricableItems, ...seenItems]) known.set(item.id, item);
+    // Sin término, primero los conceptos que ya tienen precio en esta lista (actualizarlos es lo más
+    // común) y después el resto de los activos precargados.
+    const inList = [...new Map((priceListDetail?.items ?? []).filter((price) => price.catalogItem.status === 'ACTIVE').map((price) => [price.catalogItemId, known.get(price.catalogItemId)!])).values()];
+    const base = conceptResults ?? [...inList, ...pricableItems.filter((item) => !inList.some((entry) => entry.id === item.id))];
+    const selected = priceForm.catalogItemId ? known.get(priceForm.catalogItemId) : undefined;
+    // El concepto elegido siempre está entre las opciones para que su etiqueta nunca quede en blanco.
+    const list = selected && !base.some((item) => item.id === selected.id) ? [...base, selected] : base;
+    return list.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }));
+  }, [conceptResults, priceForm.catalogItemId, priceListDetail, pricableItems, seenItems]);
 
   const previewItem = useMemo(() => priceListDetail?.items.find((price) => price.catalogItemId === priceForm.catalogItemId && price.validUntil === null) ?? null, [priceListDetail, priceForm.catalogItemId]);
   const previewText = !priceForm.catalogItemId ? '' : previewItem ? `Se cerrará el precio vigente de ${moneyLabel(previewItem.unitPriceMinor, priceListDetail!.currencyCode)} (desde ${formatDate(previewItem.validFrom)}) el día que elijas abajo.` : 'Este concepto no tiene un precio vigente en esta lista; se creará el primero.';
@@ -317,7 +359,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
           </div>
           {error && <p className="staff-error" role="alert">{error}</p>}
           <form className="catalog-form catalog-form--price" onSubmit={schedulePriceForItem}>
-            <PrivateCombobox id="catalog-price-item" label="Concepto" required value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={pricableItems.map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))} placeholder="Escribe la clave o el nombre del concepto" disabled={saving} />
+            <PrivateCombobox id="catalog-price-item" label="Concepto" required value={priceForm.catalogItemId} onValueChange={(value) => setPriceForm({ ...priceForm, catalogItemId: value })} options={conceptOptions} onSearchChange={setConceptQuery} searching={searchingConcepts} placeholder="Escribe la clave o el nombre del concepto" disabled={saving} />
             <PrivateMoneyField id="catalog-price-amount" label="Importe" value={priceForm.amountInput} onValueChange={(value) => setPriceForm({ ...priceForm, amountInput: value })} placeholder="1,250.00" required disabled={saving} />
             <PrivateDatePicker id="catalog-price-effective-from" label="Vigente desde" required value={priceForm.effectiveFrom} onValueChange={(value) => setPriceForm({ ...priceForm, effectiveFrom: value })} disabled={saving} />
             <label><span>Motivo opcional</span><input value={priceForm.reason} onChange={(event) => setPriceForm({ ...priceForm, reason: event.target.value })} placeholder="Ajuste de proveedor" maxLength={300} /></label>

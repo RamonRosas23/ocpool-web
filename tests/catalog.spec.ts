@@ -217,7 +217,8 @@ test.describe('staff catalog operations', () => {
     // Con archivados incluidos el catálogo puede pasar de una página (p. ej. con fixtures del
     // piloto cargados); se acota por clave para no depender del volumen de datos del entorno.
     await page.getByLabel('Buscar concepto', { exact: true }).fill(itemCode);
-    await page.getByRole('button', { name: 'Buscar', exact: true }).click();
+    // La búsqueda es instantánea (sin botón "Buscar"); Enter la aplica sin esperar el debounce.
+    await page.getByLabel('Buscar concepto', { exact: true }).press('Enter');
     await expect(fixtureItemRow).toBeVisible();
     await expect(fixtureItemRow).toContainText('Archivado');
     await fixtureItemRow.click();
@@ -308,7 +309,7 @@ test.describe('staff catalog operations', () => {
 
     await page.getByRole('tab', { name: 'Conceptos' }).click();
     await page.getByLabel('Buscar concepto', { exact: true }).fill(specialConceptName);
-    await page.getByRole('button', { name: 'Buscar', exact: true }).click();
+    await page.getByLabel('Buscar concepto', { exact: true }).press('Enter');
     await expect(page.getByRole('button', { name: new RegExp(specialConceptName) })).toBeVisible();
     promotedItemId = (await prisma.catalogItem.findFirstOrThrow({ where: { name: specialConceptName }, select: { id: true } })).id;
 

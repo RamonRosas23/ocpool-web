@@ -166,9 +166,16 @@ export type PrivateComboboxProps = Omit<PrivateFieldChromeProps, 'children'> & {
   placeholder?: string;
   noResultsLabel?: string;
   disabled?: boolean;
+  /**
+   * Búsqueda remota opcional: si se pasa, el combobox deja de filtrar `options` localmente y avisa
+   * cada término al padre, que es quien devuelve las opciones que coinciden (catálogos grandes que
+   * no caben precargados). `searching` muestra el estado mientras llega la respuesta.
+   */
+  onSearchChange?: (term: string) => void;
+  searching?: boolean;
 };
 
-export function PrivateCombobox({ id, label, description, error, required, hideLabel, optionalHint, className, value, options, onValueChange, placeholder = 'Escribe para buscar…', noResultsLabel = 'Sin coincidencias', disabled = false }: PrivateComboboxProps) {
+export function PrivateCombobox({ id, label, description, error, required, hideLabel, optionalHint, className, value, options, onValueChange, placeholder = 'Escribe para buscar…', noResultsLabel = 'Sin coincidencias', disabled = false, onSearchChange, searching = false }: PrivateComboboxProps) {
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   const listboxId = `${id}-listbox`;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -189,10 +196,10 @@ export function PrivateCombobox({ id, label, description, error, required, hideL
   // opciones de inmediato -- si en su lugar se precargara con la etiqueta ya seleccionada, abrir
   // el combobox filtraría de entrada a un solo resultado y el usuario no podría explorar el resto
   // sin borrar primero. Cerrar sin elegir restaura la etiqueta de la selección vigente.
-  const openDropdown = () => { setTerm(''); setOpen(true); setActiveIndex(-1); };
+  const openDropdown = () => { setTerm(''); setOpen(true); setActiveIndex(-1); onSearchChange?.(''); };
   const closeDropdown = () => { setOpen(false); setTerm(selectedOption?.label ?? ''); setActiveIndex(-1); };
 
-  const visibleOptions = options.filter((option) => !option.disabled && (!term.trim() || option.label.toLowerCase().includes(term.trim().toLowerCase())));
+  const visibleOptions = options.filter((option) => !option.disabled && (Boolean(onSearchChange) || !term.trim() || option.label.toLowerCase().includes(term.trim().toLowerCase())));
 
   useEffect(() => {
     if (!open) return;
@@ -254,12 +261,13 @@ export function PrivateCombobox({ id, label, description, error, required, hideL
           disabled={disabled}
           onFocus={openDropdown}
           onClick={openDropdown}
-          onChange={(event) => { setTerm(event.target.value); setActiveIndex(-1); if (!open) setOpen(true); }}
+          onChange={(event) => { setTerm(event.target.value); setActiveIndex(-1); if (!open) setOpen(true); onSearchChange?.(event.target.value); }}
           onKeyDown={handleKeyDown}
         />
         {open && portalContainer && listboxPosition && createPortal(
           <ul ref={listboxRef} id={listboxId} role="listbox" aria-label={label} className="private-combobox__listbox" style={listboxPosition}>
-            {visibleOptions.length === 0 && <li className="private-combobox__status">{noResultsLabel}</li>}
+            {searching && <li className="private-combobox__status">Buscando…</li>}
+            {!searching && visibleOptions.length === 0 && <li className="private-combobox__status">{noResultsLabel}</li>}
             {visibleOptions.map((option, index) => (
               <li
                 key={option.value}

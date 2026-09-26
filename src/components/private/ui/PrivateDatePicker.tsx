@@ -78,7 +78,7 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
       triggerRef.current?.focus();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setOpen(false); triggerRef.current?.focus(); return; }
+      if (event.key === 'Escape') { event.preventDefault(); setOpen(false); triggerRef.current?.focus(); return; }
       // UX audit fix: este popover ya es `role="dialog"` pero nunca atrapaba Tab -- a diferencia de
       // todo `PrivateDialog` de la app, un usuario de teclado que tabulaba fuera del calendario
       // (p.ej. más allá del selector de año en `captionLayout="dropdown"`) movía el foco a otra
@@ -100,10 +100,11 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
       }
     };
     document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    // Fase de captura: corre antes que el Escape de un PrivateDialog contenedor (fase de burbuja).
+    document.addEventListener('keydown', handleKeyDown, true);
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown, true);
     };
   }, [open]);
 

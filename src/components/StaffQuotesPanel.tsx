@@ -878,6 +878,19 @@ export default function StaffQuotesPanel() {
               unitPriceDirty: false,
             };
           }));
+        } else if (freshVersion) {
+          // El borrador cambió durante el viaje de ida y vuelta, pero las líneas que el servidor YA
+          // guardó tienen su precio congelado: se fija en las que todavía no lo tenían, sin tocar nada
+          // de lo que el usuario esté editando (ni ids, ni entradas, ni líneas con precio manual).
+          // Sin esto, agregar y quitar una línea mientras se guardaba devolvía el borrador a "Guardado"
+          // con líneas sin precio congelado: se mostraba el precio vivo del catálogo en lugar del
+          // guardado (Q1-05) y "Verificar precios vigentes" ya no detectaba el cambio.
+          const persistedByItem = new Map(freshVersion.lines.filter((line) => line.catalogItemId !== null).map((line) => [line.catalogItemId as string, line]));
+          setDraftLines((lines) => lines.map((line) => {
+            if (line.special || !line.catalogItemId || line.unitPriceDirty || line.snapshotUnitPriceMinor !== null) return line;
+            const persisted = persistedByItem.get(line.catalogItemId);
+            return persisted ? { ...line, snapshotUnitPriceMinor: persisted.unitPriceMinor } : line;
+          }));
         }
         // Si el borrador cambió durante el viaje de ida y vuelta, lo persistido ya no es lo que se ve
         // (y el precio de las líneas nuevas todavía no se re-congeló): mostrar "Guardado" era una
@@ -1115,7 +1128,7 @@ export default function StaffQuotesPanel() {
       {error && <p className="staff-error" role="alert">{error}</p>}
       <section className="quotes-workspace" aria-label="Constructor de cotizaciones">
         <aside className="quotes-rail">
-          <form className="staff-filters" onSubmit={submitSearch} role="search" aria-label="Buscar expedientes"><label><span>Buscar expediente</span><span className="staff-search"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Folio o cliente" maxLength={100} />{search && <button type="button" className="staff-search__clear" aria-label="Limpiar búsqueda" onClick={() => setSearch('')}><X size={15} aria-hidden="true" /></button>}</span></label></form>
+          <form className="staff-filters" onSubmit={submitSearch} role="search" aria-label="Buscar expedientes"><label><span>Buscar expediente</span><span className="staff-search"><input aria-label="Buscar expediente" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Folio o cliente" maxLength={100} />{search && <button type="button" className="staff-search__clear" aria-label="Limpiar búsqueda" onClick={() => setSearch('')}><X size={15} aria-hidden="true" /></button>}</span></label></form>
           <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `Mostrando ${requests.length} de ${total}`}</span></div>
           <div className="quotes-request-list" aria-live="polite">
             {loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}

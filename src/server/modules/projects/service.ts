@@ -5,7 +5,7 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { BUSINESS_TIMEZONE, timeZoneParts } from '@/lib/calendar-timezone';
-import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
+import { requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 import { formatProjectFolio, normalizeChecklistLabel, type ProjectHandoffStatus } from '@/server/modules/projects/domain';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -175,6 +175,88 @@ export type ProjectWorkspace = Readonly<{
 async function loadProjectScope(prisma: PrismaClient, projectId: string): Promise<{ currentAssigneeId: string | null } | null> {
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { quoteRequest: { select: { currentAssigneeId: true } } } });
   return project ? { currentAssigneeId: project.quoteRequest.currentAssigneeId } : null;
+}
+
+export type ProjectListFilters = Readonly<{ page?: number; pageSize?: number; status?: ProjectHandoffStatus; query?: string }>;
+
+export type ProjectListItem = Readonly<{
+  id: string;
+  folio: string;
+  status: ProjectHandoffStatus;
+  createdAt: Date;
+  completedAt: Date | null;
+  owner: { id: string; displayName: string } | null;
+  client: { displayName: string };
+  quoteRequest: { id: string; folio: string; projectType: string | null; location: string | null };
+  acceptedTotal: { totalMinor: string; currencyCode: string };
+  checklist: { total: number; completed: number };
+}>;
+
+/**
+ * Índice de proyectos para staff. Sólo lectura, con exactamente el mismo alcance que
+ * `getProjectWorkspace`: quien no puede abrir un proyecto tampoco lo ve listado
+ * (`staffRequestReadScopeWhere` sobre el expediente de origen).
+ */
+export async function listProjects(actor: Actor, filters: ProjectListFilters = {}, dependencies: ProjectServiceDependencies = {}): Promise<{ items: ProjectListItem[]; page: number; pageSize: number; total: number; totalPages: number }> {
+  requirePermission(actor, 'projects.read');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const page = Number.isInteger(filters.page) && (filters.page ?? 0) > 0 ? filters.page as number : 1;
+  const pageSize = Number.isInteger(filters.pageSize) && (filters.pageSize ?? 0) > 0 ? Math.min(filters.pageSize as number, 50) : 20;
+  const query = filters.query?.trim() || undefined;
+  if (query && query.length > 100) throw new AppError('VALIDATION_ERROR', 'La búsqueda no es válida.', 400);
+
+  const where: Prisma.ProjectWhereInput = {
+    AND: [
+      { quoteRequest: staffRequestReadScopeWhere(actor) },
+      ...(filters.status ? [{ status: filters.status }] : []),
+      ...(query ? [{ OR: [
+        { folio: { contains: query, mode: 'insensitive' as const } },
+        { client: { displayName: { contains: query, mode: 'insensitive' as const } } },
+        { quoteRequest: { folio: { contains: query, mode: 'insensitive' as const } } },
+      ] }] : []),
+    ],
+  };
+
+  const [total, rows] = await Promise.all([
+    prisma.project.count({ where }),
+    prisma.project.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        folio: true,
+        status: true,
+        createdAt: true,
+        completedAt: true,
+        owner: { select: { id: true, displayName: true } },
+        client: { select: { displayName: true } },
+        quoteRequest: { select: { id: true, folio: true, detail: { select: { projectType: true, location: true } } } },
+        quoteAcceptance: { select: { quoteVersion: { select: { totalMinor: true, currencyCode: true } } } },
+        checklistItems: { select: { completedAt: true } },
+      },
+    }),
+  ]);
+
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      folio: row.folio,
+      status: row.status,
+      createdAt: row.createdAt,
+      completedAt: row.completedAt,
+      owner: row.owner,
+      client: row.client,
+      quoteRequest: { id: row.quoteRequest.id, folio: row.quoteRequest.folio, projectType: row.quoteRequest.detail?.projectType ?? null, location: row.quoteRequest.detail?.location ?? null },
+      acceptedTotal: { totalMinor: row.quoteAcceptance.quoteVersion.totalMinor.toString(), currencyCode: row.quoteAcceptance.quoteVersion.currencyCode },
+      checklist: { total: row.checklistItems.length, completed: row.checklistItems.filter((item) => item.completedAt !== null).length },
+    })),
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
 }
 
 export async function getProjectWorkspace(actor: Actor, projectIdInput: string, dependencies: ProjectServiceDependencies = {}): Promise<ProjectWorkspace> {
