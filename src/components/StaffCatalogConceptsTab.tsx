@@ -8,6 +8,7 @@ import { formatDate } from '@/lib/format-date';
 import { BUSINESS_TIMEZONE, timeZoneParts, zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
 import { moneyLabel } from '@/lib/money';
 import { parseMoneyInput } from '@/lib/money-input';
+import { revealWhenStacked } from '@/lib/reveal-when-stacked';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { buildCategoryTreeOrder, type CatalogCapabilities, type CatalogItem, type CatalogListResponse, type Category } from '@/lib/staff-catalog-types';
@@ -59,6 +60,8 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
   const [itemPrices, setItemPrices] = useState<ItemPricesState | null>(null);
   const [pricesReloadKey, setPricesReloadKey] = useState(0);
   const activeListsRef = useRef<WizardPriceList[] | null>(null);
+  const detailRef = useRef<HTMLElement>(null);
+  const newItemNameRef = useRef<HTMLInputElement>(null);
 
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId]);
   const categoryTreeOrder = useMemo(() => buildCategoryTreeOrder(categories), [categories]);
@@ -311,7 +314,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
               </div>
             )}
             {!loading && items.map((item) => (
-              <button className={`catalog-item-row${selectedItemId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => setSelectedItemId(item.id)}>
+              <button className={`catalog-item-row${selectedItemId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => { setSelectedItemId(item.id); revealWhenStacked(detailRef.current, '(max-width: 1020px)'); }}>
                 <span className="catalog-item-row__code">{item.code}</span>
                 <strong>{item.name}</strong>
                 <small>{item.category?.name ?? 'Sin categoría'} · {item.unit}{item.status === 'ARCHIVED' ? ' · Archivado' : ''}</small>
@@ -320,7 +323,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
           </div>
           <PrivatePagination page={page} totalPages={totalPages} disabled={loading} onPrevious={() => setPage((current) => current - 1)} onNext={() => setPage((current) => current + 1)} />
         </div>
-        <section className="catalog-concepts__detail">
+        <section className="catalog-concepts__detail" ref={detailRef}>
           {selectedItem && <div className="catalog-main__top">
             <div>
               <p className="staff-section-label">Concepto seleccionado</p>
@@ -365,20 +368,24 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
       </div>
 
       {createStep === 'form' && (
-        <PrivateDialog open onClose={closeCreateDialog} labelledBy="catalog-item-create-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
+        <PrivateDialog open onClose={closeCreateDialog} labelledBy="catalog-item-create-title" initialFocusRef={newItemNameRef} className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
           <div className="catalog-category-dialog__head">
             <h2 id="catalog-item-create-title">Nuevo concepto</h2>
             <button className="staff-dialog-close" type="button" onClick={closeCreateDialog} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
           </div>
           {error && <p className="staff-error" role="alert">{error}</p>}
           <form className="catalog-form" onSubmit={createItem}>
-            <label className="catalog-filters__toggle"><input type="checkbox" checked={itemForm.useManualCode} onChange={(event) => setItemForm({ ...itemForm, useManualCode: event.target.checked })} /><span>Especificar clave manualmente</span></label>
-            {itemForm.useManualCode && <label><span>Clave</span><input required value={itemForm.code} onChange={(event) => setItemForm({ ...itemForm, code: event.target.value })} placeholder="EQUIPO-001" maxLength={64} /></label>}
-            <label><span>Nombre</span><input required value={itemForm.name} onChange={(event) => setItemForm({ ...itemForm, name: event.target.value })} placeholder="Bomba de filtrado" maxLength={180} /></label>
+            <label><span>Nombre</span><input ref={newItemNameRef} required value={itemForm.name} onChange={(event) => setItemForm({ ...itemForm, name: event.target.value })} placeholder="Bomba de filtrado" maxLength={180} /></label>
             <PrivateSelect id="catalog-item-new-unit" label="Unidad" required value={itemForm.unitPreset} onValueChange={(value) => setItemForm({ ...itemForm, unitPreset: value })} options={[...CATALOG_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit })), { value: CATALOG_UNIT_CUSTOM, label: 'Otra…' }]} disabled={saving} />
             {itemForm.unitPreset === CATALOG_UNIT_CUSTOM && <label><span>Unidad personalizada</span><input required value={itemForm.unitCustom} onChange={(event) => setItemForm({ ...itemForm, unitCustom: event.target.value })} maxLength={40} /></label>}
             <PrivateSelect id="catalog-item-new-category" label="Categoría" value={itemForm.categoryId} onValueChange={(value) => setItemForm({ ...itemForm, categoryId: value })} options={categories.filter((category) => category.status === 'ACTIVE').map((category) => ({ value: category.id, label: category.name }))} placeholder="Sin categoría" disabled={saving} />
-            <label><span>Descripción</span><textarea rows={3} value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} maxLength={2000} /></label>
+            <label><span>Descripción</span><textarea rows={3} value={itemForm.description} onChange={(event) => setItemForm({ ...itemForm, description: event.target.value })} maxLength={2000} placeholder="Qué incluye, medidas, marca o notas para ventas" /></label>
+            {/* La clave se genera sola; especificarla es la excepción, así que va al final y no primero. */}
+            <div className="catalog-form__code">
+              <label className="catalog-filters__toggle"><input type="checkbox" checked={itemForm.useManualCode} onChange={(event) => setItemForm({ ...itemForm, useManualCode: event.target.checked })} /><span>Especificar clave manualmente</span></label>
+              {!itemForm.useManualCode && <small>Si no, se genera una clave automática al guardar.</small>}
+              {itemForm.useManualCode && <label><span>Clave</span><input required value={itemForm.code} onChange={(event) => setItemForm({ ...itemForm, code: event.target.value })} placeholder="EQUIPO-001" maxLength={64} /></label>}
+            </div>
             <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Continuar</button>
           </form>
         </PrivateDialog>

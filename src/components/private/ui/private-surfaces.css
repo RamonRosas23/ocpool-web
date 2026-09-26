@@ -328,7 +328,7 @@
 .staff-detail__section { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 3px; }
 .staff-detail__grid > .staff-detail__section { border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); padding: 18px; background: #fff; }
 .staff-detail__section h3, .staff-history h3, .quotes-history h3 { margin: 0 0 4px; color: var(--private-color-brand); font-size: 17px; font-weight: 700; letter-spacing: -.015em; }
-.staff-detail__section a, .staff-detail__section > p:not(.staff-section-label) { color: var(--private-color-ink-muted); font-size: 13.5px; overflow-wrap: anywhere; }
+.staff-detail__section a, .staff-detail__section > p:not(.staff-section-label) { margin: 0; color: var(--private-color-ink-muted); font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
 .staff-detail__section a { text-decoration: none; }
 .staff-detail__section a:hover { color: var(--private-color-accent); text-decoration: underline; text-underline-offset: 3px; }
 .staff-contact-access { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; width: 100%; margin-top: 14px; border-top: 1px solid var(--private-color-border); padding-top: 14px; }
@@ -705,7 +705,7 @@
 .quotes-summary-toggle { display: none; }
 .quotes-mobile-total-bar { display: none; }
 
-.quotes-lines-head, .quotes-line { display: grid; grid-template-columns: minmax(140px, 1fr) 66px 108px 66px minmax(92px, 112px) 86px; align-items: center; gap: 8px; }
+.quotes-lines-head, .quotes-line { display: grid; grid-template-columns: minmax(140px, 1fr) 66px 108px 66px minmax(118px, 140px) 86px; align-items: center; gap: 8px; }
 .quotes-lines-head { border: 1px solid var(--private-color-border); border-bottom: 0; border-radius: var(--private-radius-panel) var(--private-radius-panel) 0 0; padding: 10px 12px; background: var(--private-color-surface-muted); color: var(--private-color-ink-muted); font-size: 12px; font-weight: 650; letter-spacing: 0; text-transform: none; }
 .quotes-lines { border: 1px solid var(--private-color-border); border-radius: 0 0 var(--private-radius-panel) var(--private-radius-panel); background: #fff; }
 .quotes-lines > div + div .quotes-line, .quotes-lines > div + div .quotes-section-header { border-top: 1px solid var(--private-color-border); }
@@ -723,7 +723,7 @@
 .quotes-line input { min-height: 38px; padding: 6px 9px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .quotes-line label input { text-align: right; }
 .quotes-line__special input { text-align: left; }
-.quotes-line__total { overflow: hidden; color: var(--private-color-brand); font-size: 13.5px; font-weight: 700; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.quotes-line__total { overflow: visible; color: var(--private-color-brand); font-size: 13.5px; font-weight: 700; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .quotes-line__actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
 .quotes-line__move, .quotes-line__remove { display: inline-flex; width: 28px; height: 30px; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: var(--private-color-ink-muted); cursor: pointer; transition: background var(--private-motion-standard), color var(--private-motion-standard); }
 .quotes-line__move:hover:not(:disabled) { background: var(--private-color-surface-sunken); color: var(--private-color-brand); }
@@ -767,7 +767,7 @@
 .quotes-summary strong { color: var(--private-color-brand); font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .quotes-summary__total { display: grid !important; gap: 4px !important; margin-top: 4px; border-top: 1px solid var(--private-color-border); padding-top: 14px; }
 .quotes-summary__total span { color: var(--private-color-ink); font-weight: 650; }
-.quotes-summary__total strong { color: var(--private-color-copper); font-size: 26px; font-weight: 750; letter-spacing: -.02em; line-height: 1.1; }
+.quotes-summary__total strong { color: var(--private-color-copper); font-size: clamp(21px, 1.9vw, 26px); font-weight: 750; letter-spacing: -.02em; line-height: 1.1; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .quotes-actions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 20px; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); padding: 16px; background: var(--private-color-surface-muted); }
 .quotes-actions > .private-field { min-width: 200px; flex: 0 1 240px; margin-right: auto; }
@@ -851,7 +851,7 @@
   .quotes-brief { grid-template-columns: 1fr 1fr; }
   .quotes-lines-head { display: none; }
   .quotes-lines { border-radius: var(--private-radius-panel); }
-  .quotes-line { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 14px; }
+  .quotes-line { grid-template-columns: minmax(0, .75fr) minmax(0, 1.5fr) minmax(0, .75fr); gap: 10px; padding: 14px; }
   .quotes-line__item { grid-column: 1 / -1; }
   .quotes-line label { display: grid; gap: 4px; }
   .quotes-mobile-label { display: block; color: var(--private-color-ink-muted); font-size: 12px; font-weight: 600; }
@@ -2024,3 +2024,11 @@ button.staff-notification-health__item.is-selected { border-color: var(--private
 @media (prefers-reduced-motion: reduce) {
   .client-files.is-spotlit, .client-version-history.is-spotlit { animation: none; outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
 }
+/* ───────────────────────── Fine polish: catalog, quotes, requests ───────────────────────── */
+
+.quotes-catalog-search__group { position: sticky; top: 0; z-index: 1; margin: 4px 0 0; border-top: 1px solid var(--private-color-border); padding: 8px 12px 6px; background: var(--private-color-surface-muted); color: var(--private-color-copper); font-size: 11.5px; font-weight: 700; letter-spacing: .02em; }
+.staff-detail, .quotes-main, .catalog-concepts__detail, .catalog-main { scroll-margin-top: calc(var(--staff-header-height) + 12px); }
+.catalog-form__code { display: grid; grid-column: 1 / -1; gap: 8px; border-top: 1px solid var(--private-color-border); padding-top: 12px; }
+.catalog-form__code small { color: var(--private-color-ink-muted); font-size: 12.5px; }
+.quotes-content__count { margin-left: auto; border-radius: 999px; padding: 2px 10px; background: var(--private-tint-copper); color: var(--private-color-copper); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.quotes-content__count.is-complete { background: var(--private-tint-success); color: var(--private-color-success); }

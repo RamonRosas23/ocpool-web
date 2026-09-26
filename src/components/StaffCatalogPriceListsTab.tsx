@@ -8,6 +8,7 @@ import { BUSINESS_TIMEZONE, timeZoneParts, zonedCalendarDateToUtc } from '@/lib/
 import { moneyLabel } from '@/lib/money';
 import { parseMoneyInput } from '@/lib/money-input';
 import { usePersistentState } from '@/lib/use-persistent-state';
+import { revealWhenStacked } from '@/lib/reveal-when-stacked';
 import { readApiResponseOrThrow } from '@/lib/api-response-error';
 import type { CatalogCapabilities, PriceList, PriceListDetail } from '@/lib/staff-catalog-types';
 
@@ -32,6 +33,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
   // vista lo que acababa de archivar y el aviso "Reactívala…" casi nunca llegaba a mostrarse.
   const [pinnedArchivedId, setPinnedArchivedId] = useState<string | null>(null);
   const pinnedArchivedIdRef = useRef<string | null>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const pinArchived = (id: string | null) => { pinnedArchivedIdRef.current = id; setPinnedArchivedId(id); };
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -256,14 +258,14 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
           )}
           <div className="catalog-list-picker">
             {railPriceLists.map((list) => (
-              <button className={`catalog-list-row${selectedPriceListId === list.id ? ' is-selected' : ''}`} type="button" key={list.id} onClick={() => { if (list.id !== pinnedArchivedId) pinArchived(null); setSelectedPriceListId(list.id); }}>
+              <button className={`catalog-list-row${selectedPriceListId === list.id ? ' is-selected' : ''}`} type="button" key={list.id} onClick={() => { if (list.id !== pinnedArchivedId) pinArchived(null); setSelectedPriceListId(list.id); revealWhenStacked(mainRef.current, '(max-width: 1020px)'); }}>
                 <span><strong>{list.name}</strong><small>{list.code} · {list.currencyCode} · {list._count.items} conceptos{list.status === 'ARCHIVED' ? ' · Archivada' : ''}</small></span>
-                <b>{formatDate(list.validFrom)}</b>
+                <b title="Vigente desde">Desde {formatDate(list.validFrom)}</b>
               </button>
             ))}
           </div>
         </aside>
-        <section className="catalog-main">
+        <section className="catalog-main" ref={mainRef}>
           {!selectedPriceListId && <div className="staff-empty staff-empty--detail"><h2>Selecciona una lista de precio.</h2></div>}
           {loadingDetail && <div className="catalog-detail-loading"><span /><span /></div>}
           {!loadingDetail && priceListDetail && (

@@ -21,6 +21,7 @@ import {
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
+import { revealWhenStacked } from '@/lib/reveal-when-stacked';
 import { quoteNextStep, quoteStageSteps, type QuoteNextStepTarget, type QuoteStageStepState } from '@/lib/quote-stage';
 import { moneyLabel } from '@/lib/money';
 import { QUOTE_REQUEST_STATUS_LABELS, QUOTE_VERSION_STATUS_LABELS, statusToneIcon } from '@/lib/labels';
@@ -295,6 +296,8 @@ export default function StaffQuotesPanel() {
   const [repriceDialogOpen, setRepriceDialogOpen] = useState(false);
   const [publishPreflight, setPublishPreflight] = useState<{ documentStatus: DocumentStatus; contentDigest: string | null; loading: boolean } | null>(null);
   const deepLinkedIdRef = useRef<string | null>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const revealPendingRef = useRef(false);
   const loadBaseGenerationRef = useRef(0);
   const loadWorkspaceGenerationRef = useRef(0);
   const persistDraftGenerationRef = useRef(0);
@@ -447,6 +450,12 @@ export default function StaffQuotesPanel() {
   }, []);
 
   useEffect(() => { void loadBase(page, appliedSearch); }, [appliedSearch, loadBase, page]);
+  // Salto al constructor en pantallas apiladas, una vez cargado (ver StaffRequestsPanel).
+  useEffect(() => {
+    if (!workspace || loadingWorkspace || !revealPendingRef.current) return;
+    revealPendingRef.current = false;
+    revealWhenStacked(mainRef.current, '(max-width: 1100px)');
+  }, [loadingWorkspace, workspace]);
   useEffect(() => { if (selectedId) void loadWorkspace(selectedId); else setWorkspace(null); }, [loadWorkspace, selectedId]);
   useEffect(() => {
     const requestFromUrl = new URLSearchParams(window.location.search).get('request');
@@ -519,6 +528,7 @@ export default function StaffQuotesPanel() {
     !contentFields.paymentTermsText.trim() && 'condiciones de pago',
     !contentFields.warrantyText.trim() && 'garantías',
   ].filter((label): label is string => Boolean(label));
+  const contentFilledCount = Object.values(contentFields).filter((value) => value.trim().length > 0).length;
   const selectedCurrency = priceListDetail?.currencyCode ?? workspace?.request.detail?.currencyCode ?? 'MXN';
   const selectedTaxProfile = workspace?.taxProfiles.find((profile) => profile.id === selectedTaxProfileId) ?? null;
 
@@ -1098,14 +1108,15 @@ export default function StaffQuotesPanel() {
   };
 
   // Nunca perder trabajo silenciosamente: si hay cambios sin persistir, se intenta guardar antes de cambiar de expediente.
-  const selectRequest = async (id: string) => {
-    if (id === selectedId) return;
-    if (autosaveState === 'conflict') return;
+  const selectRequest = async (id: string): Promise<boolean> => {
+    if (id === selectedId) return true;
+    if (autosaveState === 'conflict') return false;
     if (canEdit && ['dirty', 'error', 'offline'].includes(autosaveState)) {
       const persisted = await persistDraft();
-      if (!persisted) return;
+      if (!persisted) return false;
     }
     setSelectedId(id);
+    return true;
   };
 
   const guardNavigation = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
@@ -1133,11 +1144,11 @@ export default function StaffQuotesPanel() {
           <div className="quotes-request-list" aria-live="polite">
             {loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}
             {!loading && requests.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>Sin expedientes listos.</h2><p>Las solicitudes en elaboración o negociación aparecerán aquí.</p></div>}
-            {!loading && requests.map((item) => <button className={`quotes-request-row${selectedId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => void selectRequest(item.id)}><span className="quotes-request-row__signal" aria-hidden="true" /><span><strong>{item.folio}</strong><b>{item.client.displayName}</b><small>{item.detail?.projectType ?? 'Sin tipo'} · {item.detail?.location ?? 'Sin ubicación'}</small></span><em>{item.quote?.currentVersion ? `V${item.quote.currentVersion.versionNumber}` : 'Nuevo'}</em></button>)}
+            {!loading && requests.map((item) => <button className={`quotes-request-row${selectedId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => { if (item.id === selectedId) { revealWhenStacked(mainRef.current, '(max-width: 1100px)'); return; } void selectRequest(item.id).then((switched) => { revealPendingRef.current = switched; }); }}><span className="quotes-request-row__signal" aria-hidden="true" /><span><strong>{item.folio}</strong><b>{item.client.displayName}</b><small>{item.detail?.projectType ?? 'Sin tipo'} · {item.detail?.location ?? 'Sin ubicación'}</small></span><em>{item.quote?.currentVersion ? `V${item.quote.currentVersion.versionNumber}` : 'Nuevo'}</em></button>)}
           </div>
           <PrivatePagination page={page} totalPages={totalPages} disabled={loading} onPrevious={() => setPage((value) => value - 1)} onNext={() => setPage((value) => value + 1)} />
         </aside>
-        <section className="quotes-main">
+        <section className="quotes-main" ref={mainRef}>
           {(loadingWorkspace || (loading && !workspace)) && <div className="staff-detail__loading"><span /><span /><span /></div>}
           {!loadingWorkspace && !loading && !workspace && (error && requests.length === 0
             ? <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>No pudimos cargar el constructor.</h2><p>Revisa tu conexión e inténtalo de nuevo; tu trabajo guardado no se pierde.</p><button className="staff-button staff-button--dark" type="button" onClick={() => void loadBase(page, appliedSearch)}>Reintentar</button></div>
@@ -1205,7 +1216,7 @@ export default function StaffQuotesPanel() {
                 <div className="quotes-preflight-dialog__head"><h3 id="quotes-section-dialog-title">Agregar sección</h3><button className="staff-dialog-close" type="button" onClick={() => setShowSectionForm(false)} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
                 <form className="catalog-form" onSubmit={addSection}><label><span>Título de la sección</span><input required value={sectionForm.title} onChange={(event) => setSectionForm({ ...sectionForm, title: event.target.value })} placeholder="Por ejemplo: Alberca" maxLength={180} /></label><label><span>Descripción (opcional)</span><textarea rows={2} value={sectionForm.description} onChange={(event) => setSectionForm({ ...sectionForm, description: event.target.value })} maxLength={2000} /></label><button className="staff-button staff-button--copper" type="submit">Crear sección</button></form>
               </PrivateDialog>}
-              <details className="quotes-content"><summary>Contenido de la propuesta (alcance, exclusiones, pago, garantías, notas)</summary><label><span>Alcance</span><textarea value={contentFields.scopeText} onChange={(event) => setContentFields((current) => ({ ...current, scopeText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} placeholder="Qué incluye esta propuesta" /></label><label><span>Exclusiones</span><textarea value={contentFields.exclusionsText} onChange={(event) => setContentFields((current) => ({ ...current, exclusionsText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} placeholder="Qué no incluye" /></label><label><span>Condiciones de pago</span><textarea value={contentFields.paymentTermsText} onChange={(event) => setContentFields((current) => ({ ...current, paymentTermsText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} placeholder="Anticipo, contra entrega, etc." /></label><label><span>Garantías</span><textarea value={contentFields.warrantyText} onChange={(event) => setContentFields((current) => ({ ...current, warrantyText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} /></label><label><span>Notas públicas</span><textarea value={contentFields.publicNotesText} onChange={(event) => setContentFields((current) => ({ ...current, publicNotesText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} /></label></details>
+              <details className="quotes-content"><summary>Contenido de la propuesta (alcance, exclusiones, pago, garantías, notas)<span className={`quotes-content__count${contentFilledCount === 5 ? ' is-complete' : ''}`}>{contentFilledCount} de 5 con texto</span></summary><label><span>Alcance</span><textarea value={contentFields.scopeText} onChange={(event) => setContentFields((current) => ({ ...current, scopeText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} placeholder="Qué incluye esta propuesta" /></label><label><span>Exclusiones</span><textarea value={contentFields.exclusionsText} onChange={(event) => setContentFields((current) => ({ ...current, exclusionsText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} placeholder="Qué no incluye" /></label><label><span>Condiciones de pago</span><textarea value={contentFields.paymentTermsText} onChange={(event) => setContentFields((current) => ({ ...current, paymentTermsText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} placeholder="Anticipo, contra entrega, etc." /></label><label><span>Garantías</span><textarea value={contentFields.warrantyText} onChange={(event) => setContentFields((current) => ({ ...current, warrantyText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} placeholder="Por ejemplo: estructura, equipos e impermeabilización, con su plazo" /></label><label><span>Notas públicas</span><textarea value={contentFields.publicNotesText} onChange={(event) => setContentFields((current) => ({ ...current, publicNotesText: event.target.value }))} disabled={!canEdit && !canStartVersion} rows={3} maxLength={10000} placeholder="Visibles para el cliente en la propuesta y el PDF" /></label></details>
               </div>
               <aside className="quotes-builder__side">
               <button type="button" className="quotes-summary-toggle" aria-expanded={!summaryCollapsed} onClick={() => setSummaryCollapsed((current) => !current)}>{summaryCollapsed ? 'Mostrar resumen' : 'Ocultar resumen'}<ChevronDown size={14} aria-hidden="true" /></button>

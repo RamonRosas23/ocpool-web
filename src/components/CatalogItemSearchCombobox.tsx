@@ -20,7 +20,7 @@ async function readResponse<T>(response: Response): Promise<T> {
 }
 
 function formatPrice(item: CatalogSearchResultItem, currencyCode: string): string {
-  if (!item.price || !/^\d+$/u.test(item.price.unitPriceMinor)) return 'Sin precio en esta lista';
+  if (!item.price || !/^\d+$/u.test(item.price.unitPriceMinor)) return 'Sin precio';
   const amount = BigInt(item.price.unitPriceMinor);
   return `${currencyCode} ${(amount / 100n).toLocaleString('es-MX')}.${(amount % 100n).toString().padStart(2, '0')}`;
 }
@@ -43,14 +43,31 @@ export default function CatalogItemSearchCombobox({
   const listboxId = useId();
   const optionId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [term, setTerm] = useState('');
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<CatalogSearchResultItem[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
 
-  const visibleItems = items.filter((item) => !excludeIds.includes(item.id));
+  // Primero lo que se puede agregar; los conceptos sin precio en esta lista (no seleccionables) van
+  // después bajo su propio encabezado, en vez de mezclarse y enterrar las opciones útiles.
+  const visibleItems = items
+    .filter((item) => !excludeIds.includes(item.id))
+    .map((item, order) => ({ item, order }))
+    .sort((a, b) => Number(Boolean(a.item.blocker)) - Number(Boolean(b.item.blocker)) || a.order - b.order)
+    .map(({ item }) => item);
+  const firstBlockedIndex = visibleItems.findIndex((item) => item.blocker);
+  const selectableCount = firstBlockedIndex === -1 ? visibleItems.length : firstBlockedIndex;
+
+  // Si el campo está cerca del borde inferior, se sube para que el desplegable quede a la vista.
+  const openAndReveal = () => {
+    setOpen(true);
+    const input = inputRef.current;
+    if (input && input.getBoundingClientRect().bottom > window.innerHeight - 320) input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   useEffect(() => {
     if (!priceListId || !open) return;
@@ -58,12 +75,14 @@ export default function CatalogItemSearchCombobox({
     const timeout = window.setTimeout(() => {
       setLoading(true);
       setError(null);
-      const params = new URLSearchParams({ limit: '20' });
+      // 50 (el máximo de la API) para que, sin escribir, se vean más conceptos con precio.
+      const params = new URLSearchParams({ limit: '50' });
       if (term.trim()) params.set('query', term.trim());
       fetch(`/api/staff/catalog/price-lists/${priceListId}/search?${params.toString()}`, { credentials: 'include', cache: 'no-store', signal: controller.signal })
-        .then((response) => readResponse<{ items: CatalogSearchResultItem[] }>(response))
+        .then((response) => readResponse<{ items: CatalogSearchResultItem[]; nextCursor: string | null }>(response))
         .then((data) => {
           setItems(data.items);
+          setHasMore(Boolean(data.nextCursor));
           setActiveIndex(-1);
         })
         .catch((caught: unknown) => {
@@ -95,11 +114,12 @@ export default function CatalogItemSearchCombobox({
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      if (!open) { setOpen(true); return; }
-      setActiveIndex((current) => visibleItems.length ? (current + 1) % visibleItems.length : -1);
+      if (!open) { openAndReveal(); return; }
+      // Las flechas recorren sólo los conceptos que se pueden agregar.
+      setActiveIndex((current) => selectableCount ? (current + 1) % selectableCount : -1);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setActiveIndex((current) => visibleItems.length ? (current - 1 + visibleItems.length) % visibleItems.length : -1);
+      setActiveIndex((current) => selectableCount ? (current - 1 + selectableCount) % selectableCount : -1);
     } else if (event.key === 'Enter') {
       const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : undefined;
       if (activeItem) {
@@ -117,6 +137,7 @@ export default function CatalogItemSearchCombobox({
   return (
     <div className="quotes-catalog-search" ref={containerRef}>
       <input
+        ref={inputRef}
         type="text"
         role="combobox"
         aria-label={ariaLabel}
@@ -130,7 +151,7 @@ export default function CatalogItemSearchCombobox({
         value={term}
         disabled={disabled || !priceListId}
         onChange={(event) => { setTerm(event.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
+        onFocus={openAndReveal}
         onClick={() => setOpen(true)}
         onKeyDown={handleKeyDown}
       />
@@ -138,7 +159,8 @@ export default function CatalogItemSearchCombobox({
         {loading && <li className="quotes-catalog-search__status" role="status">Buscando…</li>}
         {!loading && error && <li className="quotes-catalog-search__status quotes-catalog-search__status--error" role="alert">{error}</li>}
         {!loading && !error && visibleItems.length === 0 && <li className="quotes-catalog-search__status">{term.trim() ? 'Sin coincidencias.' : 'Escribe para buscar en todo el catálogo.'}</li>}
-        {!loading && !error && visibleItems.map((item, index) => (
+        {!loading && !error && visibleItems.map((item, index) => [
+          index === firstBlockedIndex && <li key="blocked-heading" role="presentation" className="quotes-catalog-search__group">Sin precio en esta lista{selectableCount === 0 ? ' — asígnale precio en Catálogo para poder agregarlos' : ''}</li>,
           <li
             key={item.id}
             id={`${optionId}-${index}`}
@@ -153,8 +175,9 @@ export default function CatalogItemSearchCombobox({
             <span className="quotes-catalog-search__option-name">{item.name} · {item.unit}</span>
             <span className="quotes-catalog-search__option-code">{item.code}</span>
             <span className="quotes-catalog-search__option-price">{formatPrice(item, currencyCode)}</span>
-          </li>
-        ))}
+          </li>,
+        ])}
+        {!loading && !error && hasMore && <li className="quotes-catalog-search__status">Hay más conceptos: escribe parte del nombre o la clave para acotar.</li>}
       </ul>}
     </div>
   );

@@ -248,7 +248,7 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
   return <section className="staff-messaging" aria-labelledby={headingId}>
     <div className="staff-messaging__head">
       <div>
-        <p className="staff-section-label">Correspondencia</p>
+        <p className="staff-section-label">Cliente y equipo</p>
         <h3 id={headingId}>Correspondencia</h3>
         <p className="staff-messaging__intro">Coordina al equipo y responde al cliente desde este expediente.</p>
       </div>

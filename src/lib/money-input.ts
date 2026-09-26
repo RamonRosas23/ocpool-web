@@ -1,8 +1,11 @@
-/** Converts a minor-unit money string (e.g. "125000") into a decimal input value (e.g. "1250.00"). */
+/**
+ * Converts a minor-unit money string (e.g. "12580000") into a decimal input value with thousands
+ * separators (e.g. "125,800.00") -- easier to read while editing; `parseMoneyInput` accepts the commas.
+ */
 export function moneyInputLabel(value: string): string {
   if (!/^\d+$/u.test(value)) return '';
   const amount = BigInt(value);
-  return `${(amount / 100n).toString()}.${(amount % 100n).toString().padStart(2, '0')}`;
+  return `${(amount / 100n).toLocaleString('en-US')}.${(amount % 100n).toString().padStart(2, '0')}`;
 }
 
 /** Parses a decimal money input (e.g. "1,250.5") into a minor-unit string (e.g. "125050"), or null if invalid. */
