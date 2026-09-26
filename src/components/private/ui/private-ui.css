@@ -390,7 +390,7 @@
 
 .private-combobox { position: relative; min-width: 0; }
 .private-combobox__input { cursor: text; }
-.private-combobox__listbox { position: absolute; z-index: var(--private-z-popover); top: calc(100% + 6px); left: 0; right: 0; max-height: min(280px, 45vh); overflow-y: auto; margin: 0; padding: var(--private-space-1); list-style: none; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-popover); }
+.private-combobox__listbox { z-index: var(--private-z-popover); overflow-y: auto; margin: 0; padding: var(--private-space-1); list-style: none; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-popover); }
 .private-combobox__status { padding: 8px 10px; color: var(--private-color-ink-muted); font-size: 12px; }
 .private-combobox__option { display: flex; min-height: 40px; align-items: center; border-radius: var(--private-radius-control); padding: 8px 10px; color: var(--private-color-ink); cursor: pointer; font-size: 12px; }
 .private-combobox__option.is-active { background: var(--private-color-brand); color: #fff; }
@@ -403,14 +403,14 @@
 .private-date-field__trigger:focus-visible { border-color: var(--private-color-focus); outline: 2px solid color-mix(in srgb, var(--private-color-focus) 34%, transparent); outline-offset: 2px; }
 .private-date-field__trigger:disabled { cursor: not-allowed; opacity: .56; }
 .private-date-field__icon { font-size: 15px; line-height: 1; }
-.private-date-field__popover { position: absolute; z-index: var(--private-z-popover); top: calc(100% + 7px); left: 0; min-width: 286px; padding: var(--private-space-3); border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-popover); }
+.private-date-field__popover { z-index: var(--private-z-popover); min-width: 286px; padding: var(--private-space-3); border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-popover); }
 .private-date-field__popover .rdp-root { --rdp-accent-color: var(--private-color-accent); --rdp-accent-background-color: color-mix(in srgb, var(--private-color-accent) 12%, transparent); --rdp-day-width: 36px; --rdp-day-height: 36px; --rdp-day_button-width: 34px; --rdp-day_button-height: 34px; margin: 0; font-family: var(--private-font-interface); font-size: 11px; }
 .private-date-field__popover .rdp-caption_label { font-size: 12px; font-weight: 700; }
 .private-date-field__popover .rdp-day_button { border-radius: 6px; }
 .private-date-field__popover .rdp-day_button:hover { border-color: var(--private-color-accent); }
 .private-date-field__popover .rdp-today:not(.rdp-outside) { font-weight: 800; color: var(--private-color-focus); }
 @media (max-width: 480px) {
-  .private-date-field__popover { right: 0; left: auto; min-width: min(286px, calc(100vw - 42px)); }
+  .private-date-field__popover { min-width: min(286px, calc(100vw - 42px)); }
 }
 
 .private-tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--private-color-border); }

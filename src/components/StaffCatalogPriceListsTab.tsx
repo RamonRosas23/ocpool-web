@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { PrivateCombobox, PrivateDatePicker, PrivateDialog, PrivateMoneyField } from '@/components/private/ui';
 import { formatDate } from '@/lib/format-date';
-import { zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
+import { BUSINESS_TIMEZONE, timeZoneParts, zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
 import { moneyLabel } from '@/lib/money';
 import { parseMoneyInput } from '@/lib/money-input';
 import { usePersistentState } from '@/lib/use-persistent-state';
@@ -12,6 +12,12 @@ import { readApiResponseOrThrow } from '@/lib/api-response-error';
 import type { CatalogCapabilities, PriceList, PriceListDetail } from '@/lib/staff-catalog-types';
 
 type PricableItem = { id: string; code: string; name: string };
+type PriceDialogMode = 'create' | 'vigente' | 'programado';
+
+function todayInBusinessTimeZone(): string {
+  const { year, month, day } = timeZoneParts(new Date(), BUSINESS_TIMEZONE);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
 
 export type StaffCatalogPriceListsTabProps = { capabilities: CatalogCapabilities };
 
@@ -30,12 +36,18 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
   const [showArchived, setShowArchived, showArchivedHydrated] = usePersistentState('ocpool.staff.catalog.priceLists.showArchived', false);
   const [priceListForm, setPriceListForm] = useState({ code: '', name: '', currencyCode: 'MXN' });
   const [priceForm, setPriceForm] = useState({ catalogItemId: '', amountInput: '', effectiveFrom: '', reason: '' });
+  const [priceDialogMode, setPriceDialogMode] = useState<PriceDialogMode>('create');
   const [editingPriceList, setEditingPriceList] = useState(false);
   const [priceListEditForm, setPriceListEditForm] = useState({ name: '' });
   const [tableFilter, setTableFilter] = useState('');
 
   const previewItem = useMemo(() => priceListDetail?.items.find((price) => price.catalogItemId === priceForm.catalogItemId && price.validUntil === null) ?? null, [priceListDetail, priceForm.catalogItemId]);
   const previewText = !priceForm.catalogItemId ? '' : previewItem ? `Se cerrará el precio vigente de ${moneyLabel(previewItem.unitPriceMinor, priceListDetail!.currencyCode)} (desde ${formatDate(previewItem.validFrom)}) el día que elijas abajo.` : 'Este concepto no tiene un precio vigente en esta lista; se creará el primero.';
+  const editingConceptName = useMemo(() => priceListDetail?.items.find((price) => price.catalogItemId === priceForm.catalogItemId)?.catalogItem.name, [priceListDetail, priceForm.catalogItemId]);
+  const priceDialogTitle = priceDialogMode === 'vigente' && editingConceptName ? `Actualizar precio de ${editingConceptName}`
+    : priceDialogMode === 'programado' && editingConceptName ? `Reprogramar precio de ${editingConceptName}`
+    : 'Programar precio';
+  const priceDialogSubmitLabel = priceDialogMode === 'vigente' ? 'Actualizar precio' : priceDialogMode === 'programado' ? 'Reprogramar precio' : 'Programar precio';
   const priceGroups = useMemo(() => {
     const groups = { actuales: [] as PriceListDetail['items'], futuros: [] as PriceListDetail['items'], historicos: [] as PriceListDetail['items'] };
     if (!priceListDetail) return groups;
@@ -155,15 +167,16 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
           ...(priceForm.reason.trim() ? { reason: priceForm.reason.trim() } : {}),
         }),
       }), 'No fue posible completar la operación.');
-      setNotice('Precio programado.');
+      setNotice(priceDialogMode === 'vigente' ? 'Precio actualizado.' : priceDialogMode === 'programado' ? 'Precio reprogramado.' : 'Precio programado.');
       setPriceForm((current) => ({ ...current, amountInput: '', reason: '' }));
       await loadPriceListDetail(selectedPriceListId); await loadPriceLists();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible programar el precio.'); }
     finally { setSaving(false); }
   };
 
-  const openScheduleDialogForItem = (catalogItemId: string) => {
-    setPriceForm({ catalogItemId, amountInput: '', effectiveFrom: '', reason: '' });
+  const openScheduleDialogForItem = (catalogItemId: string, mode: 'vigente' | 'programado') => {
+    setPriceForm({ catalogItemId, amountInput: '', effectiveFrom: mode === 'vigente' ? todayInBusinessTimeZone() : '', reason: '' });
+    setPriceDialogMode(mode);
     setShowScheduleDialog(true);
   };
 
@@ -204,7 +217,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
                 <span>{priceListDetail.name}{priceListDetail.status === 'ARCHIVED' ? ' · Archivada' : ''}</span>
                 <strong>{priceListDetail.items.length} precios</strong>
                 <div className="catalog-main__actions">
-                  {capabilities.pricesManage && priceListDetail.status === 'ACTIVE' && <button className="staff-button" type="button" disabled={saving} onClick={() => setShowScheduleDialog(true)}>Programar precio</button>}
+                  {capabilities.pricesManage && priceListDetail.status === 'ACTIVE' && <button className="staff-button" type="button" disabled={saving} onClick={() => { setPriceDialogMode('create'); setShowScheduleDialog(true); }}>Programar precio</button>}
                   {capabilities.pricesManage && (
                     <>
                       <button className="staff-button" type="button" disabled={saving} onClick={startEditPriceList}>Editar</button>
@@ -217,30 +230,30 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
                 <label className="staff-filters catalog-pricelists__table-filter"><span>Buscar en esta lista</span><input value={tableFilter} onChange={(event) => setTableFilter(event.target.value)} placeholder="Clave o nombre del concepto" maxLength={100} /></label>
               )}
               {[
-                { key: 'actuales', label: 'Vigentes', items: priceGroups.actuales, allowReschedule: true },
-                { key: 'futuros', label: 'Programados', items: priceGroups.futuros, allowReschedule: true },
-                { key: 'historicos', label: 'Históricos', items: priceGroups.historicos, allowReschedule: false },
+                { key: 'actuales', label: 'Vigentes', items: priceGroups.actuales, rowAction: 'vigente' as const },
+                { key: 'futuros', label: 'Programados', items: priceGroups.futuros, rowAction: 'programado' as const },
+                { key: 'historicos', label: 'Históricos', items: priceGroups.historicos, rowAction: null },
               ].map((group) => (
                 <div className="catalog-price-group" key={group.key}>
                   <div className="catalog-price-group__head"><span>{group.label}</span><span>{group.items.length}</span></div>
                   {group.items.length === 0 && <p className="catalog-price-group__empty">Sin precios en este grupo.</p>}
                   {group.items.length > 0 && (
-                    <div className={`catalog-price-table${group.allowReschedule ? ' catalog-price-table--actionable' : ''}`} role="table" aria-label={`Precios ${group.label.toLowerCase()}`}>
+                    <div className={`catalog-price-table${group.rowAction ? ' catalog-price-table--actionable' : ''}`} role="table" aria-label={`Precios ${group.label.toLowerCase()}`}>
                       <div className="catalog-price-table__head" role="row">
                         <span role="columnheader">Concepto</span><span role="columnheader">Importe</span><span role="columnheader">Vigencia</span>
-                        {group.allowReschedule && <span role="columnheader" aria-hidden="true" />}
+                        {group.rowAction && <span role="columnheader" aria-hidden="true" />}
                       </div>
                       {group.items.map((price) => (
                         <div className="catalog-price-table__row" role="row" key={price.id}>
                           <span role="cell"><strong>{price.catalogItem.name}</strong><small>{price.catalogItem.code} · {price.catalogItem.unit}</small></span>
                           <b role="cell">{moneyLabel(price.unitPriceMinor, priceListDetail.currencyCode)}</b>
                           <small role="cell">{formatDate(price.validFrom)}{price.validUntil ? ` — ${formatDate(price.validUntil)}` : ' — abierta'}</small>
-                          {group.allowReschedule && capabilities.pricesManage && (
+                          {group.rowAction && capabilities.pricesManage && (
                             <span role="cell">
-                              <button className="staff-button staff-button--outline catalog-price-table__action" type="button" onClick={() => openScheduleDialogForItem(price.catalogItemId)}>Reprogramar</button>
+                              <button className="staff-button staff-button--outline catalog-price-table__action" type="button" onClick={() => openScheduleDialogForItem(price.catalogItemId, group.rowAction!)}>{group.rowAction === 'vigente' ? 'Editar precio' : 'Reprogramar'}</button>
                             </span>
                           )}
-                          {group.allowReschedule && !capabilities.pricesManage && <span role="cell" aria-hidden="true" />}
+                          {group.rowAction && !capabilities.pricesManage && <span role="cell" aria-hidden="true" />}
                         </div>
                       ))}
                     </div>
@@ -286,7 +299,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
       {showScheduleDialog && priceListDetail && (
         <PrivateDialog open onClose={() => setShowScheduleDialog(false)} labelledBy="catalog-schedule-price-title" className="catalog-category-dialog" overlayClassName="catalog-category-dialog__overlay">
           <div className="catalog-category-dialog__head">
-            <h2 id="catalog-schedule-price-title">Programar precio</h2>
+            <h2 id="catalog-schedule-price-title">{priceDialogTitle}</h2>
             <button className="staff-dialog-close" type="button" onClick={() => setShowScheduleDialog(false)} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button>
           </div>
           {error && <p className="staff-error" role="alert">{error}</p>}
@@ -296,7 +309,7 @@ export default function StaffCatalogPriceListsTab({ capabilities }: StaffCatalog
             <PrivateDatePicker id="catalog-price-effective-from" label="Vigente desde" required value={priceForm.effectiveFrom} onValueChange={(value) => setPriceForm({ ...priceForm, effectiveFrom: value })} disabled={saving} />
             <label><span>Motivo opcional</span><input value={priceForm.reason} onChange={(event) => setPriceForm({ ...priceForm, reason: event.target.value })} placeholder="Ajuste de proveedor" maxLength={300} /></label>
             {previewText && <p className="catalog-form__preview" aria-live="polite">{previewText}</p>}
-            <button className="staff-button staff-button--dark" type="submit" disabled={saving}>Programar precio</button>
+            <button className="staff-button staff-button--dark" type="submit" disabled={saving}>{priceDialogSubmitLabel}</button>
           </form>
         </PrivateDialog>
       )}

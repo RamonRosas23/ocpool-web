@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { ChevronDown } from 'lucide-react';
 import { privateFieldA11y } from './a11y';
 import PrivateField, { type PrivateFieldChromeProps } from './PrivateField';
+import { usePopoverPosition } from './usePopoverPosition';
 import { parseMoneyInput } from '@/lib/money-input';
 
 function joinClasses(...values: Array<string | undefined>): string {
@@ -170,10 +172,13 @@ export function PrivateCombobox({ id, label, description, error, required, hideL
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   const listboxId = `${id}-listbox`;
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listboxRef = useRef<HTMLUListElement>(null);
   const selectedOption = options.find((option) => option.value === value) ?? null;
   const [term, setTerm] = useState(selectedOption?.label ?? '');
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const { portalContainer, style: listboxPosition } = usePopoverPosition(inputRef, open, { matchTriggerWidth: true, minHeight: 160 });
 
   useEffect(() => {
     if (!open) setTerm(selectedOption?.label ?? '');
@@ -191,7 +196,14 @@ export function PrivateCombobox({ id, label, description, error, required, hideL
 
   useEffect(() => {
     if (!open) return;
-    const closeOnOutsideClick = (event: MouseEvent) => { if (!containerRef.current?.contains(event.target as Node)) closeDropdown(); };
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      // El listbox se renderiza en un portal fuera de `containerRef` (para escapar el
+      // `overflow-y: auto` de cualquier PrivateDialog que lo contenga) -- hay que revisar también
+      // `listboxRef` para no cerrarlo al hacer clic en una opción.
+      if (containerRef.current?.contains(target) || listboxRef.current?.contains(target)) return;
+      closeDropdown();
+    };
     window.addEventListener('mousedown', closeOnOutsideClick);
     return () => window.removeEventListener('mousedown', closeOnOutsideClick);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- closeDropdown lee selectedOption ya vigente en cada render; no hace falta re-suscribir el listener por eso
@@ -223,6 +235,7 @@ export function PrivateCombobox({ id, label, description, error, required, hideL
     <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
       <div className={joinClasses('private-combobox', className)} ref={containerRef}>
         <input
+          ref={inputRef}
           id={id}
           type="text"
           role="combobox"
@@ -244,8 +257,8 @@ export function PrivateCombobox({ id, label, description, error, required, hideL
           onChange={(event) => { setTerm(event.target.value); setActiveIndex(-1); if (!open) setOpen(true); }}
           onKeyDown={handleKeyDown}
         />
-        {open && (
-          <ul id={listboxId} role="listbox" aria-label={label} className="private-combobox__listbox">
+        {open && portalContainer && listboxPosition && createPortal(
+          <ul ref={listboxRef} id={listboxId} role="listbox" aria-label={label} className="private-combobox__listbox" style={listboxPosition}>
             {visibleOptions.length === 0 && <li className="private-combobox__status">{noResultsLabel}</li>}
             {visibleOptions.map((option, index) => (
               <li
@@ -260,7 +273,8 @@ export function PrivateCombobox({ id, label, description, error, required, hideL
                 {option.label}
               </li>
             ))}
-          </ul>
+          </ul>,
+          portalContainer,
         )}
       </div>
     </PrivateField>

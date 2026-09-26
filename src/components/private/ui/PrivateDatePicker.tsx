@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DayPicker } from 'react-day-picker';
 import { es } from 'react-day-picker/locale';
 import { privateFieldA11y } from './a11y';
 import PrivateField, { type PrivateFieldChromeProps } from './PrivateField';
+import { usePopoverPosition } from './usePopoverPosition';
 
 function joinClasses(...values: Array<string | undefined>): string {
   return values.filter(Boolean).join(' ');
@@ -53,6 +55,7 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
   const selected = parseDate(value);
   const minDate = parseDate(min ?? '');
   const maxDate = parseDate(max ?? '');
+  const { portalContainer, style: popoverPosition } = usePopoverPosition(triggerRef, open, { minHeight: 380, width: 286 });
   // Sólo se agrega cuando el consumidor no trae ya su propio `error` -- una validación externa más
   // específica (p.ej. una fecha fuera de rango de negocio) siempre tiene precedencia sobre este
   // aviso genérico de "esta fecha no existe en el calendario".
@@ -64,10 +67,14 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
     const firstFocusable = popoverRef.current?.querySelector<HTMLElement>('button:not([disabled]), select:not([disabled]), input:not([disabled])');
     firstFocusable?.focus();
     const handlePointerDown = (event: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
+      const target = event.target as Node;
+      // El popover ahora se renderiza en un portal fuera de `rootRef` (para escapar el
+      // `overflow-y: auto` de cualquier PrivateDialog que lo contenga) -- un clic dentro de él
+      // (elegir un día, cambiar de mes/año) ya no cae dentro de `rootRef.current.contains(...)`,
+      // así que hay que revisar también `popoverRef` para no cerrar el calendario al usarlo.
+      if (rootRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      setOpen(false);
+      triggerRef.current?.focus();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { setOpen(false); triggerRef.current?.focus(); return; }
@@ -111,26 +118,29 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
             <span className="private-date-field__icon" aria-hidden="true">▣</span>
           </button>
         </div>
-        {open && <div ref={popoverRef} className="private-date-field__popover" role="dialog" aria-label={label}>
-          <DayPicker
-            mode="single"
-            locale={es}
-            weekStartsOn={1}
-            selected={selected}
-            onSelect={(date) => {
-              if (date) {
-                onValueChange(formatValue(date));
-                setOpen(false);
-                triggerRef.current?.focus();
-              }
-            }}
-            disabled={[...(minDate ? [{ before: minDate }] : []), ...(maxDate ? [{ after: maxDate }] : [])]}
-            showOutsideDays
-            captionLayout="dropdown"
-            fromYear={minDate?.getFullYear() ?? new Date().getFullYear() - 10}
-            toYear={maxDate?.getFullYear() ?? new Date().getFullYear() + 10}
-          />
-        </div>}
+        {open && portalContainer && popoverPosition && createPortal(
+          <div ref={popoverRef} className="private-date-field__popover" role="dialog" aria-label={label} style={popoverPosition}>
+            <DayPicker
+              mode="single"
+              locale={es}
+              weekStartsOn={1}
+              selected={selected}
+              onSelect={(date) => {
+                if (date) {
+                  onValueChange(formatValue(date));
+                  setOpen(false);
+                  triggerRef.current?.focus();
+                }
+              }}
+              disabled={[...(minDate ? [{ before: minDate }] : []), ...(maxDate ? [{ after: maxDate }] : [])]}
+              showOutsideDays
+              captionLayout="dropdown"
+              fromYear={minDate?.getFullYear() ?? new Date().getFullYear() - 10}
+              toYear={maxDate?.getFullYear() ?? new Date().getFullYear() + 10}
+            />
+          </div>,
+          portalContainer,
+        )}
       </div>
     </PrivateField>
   );
