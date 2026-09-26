@@ -4,6 +4,8 @@ import { FormEvent, useCallback, useEffect, useId, useRef, useState } from 'reac
 import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
+import { loadThroughLatest } from '@/lib/load-latest-messages';
+import { relativeTimeLabel } from '@/lib/relative-time';
 
 type PortalMessage = {
   id: string;
@@ -69,7 +71,7 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
   const isStale = () => requestIdRef.current !== requestId;
 
   const loadMessages = useCallback(async (cursor?: string, signal?: AbortSignal) => {
-    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=30` : '?limit=30';
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=100` : '?limit=100';
     const response = await fetch(`/api/portal/requests/${requestId}/messages${query}`, { credentials: 'include', cache: 'no-store', signal });
     return readJson<PortalConversationResponse>(response);
   }, [requestId]);
@@ -83,7 +85,7 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     setMessages([]);
     setNextCursor(null);
     setSendIdempotencyKey(null);
-    void loadMessages(undefined, controller.signal).then((data) => {
+    void loadThroughLatest((cursor) => loadMessages(cursor, controller.signal)).then((data) => {
       if (controller.signal.aborted) return;
       setConversation(data.conversation);
       setMessages(data.items);
@@ -100,7 +102,7 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
   const retry = () => {
     setLoading(true);
     setError(null);
-    void loadMessages().then((data) => {
+    void loadThroughLatest((cursor) => loadMessages(cursor)).then((data) => {
       if (isStale()) return;
       setConversation(data.conversation);
       setMessages(data.items);
@@ -167,18 +169,18 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     {loading && <div className="client-messaging__loading" role="status" aria-label="Cargando conversación"><i /><i /><i /></div>}
     {!loading && error && <div className="client-messaging__error" role="alert"><p>{error}</p><button type="button" className="client-messaging__retry" onClick={retry}>Reintentar</button></div>}
     {!loading && !error && <>
-      {nextCursor && <button type="button" className="client-messaging__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando mensajes…' : 'Ver más mensajes'}</button>}
       {messages.length === 0 && <div className="client-messaging__empty"><strong>Aún no hay mensajes.</strong><span>Escribe una actualización o una duda y el equipo la verá en este expediente.</span></div>}
       {messages.length > 0 && <ol className="client-messaging__list" aria-live="polite">
         {messages.map((message) => <li className={`client-message client-message--${message.sender?.type === 'EMPLOYEE' ? 'team' : 'client'}`} key={message.id}>
-          <div className="client-message__meta"><strong>{authorLabel(message)}</strong><time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time></div>
+          <div className="client-message__meta"><strong>{authorLabel(message)}</strong><time dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>{relativeTimeLabel(message.createdAt)}</time></div>
           <p>{message.body}</p>
         </li>)}
       </ol>}
+      {nextCursor && <button type="button" className="client-messaging__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando mensajes…' : 'Cargar mensajes más recientes'}</button>}
       {conversation?.status === 'CLOSED' ? <div className="client-messaging__closed" role="status"><strong>Esta conversación está cerrada.</strong><span>El expediente conserva su historial como referencia. Si necesitas continuar, ponte en contacto con OCPOOL.</span></div> : <form className="client-messaging__composer" onSubmit={sendMessage}>
         <label htmlFor={composerId}>Escribe una actualización</label>
-        <textarea id={composerId} value={draft} maxLength={MAX_MESSAGE_LENGTH} onChange={(event) => { setDraft(event.target.value); setSendIdempotencyKey(null); }} placeholder="Comparte una duda, ajuste o próximo paso…" rows={4} disabled={sending} />
-        <div className="client-messaging__composer-bottom"><span>{draft.length.toLocaleString('es-MX')} / {MAX_MESSAGE_LENGTH.toLocaleString('es-MX')} caracteres</span><button type="submit" className="client-messaging__send" disabled={sending || !draft.trim()} aria-busy={sending}>{sending ? 'Enviando…' : 'Enviar mensaje'}</button></div>
+        <textarea id={composerId} value={draft} maxLength={MAX_MESSAGE_LENGTH} onChange={(event) => { setDraft(event.target.value); setSendIdempotencyKey(null); }} onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder="Comparte una duda, ajuste o próximo paso…" rows={4} disabled={sending} aria-describedby={`${composerId}-hint`} />
+        <div className="client-messaging__composer-bottom"><span id={`${composerId}-hint`}>{draft.length.toLocaleString('es-MX')} / {MAX_MESSAGE_LENGTH.toLocaleString('es-MX')} caracteres · Ctrl + Enter para enviar</span><button type="submit" className="client-messaging__send" disabled={sending || !draft.trim()} aria-busy={sending}>{sending ? 'Enviando…' : 'Enviar mensaje'}</button></div>
         {sendError && <p className="client-messaging__send-error" role="alert">{sendError}</p>}
       </form>}
       <span className="sr-only" aria-live="polite">{announcement}</span>

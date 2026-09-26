@@ -5,6 +5,8 @@ import { nextRovingTabIndex } from '@/components/private/ui';
 import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
+import { loadThroughLatest } from '@/lib/load-latest-messages';
+import { relativeTimeLabel } from '@/lib/relative-time';
 
 export type StaffMessagingCapabilities = {
   messagingRead: boolean;
@@ -114,7 +116,7 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
   };
 
   const loadMessages = useCallback(async (cursor?: string, signal?: AbortSignal) => {
-    const params = new URLSearchParams({ limit: '30' });
+    const params = new URLSearchParams({ limit: '100' });
     if (cursor) params.set('cursor', cursor);
     const response = await fetch(`/api/staff/quote-requests/${requestId}/messages?${params.toString()}`, {
       credentials: 'include',
@@ -142,7 +144,7 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
     setMessages([]);
     setNextCursor(null);
     if (!onDraftChange) setLocalDraft('');
-    void loadMessages(undefined, controller.signal).then((data) => {
+    void loadThroughLatest((cursor) => loadMessages(cursor, controller.signal)).then((data) => {
       if (!controller.signal.aborted) applyResponse(data);
     }).catch((caught: unknown) => {
       if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'No fue posible cargar la conversación.');
@@ -159,7 +161,7 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
   const retry = () => {
     setLoading(true);
     setError(null);
-    void loadMessages().then((data) => { if (!isStale()) applyResponse(data); }).catch((caught: unknown) => {
+    void loadThroughLatest((cursor) => loadMessages(cursor)).then((data) => { if (!isStale()) applyResponse(data); }).catch((caught: unknown) => {
       if (!isStale()) setError(caught instanceof Error ? caught.message : 'No fue posible cargar la conversación.');
     }).finally(() => setLoading(false));
   };
@@ -271,14 +273,14 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
         {canSeeInternal && <button id={internalTabId} type="button" role="tab" tabIndex={mode === 'INTERNAL' ? 0 : -1} aria-selected={mode === 'INTERNAL'} aria-controls={mode === 'INTERNAL' ? internalPanelId : undefined} className={mode === 'INTERNAL' ? 'is-active' : ''} onKeyDown={handleTabKeyDown} onClick={() => { setMode('INTERNAL'); setSendIdempotencyKey(null); setSendError(null); }}>{`Notas internas ${internalCount}`}</button>}
       </div>
       <div id={mode === 'CUSTOMER' ? sharedPanelId : internalPanelId} role="tabpanel" aria-labelledby={mode === 'CUSTOMER' ? sharedTabId : internalTabId} className={`staff-messaging__panel${mode === 'INTERNAL' ? ' is-internal' : ''}`}>
-        {nextCursor && <button type="button" className="staff-messaging__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando mensajes…' : 'Ver más mensajes'}</button>}
         {visibleMessages.length === 0 && <div className="staff-messaging__empty"><strong>{mode === 'CUSTOMER' ? 'Aún no hay mensajes compartidos.' : 'Aún no hay notas internas.'}</strong><span>{mode === 'CUSTOMER' ? 'Las respuestas de este hilo quedarán visibles para el cliente.' : 'Usa este espacio para coordinar detalles que no deben salir del equipo.'}</span></div>}
         {visibleMessages.length > 0 && <ol className="staff-messaging__list" aria-live="polite">
           {visibleMessages.map((message) => <li className={`staff-message${message.visibility === 'INTERNAL' ? ' staff-message--internal' : ''}`} key={message.id}>
-            <div className="staff-message__meta"><strong>{message.sender?.type === 'CUSTOMER' ? 'Cliente' : message.sender?.displayName ?? 'Equipo OCPOOL'}</strong><time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time><span>{message.visibility === 'CUSTOMER' ? 'Visible para cliente' : 'Sólo equipo'}</span></div>
+            <div className="staff-message__meta"><strong>{message.sender?.type === 'CUSTOMER' ? 'Cliente' : message.sender?.displayName ?? 'Equipo OCPOOL'}</strong><time dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>{relativeTimeLabel(message.createdAt)}</time><span>{message.visibility === 'CUSTOMER' ? 'Visible para cliente' : 'Sólo equipo'}</span></div>
             <p>{message.body}</p>
           </li>)}
         </ol>}
+        {nextCursor && <button type="button" className="staff-messaging__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando mensajes…' : 'Cargar mensajes más recientes'}</button>}
         {closed ? <div className="staff-messaging__closed" role="status"><strong>Conversación cerrada.</strong><span>El historial permanece disponible; reabre la conversación para continuar.</span></div> : canCompose ? <form className="staff-messaging__composer" onSubmit={sendMessage}>
           <label htmlFor={composerId}>{modeLabel}</label>
           <textarea id={composerId} value={draft} maxLength={MAX_MESSAGE_LENGTH} onChange={(event) => updateDraft(event.target.value)} placeholder={mode === 'CUSTOMER' ? 'Escribe una actualización para el cliente…' : 'Registra una nota que sólo verá el equipo…'} rows={4} disabled={sending} />

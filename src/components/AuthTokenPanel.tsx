@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Check, Eye, EyeOff } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 
 type TokenKind = 'customer' | 'recovery';
@@ -11,6 +12,17 @@ type ErrorResponse = { error?: { message?: string } };
 async function publicError(response: Response): Promise<string> {
   const body = await response.json().catch(() => ({})) as ErrorResponse;
   return body.error?.message ? 'El enlace no es válido o ya expiró.' : 'El enlace no es válido o ya expiró.';
+}
+
+// Mismas reglas que `passwordSchema` del servidor (12–128 caracteres, al menos una letra y un
+// número): se muestran en vivo para que el formulario no falle después de enviarlo.
+function passwordChecks(password: string, confirmation: string) {
+  return [
+    { key: 'length', label: 'Al menos 12 caracteres', met: password.length >= 12 && password.length <= 128 },
+    { key: 'letter', label: 'Incluye una letra', met: /[A-Za-z]/u.test(password) },
+    { key: 'digit', label: 'Incluye un número', met: /[0-9]/u.test(password) },
+    { key: 'match', label: 'Ambas coinciden', met: password.length > 0 && password === confirmation },
+  ];
 }
 
 function removeParamsFromAddress(params: readonly string[]) {
@@ -26,6 +38,7 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
   const [state, setState] = useState<TokenState>('loading');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [passwordsVisible, setPasswordsVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,6 +87,11 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
   const submitRecovery = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!token || busy) return;
+    const [length, letter, digit] = passwordChecks(password, confirmation);
+    if (!length.met || !letter.met || !digit.met) {
+      setError('La contraseña necesita al menos 12 caracteres, con letras y números.');
+      return;
+    }
     if (password !== confirmation) {
       setError('Las contraseñas no coinciden.');
       return;
@@ -122,9 +140,9 @@ export default function AuthTokenPanel({ kind }: { kind: TokenKind }) {
       <div className="auth-panel__top"><p className="auth-kicker">{customer ? 'Portal de cliente' : 'Recuperación'}</p><Link href={customer ? '/portal/access' : '/login'} className="auth-panel__back">Volver al acceso</Link></div>
       <div className="auth-panel__body">
         {customer && state === 'loading' && <><h2 id="auth-token-title">Validando tu acceso</h2><p className="auth-panel__intro" role="status">Un momento. Estamos comprobando tu enlace.</p></>}
-        {customer && state === 'ready' && <><h2 id="auth-token-title">Confirma tu entrada</h2><p className="auth-panel__intro">Por tu seguridad, este enlace de un solo uso sólo se activa cuando tú confirmas -- así protegemos tu acceso incluso de escáneres automáticos de correo.</p>{error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}<button className="auth-submit" type="button" disabled={busy} onClick={() => void consumeCustomerLink()}>{busy ? 'Entrando…' : 'Entrar a mi portal'}</button></>}
+        {customer && state === 'ready' && <><h2 id="auth-token-title">Confirma tu entrada</h2><p className="auth-panel__intro">Por tu seguridad, este enlace de un solo uso sólo se activa cuando tú confirmas -- así protegemos tu acceso incluso de escáneres automáticos de correo.</p>{error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}<button className="auth-submit" type="button" autoFocus disabled={busy} onClick={() => void consumeCustomerLink()}>{busy ? 'Entrando…' : 'Entrar a mi portal'}</button></>}
         {invalid && <><h2 id="auth-token-title">Enlace no disponible</h2><p className="auth-panel__intro" role="alert">{error ?? 'Este enlace no existe, ya fue utilizado o expiró.'}</p><Link className="auth-submit auth-submit--link" href={customer ? '/portal/access' : '/login/recovery'}>{customer ? 'Solicitar otro enlace' : 'Solicitar otro enlace'}</Link></>}
-        {!customer && state === 'ready' && <><h2 id="auth-token-title">Define tu contraseña</h2><p className="auth-panel__intro">Usa al menos 12 caracteres con letras y números.</p><form className="auth-form" method="post" onSubmit={submitRecovery} noValidate><label><span>Nueva contraseña</span><input type="password" name="newPassword" autoComplete="new-password" minLength={12} required value={password} onChange={(event) => setPassword(event.target.value)} /></label><label><span>Confirmar contraseña</span><input type="password" name="confirmation" autoComplete="new-password" minLength={12} required value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>{error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}<button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Actualizando…' : 'Actualizar contraseña'}</button></form></>}
+        {!customer && state === 'ready' && <><h2 id="auth-token-title">Define tu contraseña</h2><p className="auth-panel__intro">Usa al menos 12 caracteres con letras y números.</p><form className="auth-form" method="post" onSubmit={submitRecovery} noValidate><label><span>Nueva contraseña</span><input type={passwordsVisible ? 'text' : 'password'} name="newPassword" autoComplete="new-password" minLength={12} maxLength={128} required value={password} onChange={(event) => { setPassword(event.target.value); if (error) setError(null); }} aria-describedby="auth-password-requirements" /></label><label><span>Confirmar contraseña</span><input type={passwordsVisible ? 'text' : 'password'} name="confirmation" autoComplete="new-password" minLength={12} maxLength={128} required value={confirmation} onChange={(event) => { setConfirmation(event.target.value); if (error) setError(null); }} /></label><div className="auth-requirements"><ul id="auth-password-requirements" aria-label="Requisitos de la contraseña">{passwordChecks(password, confirmation).map((check) => <li key={check.key} className={check.met ? 'is-met' : undefined}><span className="auth-requirements__mark" aria-hidden="true">{check.met ? <Check size={12} strokeWidth={3} /> : null}</span>{check.label}<span className="sr-only">{check.met ? ' (cumplido)' : ' (pendiente)'}</span></li>)}</ul><button className="auth-text-button" type="button" aria-pressed={passwordsVisible} onClick={() => setPasswordsVisible((current) => !current)}>{passwordsVisible ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}{passwordsVisible ? 'Ocultar claves' : 'Mostrar claves'}</button></div>{error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}<button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Actualizando…' : 'Actualizar contraseña'}</button></form></>}
         {success && !customer && <><h2 id="auth-token-title">Acceso actualizado</h2><p className="auth-feedback auth-feedback--success" role="status">Tu contraseña fue actualizada. Ya puedes iniciar sesión con ella.</p><Link className="auth-submit auth-submit--link" href="/login">Ir al acceso</Link></>}
       </div>
       <p className="auth-panel__note">Nunca compartas un enlace de acceso. OCPOOL no te pedirá tu contraseña por correo.</p>

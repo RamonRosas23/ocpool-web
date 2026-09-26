@@ -1984,3 +1984,43 @@ button.staff-notification-health__item.is-selected { border-color: var(--private
   .audit-toolbar__apply { justify-items: stretch; }
   .audit-quickbar { align-items: flex-start; flex-direction: column; }
 }
+
+/* ───────────────────────── Access: sent state, requirements, hints ───────────────────────── */
+
+.auth-sent { display: grid; max-width: 420px; gap: 14px; animation: private-ui-rise 220ms cubic-bezier(.2, .7, .2, 1); }
+.auth-sent__mark { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 14px; background: var(--private-tint-success); color: var(--private-color-success); }
+.auth-sent h2 { margin: 0; }
+.auth-sent .auth-feedback p { margin: 0; }
+.auth-sent .auth-feedback p + p { margin-top: 6px; }
+.auth-sent__email { margin: 0; color: var(--private-color-ink-muted); font-size: 14px; overflow-wrap: anywhere; }
+.auth-sent__email strong { color: var(--private-color-brand); font-weight: 650; }
+.auth-sent__tips { display: grid; gap: 4px; margin: 0; padding-left: 18px; color: var(--private-color-ink-muted); font-size: 13px; line-height: 1.5; }
+.auth-sent__actions { display: grid; gap: 8px; margin-top: 4px; }
+.auth-submit--secondary { border-color: var(--private-color-border-strong); background: transparent; color: var(--private-color-brand); }
+.auth-submit--secondary:hover:not(:disabled), .auth-submit--secondary:focus-visible:not(:disabled) { border-color: var(--private-color-brand); background: var(--private-tint-accent); color: var(--private-color-brand); }
+.auth-submit--secondary:disabled { cursor: not-allowed; }
+.auth-text-button { display: inline-flex; min-height: 40px; align-items: center; justify-self: start; gap: 6px; border: 0; border-radius: 8px; padding: 0 6px; margin-left: -6px; background: transparent; color: var(--private-color-accent); cursor: pointer; font: inherit; font-size: 14px; font-weight: 650; }
+.auth-text-button:hover:not(:disabled) { color: var(--private-color-brand); text-decoration: underline; text-underline-offset: 3px; }
+.auth-text-button:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.auth-text-button:disabled { cursor: wait; opacity: .6; }
+.auth-text-button--center { justify-self: center; margin-left: 0; }
+.auth-requirements { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; margin-top: -6px; }
+.auth-requirements ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.auth-requirements li { display: flex; align-items: center; gap: 8px; color: var(--private-color-ink-muted); font-size: 13px; transition: color var(--private-motion-standard); }
+.auth-requirements li.is-met { color: var(--private-color-success); font-weight: 600; }
+.auth-requirements__mark { display: grid; width: 16px; height: 16px; flex: 0 0 auto; place-items: center; border: 1.5px solid var(--private-color-border-control); border-radius: 50%; background: #fff; }
+.auth-requirements li.is-met .auth-requirements__mark { border-color: var(--private-color-success); background: var(--private-color-success); color: #fff; }
+.auth-hint { margin: -10px 0 0; color: var(--private-color-copper); font-size: 13px; font-weight: 650; }
+
+/* ───────────────────────── Portal: section shortcuts ───────────────────────── */
+
+.client-sections { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 0 4px; }
+.client-sections button { min-height: 36px; border: 1px solid var(--private-color-border-control); border-radius: 999px; padding: 0 14px; background: #fff; color: var(--private-color-brand); cursor: pointer; font: inherit; font-size: 13px; font-weight: 650; transition: border-color var(--private-motion-standard), background var(--private-motion-standard); }
+.client-sections button:hover { border-color: var(--private-color-brand); background: var(--private-tint-accent); }
+.client-sections button:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.client-files:focus, .client-version-history:focus { outline: none; }
+.client-files.is-spotlit, .client-version-history.is-spotlit { animation: quotes-spotlight 1.5s cubic-bezier(.2, .7, .2, 1); }
+.client-restricted [role='status'] { color: #f7f2e9; }
+@media (prefers-reduced-motion: reduce) {
+  .client-files.is-spotlit, .client-version-history.is-spotlit { animation: none; outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+}

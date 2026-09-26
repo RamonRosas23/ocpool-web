@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { useHydrated } from '@/lib/use-hydrated';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
@@ -33,6 +33,8 @@ export default function EmployeeLoginPanel() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
   const [mfaRequired, setMfaRequired] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const hydrated = useHydrated();
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +83,20 @@ export default function EmployeeLoginPanel() {
     }
   };
 
+  // Bloq Mayús es la causa más común de "contraseña incorrecta" que el usuario no ve: se avisa
+  // mientras escribe, sin cambiar el orden de tabulación del formulario.
+  const trackCapsLock = (event: KeyboardEvent<HTMLInputElement>) => setCapsLockOn(event.getModifierState('CapsLock'));
+
+  // En el paso del código, correo y contraseña quedan bloqueados: sin esta salida, equivocarse de
+  // cuenta obligaba a recargar la página.
+  const switchAccount = () => {
+    setMfaRequired(false);
+    setMfaCode('');
+    setPassword('');
+    setError(null);
+    window.requestAnimationFrame(() => emailInputRef.current?.focus());
+  };
+
   return <main className="auth-shell auth-shell--staff">
     <section className="auth-context" aria-label="Contexto de acceso">
       <WorkspaceBrand className="auth-brand" subtitle="Operaciones comerciales" />
@@ -94,11 +110,13 @@ export default function EmployeeLoginPanel() {
         <h2 id="employee-login-title">Acceso interno</h2>
         <p className="auth-panel__intro">{mfaRequired ? 'Ingresa el código de tu app de autenticación para continuar.' : 'Ingresa con tu cuenta de empleado para continuar.'}</p>
         <form className="auth-form" method="post" onSubmit={submit} noValidate>
-          <label><span>Correo</span><input type="email" name="email" autoComplete="username" inputMode="email" required disabled={mfaRequired} value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-          <label><span>Contraseña</span><span className="auth-password"><input type={passwordVisible ? 'text' : 'password'} name="password" autoComplete="current-password" required disabled={mfaRequired} value={password} onChange={(event) => setPassword(event.target.value)} /><button className="auth-password__toggle" type="button" aria-label={passwordVisible ? 'Ocultar clave' : 'Mostrar clave'} aria-pressed={passwordVisible} disabled={mfaRequired} onClick={() => setPasswordVisible((current) => !current)}>{passwordVisible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}</button></span></label>
+          <label><span>Correo</span><input ref={emailInputRef} type="email" name="email" autoComplete="username" inputMode="email" required disabled={mfaRequired} value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label><span>Contraseña</span><span className="auth-password"><input type={passwordVisible ? 'text' : 'password'} name="password" autoComplete="current-password" required disabled={mfaRequired} value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={trackCapsLock} onKeyUp={trackCapsLock} onBlur={() => setCapsLockOn(false)} aria-describedby={capsLockOn ? 'employee-login-caps' : undefined} /><button className="auth-password__toggle" type="button" aria-label={passwordVisible ? 'Ocultar clave' : 'Mostrar clave'} aria-pressed={passwordVisible} disabled={mfaRequired} onClick={() => setPasswordVisible((current) => !current)}>{passwordVisible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}</button></span></label>
+          {capsLockOn && !mfaRequired && <p className="auth-hint" id="employee-login-caps">Bloq Mayús está activado.</p>}
           {mfaRequired && <label><span>Código de autenticación</span><input type="text" name="mfaCode" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoFocus required value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/gu, '').slice(0, 6))} /></label>}
           {error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}
           <button className="auth-submit" type="submit" disabled={busy || !hydrated}>{busy ? 'Verificando…' : mfaRequired ? 'Verificar código' : 'Entrar'}</button>
+          {mfaRequired && <button className="auth-text-button auth-text-button--center" type="button" disabled={busy} onClick={switchAccount}>Usar otra cuenta</button>}
         </form>
         <Link className="auth-panel__recovery" href="/login/recovery">¿Olvidaste tu contraseña?</Link>
       </div>
