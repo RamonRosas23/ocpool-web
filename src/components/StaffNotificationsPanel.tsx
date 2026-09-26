@@ -1,16 +1,16 @@
 'use client';
 
 import { Inbox } from 'lucide-react';
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
-import StaffTopNav from '@/components/StaffTopNav';
+import StaffHeader from '@/components/StaffHeader';
 import { statusToneIcon } from '@/lib/labels';
 import { formatDateTime } from '@/lib/format-date';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
-import { PrivateBlockingState, PrivateLinkButton, PrivateSelect } from '@/components/private/ui';
+import { PrivateBlockingState, PrivateLinkButton, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
+import { errorCategoryLabel, eventLabel, templateLabel } from '@/lib/notification-labels';
 
 const STATUS_OPTIONS = ['', 'PENDING', 'PROCESSING', 'SENT', 'FAILED', 'CANCELLED'] as const;
 type NotificationStatus = (typeof STATUS_OPTIONS)[number];
@@ -63,15 +63,6 @@ const STATUS_LABELS: Record<Exclude<NotificationStatus, ''>, string> = {
   CANCELLED: 'Cancelado',
 };
 
-const ERROR_LABELS: Record<string, string> = {
-  TEMPORARY_PROVIDER: 'Proveedor temporal',
-  RATE_LIMIT: 'Límite del proveedor',
-  INVALID_RECIPIENT: 'Destinatario inválido',
-  TEMPLATE_ERROR: 'Plantilla inválida',
-  CONFIGURATION: 'Configuración',
-  OTHER: 'Error controlado',
-};
-
 function statusLabel(status: NotificationStatus): string {
   return status ? STATUS_LABELS[status] : 'Todos los estados';
 }
@@ -82,7 +73,7 @@ function StatusPill({ status }: { status: Exclude<NotificationStatus, ''> }) {
 }
 
 function errorLabel(value: string | null): string {
-  return value ? (ERROR_LABELS[value] ?? 'Error controlado') : 'Sin error';
+  return errorCategoryLabel(value);
 }
 
 const CANCEL_REASON_LABELS: Record<string, string> = {
@@ -108,7 +99,6 @@ function diagnosisLabel(item: NotificationItem): string {
   return item.status === 'CANCELLED' ? cancelReasonLabel(item.cancelReason) : errorLabel(item.errorCategory);
 }
 
-
 function formatAge(seconds: number): string {
   if (seconds < 60) return 'Hace menos de un minuto';
   const minutes = Math.floor(seconds / 60);
@@ -127,6 +117,7 @@ export default function StaffNotificationsPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (!statusFilterHydrated) return;
@@ -135,8 +126,9 @@ export default function StaffNotificationsPanel() {
       setLoading(true);
       setError(null);
       try {
-        const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '';
-        const response = await fetch(`/api/staff/notifications${query}`, { credentials: 'include', cache: 'no-store', signal: controller.signal });
+        const params = new URLSearchParams({ page: String(page) });
+        if (statusFilter) params.set('status', statusFilter);
+        const response = await fetch(`/api/staff/notifications?${params.toString()}`, { credentials: 'include', cache: 'no-store', signal: controller.signal });
         const result = await readApiResponse<ListResponse>(response, 'No fue posible actualizar las notificaciones.');
         if (!result.ok) {
           if (result.kind === 'forbidden') setAccessDenied(true);
@@ -153,7 +145,7 @@ export default function StaffNotificationsPanel() {
     };
     void load();
     return () => controller.abort();
-  }, [reloadToken, statusFilter, statusFilterHydrated]);
+  }, [page, reloadToken, statusFilter, statusFilterHydrated]);
 
   const refresh = () => setReloadToken((current) => current + 1);
 
@@ -187,16 +179,11 @@ export default function StaffNotificationsPanel() {
 
   return (
     <PrivateSurfaceRoot className="staff-shell">
-      <header className="staff-header">
-        <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
-        <StaffTopNav />
-        <div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Operación de notificaciones</div></div>
-      </header>
+      <StaffHeader />
 
       <div className="staff-content staff-notifications">
         <div className="staff-intro">
           <div><p className="staff-kicker">Entrega transaccional</p><h1>Notificaciones</h1><p className="staff-intro__copy">Diagnóstico seguro de la cola de correo, sin exponer destinatarios ni contenido privado.</p></div>
-          <Link className="staff-button staff-button--dark" href="/staff/requests">Volver a solicitudes</Link>
         </div>
 
         {notice && <p className="staff-notice" role="status">{notice}</p>}
@@ -213,8 +200,8 @@ export default function StaffNotificationsPanel() {
 
         <section className="staff-notification-workspace" aria-label="Cola de notificaciones">
           <div className="staff-notification-toolbar">
-            <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="notification-status" label="Filtrar por estado" value={statusFilter} onValueChange={(value) => { setNotice(null); setStatusFilter(value as NotificationStatus); }} options={STATUS_OPTIONS.slice(1).map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
-            <div className="staff-notification-toolbar__summary"><span>{loading ? 'Actualizando…' : `${data?.total ?? 0} entregas`}</span><small>La vista se actualiza al cambiar el filtro.</small></div>
+            <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="notification-status" label="Filtrar por estado" value={statusFilter} onValueChange={(value) => { setNotice(null); setPage(1); setStatusFilter(value as NotificationStatus); }} options={STATUS_OPTIONS.slice(1).map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
+            <div className="staff-notification-toolbar__summary"><span>{loading ? 'Actualizando…' : `${data?.total ?? 0} entrega${data?.total === 1 ? '' : 's'}`}</span><small>La vista se actualiza al cambiar el filtro.</small></div>
           </div>
 
           <div className="staff-notification-list" aria-live="polite">
@@ -226,11 +213,12 @@ export default function StaffNotificationsPanel() {
             {loading && !data && <div className="staff-notification-loading" role="status"><span /><span /><span /><b>Consultando la cola…</b></div>}
             {!(loading && !data) && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>No hay entregas en esta vista.</h2><p>Cuando existan notificaciones con este estado aparecerán aquí con su diagnóstico operativo.</p></div>}
             {items.length > 0 && <ul>{items.map((item) => <li className={`staff-notification-row staff-notification-row--${item.status.toLowerCase()}`} key={item.id}>
-              <div className="staff-notification-row__identity"><StatusPill status={item.status} /><strong>{item.templateKey}</strong><small>{item.eventType} · {item.aggregateType}</small></div>
+              <div className="staff-notification-row__identity"><StatusPill status={item.status} /><strong>{templateLabel(item.templateKey)}</strong><small>{eventLabel(item.eventType)} · <code>{item.templateKey}</code></small></div>
               <dl className="staff-notification-row__facts"><div><dt>Intentos</dt><dd>{item.attempts}</dd></div><div><dt>Antigüedad</dt><dd>{formatAge(item.ageSeconds)}</dd></div><div><dt>Actualizada</dt><dd><time dateTime={item.updatedAt}>{formatDateTime(item.updatedAt)}</time></dd></div><div><dt>Diagnóstico</dt><dd>{diagnosisLabel(item)}</dd></div></dl>
               <div className="staff-notification-row__action">{item.retryable ? <button className="staff-button staff-button--copper" type="button" disabled={retryingId === item.id} onClick={() => void retry(item)}>{retryingId === item.id ? 'Reintentando…' : 'Reintentar entrega'}</button> : <span>{item.status === 'FAILED' ? 'Requiere corrección técnica' : 'Sin acción manual'}</span>}</div>
             </li>)}</ul>}
           </div>
+          {data && data.totalPages > 1 && <PrivatePagination page={data.page} totalPages={data.totalPages} disabled={loading} onPrevious={() => setPage((current) => Math.max(1, current - 1))} onNext={() => setPage((current) => current + 1)} />}
         </section>
       </div>
     </PrivateSurfaceRoot>

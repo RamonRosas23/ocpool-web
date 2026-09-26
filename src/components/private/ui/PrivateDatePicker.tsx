@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DayPicker } from 'react-day-picker';
+import { CalendarDays } from 'lucide-react';
 import { es } from 'react-day-picker/locale';
 import { privateFieldA11y } from './a11y';
 import PrivateField, { type PrivateFieldChromeProps } from './PrivateField';
@@ -115,7 +116,7 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
               en el cuarto y último campo del kit que lo tenía. */}
           <input id={id} className="private-control private-date-field__input" type="text" inputMode="numeric" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} required={required} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
           <button ref={triggerRef} className="private-date-field__trigger" type="button" aria-label={`Abrir calendario: ${label}`} aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)}>
-            <span className="private-date-field__icon" aria-hidden="true">▣</span>
+            <span className="private-date-field__icon" aria-hidden="true"><CalendarDays size={17} strokeWidth={1.9} /></span>
           </button>
         </div>
         {open && portalContainer && popoverPosition && createPortal(

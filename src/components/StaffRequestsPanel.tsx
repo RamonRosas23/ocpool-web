@@ -10,7 +10,7 @@ import StaffFilesPanel, { type StaffFilesCapabilities } from '@/components/Staff
 import StaffMessagingPanel, { type StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
-import StaffTopNav from '@/components/StaffTopNav';
+import StaffHeader from '@/components/StaffHeader';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateLinkButton, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import {
@@ -383,11 +383,7 @@ export default function StaffRequestsPanel() {
 
   return (
     <PrivateSurfaceRoot className="staff-shell">
-      <header className="staff-header">
-        <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
-        <StaffTopNav />
-        <div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Bandeja de solicitudes</div></div>
-      </header>
+      <StaffHeader />
 
       <div className="staff-content">
         <div className="staff-intro">
@@ -406,7 +402,7 @@ export default function StaffRequestsPanel() {
               <button className="staff-button staff-button--filter" type="submit">Aplicar filtros</button>
             </form>
 
-            <div className="staff-inbox__head"><span>{loadingList ? 'Actualizando…' : `${items.length} de ${total}`}</span><span>Página {page} / {totalPages}</span></div>
+            <div className="staff-inbox__head"><span>{loadingList ? 'Actualizando…' : `Mostrando ${items.length} de ${total}`}</span></div>
             <div className="staff-request-list" aria-live="polite">
               {loadingList && <div className="staff-list-placeholder"><span /><span /><span /></div>}
               {!loadingList && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>No hay solicitudes aquí.</h2><p>Prueba con otro estado o término de búsqueda.</p></div>}

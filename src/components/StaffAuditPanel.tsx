@@ -4,10 +4,11 @@ import { Inbox } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
-import StaffTopNav from '@/components/StaffTopNav';
+import StaffHeader from '@/components/StaffHeader';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateSelect } from '@/components/private/ui';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
+import { formatAuditDetail } from '@/lib/audit-detail-format';
 
 const CATEGORY_OPTIONS = ['', 'commercial', 'communication', 'documents', 'notifications', 'security'] as const;
 const OUTCOME_OPTIONS = ['', 'SUCCESS', 'DENIED', 'FAILURE'] as const;
@@ -154,7 +155,7 @@ export default function StaffAuditPanel() {
   const items = data?.items ?? [];
 
   return <PrivateSurfaceRoot className="staff-shell audit-shell">
-    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><StaffTopNav /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Trazabilidad protegida</div></div></header>
+    <StaffHeader />
     <div className="staff-content audit-content" aria-busy={loading}>
       <section className="audit-hero"><div><p className="staff-kicker">Gobierno operativo</p><h1>{isSecurity ? <>Eventos de <em>seguridad</em></> : <>Auditoría <em>operativa</em></>}</h1><p className="staff-intro__copy">Una lectura trazable de los movimientos autorizados, con identidad y datos sensibles reducidos al mínimo necesario.</p></div><div className="audit-scope"><p className="staff-section-label">Alcance actual</p><strong>{isSecurity ? 'Identidad y acceso' : 'Actividad del negocio'}</strong><span>{data?.meta.timezone ?? 'America/Chihuahua'} · {data?.meta.freshness === 'fresh' ? 'Actualizado al consultar' : '—'}</span></div></section>
 
@@ -165,7 +166,7 @@ export default function StaffAuditPanel() {
         <div className="audit-workspace__head"><div><p className="staff-section-label">{isSecurity ? 'Acceso y sesiones' : 'Registro consultable'}</p><h2>{isSecurity ? 'Eventos de seguridad' : 'Auditoría operativa'}</h2></div><div className="audit-workspace__meta"><span>{loading ? 'Consultando…' : `${items.length} evento${items.length === 1 ? '' : 's'} visibles`}</span><small>Los eventos históricos no son editables desde esta vista.</small></div></div>
         {loading && !data && <div className="audit-loading" role="status" aria-live="polite"><span /><span /><span /><strong>Consultando trazabilidad…</strong></div>}
         {!loading && data && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>No hay eventos en este periodo.</h2><p>Prueba con otro rango o retira algún filtro para ampliar la lectura.</p></div>}
-        {items.length > 0 && <ul className="audit-list" aria-live="polite">{items.map((item) => <li className="audit-entry" data-testid="audit-entry" key={item.eventKey}><div className="audit-entry__main"><div className="audit-entry__top"><span className={outcomeClass(item.outcome)}>{OUTCOME_LABELS[item.outcome]}</span><time dateTime={item.occurredAt}>{formatDate(item.occurredAt, data?.meta.timezone ?? 'America/Chihuahua')}</time></div><h3>{item.action}</h3><p>{item.entityLink ? <Link className="audit-entry__entity-link" href={item.entityLink.href}>{item.entityLabel}</Link> : item.entityLabel} · {item.actorLabel}</p></div>{item.details.length > 0 && <dl className="audit-entry__details">{item.details.map((detail) => <div key={detail.label}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)}</dl>}</li>)}</ul>}
+        {items.length > 0 && <ul className="audit-list" aria-live="polite">{items.map((item) => <li className="audit-entry" data-testid="audit-entry" key={item.eventKey}><div className="audit-entry__main"><div className="audit-entry__top"><span className={outcomeClass(item.outcome)}>{OUTCOME_LABELS[item.outcome]}</span><time dateTime={item.occurredAt}>{formatDate(item.occurredAt, data?.meta.timezone ?? 'America/Chihuahua')}</time></div><h3>{item.action}</h3><p>{item.entityLink ? <Link className="audit-entry__entity-link" href={item.entityLink.href}>{item.entityLabel}</Link> : item.entityLabel} · {item.actorLabel}</p></div>{item.details.length > 0 && <dl className="audit-entry__details">{item.details.map((raw) => { const detail = formatAuditDetail(raw, data?.meta.timezone); return <div key={raw.label}><dt>{detail.label}</dt><dd title={detail.value}>{detail.value}</dd></div>; })}</dl>}</li>)}</ul>}
         {!loading && data?.nextCursor && <div className="audit-load-more"><button className="staff-button" type="button" onClick={loadPrevious}>Cargar eventos anteriores</button><span aria-live="polite">Se conservan los filtros actuales.</span></div>}
       </section>
     </div>

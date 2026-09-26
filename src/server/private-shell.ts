@@ -44,6 +44,7 @@ export async function getPrivateShellContext(surface: PrivateShellSurface): Prom
       catalogRead: hasPermission(session.actor, 'catalog.read'),
       notificationsRead: hasPermission(session.actor, 'notifications.read'),
       auditRead: hasPermission(session.actor, 'audit.read'),
+      approvalsRead: hasPermission(session.actor, 'quotes.approve_discount'),
     },
   };
 }

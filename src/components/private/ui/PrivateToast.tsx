@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { X } from 'lucide-react';
 import { PrivateIconButton } from './PrivateControls';
 
 type ToastTone = 'success' | 'error';
@@ -36,7 +37,7 @@ export function PrivateToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((toast) => (
           <div key={toast.id} className={`private-toast private-toast--${toast.tone}`} role="status">
             <span>{toast.message}</span>
-            <PrivateIconButton label="Cerrar notificación" variant="quiet" className="private-toast__dismiss" onClick={() => dismiss(toast.id)}>×</PrivateIconButton>
+            <PrivateIconButton label="Cerrar notificación" variant="quiet" className="private-toast__dismiss" onClick={() => dismiss(toast.id)}><X size={16} aria-hidden="true" /></PrivateIconButton>
           </div>
         ))}
       </div>

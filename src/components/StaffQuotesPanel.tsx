@@ -1,7 +1,6 @@
 'use client';
 
 import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, ChevronDown, ChevronUp, Inbox, X } from 'lucide-react';
 import StaffQuoteDocumentPanel from '@/components/StaffQuoteDocumentPanel';
@@ -10,7 +9,7 @@ import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
 import { zonedCalendarDateEndOfDayToUtc } from '@/lib/calendar-timezone';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
-import StaffTopNav from '@/components/StaffTopNav';
+import StaffHeader from '@/components/StaffHeader';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateDialog, PrivateLinkButton, PrivateMoneyField, PrivatePagination, PrivateSelect, usePrivateToast } from '@/components/private/ui';
 import {
@@ -1036,14 +1035,14 @@ export default function StaffQuotesPanel() {
   if (restricted) return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/staff/requests" variant="quiet">Volver a solicitudes</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado con permiso comercial para usar el constructor.</PrivateBlockingState></PrivateSurfaceRoot>;
 
   return <PrivateSurfaceRoot className="staff-shell">
-    <header className="staff-header"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><StaffTopNav onNavigate={guardNavigation} /><div className="staff-header__tools"><Link className="staff-header__home" href="/staff" onClick={(event) => guardNavigation(event, '/staff')}>Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Constructor de cotizaciones</div></div></header>
+    <StaffHeader onNavigate={guardNavigation} />
     <div className="staff-content">
       <div className="staff-intro"><div><p className="staff-kicker">Trabajo comercial</p><h1>Cotizaciones</h1><p className="staff-intro__copy">Convierte el alcance de cada expediente en una propuesta trazable, precisa y lista para revisión.</p></div><div className="staff-intro__metric"><strong>{total}</strong><span>expedientes listos</span></div></div>
       {error && <p className="staff-error" role="alert">{error}</p>}
       <section className="quotes-workspace" aria-label="Constructor de cotizaciones">
         <aside className="quotes-rail">
           <form className="staff-filters" onSubmit={submitSearch}><label><span>Buscar expediente</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Folio o cliente" maxLength={100} /></label><button className="staff-button staff-button--filter" type="submit">Aplicar búsqueda</button></form>
-          <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `${requests.length} de ${total}`}</span><span>Página {page} / {totalPages}</span></div>
+          <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `Mostrando ${requests.length} de ${total}`}</span></div>
           <div className="quotes-request-list" aria-live="polite">
             {loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}
             {!loading && requests.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>Sin expedientes listos.</h2><p>Las solicitudes en elaboración o negociación aparecerán aquí.</p></div>}

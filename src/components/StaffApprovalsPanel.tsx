@@ -4,7 +4,7 @@ import { Inbox } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
-import StaffTopNav from '@/components/StaffTopNav';
+import StaffHeader from '@/components/StaffHeader';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateLinkButton, PrivatePagination } from '@/components/private/ui';
 import { formatDateTime } from '@/lib/format-date';
@@ -96,22 +96,18 @@ export default function StaffApprovalsPanel() {
 
   return (
     <PrivateSurfaceRoot className="staff-shell">
-      <header className="staff-header">
-        <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
-        <StaffTopNav />
-        <div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Cola de aprobaciones</div></div>
-      </header>
+      <StaffHeader />
 
       <div className="staff-content staff-notifications">
         <div className="staff-intro">
-          <div><p className="staff-kicker">Esperan tu decisión</p><h1>Aprobaciones</h1><p className="staff-intro__copy">Cada fila abre el expediente exacto donde ya puedes aprobar o rechazar; ésta es sólo la vista completa de lo que la tarjeta del dashboard recorta a cinco.</p></div>
+          <div><p className="staff-kicker">Esperan tu decisión</p><h1>Aprobaciones</h1><p className="staff-intro__copy">Descuentos y conceptos especiales que esperan tu autorización. Cada fila abre el expediente exacto, donde puedes aprobar o rechazar con su contexto completo.</p></div>
         </div>
 
         {error && <p className="staff-error" role="alert">{error}</p>}
 
         <section className="staff-notification-workspace" aria-label="Aprobaciones pendientes">
           <div className="staff-notification-toolbar">
-            <div className="staff-notification-toolbar__summary"><span>{loading ? 'Actualizando…' : `${data?.total ?? 0} pendientes`}</span><small>Ordenadas por antigüedad de solicitud.</small></div>
+            <div className="staff-notification-toolbar__summary"><span>{loading ? 'Actualizando…' : `${data?.total ?? 0} pendiente${data?.total === 1 ? '' : 's'} de decisión`}</span><small>Ordenadas por antigüedad de solicitud.</small></div>
           </div>
 
           <div className="staff-notification-list" aria-live="polite">
@@ -129,8 +125,7 @@ export default function StaffApprovalsPanel() {
                   <div><dt>Versión</dt><dd>V{item.versionNumber} · {moneyLabel(item.totalMinor, item.currencyCode)}</dd></div>
                   {rate && <div><dt>Descuento</dt><dd>{rate} · {moneyLabel(item.discountTotalMinor, item.currencyCode)}</dd></div>}
                   <div><dt>Solicitada por</dt><dd>{item.requestedByDisplayName}</dd></div>
-                  <div><dt>Antigüedad</dt><dd><time dateTime={item.requestedAt}>{ageLabel(item.requestedAt)}</time></dd></div>
-                  <div><dt>Fecha</dt><dd>{formatDateTime(item.requestedAt)}</dd></div>
+                  <div><dt>Solicitada</dt><dd><time dateTime={item.requestedAt}>{ageLabel(item.requestedAt)}</time><small>{formatDateTime(item.requestedAt)}</small></dd></div>
                 </dl>
                 {item.reason && <p className="staff-notification-row__reason">{item.reason}</p>}
                 <div className="staff-notification-row__action"><Link className="staff-button staff-button--copper" href={`/staff/quotes?request=${item.requestId}`}>Abrir expediente</Link></div>

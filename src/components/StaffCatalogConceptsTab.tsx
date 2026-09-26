@@ -231,7 +231,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
             <label className="catalog-filters__toggle"><input type="checkbox" checked={showArchived} onChange={(event) => { setPage(1); setShowArchived(event.target.checked); }} /><span>Mostrar archivados</span></label>
             <button className="staff-button staff-button--filter" type="submit">Buscar</button>
           </form>
-          <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `${items.length} de ${total}`}</span><span>Página {page} / {totalPages}</span></div>
+          <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `Mostrando ${items.length} de ${total}`}</span></div>
           <div className="catalog-item-list" aria-live="polite">
             {loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}
             {isTrulyEmpty && (

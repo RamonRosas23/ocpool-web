@@ -7,6 +7,7 @@ export type PrivateStaffCapabilities = Readonly<{
   catalogRead?: boolean;
   notificationsRead?: boolean;
   auditRead?: boolean;
+  approvalsRead?: boolean;
 }>;
 
 export type PrivateNavigationItem = {

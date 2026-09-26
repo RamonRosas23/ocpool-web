@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { ChevronDown } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { privateFieldA11y } from './a11y';
 import PrivateField, { type PrivateFieldChromeProps } from './PrivateField';
 import { usePopoverPosition } from './usePopoverPosition';
@@ -135,7 +135,7 @@ export function PrivateSelect({ id, label, description, error, required, hideLab
   return (
     <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
       <SelectPrimitive.Root value={selectedValue} onValueChange={(nextValue) => onValueChange(nextValue === EMPTY_SELECT_VALUE ? '' : nextValue)} disabled={disabled}>
-        <SelectPrimitive.Trigger ref={triggerRef} id={id} className={joinClasses('private-control private-select__trigger', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required}>
+        <SelectPrimitive.Trigger ref={triggerRef} id={id} className={joinClasses('private-control private-select__trigger', value ? undefined : 'is-empty', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required}>
           <SelectPrimitive.Value placeholder={placeholder} />
           <SelectPrimitive.Icon aria-hidden="true"><ChevronDown size={16} /></SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
@@ -148,7 +148,7 @@ export function PrivateSelect({ id, label, description, error, required, hideLab
               {options.filter((option) => option.value !== '').map((option) => (
                 <SelectPrimitive.Item className="private-select__item" value={option.value} disabled={option.disabled} key={option.value}>
                   <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
-                  <SelectPrimitive.ItemIndicator aria-hidden="true">✓</SelectPrimitive.ItemIndicator>
+                  <SelectPrimitive.ItemIndicator className="private-select__check" aria-hidden="true"><Check size={15} strokeWidth={2.4} /></SelectPrimitive.ItemIndicator>
                 </SelectPrimitive.Item>
               ))}
             </SelectPrimitive.Viewport>

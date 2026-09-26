@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
-import StaffTopNav from '@/components/StaffTopNav';
+import StaffHeader from '@/components/StaffHeader';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateLinkButton, PrivateSelect } from '@/components/private/ui';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
@@ -199,11 +199,7 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
 
   return (
     <PrivateSurfaceRoot className="staff-shell">
-      <header className="staff-header">
-        <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
-        <StaffTopNav />
-        <div className="staff-header__tools"><Link className="staff-header__home" href="/staff">Volver al dashboard</Link><div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Handoff a proyecto</div></div>
-      </header>
+      <StaffHeader />
 
       <div className="staff-content staff-notifications">
         {loading && !workspace && <div className="analytics-loading" role="status" aria-live="polite"><span /><span /><span /><strong>Cargando proyecto…</strong></div>}

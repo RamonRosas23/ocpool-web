@@ -1,10 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
-import StaffTopNav from '@/components/StaffTopNav';
+import StaffHeader from '@/components/StaffHeader';
 import StaffCatalogConceptsTab from '@/components/StaffCatalogConceptsTab';
 import StaffCatalogPriceListsTab from '@/components/StaffCatalogPriceListsTab';
 import StaffCatalogReviewTab from '@/components/StaffCatalogReviewTab';
@@ -64,14 +63,7 @@ export default function StaffCatalogPanel() {
 
   return (
     <PrivateSurfaceRoot className="staff-shell">
-      <header className="staff-header">
-        <WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" />
-        <StaffTopNav />
-        <div className="staff-header__tools">
-          <Link className="staff-header__home" href="/staff">Volver al dashboard</Link>
-          <div className="staff-header__context"><span className="staff-header__pulse" aria-hidden="true" /> Catálogo y precios</div>
-        </div>
-      </header>
+      <StaffHeader />
       <div className="staff-content catalog-content">
         <div className="staff-intro">
           <div>

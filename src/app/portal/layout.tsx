@@ -4,6 +4,7 @@ import { PrivateToastProvider } from '@/components/private/ui/PrivateToast';
 import { getPrivateShellContext } from '@/server/private-shell';
 import { readCommercialV2Flags } from '@/server/flags/commercial-v2';
 import '@/components/private/ui/private-ui.css';
+import '@/components/private/ui/private-surfaces.css';
 
 const PORTAL_NAVIGATION = [{ key: 'portal', href: '/portal', label: 'Mis expedientes', capability: 'requestsRead' }] as const;
 
