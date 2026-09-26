@@ -134,7 +134,14 @@ export function PrivateSelect({ id, label, description, error, required, hideLab
 
   return (
     <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel} optionalHint={optionalHint}>
-      <SelectPrimitive.Root value={selectedValue} onValueChange={(nextValue) => onValueChange(nextValue === EMPTY_SELECT_VALUE ? '' : nextValue)} disabled={disabled}>
+      <SelectPrimitive.Root value={selectedValue} onValueChange={(nextValue) => {
+        // Radix nunca entrega '' por una elección real (ningún ítem puede valer ''; "limpiar" llega
+        // como EMPTY_SELECT_VALUE). Un '' crudo es el eco de su <select> nativo oculto cuando el valor
+        // cambia por código (p. ej. un filtro aplicado desde la URL o desde otro control): propagarlo
+        // borraba en silencio el filtro recién aplicado.
+        if (nextValue === '') return;
+        onValueChange(nextValue === EMPTY_SELECT_VALUE ? '' : nextValue);
+      }} disabled={disabled}>
         <SelectPrimitive.Trigger ref={triggerRef} id={id} className={joinClasses('private-control private-select__trigger', value ? undefined : 'is-empty', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required}>
           <SelectPrimitive.Value placeholder={placeholder} />
           <SelectPrimitive.Icon aria-hidden="true"><ChevronDown size={16} /></SelectPrimitive.Icon>

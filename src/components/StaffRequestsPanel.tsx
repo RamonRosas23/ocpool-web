@@ -290,6 +290,22 @@ export default function StaffRequestsPanel() {
     window.history.replaceState(null, '', url);
   }, [setView, view, viewHydrated, viewParam]);
 
+  // ?status=ESTADO (p. ej. una barra del pipeline del dashboard) abre la bandeja completa filtrada por
+  // ese estado; igual que ?view=, se consume y se quita de la URL.
+  const statusParam = searchParams.get('status');
+  useEffect(() => {
+    if (!statusFilterHydrated || !viewHydrated || !statusParam) return;
+    if (STATUS_OPTIONS.includes(statusParam)) {
+      setStatusFilterDraft(statusParam);
+      setStatusFilter(statusParam);
+      setView('all');
+      setPage(1);
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('status');
+    window.history.replaceState(null, '', url);
+  }, [setStatusFilter, setView, statusFilterHydrated, statusParam, viewHydrated]);
+
   useEffect(() => {
     if (!selectedId) return;
     const url = new URL(window.location.href);

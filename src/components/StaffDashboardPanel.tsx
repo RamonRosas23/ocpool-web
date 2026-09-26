@@ -6,6 +6,9 @@ import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffHeader from '@/components/StaffHeader';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton } from '@/components/private/ui';
+import { useStaffSession } from '@/components/staff/StaffSessionContext';
+import { relativeTimeLabel } from '@/lib/relative-time';
+import { useHydrated } from '@/lib/use-hydrated';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 import { readApiResponse } from '@/lib/api-response-error';
 import { errorCategoryLabel, eventLabel, templateLabel } from '@/lib/notification-labels';
@@ -83,6 +86,15 @@ type ReadyToPublish = {
   updatedAt: string;
 };
 
+type ProjectQueueItem = {
+  id: string;
+  folio: string;
+  owner: { displayName: string } | null;
+  client: { displayName: string };
+  checklist: { total: number; completed: number };
+  createdAt: string;
+};
+
 type FailedNotification = {
   id: string;
   eventType: string;
@@ -98,11 +110,16 @@ const APPROVAL_TYPE_LABELS: Record<PendingApproval['type'], string> = {
 };
 
 function ageLabel(value: string): string {
-  const ms = Date.now() - new Date(value).getTime();
-  const days = Math.floor(ms / 86_400_000);
-  if (days <= 0) return 'Actualizada hoy';
-  if (days === 1) return 'Hace 1 día';
-  return `Hace ${days} días`;
+  return relativeTimeLabel(value);
+}
+
+function plural(count: number, singular: string, pluralForm: string): string {
+  return `${new Intl.NumberFormat('es-MX').format(count)} ${count === 1 ? singular : pluralForm}`;
+}
+
+function greetingFor(date: Date): string {
+  const hour = date.getHours();
+  return hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
 }
 
 function approvalMoneyLabel(value: string, currency: string): string {
@@ -162,10 +179,15 @@ function QueueCount({ value }: { value: number | null }) {
   return <span className={`staff-workqueue__count${value > 0 ? ' is-hot' : ''}`}>{formatInteger(value)}<span className="sr-only"> en esta cola</span></span>;
 }
 
-function BarList({ items, label, empty }: { items: Array<{ label: string; count: number }>; label: string; empty: string }) {
+function BarList({ items, label, empty }: { items: Array<{ label: string; count: number; href?: string }>; label: string; empty: string }) {
   const max = Math.max(...items.map((item) => item.count), 1);
   if (items.length === 0) return <div className="analytics-empty"><strong>{empty}</strong><p>Cuando existan movimientos dentro del periodo aparecerán aquí.</p></div>;
-  return <ul className="analytics-bars" aria-label={label}>{items.map((item) => <li key={item.label}><div className="analytics-bars__meta"><span>{item.label}</span><strong>{formatInteger(item.count)}</strong></div><div className="analytics-bars__track" aria-hidden="true"><span style={{ width: `${Math.max((item.count / max) * 100, item.count ? 4 : 0)}%` }} /></div></li>)}</ul>;
+  return <ul className="analytics-bars" aria-label={label}>{items.map((item) => {
+    const content = <><div className="analytics-bars__meta"><span>{item.label}</span><strong>{formatInteger(item.count)}</strong></div><div className="analytics-bars__track" aria-hidden="true"><span style={{ width: `${Math.max((item.count / max) * 100, item.count ? 4 : 0)}%` }} /></div></>;
+    // Una barra con destino abre la bandeja ya filtrada por ese estado: el pipeline deja de ser sólo
+    // lectura y se vuelve el atajo a ese grupo de expedientes.
+    return <li key={item.label}>{item.href ? <Link className="analytics-bars__link" href={item.href} title={`Ver ${item.label.toLowerCase()} en la bandeja`}>{content}</Link> : content}</li>;
+  })}</ul>;
 }
 
 function MetricLine({ label, metric }: { label: string; metric: MetricSummary }) {
@@ -192,6 +214,22 @@ export default function StaffDashboardPanel() {
   const [failedNotifications, setFailedNotifications] = useState<{ items: FailedNotification[]; total: number } | null>(null);
   const [queuesLoading, setQueuesLoading] = useState(true);
   const [queuesError, setQueuesError] = useState<string | null>(null);
+  const session = useStaffSession();
+  const hydrated = useHydrated();
+  const canReadProjects = session?.capabilities.projectsRead === true;
+  const [projectsQueue, setProjectsQueue] = useState<{ items: ProjectQueueItem[]; total: number } | null>(null);
+
+  // Proyectos en arranque: sólo para perfiles con lectura de proyectos (así nunca se dispara una
+  // petición que el servidor rechazaría). Un fallo aquí no tumba el resto del tablero.
+  useEffect(() => {
+    if (!canReadProjects) return;
+    const controller = new AbortController();
+    void fetch('/api/staff/projects?status=EN_TRANSICION&pageSize=5', { credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then((response) => readApiResponse<{ items: ProjectQueueItem[]; total: number }>(response, 'No fue posible cargar los proyectos en arranque.'))
+      .then((result) => { if (result.ok) setProjectsQueue({ items: result.data.items, total: result.data.total }); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [canReadProjects]);
 
   // W1-02 (primer corte): "qué atender ahora" reutiliza el mismo endpoint y scope de R1 (mine/sin
   // asignar) — sin score opaco, cada fila es un expediente real con enlace directo al expediente exacto.
@@ -308,25 +346,37 @@ export default function StaffDashboardPanel() {
   if (error && !data) return <PrivateSurfaceRoot className="staff-shell"><PrivateBlockingState title="No fue posible cargarlo." onRetry={() => { setError(null); setReloadToken((current) => current + 1); }}>{error}</PrivateBlockingState></PrivateSurfaceRoot>;
 
   const dashboard = data;
-  const pipeline = dashboard?.requests.byStatus.map((item) => ({ label: labelForStatus(item.status), count: item.count })) ?? [];
+  const pipeline = dashboard?.requests.byStatus.map((item) => ({ label: labelForStatus(item.status), count: item.count, href: `/staff/requests?status=${encodeURIComponent(item.status)}` })) ?? [];
+
+  // Resumen personal: responde "¿qué tengo hoy?" antes de leer cualquier gráfica. Se arma sólo con
+  // colas ya cargadas y sólo tras hidratar (la hora local no debe entrar al HTML del servidor).
+  const summaryParts = [
+    ...(mineQueue && mineQueue.total > 0 ? [`tienes ${plural(mineQueue.total, 'expediente a tu cargo', 'expedientes a tu cargo')}`] : []),
+    ...(customerReplied && customerReplied.length > 0 ? [`${plural(customerReplied.length, 'cliente espera', 'clientes esperan')} tu respuesta`] : []),
+    ...(pendingApprovals && pendingApprovals.length > 0 ? [`${plural(pendingApprovals.length, 'aprobación espera', 'aprobaciones esperan')} tu decisión`] : []),
+    ...(readyToPublish && readyToPublish.length > 0 ? [`${plural(readyToPublish.length, 'cotización está lista', 'cotizaciones están listas')} para enviar`] : []),
+    ...(unassignedQueue && unassignedQueue.total > 0 ? [`${plural(unassignedQueue.total, 'solicitud sigue', 'solicitudes siguen')} sin responsable`] : []),
+  ];
+  const summarySentence = summaryParts.length === 0 ? 'Todo al día: no hay pendientes en tus colas.' : `${summaryParts.slice(0, -1).join(', ')}${summaryParts.length > 1 ? ' y ' : ''}${summaryParts[summaryParts.length - 1]}.`;
+  const firstName = session?.user.displayName.trim().split(/\s+/u)[0] ?? '';
   const origins = dashboard?.requests.byOrigin.map((item) => ({ label: labelForOrigin(item.origin), count: item.count })) ?? [];
   const aging = dashboard?.requests.aging.map((item) => ({ label: `${item.bucket} días`, count: item.count })) ?? [];
   const notificationStatus = dashboard?.notifications.byStatus.filter((item) => item.count > 0).map((item) => ({ label: NOTIFICATION_LABELS[item.status] ?? item.status, count: item.count })) ?? [];
   const alerts = dashboard ? [
-    ...(dashboard.requests.unassigned > 0 ? [{ label: `${formatInteger(dashboard.requests.unassigned)} solicitud${dashboard.requests.unassigned === 1 ? '' : 'es'} sin asignar`, detail: 'Requieren responsable para avanzar.', href: '/staff/requests' }] : []),
+    ...(dashboard.requests.unassigned > 0 ? [{ label: `${formatInteger(dashboard.requests.unassigned)} solicitud${dashboard.requests.unassigned === 1 ? '' : 'es'} sin asignar`, detail: 'Requieren responsable para avanzar.', href: '/staff/requests?view=unassigned' }] : []),
     ...(dashboard.notifications.failedInPeriod > 0 ? [{ label: `${formatInteger(dashboard.notifications.failedInPeriod)} entrega${dashboard.notifications.failedInPeriod === 1 ? '' : 's'} fallida${dashboard.notifications.failedInPeriod === 1 ? '' : 's'}`, detail: 'Revisa la operación de correo del periodo.', href: '/staff/notifications' }] : []),
   ] : [];
 
   return <PrivateSurfaceRoot className="staff-shell analytics-shell">
     <StaffHeader />
     <div className="staff-content analytics-content" aria-busy={loading}>
-      <section className="analytics-hero" aria-labelledby="analytics-title"><div><p className="staff-kicker">Centro de operación</p><h1 id="analytics-title">Pulso <em>comercial</em></h1><p className="staff-intro__copy">Una lectura compacta de la operación para decidir qué merece atención ahora.</p></div><div className="analytics-period"><p className="staff-section-label">Periodo de lectura</p><strong>{displayRange}</strong><span>Zona de negocio: {dashboard?.meta.timezone ?? '—'}</span><span>Actualizado {dashboard ? formatDate(dashboard.meta.generatedAt, dashboard.meta.timezone, true) : '—'}</span></div></section>
+      <section className="analytics-hero" aria-labelledby="analytics-title"><div><p className="staff-kicker">Centro de operación</p><h1 id="analytics-title">Pulso <em>comercial</em></h1>{hydrated && !queuesLoading ? <p className="analytics-greeting"><strong>{greetingFor(new Date())}{firstName ? `, ${firstName}` : ''}.</strong> {summarySentence.charAt(0).toUpperCase() + summarySentence.slice(1)}</p> : <p className="staff-intro__copy">Una lectura compacta de la operación para decidir qué merece atención ahora.</p>}</div><div className="analytics-period"><p className="staff-section-label">Periodo de lectura</p><strong>{displayRange}</strong><span>Zona de negocio: {dashboard?.meta.timezone ?? '—'}</span><span>Actualizado {dashboard ? formatDate(dashboard.meta.generatedAt, dashboard.meta.timezone, true) : '—'}</span></div></section>
 
       <section className="analytics-controls" aria-label="Controles del periodo"><div className="analytics-presets"><span id="analytics-presets-label">Vista rápida</span><div className="analytics-presets__track" role="group" aria-labelledby="analytics-presets-label">{(['7', '30', '90'] as const).map((days) => <button key={days} className={selectedPreset === days ? 'is-selected' : ''} type="button" aria-pressed={selectedPreset === days} onClick={() => applyPreset(Number(days))} disabled={!draftTo}>{days} días</button>)}</div></div><div className="analytics-date-form"><PrivateDatePicker id="dashboard-from" label="Desde" required value={draftFrom} onValueChange={(value) => { rangeEdited.current = true; setDraftFrom(value); }} /><PrivateDatePicker id="dashboard-to" label="Hasta" required value={draftTo} onValueChange={(value) => { rangeEdited.current = true; setDraftTo(value); }} /><button className="staff-button staff-button--dark" type="button" onClick={applyCustomRange} disabled={!draftFrom || !draftTo || loading}>Aplicar periodo</button></div></section>
 
       {error && <p className="staff-error" role="alert">{error}</p>}
 
-      {dashboard && <section className="analytics-kpis" aria-label="Indicadores principales"><article><span>Solicitudes recibidas</span><strong>{formatInteger(dashboard.requests.received)}</strong><small>Entradas del periodo</small></article><article><span>Cotizaciones enviadas</span><strong>{formatInteger(dashboard.quotes.sent)}</strong><small>{formatInteger(dashboard.quotes.accepted)} aceptadas</small></article><article><span>Tasa de aceptación</span><strong>{formatRate(dashboard.quotes.acceptanceRateBps)}</strong><small>Sobre cotizaciones enviadas</small></article><article className={dashboard.requests.unassigned ? 'has-alert' : undefined}><span>Sin asignar</span><strong>{formatInteger(dashboard.requests.unassigned)}</strong><small>{dashboard.requests.unassigned ? 'Atención requerida' : 'Sin pendientes'}</small></article></section>}
+      {dashboard && <section className="analytics-kpis" aria-label="Indicadores principales"><article><span>Solicitudes recibidas</span><strong>{formatInteger(dashboard.requests.received)}</strong><small>Entradas del periodo</small></article><article><span>Cotizaciones enviadas</span><strong>{formatInteger(dashboard.quotes.sent)}</strong><small>{formatInteger(dashboard.quotes.accepted)} aceptadas</small></article><article><span>Tasa de aceptación</span><strong>{formatRate(dashboard.quotes.acceptanceRateBps)}</strong><small>Sobre cotizaciones enviadas</small></article><article className={dashboard.requests.unassigned ? 'has-alert' : undefined}><span>Sin asignar</span><strong>{formatInteger(dashboard.requests.unassigned)}</strong>{dashboard.requests.unassigned ? <Link className="analytics-kpis__link" href="/staff/requests?view=unassigned">Asignar responsables →</Link> : <small>Sin pendientes</small>}</article></section>}
 
       <section className="staff-workqueue" aria-label="Qué atender ahora">
         <div className="staff-workqueue__title"><h2>Qué atender ahora</h2><span>Expedientes reales, ordenados por lo que más tiempo lleva esperando.</span></div>
@@ -354,12 +404,17 @@ export default function StaffDashboardPanel() {
           {pendingApprovals && pendingApprovals.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-approvals-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Esperan tu decisión</p><h3 id="workqueue-approvals-title">Aprobaciones</h3></div><QueueCount value={pendingApprovals ? pendingApprovals.length : null} /></div>
             <ul className="staff-workqueue__list">{pendingApprovals.slice(0, 5).map((approval) => <li key={approval.id}><Link href={`/staff/quotes?request=${approval.requestId}`}><span className="staff-workqueue__folio">{approval.folio}</span><span className="staff-workqueue__client">{approval.clientDisplayName}</span><span className="staff-workqueue__stage">{APPROVAL_TYPE_LABELS[approval.type]} · {approvalMoneyLabel(approval.totalMinor, approval.currencyCode)}</span><span className="staff-workqueue__age">{ageLabel(approval.requestedAt)}</span></Link></li>)}</ul>
-            {pendingApprovals.length > 5 && <Link className="staff-workqueue__more" href="/staff/approvals">Y {formatInteger(pendingApprovals.length - 5)} más esperando decisión →</Link>}
+            <Link className="staff-workqueue__more" href="/staff/approvals">{pendingApprovals.length > 5 ? `Decidir las ${formatInteger(pendingApprovals.length)} en la cola →` : 'Decidir en la cola →'}</Link>
           </article>}
           {readyToPublish && readyToPublish.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-ready-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Sólo falta el envío</p><h3 id="workqueue-ready-title">Listas para publicar</h3></div><QueueCount value={readyToPublish ? readyToPublish.length : null} /></div>
             <ul className="staff-workqueue__list">{readyToPublish.slice(0, 5).map((item) => <li key={item.versionId}><Link href={`/staff/quotes?request=${item.requestId}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.clientDisplayName}</span><span className="staff-workqueue__stage">V{item.versionNumber} · {approvalMoneyLabel(item.totalMinor, item.currencyCode)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>
             {readyToPublish.length > 5 && <span className="staff-workqueue__more">Y {formatInteger(readyToPublish.length - 5)} más listas para publicar</span>}
+          </article>}
+          {projectsQueue && projectsQueue.total > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-projects-title">
+            <div className="staff-workqueue__head"><div><p className="staff-section-label">Después de la venta</p><h3 id="workqueue-projects-title">Proyectos en arranque</h3></div><QueueCount value={projectsQueue.total} /></div>
+            <ul className="staff-workqueue__list">{projectsQueue.items.map((item) => <li key={item.id}><Link href={`/staff/projects/${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{item.owner ? item.owner.displayName : 'Sin responsable'} · {item.checklist.total ? `${item.checklist.completed}/${item.checklist.total} tareas` : 'Sin checklist'}</span><span className="staff-workqueue__age">{ageLabel(item.createdAt)}</span></Link></li>)}</ul>
+            <Link className="staff-workqueue__more" href="/staff/projects">{projectsQueue.total > projectsQueue.items.length ? `Ver los ${formatInteger(projectsQueue.total)} proyectos →` : 'Ver proyectos →'}</Link>
           </article>}
           {failedNotifications && failedNotifications.items.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-notification-failures-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Un cliente no recibió aviso</p><h3 id="workqueue-notification-failures-title">Fallos de aviso</h3></div><QueueCount value={failedNotifications ? failedNotifications.total : null} /></div>
