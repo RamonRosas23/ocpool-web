@@ -634,7 +634,8 @@
 
 .catalog-category-dialog__overlay, .quotes-reprice-overlay, .quotes-preflight-overlay, .client-accept-overlay { position: fixed; z-index: var(--private-z-dialog); inset: 0; display: grid; overflow-y: auto; place-items: center; padding: 24px 16px; background: rgba(6, 26, 37, .52); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); animation: private-ui-fade 160ms ease-out; }
 .catalog-category-dialog__overlay { z-index: var(--private-z-dialog); }
-.catalog-category-dialog { position: fixed; z-index: calc(var(--private-z-dialog) + 1); top: 50%; left: 50%; width: min(640px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 48px)); overflow-y: auto; transform: translate(-50%, -50%); border: 1px solid rgba(255, 255, 255, .6); border-radius: var(--private-radius-dialog); padding: 24px 26px 26px; background: var(--private-color-surface); color: var(--private-color-ink); box-shadow: var(--private-shadow-popover); outline: 0; }
+.catalog-category-dialog { position: fixed; z-index: calc(var(--private-z-dialog) + 1); top: 50%; left: 50%; width: min(640px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 48px)); overflow-y: auto; transform: translate(-50%, -50%); border: 1px solid rgba(255, 255, 255, .6); border-radius: var(--private-radius-dialog); padding: 24px 26px 26px; background: var(--private-color-surface); color: var(--private-color-ink); box-shadow: var(--private-shadow-popover); outline: 0; scrollbar-width: thin; animation: private-ui-dialog-centered 200ms cubic-bezier(.2, .7, .2, 1); }
+@keyframes private-ui-dialog-centered { from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)) scale(.98); } to { opacity: 1; transform: translate(-50%, -50%); } }
 .quotes-reprice-dialog, .quotes-preflight-dialog, .client-accept-dialog { position: relative; width: min(100%, 560px); max-height: calc(100vh - 48px); overflow-y: auto; border: 1px solid rgba(255, 255, 255, .6); border-radius: var(--private-radius-dialog); padding: 24px 26px 26px; background: var(--private-color-surface); color: var(--private-color-ink); box-shadow: var(--private-shadow-popover); outline: 0; animation: private-ui-dialog 200ms cubic-bezier(.2, .7, .2, 1); }
 .quotes-preflight-dialog { width: min(100%, 520px); }
 .catalog-category-dialog__head, .quotes-reprice-dialog__head, .quotes-preflight-dialog__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: -4px 0 18px; border-bottom: 1px solid var(--private-color-border); padding-bottom: 14px; }
@@ -979,7 +980,7 @@
 .staff-workqueue__title { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 12px; }
 .staff-workqueue__title h2 { margin: 0; color: var(--private-color-brand); font-size: 18px; font-weight: 700; letter-spacing: -.015em; }
 .staff-workqueue__title span { color: var(--private-color-ink-muted); font-size: 13px; }
-.staff-workqueue__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.staff-workqueue__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
 .staff-workqueue__card { display: flex; min-width: 0; flex-direction: column; overflow: clip; }
 .staff-workqueue__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--private-color-border); padding: 14px 18px 12px; }
 .staff-workqueue__head .staff-section-label { margin-bottom: 2px; }
@@ -1492,4 +1493,83 @@ a.staff-workqueue__more:hover { background: var(--private-color-surface-muted); 
 @media (prefers-reduced-motion: reduce) {
   .auth-context::after { animation: none; }
   .analytics-bars__track span { animation: none; }
+}
+
+.catalog-review__empty { margin-top: 16px; border: 1px dashed var(--private-color-border-control); border-radius: var(--private-radius-panel); background: var(--private-color-surface); }
+.client-empty__retry { margin-top: 12px; }
+
+/* ───────────────────────── Project handoff ───────────────────────── */
+
+.handoff-intro { align-items: center; }
+.handoff-intro .staff-intro__copy a { color: var(--private-color-accent); font-weight: 650; text-decoration: underline; text-decoration-color: rgba(27, 82, 102, .35); text-underline-offset: 3px; }
+.handoff-intro__side { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+.handoff-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr); align-items: start; gap: 16px; }
+.handoff-aside { display: grid; gap: 16px; }
+.handoff-card { min-width: 0; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); padding: 18px 20px 20px; background: var(--private-color-surface); box-shadow: var(--private-shadow-card); }
+.handoff-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.handoff-card__head .staff-section-label { margin-bottom: 2px; }
+.handoff-card__head h2 { margin: 0; color: var(--private-color-brand); font-size: 18px; font-weight: 700; letter-spacing: -.015em; }
+.handoff-card__meta { margin: 4px 0 0; color: var(--private-color-ink-muted); font-size: 13px; }
+.handoff-scope { padding-bottom: 0; overflow: clip; }
+.handoff-scope__group { border-top: 1px solid var(--private-color-border); padding: 14px 0; }
+.handoff-scope__group-head h3 { margin: 0; color: var(--private-color-copper); font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.handoff-scope__group-head p { margin: 4px 0 0; color: var(--private-color-ink-muted); font-size: 13px; line-height: 1.5; }
+.handoff-lines { display: grid; margin: 8px 0 0; padding: 0; list-style: none; }
+.handoff-line { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(110px, auto); align-items: baseline; gap: 16px; border-radius: 8px; padding: 8px 0; }
+.handoff-line + .handoff-line { border-top: 1px dashed var(--private-color-border); }
+.handoff-line__name { display: grid; min-width: 0; gap: 1px; }
+.handoff-line__name strong { color: var(--private-color-brand); font-size: 14px; font-weight: 650; }
+.handoff-line__name small { color: var(--private-color-ink-muted); font-size: 12.5px; line-height: 1.45; }
+.handoff-line__qty { color: var(--private-color-ink-muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.handoff-line__total { color: var(--private-color-brand); font-size: 14px; font-weight: 650; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.handoff-scope__total { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 0 -20px; border-top: 1px solid var(--private-color-border); padding: 16px 20px; background: var(--private-color-surface-muted); }
+.handoff-scope__total span { color: var(--private-color-ink); font-size: 14px; font-weight: 650; }
+.handoff-scope__total strong { color: var(--private-color-copper); font-size: 24px; font-weight: 750; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.handoff-progress__count { flex: 0 0 auto; border-radius: 999px; padding: 3px 10px; background: var(--private-tint-success); color: var(--private-color-success); font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.handoff-progress { height: 8px; margin: -4px 0 16px; overflow: hidden; border-radius: 999px; background: rgba(39, 107, 73, .12); }
+.handoff-progress span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #2f7d56, var(--private-color-success)); transition: width 320ms cubic-bezier(.2, .7, .2, 1); }
+.handoff-owner { display: grid; gap: 6px; margin-bottom: 14px; }
+.handoff-owner small { color: var(--private-color-ink-muted); font-size: 12.5px; }
+.handoff-owner__error { color: var(--private-color-danger) !important; font-weight: 600; }
+.handoff-checklist-empty { display: grid; gap: 3px; border: 1px dashed var(--private-color-border-control); border-radius: 10px; padding: 14px 16px; background: var(--private-color-surface-muted); }
+.handoff-checklist-empty strong { color: var(--private-color-brand); font-size: 14px; font-weight: 650; }
+.handoff-checklist-empty span { color: var(--private-color-ink-muted); font-size: 13px; }
+.handoff-card .staff-checklist { margin-top: 0; }
+.handoff-add-tasks { display: grid; gap: 10px; margin-top: 14px; border-top: 1px solid var(--private-color-border); padding-top: 14px; }
+.handoff-add-tasks label { display: grid; gap: 6px; }
+.handoff-add-tasks label span { color: var(--private-color-ink); font-size: 13px; font-weight: 600; }
+.handoff-add-tasks .staff-button { justify-self: end; }
+.handoff-contact { display: grid; gap: 4px; }
+.handoff-contact .handoff-card__head { margin-bottom: 6px; }
+.handoff-contact a { color: var(--private-color-accent); font-size: 14px; text-decoration: none; overflow-wrap: anywhere; }
+.handoff-contact a:hover { color: var(--private-color-brand); text-decoration: underline; text-underline-offset: 3px; }
+.handoff-activity { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.handoff-activity li { position: relative; display: grid; gap: 2px; border-left: 2px solid rgba(138, 99, 46, .22); padding: 0 0 14px 14px; }
+.handoff-activity li:last-child { padding-bottom: 0; }
+.handoff-activity li::before { position: absolute; top: 4px; left: -6px; width: 10px; height: 10px; border: 2px solid var(--private-color-copper); border-radius: 50%; background: var(--private-color-surface); content: ''; }
+.handoff-activity span { color: var(--private-color-ink); font-size: 13.5px; line-height: 1.45; }
+.handoff-activity time { color: var(--private-color-ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1020px) {
+  .handoff-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .handoff-intro__side { justify-content: flex-start; width: 100%; }
+  .handoff-intro__side .staff-button { flex: 1 1 auto; }
+  .handoff-card { padding: 16px; }
+  .handoff-scope__total { margin: 0 -16px; padding: 14px 16px; }
+  .handoff-line { grid-template-columns: minmax(0, 1fr) auto; }
+  .handoff-line__qty { grid-column: 1; grid-row: 2; }
+  .handoff-line__total { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .handoff-add-tasks .staff-button { justify-self: stretch; }
+}
+
+/* Stacked rails (tablet/mobile): filters sit in one compact row instead of full-width stacked controls. */
+@media (max-width: 1100px) and (min-width: 621px) {
+  .quotes-rail .staff-filters { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+  .quotes-rail .staff-filters .staff-button--filter { width: auto; }
+}
+@media (max-width: 900px) and (min-width: 621px) {
+  .staff-inbox .staff-filters { grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; align-items: end; }
+  .staff-inbox .staff-filters .staff-button--filter { width: auto; }
 }

@@ -2,7 +2,6 @@
 
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffHeader from '@/components/StaffHeader';
 import StaffCatalogConceptsTab from '@/components/StaffCatalogConceptsTab';
 import StaffCatalogPriceListsTab from '@/components/StaffCatalogPriceListsTab';

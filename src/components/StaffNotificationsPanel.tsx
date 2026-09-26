@@ -200,7 +200,7 @@ export default function StaffNotificationsPanel() {
 
         <section className="staff-notification-workspace" aria-label="Cola de notificaciones">
           <div className="staff-notification-toolbar">
-            <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="notification-status" label="Filtrar por estado" value={statusFilter} onValueChange={(value) => { setNotice(null); setPage(1); setStatusFilter(value as NotificationStatus); }} options={STATUS_OPTIONS.slice(1).map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
+            <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="notification-status" optionalHint={false} label="Filtrar por estado" value={statusFilter} onValueChange={(value) => { setNotice(null); setPage(1); setStatusFilter(value as NotificationStatus); }} options={STATUS_OPTIONS.slice(1).map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
             <div className="staff-notification-toolbar__summary"><span>{loading ? 'Actualizando…' : `${data?.total ?? 0} entrega${data?.total === 1 ? '' : 's'}`}</span><small>La vista se actualiza al cambiar el filtro.</small></div>
           </div>
 

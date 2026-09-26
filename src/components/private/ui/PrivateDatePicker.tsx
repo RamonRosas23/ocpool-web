@@ -48,7 +48,7 @@ function isMalformedCalendarDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/u.test(value) && parseDate(value) === undefined;
 }
 
-export function PrivateDatePicker({ id, label, description, error, required, hideLabel, className, value, onValueChange, placeholder = 'Selecciona una fecha', disabled = false, min, max }: PrivateDatePickerProps) {
+export function PrivateDatePicker({ id, label, description, error, required, hideLabel, optionalHint, className, value, onValueChange, placeholder = 'Selecciona una fecha', disabled = false, min, max }: PrivateDatePickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -108,7 +108,7 @@ export function PrivateDatePicker({ id, label, description, error, required, hid
   }, [open]);
 
   return (
-    <PrivateField id={id} label={label} description={description} error={effectiveError} required={required} hideLabel={hideLabel}>
+    <PrivateField id={id} label={label} description={description} error={effectiveError} required={required} hideLabel={hideLabel} optionalHint={optionalHint}>
       <div className={joinClasses('private-date-field', className)} ref={rootRef}>
         <div className="private-date-field__control">
           {/* UX audit fix: `required` sólo alimentaba `aria-required` -- el mismo hueco ya

@@ -67,7 +67,6 @@ function quantityLabel(milliunits: string): string {
   return (Number(milliunits) / 1000).toLocaleString('es-MX', { maximumFractionDigits: 3 });
 }
 
-
 export default function StaffProjectWorkspacePanel({ projectId }: { projectId: string }) {
   const [workspace, setWorkspace] = useState<ProjectWorkspace | null>(null);
   const [loading, setLoading] = useState(true);
@@ -201,62 +200,82 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
     <PrivateSurfaceRoot className="staff-shell">
       <StaffHeader />
 
-      <div className="staff-content staff-notifications">
+      <div className="staff-content handoff-content">
         {loading && !workspace && <div className="analytics-loading" role="status" aria-live="polite"><span /><span /><span /><strong>Cargando proyecto…</strong></div>}
         {error && <p className="staff-error" role="alert">{error}</p>}
 
         {workspace && <>
-          <div className="staff-intro">
+          <div className="staff-intro handoff-intro">
             <div><p className="staff-kicker">{workspace.folio}</p><h1>{workspace.client.displayName}</h1><p className="staff-intro__copy">{workspace.quoteRequest.projectType} · {workspace.quoteRequest.location} · Expediente <Link href={`/staff/requests?request=${encodeURIComponent(workspace.quoteRequest.id)}`}>{workspace.quoteRequest.folio}</Link></p></div>
-            <span className={`staff-status-pill staff-status-pill--${workspace.status === 'COMPLETADO' ? 'sent' : 'pending'}`}>{STATUS_LABELS[workspace.status]}</span>
-          </div>
-
-          <section className="staff-notification-workspace" aria-label="Resumen del proyecto">
-            <div className="staff-notification-toolbar">
-              <div className="staff-notification-toolbar__summary"><span>Alcance aceptado · V{workspace.acceptedVersion.versionNumber}</span><small>Firmado por {workspace.acceptedVersion.signerName} · {formatDateTime(workspace.acceptedVersion.acceptedAt)}</small></div>
-            </div>
-            <div className="staff-notification-list">
-              <ul>
-                {workspace.acceptedVersion.sections.map((section) => <li className="staff-notification-row" key={section.id}>
-                  <div className="staff-notification-row__identity"><strong>{section.title}</strong>{section.description && <small>{section.description}</small>}</div>
-                  <dl className="staff-notification-row__facts">{workspace.acceptedVersion.lines.filter((line) => line.sectionId === section.id).map((line) => <div key={line.id}><dt>{line.name}</dt><dd>{quantityLabel(line.quantityMilliunits)} {line.unit} · {moneyLabel(line.totalMinor, workspace.acceptedVersion.currencyCode)}</dd></div>)}</dl>
-                </li>)}
-                {workspace.acceptedVersion.lines.filter((line) => !line.sectionId).length > 0 && <li className="staff-notification-row" key="sin-seccion">
-                  <div className="staff-notification-row__identity"><strong>Sin sección</strong></div>
-                  <dl className="staff-notification-row__facts">{workspace.acceptedVersion.lines.filter((line) => !line.sectionId).map((line) => <div key={line.id}><dt>{line.name}</dt><dd>{quantityLabel(line.quantityMilliunits)} {line.unit} · {moneyLabel(line.totalMinor, workspace.acceptedVersion.currencyCode)}</dd></div>)}</dl>
-                </li>}
-              </ul>
-              <p className="staff-notification-row__reason">Total aceptado: <strong>{moneyLabel(workspace.acceptedVersion.totalMinor, workspace.acceptedVersion.currencyCode)}</strong></p>
-            </div>
-          </section>
-
-          <section className="staff-notification-workspace" aria-label="Responsable y checklist de transición">
-            <div className="staff-notification-toolbar">
-              <div className="staff-notification-toolbar__summary"><PrivateSelect key={workspace.owner?.id ?? 'unassigned'} id="project-owner" label="Responsable" value={workspace.owner?.id ?? ''} onValueChange={(value) => void setOwner(value)} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin asignar" disabled={busy} /><small>Creado por {workspace.createdBy.displayName} · {formatDateTime(workspace.createdAt)}</small>{assigneesError && <small className="staff-error" role="alert">{assigneesError}</small>}</div>
+            <div className="handoff-intro__side">
+              <span className={`staff-status-pill staff-status-pill--${workspace.status === 'COMPLETADO' ? 'sent' : 'pending'}`}>{STATUS_LABELS[workspace.status]}</span>
               {workspace.status === 'EN_TRANSICION'
                 ? <button className="staff-button staff-button--copper" type="button" disabled={busy} onClick={() => void setStatus('COMPLETADO')}>Marcar handoff completado</button>
                 : <button className="staff-button staff-button--outline" type="button" disabled={busy} onClick={() => void setStatus('EN_TRANSICION')}>Reabrir handoff</button>}
             </div>
-            <div className="staff-notification-list">
-              {workspace.checklistItems.length === 0 && <div className="staff-empty staff-empty--compact"><h2>Sin tareas de checklist todavía.</h2><p>Agrega los pendientes de transición para este proyecto.</p></div>}
-              {workspace.checklistItems.length > 0 && <ul className="staff-checklist">{workspace.checklistItems.map((item) => <li className={`staff-checklist__item${item.completedAt ? ' is-complete' : ''}`} key={item.id}>
-                <label>
-                  <input type="checkbox" checked={Boolean(item.completedAt)} disabled={busy} onChange={() => void toggleItem(item)} />
-                  <span>{item.label}</span>
-                </label>
-                {item.completedAt && item.completedBy && <small>{item.completedBy.displayName} · {formatDateTime(item.completedAt)}</small>}
-              </li>)}</ul>}
-            </div>
-            <form onSubmit={(event) => void addItem(event)} className="catalog-form">
-              <label><span>Nuevas tareas</span><textarea value={newItemLabel} onChange={(event) => setNewItemLabel(event.target.value)} maxLength={4000} rows={3} placeholder={'Una tarea por línea, por ejemplo:\nAgendar visita de medición\nConfirmar accesos en sitio'} disabled={busy} /></label>
-              <button className="staff-button staff-button--outline" type="submit" disabled={busy || !newItemLabel.trim()}>{newItemLabel.trim().includes('\n') ? 'Agregar tareas' : 'Agregar tarea'}</button>
-            </form>
-          </section>
+          </div>
 
-          <section className="staff-notification-workspace" aria-label="Actividad del proyecto">
-            <div className="staff-notification-toolbar"><div className="staff-notification-toolbar__summary"><span>Actividad</span></div></div>
-            <ul className="staff-workqueue__list">{workspace.activity.map((entry) => <li key={entry.id}><span className="staff-workqueue__client">{ACTIVITY_LABELS[entry.action] ?? entry.action}</span><span className="staff-workqueue__age">{formatDateTime(entry.createdAt)}</span></li>)}</ul>
-          </section>
+          <div className="handoff-layout">
+            <section className="handoff-card handoff-scope" aria-label="Resumen del proyecto">
+              <header className="handoff-card__head">
+                <div><p className="staff-section-label">Alcance aceptado · V{workspace.acceptedVersion.versionNumber}</p><h2>Lo que se va a construir</h2><p className="handoff-card__meta">Firmado por {workspace.acceptedVersion.signerName} · {formatDateTime(workspace.acceptedVersion.acceptedAt)}</p></div>
+              </header>
+              {[
+                ...workspace.acceptedVersion.sections.map((section) => ({ key: section.id, title: section.title, description: section.description, lines: workspace.acceptedVersion.lines.filter((line) => line.sectionId === section.id) })),
+                ...(workspace.acceptedVersion.lines.some((line) => !line.sectionId) ? [{ key: 'sin-seccion', title: workspace.acceptedVersion.sections.length ? 'Conceptos generales' : 'Conceptos', description: null, lines: workspace.acceptedVersion.lines.filter((line) => !line.sectionId) }] : []),
+              ].map((group) => (
+                <div className="handoff-scope__group" key={group.key}>
+                  <div className="handoff-scope__group-head"><h3>{group.title}</h3>{group.description && <p>{group.description}</p>}</div>
+                  <ul className="handoff-lines">
+                    {group.lines.map((line) => <li className="handoff-line" key={line.id}>
+                      <span className="handoff-line__name"><strong>{line.name}</strong>{line.description && <small>{line.description}</small>}</span>
+                      <span className="handoff-line__qty">{quantityLabel(line.quantityMilliunits)} {line.unit}</span>
+                      <span className="handoff-line__total">{moneyLabel(line.totalMinor, workspace.acceptedVersion.currencyCode)}</span>
+                    </li>)}
+                  </ul>
+                </div>
+              ))}
+              <footer className="handoff-scope__total"><span>Total aceptado</span><strong>{moneyLabel(workspace.acceptedVersion.totalMinor, workspace.acceptedVersion.currencyCode)}</strong></footer>
+            </section>
+
+            <div className="handoff-aside">
+              <section className="handoff-card" aria-label="Responsable y checklist de transición">
+                <header className="handoff-card__head">
+                  <div><p className="staff-section-label">Transición</p><h2>Checklist de arranque</h2></div>
+                  {workspace.checklistItems.length > 0 && <span className="handoff-progress__count">{workspace.checklistItems.filter((item) => item.completedAt).length} de {workspace.checklistItems.length}</span>}
+                </header>
+                {workspace.checklistItems.length > 0 && <div className="handoff-progress" aria-hidden="true"><span style={{ width: `${Math.round((workspace.checklistItems.filter((item) => item.completedAt).length / workspace.checklistItems.length) * 100)}%` }} /></div>}
+                <div className="handoff-owner">
+                  <PrivateSelect key={workspace.owner?.id ?? 'unassigned'} id="project-owner" optionalHint={false} label="Responsable" value={workspace.owner?.id ?? ''} onValueChange={(value) => void setOwner(value)} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin asignar" disabled={busy} />
+                  <small>Creado por {workspace.createdBy.displayName} · {formatDateTime(workspace.createdAt)}</small>
+                  {assigneesError && <small className="handoff-owner__error" role="alert">{assigneesError}</small>}
+                </div>
+                {workspace.checklistItems.length === 0 && <div className="handoff-checklist-empty"><strong>Sin tareas de checklist todavía.</strong><span>Agrega los pendientes de transición para este proyecto.</span></div>}
+                {workspace.checklistItems.length > 0 && <ul className="staff-checklist">{workspace.checklistItems.map((item) => <li className={`staff-checklist__item${item.completedAt ? ' is-complete' : ''}`} key={item.id}>
+                  <label>
+                    <input type="checkbox" checked={Boolean(item.completedAt)} disabled={busy} onChange={() => void toggleItem(item)} />
+                    <span>{item.label}</span>
+                  </label>
+                  {item.completedAt && item.completedBy && <small>{item.completedBy.displayName} · {formatDateTime(item.completedAt)}</small>}
+                </li>)}</ul>}
+                <form onSubmit={(event) => void addItem(event)} className="handoff-add-tasks">
+                  <label><span>Nuevas tareas</span><textarea value={newItemLabel} onChange={(event) => setNewItemLabel(event.target.value)} maxLength={4000} rows={3} placeholder={'Una tarea por línea, por ejemplo:\nAgendar visita de medición\nConfirmar accesos en sitio'} disabled={busy} /></label>
+                  <button className="staff-button staff-button--outline" type="submit" disabled={busy || !newItemLabel.trim()}>{newItemLabel.trim().includes('\n') ? 'Agregar tareas' : 'Agregar tarea'}</button>
+                </form>
+              </section>
+
+              <section className="handoff-card handoff-contact" aria-label="Contacto del cliente">
+                <header className="handoff-card__head"><div><p className="staff-section-label">Contacto</p><h2>{workspace.contact.displayName}</h2></div></header>
+                <a href={`mailto:${workspace.contact.email}`}>{workspace.contact.email}</a>
+                {workspace.contact.phone && <a href={`tel:${workspace.contact.phone}`}>{workspace.contact.phone}</a>}
+              </section>
+
+              <section className="handoff-card" aria-label="Actividad del proyecto">
+                <header className="handoff-card__head"><div><p className="staff-section-label">Trazabilidad</p><h2>Actividad</h2></div></header>
+                <ol className="handoff-activity">{workspace.activity.map((entry) => <li key={entry.id}><span>{ACTIVITY_LABELS[entry.action] ?? entry.action}</span><time dateTime={entry.createdAt}>{formatDateTime(entry.createdAt)}</time></li>)}</ol>
+              </section>
+            </div>
+          </div>
         </>}
       </div>
     </PrivateSurfaceRoot>

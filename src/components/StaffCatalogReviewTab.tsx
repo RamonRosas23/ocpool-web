@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { CheckCheck } from 'lucide-react';
 import { PrivateSelect } from '@/components/private/ui';
 import { readApiResponseOrThrow } from '@/lib/api-response-error';
 import type { Category, SpecialConceptGroup } from '@/lib/staff-catalog-types';
@@ -66,7 +67,7 @@ export default function StaffCatalogReviewTab({ onPromoted }: StaffCatalogReview
       {notice && <p className="staff-notice" role="status">{notice}</p>}
       {error && <p className="staff-error" role="alert">{error}</p>}
       {loading && <div className="catalog-detail-loading"><span /><span /></div>}
-      {!loading && groups && groups.length === 0 && <p className="catalog-form__note">No hay conceptos especiales pendientes de revisión.</p>}
+      {!loading && groups && groups.length === 0 && <div className="staff-empty staff-empty--compact catalog-review__empty"><span className="staff-empty__mark" aria-hidden="true"><CheckCheck size={20} /></span><h2>Todo al día.</h2><p>No hay conceptos especiales pendientes de revisión. Cuando una propuesta use un concepto fuera de catálogo, aparecerá aquí para promoverlo o vincularlo.</p></div>}
       {!loading && groups && groups.length > 0 && (
         <div className="catalog-review-list">
           {groups.map((group) => {

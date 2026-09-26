@@ -37,7 +37,9 @@ describe('private UI foundation contract', () => {
     expect(field).toContain('hideLabel');
     expect(field).toContain("htmlFor={id}");
     expect(field).toContain("hideLabel ? 'private-field__label--hidden' : 'private-field__label'");
-    expect(field).toContain('!required && !hideLabel && <small>Opcional</small>');
+    // Una etiqueta oculta nunca muestra la pista "Opcional"; `optionalHint` sólo permite apagarla
+    // también en filtros visibles, nunca encenderla en un campo requerido u oculto.
+    expect(field).toContain('!required && !hideLabel && optionalHint && <small>Opcional</small>');
 
     const css = readFileSync(join(process.cwd(), 'src/components/private/ui/private-ui.css'), 'utf8');
     expect(css).toContain('.private-field__label--hidden');

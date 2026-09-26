@@ -53,10 +53,10 @@ export function PrivateLinkButton({ variant = 'primary', className, ...props }: 
 
 type PrivateTextFieldProps = Omit<PrivateFieldChromeProps, 'children'> & Omit<ComponentPropsWithoutRef<'input'>, 'id' | 'aria-describedby' | 'aria-invalid' | 'aria-labelledby' | 'aria-required'>;
 
-export function PrivateTextField({ id, label, description, error, required, className, ...props }: PrivateTextFieldProps) {
+export function PrivateTextField({ id, label, description, error, required, optionalHint, className, ...props }: PrivateTextFieldProps) {
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   return (
-    <PrivateField id={id} label={label} description={description} error={error} required={required}>
+    <PrivateField id={id} label={label} description={description} error={error} required={required} optionalHint={optionalHint}>
       {/* UX audit fix: `required` se destructura arriba (para calcular `a11y.required`) y por lo
           tanto queda fuera de `...props` -- nunca llegaba al elemento real, así que la validación
           nativa del navegador (bloquear el envío, enfocar el campo vacío) nunca se activaba en
@@ -69,10 +69,10 @@ export function PrivateTextField({ id, label, description, error, required, clas
 
 type PrivateTextAreaProps = Omit<PrivateFieldChromeProps, 'children'> & Omit<ComponentPropsWithoutRef<'textarea'>, 'id' | 'aria-describedby' | 'aria-invalid' | 'aria-labelledby' | 'aria-required'>;
 
-export function PrivateTextArea({ id, label, description, error, required, className, ...props }: PrivateTextAreaProps) {
+export function PrivateTextArea({ id, label, description, error, required, optionalHint, className, ...props }: PrivateTextAreaProps) {
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   return (
-    <PrivateField id={id} label={label} description={description} error={error} required={required}>
+    <PrivateField id={id} label={label} description={description} error={error} required={required} optionalHint={optionalHint}>
       <textarea {...props} id={id} required={required} className={joinClasses('private-control private-control--area', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} />
     </PrivateField>
   );
@@ -89,11 +89,11 @@ export type PrivateMoneyFieldProps = Omit<PrivateFieldChromeProps, 'children'> &
   disabled?: boolean;
 };
 
-export function PrivateMoneyField({ id, label, description, error, required, hideLabel, className, value, onValueChange, placeholder = '0.00', disabled = false }: PrivateMoneyFieldProps) {
+export function PrivateMoneyField({ id, label, description, error, required, hideLabel, optionalHint, className, value, onValueChange, placeholder = '0.00', disabled = false }: PrivateMoneyFieldProps) {
   const isInvalid = value !== '' && parseMoneyInput(value) === null;
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error) || isInvalid, required);
   return (
-    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
+    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel} optionalHint={optionalHint}>
       <div className={joinClasses('private-money-field', className)}>
         <span className="private-money-field__prefix" aria-hidden="true">$</span>
         <input id={id} className="private-control private-money-field__input" type="text" inputMode="decimal" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} required={required} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
@@ -117,7 +117,7 @@ export type PrivateSelectProps = Omit<PrivateFieldChromeProps, 'children'> & {
 
 const EMPTY_SELECT_VALUE = '__private_ui_empty__';
 
-export function PrivateSelect({ id, label, description, error, required, hideLabel, className, value, options, onValueChange, placeholder = 'Selecciona una opción', disabled = false }: PrivateSelectProps) {
+export function PrivateSelect({ id, label, description, error, required, hideLabel, optionalHint, className, value, options, onValueChange, placeholder = 'Selecciona una opción', disabled = false }: PrivateSelectProps) {
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   const selectedValue = value || EMPTY_SELECT_VALUE;
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -133,7 +133,7 @@ export function PrivateSelect({ id, label, description, error, required, hideLab
   }, []);
 
   return (
-    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
+    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel} optionalHint={optionalHint}>
       <SelectPrimitive.Root value={selectedValue} onValueChange={(nextValue) => onValueChange(nextValue === EMPTY_SELECT_VALUE ? '' : nextValue)} disabled={disabled}>
         <SelectPrimitive.Trigger ref={triggerRef} id={id} className={joinClasses('private-control private-select__trigger', value ? undefined : 'is-empty', className)} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required}>
           <SelectPrimitive.Value placeholder={placeholder} />
@@ -168,7 +168,7 @@ export type PrivateComboboxProps = Omit<PrivateFieldChromeProps, 'children'> & {
   disabled?: boolean;
 };
 
-export function PrivateCombobox({ id, label, description, error, required, hideLabel, className, value, options, onValueChange, placeholder = 'Escribe para buscar…', noResultsLabel = 'Sin coincidencias', disabled = false }: PrivateComboboxProps) {
+export function PrivateCombobox({ id, label, description, error, required, hideLabel, optionalHint, className, value, options, onValueChange, placeholder = 'Escribe para buscar…', noResultsLabel = 'Sin coincidencias', disabled = false }: PrivateComboboxProps) {
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error), required);
   const listboxId = `${id}-listbox`;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -232,7 +232,7 @@ export function PrivateCombobox({ id, label, description, error, required, hideL
   };
 
   return (
-    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel}>
+    <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel} optionalHint={optionalHint}>
       <div className={joinClasses('private-combobox', className)} ref={containerRef}>
         <input
           ref={inputRef}

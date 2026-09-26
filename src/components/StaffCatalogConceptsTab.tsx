@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Inbox, X } from 'lucide-react';
+import { BookOpen, Inbox, X } from 'lucide-react';
 import { PrivateDatePicker, PrivateDialog, PrivateMoneyField, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import StaffCatalogCategoryDialog from '@/components/StaffCatalogCategoryDialog';
 import { formatDate } from '@/lib/format-date';
@@ -260,10 +260,10 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
           <PrivatePagination page={page} totalPages={totalPages} disabled={loading} onPrevious={() => setPage((current) => current - 1)} onNext={() => setPage((current) => current + 1)} />
         </div>
         <section className="catalog-concepts__detail">
-          <div className="catalog-main__top">
+          {selectedItem && <div className="catalog-main__top">
             <div>
               <p className="staff-section-label">Concepto seleccionado</p>
-              {selectedItem ? <><h2>{selectedItem.name}</h2><p className="catalog-main__meta">{selectedItem.code} · {selectedItem.unit} · actualizado {formatDate(selectedItem.updatedAt)}</p></> : <h2>Selecciona un concepto</h2>}
+              <h2>{selectedItem.name}</h2><p className="catalog-main__meta">{selectedItem.code} · {selectedItem.unit} · actualizado {formatDate(selectedItem.updatedAt)}</p>
             </div>
             {selectedItem && capabilities.catalogManage && (
               <div className="catalog-main__actions">
@@ -271,8 +271,9 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
                 <button className="staff-button" type="button" disabled={saving} onClick={() => void toggleItemStatus()}>{selectedItem.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'}</button>
               </div>
             )}
-          </div>
-          {!selectedItem && <div className="staff-empty staff-empty--detail"><h2>Selecciona un concepto de la lista para ver su detalle.</h2></div>}
+          </div>}
+          {!selectedItem && loading && <div className="staff-detail__loading"><span /><span /><span /></div>}
+          {!selectedItem && !loading && <div className="staff-empty staff-empty--detail"><span className="staff-empty__mark" aria-hidden="true"><BookOpen size={20} /></span><h2>Selecciona un concepto.</h2><p>Su descripción, categoría y estado aparecerán aquí.</p></div>}
           {selectedItem && (
             <div className="catalog-detail">
               <p>{selectedItem.description ?? 'Este concepto todavía no tiene descripción.'}</p>
