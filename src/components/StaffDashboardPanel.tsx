@@ -337,14 +337,14 @@ export default function StaffDashboardPanel() {
             {queuesLoading && !mineQueue && <div className="staff-workqueue__loading" role="status"><span /><span /><span /></div>}
             {mineQueue && mineQueue.items.length === 0 && <p className="staff-workqueue__empty">No tienes solicitudes activas asignadas.</p>}
             {mineQueue && mineQueue.items.length > 0 && <ul className="staff-workqueue__list">{mineQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{labelForStatus(item.status)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>}
-            {mineQueue && mineQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests">Ver las {formatInteger(mineQueue.total)} solicitudes →</Link>}
+            {mineQueue && mineQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests?view=mine">Ver las {formatInteger(mineQueue.total)} solicitudes →</Link>}
           </article>
           <article className="staff-workqueue__card" aria-labelledby="workqueue-unassigned-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Nadie las tiene todavía</p><h3 id="workqueue-unassigned-title">Sin asignar</h3></div><QueueCount value={unassignedQueue ? unassignedQueue.total : null} /></div>
             {queuesLoading && !unassignedQueue && <div className="staff-workqueue__loading" role="status"><span /><span /><span /></div>}
             {unassignedQueue && unassignedQueue.items.length === 0 && <p className="staff-workqueue__empty">No hay solicitudes sin asignar.</p>}
             {unassignedQueue && unassignedQueue.items.length > 0 && <ul className="staff-workqueue__list">{unassignedQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{labelForStatus(item.status)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>}
-            {unassignedQueue && unassignedQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests">Ver las {formatInteger(unassignedQueue.total)} solicitudes →</Link>}
+            {unassignedQueue && unassignedQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests?view=unassigned">Ver las {formatInteger(unassignedQueue.total)} solicitudes →</Link>}
           </article>
           {customerReplied && customerReplied.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-customer-replied-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Esperando tu respuesta</p><h3 id="workqueue-customer-replied-title">Cliente respondió</h3></div><QueueCount value={customerReplied ? customerReplied.length : null} /></div>

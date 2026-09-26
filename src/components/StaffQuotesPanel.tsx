@@ -1,8 +1,9 @@
 'use client';
 
 import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, ChevronDown, ChevronUp, Inbox, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronUp, CircleCheck, Compass, Hourglass, Inbox, X } from 'lucide-react';
 import StaffQuoteDocumentPanel from '@/components/StaffQuoteDocumentPanel';
 import CatalogItemSearchCombobox, { type CatalogSearchResultItem } from '@/components/CatalogItemSearchCombobox';
 import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
@@ -20,6 +21,7 @@ import {
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
+import { quoteNextStep, quoteStageSteps, type QuoteNextStepTarget, type QuoteStageStepState } from '@/lib/quote-stage';
 import { moneyLabel } from '@/lib/money';
 import { QUOTE_REQUEST_STATUS_LABELS, QUOTE_VERSION_STATUS_LABELS, statusToneIcon } from '@/lib/labels';
 
@@ -237,6 +239,20 @@ function calculatePreview(line: DraftLine, priceMinor: string | undefined) {
   return { subtotal, discount: discountMinor, taxable, tax: taxMinor, total: taxable + taxMinor, unitPrice };
 }
 
+const NEXT_STEP_CTA: Record<QuoteNextStepTarget, string> = {
+  'price-list': 'Elegir lista',
+  lines: 'Agregar conceptos',
+  actions: 'Ir a las acciones',
+  document: 'Ir al documento',
+};
+
+const STAGE_STATE_LABELS: Record<QuoteStageStepState, string> = {
+  done: ' (completada)',
+  current: ' (etapa actual)',
+  closed: ' (cerrada)',
+  upcoming: ' (pendiente)',
+};
+
 export default function StaffQuotesPanel() {
   const router = useRouter();
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
@@ -347,7 +363,9 @@ export default function StaffQuotesPanel() {
         // aceptado sale de las 3 categorías "en construcción" de esta lista, pero loadWorkspace lo
         // trae por su cuenta igual. Mismo patrón que StaffRequestsPanel.tsx (W1-02).
         if (deepLinkedIdRef.current && current === deepLinkedIdRef.current) { deepLinkedIdRef.current = null; return current; }
-        return current && requestData.items.some((item) => item.id === current) ? current : requestData.items[0]?.id ?? null;
+        // El expediente abierto se conserva aunque la búsqueda o la página ya no lo incluyan: buscar
+        // en el riel es para encontrar el siguiente, no debe cerrar (ni arriesgar) el borrador en curso.
+        return current ?? requestData.items[0]?.id ?? null;
       });
     } catch (caught) {
       if (loadBaseGenerationRef.current !== generation) return;
@@ -435,6 +453,15 @@ export default function StaffQuotesPanel() {
     if (requestFromUrl) { deepLinkedIdRef.current = requestFromUrl; setSelectedId(requestFromUrl); }
   }, []);
 
+  // El expediente abierto vive en la URL: recargar o compartir el enlace regresa al mismo constructor.
+  useEffect(() => {
+    if (!selectedId) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('request') === selectedId) return;
+    url.searchParams.set('request', selectedId);
+    window.history.replaceState(null, '', url);
+  }, [selectedId]);
+
   useEffect(() => {
     if (!selectedPriceListId) { setPriceListDetail(null); return; }
     let cancelled = false;
@@ -494,6 +521,40 @@ export default function StaffQuotesPanel() {
   ].filter((label): label is string => Boolean(label));
   const selectedCurrency = priceListDetail?.currencyCode ?? workspace?.request.detail?.currencyCode ?? 'MXN';
   const selectedTaxProfile = workspace?.taxProfiles.find((profile) => profile.id === selectedTaxProfileId) ?? null;
+
+  // Guía de etapa: traduce versión + aprobaciones + permisos (ya calculados arriba) a "dónde va" y
+  // "qué sigue", para no tener que deducirlo de qué botones aparecen en la barra de acciones.
+  const stageInput = {
+    versionStatus: currentVersion?.status ?? null,
+    lineCount: draftLines.length,
+    priceListSelected: Boolean(selectedPriceListId),
+    approvalNeeded: requiresDiscountApproval || hasSpecialLines,
+    approvalGranted: (!requiresDiscountApproval || hasApprovedDiscount) && (!hasSpecialLines || hasApprovedSpecial),
+    approvalRequested: (!requiresDiscountApproval || hasApprovedDiscount || activeDiscountApproval?.status === 'REQUESTED') && (!hasSpecialLines || hasApprovedSpecial || activeSpecialApproval?.status === 'REQUESTED'),
+    canApprove: Boolean(capabilities?.quotesApproveDiscount),
+    canSend: canPublish,
+    canEdit: Boolean(capabilities?.quotesCreate),
+    projectCreated: workspace?.request.status === 'CONVERTIDA_EN_PROYECTO',
+  };
+  const stageSteps = quoteStageSteps(stageInput);
+  const nextStep = quoteNextStep(stageInput);
+  const nextStepTarget = nextStep.target;
+
+  const goToNextStep = (target: QuoteNextStepTarget) => {
+    const element = target === 'price-list' ? document.getElementById('quotes-price-list')
+      : target === 'lines' ? document.querySelector<HTMLElement>('.quotes-catalog-search__input')
+        : target === 'actions' ? document.getElementById('quotes-actions')
+          : document.querySelector<HTMLElement>('.quote-document-panel');
+    if (!element) return;
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    element.focus({ preventScroll: true });
+    if (target === 'actions' || target === 'document') {
+      element.classList.remove('is-spotlit');
+      void element.offsetWidth;
+      element.classList.add('is-spotlit');
+      window.setTimeout(() => element.classList.remove('is-spotlit'), 1600);
+    }
+  };
 
   // UX audit fix: cambiar "Lista de precios" deliberadamente NO repriecia en silencio las líneas ya
   // agregadas (Q1-05 protege justo contra eso), pero hasta ahora ese silencio no daba ninguna señal
@@ -619,6 +680,14 @@ export default function StaffQuotesPanel() {
   };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setPage(1); setAppliedSearch(search.trim()); };
+
+  // Búsqueda instantánea al dejar de escribir (Enter la aplica al momento).
+  useEffect(() => {
+    const trimmed = search.trim();
+    if (trimmed === appliedSearch) return;
+    const timer = window.setTimeout(() => { setPage(1); setAppliedSearch(trimmed); }, 350);
+    return () => window.clearTimeout(timer);
+  }, [appliedSearch, search]);
 
   const addLineFromSearch = (item: CatalogSearchResultItem) => {
     if (draftLines.some((line) => line.catalogItemId === item.id)) return;
@@ -1046,7 +1115,7 @@ export default function StaffQuotesPanel() {
       {error && <p className="staff-error" role="alert">{error}</p>}
       <section className="quotes-workspace" aria-label="Constructor de cotizaciones">
         <aside className="quotes-rail">
-          <form className="staff-filters" onSubmit={submitSearch}><label><span>Buscar expediente</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Folio o cliente" maxLength={100} /></label><button className="staff-button staff-button--filter" type="submit">Aplicar búsqueda</button></form>
+          <form className="staff-filters" onSubmit={submitSearch} role="search" aria-label="Buscar expedientes"><label><span>Buscar expediente</span><span className="staff-search"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Folio o cliente" maxLength={100} />{search && <button type="button" className="staff-search__clear" aria-label="Limpiar búsqueda" onClick={() => setSearch('')}><X size={15} aria-hidden="true" /></button>}</span></label></form>
           <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `Mostrando ${requests.length} de ${total}`}</span></div>
           <div className="quotes-request-list" aria-live="polite">
             {loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}
@@ -1057,9 +1126,14 @@ export default function StaffQuotesPanel() {
         </aside>
         <section className="quotes-main">
           {(loadingWorkspace || (loading && !workspace)) && <div className="staff-detail__loading"><span /><span /><span /></div>}
-          {!loadingWorkspace && !loading && !workspace && <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>Selecciona un expediente.</h2><p>El alcance y las líneas de cotización aparecerán aquí.</p></div>}
+          {!loadingWorkspace && !loading && !workspace && (error && requests.length === 0
+            ? <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>No pudimos cargar el constructor.</h2><p>Revisa tu conexión e inténtalo de nuevo; tu trabajo guardado no se pierde.</p><button className="staff-button staff-button--dark" type="button" onClick={() => void loadBase(page, appliedSearch)}>Reintentar</button></div>
+            : requests.length === 0 && !appliedSearch
+              ? <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>Nada por cotizar todavía.</h2><p>Cuando una solicitud pase a elaboración de cotización aparecerá aquí, lista para armar la propuesta.</p><Link className="staff-button" href="/staff/requests" onClick={(event) => guardNavigation(event, '/staff/requests')}>Revisar la bandeja</Link></div>
+              : <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>Selecciona un expediente.</h2><p>El alcance y las líneas de cotización aparecerán aquí.</p></div>)}
           {!loadingWorkspace && workspace && <>
-            <div className="quotes-main__top"><div><p className="staff-kicker">{workspace.request.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{workspace.request.folio}</h2><p className="staff-detail__date">{workspace.request.client.displayName} · Actualizado {formatDateTime(workspace.request.updatedAt)}</p></div><StatusPill status={workspace.request.status} /></div>
+            <div className="quotes-main__top"><div><p className="staff-kicker">{workspace.request.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{workspace.request.folio}</h2><p className="staff-detail__date">{workspace.request.client.displayName} · Actualizado {formatDateTime(workspace.request.updatedAt)}</p><Link className="quotes-main__request-link" href={`/staff/requests?request=${workspace.request.id}`} onClick={(event) => guardNavigation(event, `/staff/requests?request=${workspace.request.id}`)}>Ver expediente<ArrowUpRight size={14} aria-hidden="true" /></Link></div><StatusPill status={workspace.request.status} /></div>
+            <section className="quotes-stage" aria-label="Avance de la cotización"><ol className="quotes-stage__steps">{stageSteps.map((step, index) => <li key={step.key} className={`quotes-stage__step is-${step.state}`} aria-current={step.state === 'current' ? 'step' : undefined}><span className="quotes-stage__marker" aria-hidden="true">{step.state === 'done' ? <Check size={13} strokeWidth={2.6} /> : step.state === 'closed' ? <X size={13} strokeWidth={2.6} /> : index + 1}</span><span className="quotes-stage__label">{step.label}<span className="sr-only">{STAGE_STATE_LABELS[step.state]}</span>{step.note && <small>{step.note}</small>}</span></li>)}</ol><div className={`quotes-next quotes-next--${nextStep.tone}`}><span className="quotes-next__icon" aria-hidden="true">{nextStep.tone === 'waiting' ? <Hourglass size={18} /> : nextStep.tone === 'blocked' ? <AlertTriangle size={18} /> : nextStep.tone === 'done' ? <CircleCheck size={18} /> : <Compass size={18} />}</span><div className="quotes-next__body"><p className="staff-section-label">Siguiente paso</p><h3>{nextStep.title}</h3><p>{nextStep.detail}</p></div>{nextStepTarget && <button className="staff-button staff-button--outline quotes-next__cta" type="button" onClick={() => goToNextStep(nextStepTarget)}>{NEXT_STEP_CTA[nextStepTarget]}<ArrowRight size={15} aria-hidden="true" /></button>}</div></section>
             <div className="quotes-brief"><div><p className="staff-section-label">Alcance</p><strong>{workspace.request.detail?.projectType ?? 'Sin tipo de proyecto'}</strong><span>{workspace.request.detail?.location ?? 'Sin ubicación'}{workspace.request.detail?.dimensions ? ` · ${workspace.request.detail.dimensions}` : ''}</span></div><div><p className="staff-section-label">Calificación</p><strong>{qualificationLabel(workspace.request.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</strong><span>{qualificationLabel(workspace.request.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)} · {qualificationLabel(workspace.request.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</span></div><div><p className="staff-section-label">Contacto</p><strong>{workspace.request.contact.displayName}</strong><span>{workspace.request.contact.email}</span></div><div><p className="staff-section-label">Moneda</p><strong>{selectedCurrency}</strong><span>{workspace.request.detail?.budgetCents ? `Presupuesto ${moneyLabel(workspace.request.detail.budgetCents, workspace.request.detail.currencyCode)}` : 'Sin presupuesto declarado'}</span></div></div>
             <section className="quotes-builder"><div className="quotes-builder__head"><div><p className="staff-section-label">Composición</p><h3>{currentVersion ? `Versión ${currentVersion.versionNumber} · ${statusLabel(currentVersion.status)}` : 'Primera versión'}</h3>{canEdit && draftLines.length > 0 ? <AutosaveIndicator state={autosaveState} /> : null}</div><PrivateSelect id="quotes-price-list" optionalHint={false} className="quotes-list-select" label="Lista de precios" value={selectedPriceListId} onValueChange={handlePriceListChange} options={priceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currencyCode}` }))} placeholder="Selecciona una lista" disabled={(!canEdit && !canStartVersion) || autosaveState === 'conflict'} /><PrivateSelect id="quotes-tax-profile" optionalHint={false} className="quotes-list-select" label="Perfil de IVA" value={selectedTaxProfileId} onValueChange={setSelectedTaxProfileId} options={(workspace?.taxProfiles ?? []).map((profile) => ({ value: profile.id, label: `${profile.name} · ${(profile.ratePercentBasisPoints / 100).toString()}%` }))} placeholder="Selecciona un perfil" disabled={!canEdit && !canStartVersion} />{(canEdit || canStartVersion) && draftLines.some((line) => !line.special) && <button className="staff-button staff-button--outline quotes-reprice-trigger" type="button" disabled={checkingReprice} onClick={() => void checkReprice()}>{checkingReprice ? 'Comprobando…' : 'Verificar precios vigentes'}</button>}</div>
               {autosaveState === 'conflict' && <div className="quotes-conflict" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p>{autosaveMessage ?? 'La versión cambió desde la última lectura.'}</p><div className="quotes-conflict__actions"><button className="staff-button staff-button--outline" type="button" onClick={() => void reloadDiscardingLocalEdits()}>Recargar con los cambios del servidor</button><button className="staff-button staff-button--danger" type="button" onClick={() => void overwriteWithLocalEdits()}>Mantener mis cambios y sobrescribir</button></div></div>}
@@ -1126,7 +1200,7 @@ export default function StaffQuotesPanel() {
               </aside>
               </div>
               {draftLines.length > 0 && <button type="button" className="quotes-mobile-total-bar" onClick={() => document.getElementById('quotes-actions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><span>Total<strong>{preview.valid ? moneyLabel(preview.total, selectedCurrency) : 'Revisa las líneas'}</strong></span><span className="quotes-mobile-total-bar__cta">Ver acciones<ChevronDown size={14} aria-hidden="true" /></span></button>}
-              <div className="quotes-actions" id="quotes-actions"><PrivateDatePicker id="quotes-valid-until" label="Vigencia hasta" value={validUntil} onValueChange={setValidUntil} disabled={!canEdit && !canStartVersion} />{canEdit ? <button className="staff-button staff-button--dark" type="button" disabled={autosaveState === 'saving' || autosaveState === 'saved' || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void persistDraft()}>{autosaveState === 'saving' ? 'Guardando…' : 'Guardar ahora'}</button> : null}{canStartVersion ? <button className="staff-button staff-button--dark" type="button" disabled={saving || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void createVersionFromSent()}>{saving ? 'Creando…' : 'Crear nueva versión'}</button> : null}{(currentVersion?.status === 'ENVIADA' || currentVersion?.status === 'EN_NEGOCIACION') && capabilities?.quotesSend ? <button className="staff-button staff-button--outline" type="button" disabled={saving} onClick={() => { setRejectVersionReason(''); setRejectVersionDialogOpen(true); }}>Rechazar versión</button> : null}{currentVersion?.status === 'BORRADOR' && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || autosaveState === 'saving' || autosaveState === 'dirty' || autosaveState === 'conflict' || draftLines.length === 0} onClick={() => void transition('EN_REVISION')}>Pasar a revisión</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesCreate ? <button className="staff-button staff-button--outline" type="button" disabled={saving} onClick={() => { setReturnToDraftReason(''); setReturnToDraftDialogOpen(true); }}>Volver a borrador</button> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval && !hasApprovedDiscount && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeDiscountApproval)} onClick={() => void requestDiscountApproval()}>{activeDiscountApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasDiscount && activeDiscountApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideDiscountApproval(activeDiscountApproval.id, 'APPROVED')}>Aprobar descuento</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => { setRejectApprovalReason(''); setRejectApprovalDialog({ kind: 'DISCOUNT', approvalId: activeDiscountApproval.id }); }}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && !hasApprovedSpecial && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeSpecialApproval)} onClick={() => void requestSpecialApproval()}>{activeSpecialApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación de concepto especial'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && activeSpecialApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideSpecialApproval(activeSpecialApproval.id, 'APPROVED')}>Aprobar concepto especial</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => { setRejectApprovalReason(''); setRejectApprovalDialog({ kind: 'SPECIAL_CONCEPT', approvalId: activeSpecialApproval.id }); }}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && canPublish && (!requiresDiscountApproval || hasApprovedDiscount) && (!hasSpecialLines || hasApprovedSpecial) ? <button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void openPublishPreflight()}>Enviar cotización</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesSend && !capabilities.quotesPdfGenerate ? <p className="quotes-action-note">Tu perfil puede enviar, pero necesita permiso para preparar el PDF comercial.</p> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval ? <p className="quotes-action-note">{discountApproval ? `${approvalStatusLabel(discountApproval.status)}. ` : ''}{hasApprovedDiscount ? 'La versión tiene una aprobación vigente.' : 'Esta versión no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines ? <p className="quotes-action-note">{specialApproval ? `${approvalStatusLabel(specialApproval.status)}. ` : ''}{hasApprovedSpecial ? 'Los conceptos especiales tienen una aprobación vigente.' : 'Esta versión tiene conceptos especiales y no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}</div>
+              <div className="quotes-actions" id="quotes-actions" tabIndex={-1}><PrivateDatePicker id="quotes-valid-until" label="Vigencia hasta" value={validUntil} onValueChange={setValidUntil} disabled={!canEdit && !canStartVersion} />{canEdit ? <button className="staff-button staff-button--dark" type="button" disabled={autosaveState === 'saving' || autosaveState === 'saved' || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void persistDraft()}>{autosaveState === 'saving' ? 'Guardando…' : 'Guardar ahora'}</button> : null}{canStartVersion ? <button className="staff-button staff-button--dark" type="button" disabled={saving || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void createVersionFromSent()}>{saving ? 'Creando…' : 'Crear nueva versión'}</button> : null}{(currentVersion?.status === 'ENVIADA' || currentVersion?.status === 'EN_NEGOCIACION') && capabilities?.quotesSend ? <button className="staff-button staff-button--outline" type="button" disabled={saving} onClick={() => { setRejectVersionReason(''); setRejectVersionDialogOpen(true); }}>Rechazar versión</button> : null}{currentVersion?.status === 'BORRADOR' && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || autosaveState === 'saving' || autosaveState === 'dirty' || autosaveState === 'conflict' || draftLines.length === 0} onClick={() => void transition('EN_REVISION')}>Pasar a revisión</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesCreate ? <button className="staff-button staff-button--outline" type="button" disabled={saving} onClick={() => { setReturnToDraftReason(''); setReturnToDraftDialogOpen(true); }}>Volver a borrador</button> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval && !hasApprovedDiscount && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeDiscountApproval)} onClick={() => void requestDiscountApproval()}>{activeDiscountApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasDiscount && activeDiscountApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideDiscountApproval(activeDiscountApproval.id, 'APPROVED')}>Aprobar descuento</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => { setRejectApprovalReason(''); setRejectApprovalDialog({ kind: 'DISCOUNT', approvalId: activeDiscountApproval.id }); }}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && !hasApprovedSpecial && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeSpecialApproval)} onClick={() => void requestSpecialApproval()}>{activeSpecialApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación de concepto especial'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && activeSpecialApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideSpecialApproval(activeSpecialApproval.id, 'APPROVED')}>Aprobar concepto especial</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => { setRejectApprovalReason(''); setRejectApprovalDialog({ kind: 'SPECIAL_CONCEPT', approvalId: activeSpecialApproval.id }); }}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && canPublish && (!requiresDiscountApproval || hasApprovedDiscount) && (!hasSpecialLines || hasApprovedSpecial) ? <button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void openPublishPreflight()}>Enviar cotización</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesSend && !capabilities.quotesPdfGenerate ? <p className="quotes-action-note">Tu perfil puede enviar, pero necesita permiso para preparar el PDF comercial.</p> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval ? <p className="quotes-action-note">{discountApproval ? `${approvalStatusLabel(discountApproval.status)}. ` : ''}{hasApprovedDiscount ? 'La versión tiene una aprobación vigente.' : 'Esta versión no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines ? <p className="quotes-action-note">{specialApproval ? `${approvalStatusLabel(specialApproval.status)}. ` : ''}{hasApprovedSpecial ? 'Los conceptos especiales tienen una aprobación vigente.' : 'Esta versión tiene conceptos especiales y no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}</div>
               {hasDiscount && currentVersion?.approvals.length ? <div className="quotes-approval-summary" aria-label="Historial de aprobación de descuento"><strong>Control de descuento</strong>{currentVersion.approvals.filter((approval) => approval.type === 'DISCOUNT').slice(0, 3).map((approval) => <span key={approval.id}>{approvalStatusLabel(approval.status)} · {formatDateTime(approval.requestedAt)}</span>)}</div> : null}
               {hasSpecialLines && currentVersion?.approvals.length ? <div className="quotes-approval-summary" aria-label="Historial de aprobación de conceptos especiales"><strong>Control de concepto especial</strong>{currentVersion.approvals.filter((approval) => approval.type === 'SPECIAL_CONCEPT').slice(0, 3).map((approval) => <span key={approval.id}>{approvalStatusLabel(approval.status)} · {formatDateTime(approval.requestedAt)}</span>)}</div> : null}
             </section>

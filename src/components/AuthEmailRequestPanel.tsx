@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useHydrated } from '@/lib/use-hydrated';
 import Link from 'next/link';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 
@@ -17,6 +18,7 @@ export default function AuthEmailRequestPanel({ kind }: { kind: RequestKind }) {
   const customer = kind === 'customer';
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
+  const hydrated = useHydrated();
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [redirectRequestId, setRedirectRequestId] = useState<string | null>(null);
@@ -62,11 +64,11 @@ export default function AuthEmailRequestPanel({ kind }: { kind: RequestKind }) {
       <div className="auth-panel__body">
         <h2 id="auth-request-title">{customer ? 'Accede a tu portal' : 'Recupera tu acceso'}</h2>
         <p className="auth-panel__intro">{customer ? 'Este formulario sólo envía un enlace cuando existe una cuenta cliente activa. Si acabas de pedir una cotización y nunca has tenido acceso, conserva tu folio: primero revisaremos tu solicitud, habilitaremos tu portal y después recibirás un enlace seguro de un solo uso.' : 'Te enviaremos un enlace temporal para definir una nueva contraseña.'}</p>
-        <form className="auth-form" onSubmit={submit} noValidate>
+        <form className="auth-form" method="post" onSubmit={submit} noValidate>
           <label><span>Correo</span><input type="email" name="email" autoComplete="email" inputMode="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           {error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}
           {notice && <p className="auth-feedback auth-feedback--success" role="status">{notice}</p>}
-          <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Enviando…' : customer ? 'Solicitar acceso' : 'Enviar solicitud'}</button>
+          <button className="auth-submit" type="submit" disabled={busy || !hydrated}>{busy ? 'Enviando…' : customer ? 'Solicitar acceso' : 'Enviar solicitud'}</button>
         </form>
       </div>
       <p className="auth-panel__note">Por seguridad, la respuesta es la misma aunque el correo no esté asociado a una cuenta.</p>

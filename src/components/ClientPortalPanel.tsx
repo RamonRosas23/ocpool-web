@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { ArrowRight, Check, X } from 'lucide-react';
 import ClientFilesPanel from '@/components/ClientFilesPanel';
 import ClientMessagingThread from '@/components/ClientMessagingThread';
 import ClientQuoteActions from '@/components/ClientQuoteActions';
@@ -9,11 +10,39 @@ import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { formatDate } from '@/lib/format-date';
+import { portalNextStep, portalStages, type PortalNextStep, type PortalStageState } from '@/lib/portal-stage';
 import { moneyLabel } from '@/lib/money';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 import { QUOTE_VERSION_STATUS_LABELS, statusToneIcon } from '@/lib/labels';
 
 const STATUS_LABELS: Record<string, string> = QUOTE_REQUEST_STATUS_LABELS;
+
+const STAGE_STATE_LABELS: Record<PortalStageState, string> = {
+  done: ' (completada)',
+  current: ' (etapa actual)',
+  closed: ' (cerrada)',
+  upcoming: ' (pendiente)',
+};
+
+const NEXT_STEP_EYEBROW: Record<PortalNextStep['owner'], string> = {
+  customer: 'Tu siguiente paso',
+  team: 'Lo que sigue',
+  done: 'Todo en orden',
+};
+
+// Lleva al cliente directo a donde está la acción (la propuesta o la conversación) y la resalta.
+function goToPortalTarget(target: NonNullable<PortalNextStep['target']>) {
+  const section = document.querySelector<HTMLElement>(target === 'quote' ? '.client-quote' : '.client-messaging');
+  if (!section) return;
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const focusTarget = target === 'conversation' ? section.querySelector<HTMLElement>('textarea:not(:disabled)') ?? section : section;
+  if (focusTarget === section && !section.hasAttribute('tabindex')) section.setAttribute('tabindex', '-1');
+  focusTarget.focus({ preventScroll: true });
+  section.classList.remove('is-spotlit');
+  void section.offsetWidth;
+  section.classList.add('is-spotlit');
+  window.setTimeout(() => section.classList.remove('is-spotlit'), 1600);
+}
 
 type RequestSummary = {
   id: string;
@@ -185,6 +214,16 @@ export default function ClientPortalPanel() {
   if (restricted) return <PrivateSurfaceRoot className="client-portal client-portal--restricted"><section className="client-restricted"><WorkspaceLogo tone="light" className="client-restricted__logo" /><p className="client-eyebrow">Portal privado</p><h1>Acceso privado.</h1><p>Necesitas un enlace de acceso válido para consultar tus expedientes.</p><div className="client-restricted__actions"><Link className="client-button client-button--dark" href={requestFromUrl ? `/portal/access?request=${encodeURIComponent(requestFromUrl)}` : '/portal/access'}>Solicitar acceso</Link><Link className="client-restricted__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
 
   const validity = workspace?.quote?.currentVersion ? quoteValidityLabel(workspace.quote.currentVersion.validUntil) : null;
+  const currentQuote = workspace?.quote?.currentVersion ?? null;
+  const stages = workspace ? portalStages(workspace.request.status) : [];
+  const nextStep = workspace ? portalNextStep({
+    status: workspace.request.status,
+    hasQuote: Boolean(currentQuote),
+    quoteExpired: Boolean(validity?.expired),
+    quoteAccepted: currentQuote?.status === 'ACEPTADA',
+    quoteActionable: Boolean(currentQuote && currentQuote.pdfReady && ['ENVIADA', 'EN_NEGOCIACION'].includes(currentQuote.status) && !validity?.expired),
+  }) : null;
+  const nextStepTarget = nextStep?.target ?? null;
 
   return <PrivateSurfaceRoot className="client-portal">
     <header className="client-header"><WorkspaceBrand className="client-brand" subtitle="Portal de cliente" /><div className="client-header__right"><Link className="client-header__home" href="/">Volver al sitio</Link><span className="client-header__state"><i aria-hidden="true" /> Sesión privada</span><button type="button" className="client-header__logout" onClick={() => void logout()}>Cerrar sesión</button></div></header>
@@ -196,7 +235,7 @@ export default function ClientPortalPanel() {
         <section className="client-detail">
           {loadingDetail && <div className="client-detail-loading"><i /><i /><i /></div>}
           {!loadingDetail && !workspace && <div className="client-empty"><WorkspaceLogo className="client-empty__logo" /><h2>Elige un expediente.</h2><p>Selecciona un proyecto para ver su alcance y propuesta.</p></div>}
-          {!loadingDetail && workspace && <><div className="client-detail__intro"><div><p className="client-eyebrow">{workspace.request.folio}</p><h2>{workspace.request.detail?.projectType ?? 'Tu proyecto'}</h2><p>{workspace.request.detail?.location ?? 'Ubicación por confirmar'} · Actualizado {formatDate(workspace.request.updatedAt)}</p></div><ClientStatusPill status={workspace.request.status} /></div><div className="client-overview"><div><span>Alcance</span><strong>{workspace.request.detail?.description ?? 'Estamos definiendo el alcance contigo.'}</strong></div><div><span>Contacto</span><strong>{workspace.request.contact.displayName}</strong><small>{workspace.request.contact.email}</small></div></div>{workspace.quote?.currentVersion ? <section className="client-quote"><div className="client-quote__head"><div><p className="client-eyebrow">{validity?.expired ? 'Propuesta vencida' : 'Propuesta vigente'}</p><h3>Versión {workspace.quote.currentVersion.versionNumber}</h3></div><div className="client-quote__total"><span>Total</span><strong>{moneyLabel(workspace.quote.currentVersion.totalMinor, workspace.quote.currentVersion.currencyCode)}</strong></div></div><p className={`client-quote__validity${validity?.expired ? ' is-expired' : ''}`}>{validity?.label}</p><ClientQuoteActions quoteId={workspace.quote.id} requestId={workspace.request.id} version={workspace.quote.currentVersion} validity={validity ?? { label: 'Vigencia por confirmar', expired: false }} contactDisplayName={workspace.request.contact.displayName} onAccepted={() => void loadDetail(workspace.request.id)} onChangeRequested={() => setMessagingRefreshKey((current) => current + 1)} /><div className="client-quote__lines">{workspace.quote.currentVersion.lines.map((line, index) => <div className="client-quote-line" key={`${line.catalogItemCode ?? 'special'}-${line.name}-${index}`}><div><strong>{line.name}</strong><small>{line.catalogItemCode ?? 'Concepto especial'} · {quantityLabel(line.quantityMilliunits)} {line.unit}</small></div><span>{moneyLabel(line.totalMinor, line.currencyCode)}</span></div>)}</div><div className="client-quote__summary"><span>Subtotal <b>{moneyLabel(workspace.quote.currentVersion.subtotalMinor, workspace.quote.currentVersion.currencyCode)}</b></span><span>Descuento <b>− {moneyLabel(workspace.quote.currentVersion.discountTotalMinor, workspace.quote.currentVersion.currencyCode)}</b></span><span>Impuestos <b>{moneyLabel(workspace.quote.currentVersion.taxTotalMinor, workspace.quote.currentVersion.currencyCode)}</b></span></div></section> : <section className="client-quote client-quote--empty"><p className="client-eyebrow">Propuesta</p><h3>Estamos preparando los detalles.</h3><p>Cuando exista una propuesta disponible, aparecerá en este expediente.</p></section>}<ClientFilesPanel requestId={workspace.request.id} /><ClientMessagingThread key={messagingRefreshKey} requestId={workspace.request.id} /><section className="client-version-history"><div className="client-section-head"><div><p className="client-eyebrow">Trazabilidad</p><h3>Versiones compartidas</h3></div><span>{workspace.quote?.versions.length ?? 0}</span></div>{workspace.quote?.versions.length ? <ol>{workspace.quote.versions.map((version) => <li key={version.id}><span>V{version.versionNumber}</span><div><strong>{versionStatusLabel(version.status)}</strong><small>{moneyLabel(version.totalMinor, version.currencyCode)} · {formatDate(version.createdAt)}</small></div></li>)}</ol> : <p className="client-history-empty">Todavía no hay versiones compartidas.</p>}</section></>}
+          {!loadingDetail && workspace && <><div className="client-detail__intro"><div><p className="client-eyebrow">{workspace.request.folio}</p><h2>{workspace.request.detail?.projectType ?? 'Tu proyecto'}</h2><p>{workspace.request.detail?.location ?? 'Ubicación por confirmar'} · Actualizado {formatDate(workspace.request.updatedAt)}</p></div><ClientStatusPill status={workspace.request.status} /></div><section className="client-progress" aria-label="Avance de tu proyecto"><ol className="client-progress__steps">{stages.map((stage, index) => <li key={stage.key} className={`client-progress__step is-${stage.state}`} aria-current={stage.state === 'current' ? 'step' : undefined}><span className="client-progress__marker" aria-hidden="true">{stage.state === 'done' ? <Check size={12} strokeWidth={2.8} /> : stage.state === 'closed' ? <X size={12} strokeWidth={2.8} /> : index + 1}</span><span className="client-progress__label">{stage.label}<span className="sr-only">{STAGE_STATE_LABELS[stage.state]}</span></span></li>)}</ol>{nextStep && <div className={`client-next client-next--${nextStep.owner}`}><div className="client-next__body"><p className="client-eyebrow">{NEXT_STEP_EYEBROW[nextStep.owner]}</p><h3>{nextStep.title}</h3><p>{nextStep.detail}</p></div>{nextStepTarget && nextStep.cta && <button type="button" className="client-quote-action client-quote-action--primary client-next__cta" onClick={() => goToPortalTarget(nextStepTarget)}>{nextStep.cta}<ArrowRight size={15} aria-hidden="true" /></button>}</div>}</section><div className="client-overview"><div><span>Alcance</span><strong>{workspace.request.detail?.description ?? 'Estamos definiendo el alcance contigo.'}</strong></div><div><span>Contacto</span><strong>{workspace.request.contact.displayName}</strong><small>{workspace.request.contact.email}</small></div></div>{workspace.quote?.currentVersion ? <section className="client-quote"><div className="client-quote__head"><div><p className="client-eyebrow">{validity?.expired ? 'Propuesta vencida' : 'Propuesta vigente'}</p><h3>Versión {workspace.quote.currentVersion.versionNumber}</h3></div><div className="client-quote__total"><span>Total</span><strong>{moneyLabel(workspace.quote.currentVersion.totalMinor, workspace.quote.currentVersion.currencyCode)}</strong></div></div><p className={`client-quote__validity${validity?.expired ? ' is-expired' : ''}`}>{validity?.label}</p><ClientQuoteActions quoteId={workspace.quote.id} requestId={workspace.request.id} version={workspace.quote.currentVersion} validity={validity ?? { label: 'Vigencia por confirmar', expired: false }} contactDisplayName={workspace.request.contact.displayName} onAccepted={() => void loadDetail(workspace.request.id)} onChangeRequested={() => setMessagingRefreshKey((current) => current + 1)} /><div className="client-quote__lines">{workspace.quote.currentVersion.lines.map((line, index) => <div className="client-quote-line" key={`${line.catalogItemCode ?? 'special'}-${line.name}-${index}`}><div><strong>{line.name}</strong><small>{line.catalogItemCode ?? 'Concepto especial'} · {quantityLabel(line.quantityMilliunits)} {line.unit}</small></div><span>{moneyLabel(line.totalMinor, line.currencyCode)}</span></div>)}</div><div className="client-quote__summary"><span>Subtotal <b>{moneyLabel(workspace.quote.currentVersion.subtotalMinor, workspace.quote.currentVersion.currencyCode)}</b></span><span>Descuento <b>− {moneyLabel(workspace.quote.currentVersion.discountTotalMinor, workspace.quote.currentVersion.currencyCode)}</b></span><span>Impuestos <b>{moneyLabel(workspace.quote.currentVersion.taxTotalMinor, workspace.quote.currentVersion.currencyCode)}</b></span></div></section> : <section className="client-quote client-quote--empty"><p className="client-eyebrow">Propuesta</p><h3>Estamos preparando los detalles.</h3><p>Cuando exista una propuesta disponible, aparecerá en este expediente.</p></section>}<ClientFilesPanel requestId={workspace.request.id} /><ClientMessagingThread key={messagingRefreshKey} requestId={workspace.request.id} /><section className="client-version-history"><div className="client-section-head"><div><p className="client-eyebrow">Trazabilidad</p><h3>Versiones compartidas</h3></div><span>{workspace.quote?.versions.length ?? 0}</span></div>{workspace.quote?.versions.length ? <ol>{workspace.quote.versions.map((version) => <li key={version.id}><span>V{version.versionNumber}</span><div><strong>{versionStatusLabel(version.status)}</strong><small>{moneyLabel(version.totalMinor, version.currencyCode)} · {formatDate(version.createdAt)}</small></div></li>)}</ol> : <p className="client-history-empty">Todavía no hay versiones compartidas.</p>}</section></>}
         </section>
       </section>
     </div>

@@ -179,7 +179,7 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
   const canDownload = Boolean(operation?.actions.canDownload);
   const canGenerateNow = Boolean(canGenerate && operation?.actions.canGenerate);
 
-  return <section className="quote-document-panel" aria-label="Documento comercial y aceptación">
+  return <section className="quote-document-panel" aria-label="Documento comercial y aceptación" tabIndex={-1}>
     <div className="quote-document-panel__head">
       <div>
         <p className="staff-section-label">Entrega documental</p>

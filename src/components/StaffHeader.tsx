@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState, type MouseEvent } from 'react';
 import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, Inbox, LayoutDashboard, LogOut, Menu, ScrollText, X, type LucideIcon } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import { usePrivateShellContext } from '@/components/private/PrivateShellContext';
+import StaffQuickFind from '@/components/staff/StaffQuickFind';
 import { useStaffSession } from '@/components/staff/StaffSessionContext';
 import type { PrivateStaffCapabilities } from '@/components/private/navigation';
 import { getApiErrorMessage } from '@/lib/api-error-message';
@@ -125,6 +126,7 @@ export default function StaffHeader({ onNavigate }: Props) {
           <WorkspaceBrand className="staff-brand" subtitle="Operaciones" href={homeHref} ariaLabel="OCPOOL, volver al dashboard" onClick={onNavigate ? (event) => onNavigate(event, homeHref) : undefined} />
           <nav className="staff-top-nav" aria-label="Navegación de operaciones">{navLinks('bar')}</nav>
           <div className="staff-header__tools">
+            <StaffQuickFind sections={sections} onNavigate={onNavigate} />
             {session && (
               <div className="staff-account" ref={accountRef}>
                 <button

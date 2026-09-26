@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useHydrated } from '@/lib/use-hydrated';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
@@ -33,6 +34,7 @@ export default function EmployeeLoginPanel() {
   const [mfaCode, setMfaCode] = useState('');
   const [mfaRequired, setMfaRequired] = useState(false);
   const [busy, setBusy] = useState(false);
+  const hydrated = useHydrated();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,12 +93,12 @@ export default function EmployeeLoginPanel() {
       <div className="auth-panel__body">
         <h2 id="employee-login-title">Acceso interno</h2>
         <p className="auth-panel__intro">{mfaRequired ? 'Ingresa el código de tu app de autenticación para continuar.' : 'Ingresa con tu cuenta de empleado para continuar.'}</p>
-        <form className="auth-form" onSubmit={submit} noValidate>
+        <form className="auth-form" method="post" onSubmit={submit} noValidate>
           <label><span>Correo</span><input type="email" name="email" autoComplete="username" inputMode="email" required disabled={mfaRequired} value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           <label><span>Contraseña</span><span className="auth-password"><input type={passwordVisible ? 'text' : 'password'} name="password" autoComplete="current-password" required disabled={mfaRequired} value={password} onChange={(event) => setPassword(event.target.value)} /><button className="auth-password__toggle" type="button" aria-label={passwordVisible ? 'Ocultar clave' : 'Mostrar clave'} aria-pressed={passwordVisible} disabled={mfaRequired} onClick={() => setPasswordVisible((current) => !current)}>{passwordVisible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}</button></span></label>
           {mfaRequired && <label><span>Código de autenticación</span><input type="text" name="mfaCode" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoFocus required value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/gu, '').slice(0, 6))} /></label>}
           {error && <p className="auth-feedback auth-feedback--error" role="alert">{error}</p>}
-          <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Verificando…' : mfaRequired ? 'Verificar código' : 'Entrar'}</button>
+          <button className="auth-submit" type="submit" disabled={busy || !hydrated}>{busy ? 'Verificando…' : mfaRequired ? 'Verificar código' : 'Entrar'}</button>
         </form>
         <Link className="auth-panel__recovery" href="/login/recovery">¿Olvidaste tu contraseña?</Link>
       </div>
