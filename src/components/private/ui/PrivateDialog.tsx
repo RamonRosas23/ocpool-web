@@ -19,8 +19,10 @@ function joinClasses(...values: Array<string | undefined>): string {
   return values.filter(Boolean).join(' ');
 }
 
+// Incluye textarea y select: con formularios largos dentro del diálogo (p. ej. "Editar datos"), el
+// último control podía ser un textarea y el Tab se escapaba del modal.
 function focusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [href], [tabindex="0"]'));
+  return Array.from(container.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'));
 }
 
 export function PrivateDialog({ open, onClose, modal = true, id, labelledBy, describedBy, initialFocusRef, className, overlayClassName, children }: PrivateDialogProps) {

@@ -198,6 +198,9 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
       const created = await readApiResponseOrThrow<CatalogItem>(response, 'No fue posible completar la operación.');
       setNotice(`Concepto ${created.code} creado.`);
       await refresh();
+      // Recién creado: queda a la vista y seleccionado aunque su orden lo deje fuera de la página
+      // actual (antes, con más de 25 conceptos, el detalle quedaba en "Selecciona un concepto").
+      setItems((current) => current.some((item) => item.id === created.id) ? current : [created, ...current]);
       setSelectedItemId(created.id);
       if (capabilities.pricesManage) {
         const lists = await loadWizardPriceLists();

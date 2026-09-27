@@ -435,13 +435,18 @@ export async function listCustomerRepliedForActor(actor: Actor, dependencies: St
     INNER JOIN "clients" cl ON cl."id" = qr."clientId"
     INNER JOIN "conversations" c ON c."quoteRequestId" = qr."id"
     INNER JOIN LATERAL (
-      SELECT cm."createdAt" FROM "conversation_messages" cm
+      SELECT cm."createdAt", sender."type" AS "senderType" FROM "conversation_messages" cm
+      LEFT JOIN "users" sender ON sender."id" = cm."senderUserId"
       WHERE cm."conversationId" = c."id" AND cm."visibility" = 'CUSTOMER'
       ORDER BY cm."createdAt" DESC, cm."id" DESC
       LIMIT 1
     ) lastmsg ON TRUE
     LEFT JOIN "conversation_read_states" crs ON crs."conversationId" = c."id" AND crs."userId" = ${actor.userId}::uuid
     WHERE qr."status" NOT IN (${Prisma.join(CLOSED_QUOTE_REQUEST_STATUSES)})
+      -- "Visible para el cliente" no es "del cliente": si el último mensaje compartido lo escribió
+      -- el equipo (p. ej. una solicitud de información), nadie está esperando respuesta. Antes esos
+      -- mensajes salían como "Cliente respondió" para todo el que aún no los había leído.
+      AND (lastmsg."senderType" IS NULL OR lastmsg."senderType" <> 'EMPLOYEE')
       AND (crs."id" IS NULL OR crs."lastReadAt" < lastmsg."createdAt")
       AND ${scope}
     ORDER BY lastmsg."createdAt" ASC
@@ -495,7 +500,19 @@ export async function getStaffQuoteRequest(actor: Actor, quoteRequestId: string,
   if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
   requireStaffRequestReadScope(actor, request.currentAssignee?.id ?? null);
   const activity = activityPage(request.statusHistory, request.assignments, DEFAULT_ACTIVITY_PAGE_SIZE);
-  return { ...request, detail: serializeDetail(request.detail), assignments: activity.assignments, statusHistory: activity.statusHistory, activityNextCursor: activity.nextCursor, ...projectAvailableActions(actor, request.status, request.currentAssignee?.id ?? null) };
+  // Mientras se espera información: ¿ya respondió el cliente? (misma regla que "revisar respuesta").
+  // Sin esto, la vista clásica recomendaba "Marcar en revisión" justo después de pedir los datos.
+  const informationRequest = request.status === 'INFORMACION_REQUERIDA'
+    ? {
+      requestedAt: request.statusHistory.find((entry) => entry.toStatus === 'INFORMACION_REQUERIDA')?.createdAt ?? null,
+      customerReplied: (await prisma.conversationMessage.findFirst({
+        where: { conversation: { quoteRequestId: request.id }, visibility: 'CUSTOMER' },
+        orderBy: { createdAt: 'desc' },
+        select: { sender: { select: { type: true } } },
+      }))?.sender?.type === 'CUSTOMER',
+    }
+    : null;
+  return { ...request, detail: serializeDetail(request.detail), assignments: activity.assignments, statusHistory: activity.statusHistory, activityNextCursor: activity.nextCursor, informationRequest, ...projectAvailableActions(actor, request.status, request.currentAssignee?.id ?? null) };
 }
 
 export type StaffQuoteRequestActivityFilters = {

@@ -17,6 +17,12 @@ export type QuotePdfDownloadDependencies = Readonly<{
   storage?: PrivateStorage;
   now?: Date;
   expiresInSeconds?: number;
+  /**
+   * `inline` para ver el PDF dentro de la página (vista previa antes de aceptar). Antes la vista
+   * previa reutilizaba la URL de descarga (`attachment`) y el navegador descargaba el archivo en vez
+   * de mostrarlo: el recuadro "Revisa el PDF aquí mismo" quedaba vacío.
+   */
+  disposition?: 'attachment' | 'inline';
 }>;
 
 export type QuotePdfDownloadResult = Readonly<{
@@ -146,7 +152,7 @@ async function getDownload(
   if (document.byteSize > BigInt(Number.MAX_SAFE_INTEGER)) throw new AppError('CONFLICT', 'El PDF de la cotización no está disponible.', 409);
   const head = await storage.head(document.storageObject.storageKey);
   if (!head || head.contentLength !== Number(document.byteSize) || head.contentType !== PDF_CONTENT_TYPE) throw new AppError('CONFLICT', 'El PDF de la cotización no está disponible.', 409);
-  const downloadUrl = await storage.createDownloadUrl({ key: document.storageObject.storageKey, expiresInSeconds });
+  const downloadUrl = await storage.createDownloadUrl({ key: document.storageObject.storageKey, expiresInSeconds, disposition: dependencies.disposition ?? 'attachment' });
   const expiresAt = new Date(now.getTime() + expiresInSeconds * 1000);
   await auditDownload(prisma, actor, { id: document.id, quoteId: version.quoteId, quoteVersionId: version.id, versionNumber: version.versionNumber }, expiresInSeconds);
   return {

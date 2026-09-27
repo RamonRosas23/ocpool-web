@@ -53,8 +53,22 @@ describe('quoteNextStep', () => {
     expect(quoteNextStep({ ...review, approvalGranted: true, canSend: false })).toMatchObject({ title: 'Lista para enviar', tone: 'waiting' });
   });
 
+  it('shows the manager rejection reason until the approval is requested again', () => {
+    const rejected = { ...base, versionStatus: 'EN_REVISION', approvalNeeded: true, approvalRejectedReason: 'Propón máximo 10%.' };
+    expect(quoteNextStep(rejected)).toMatchObject({ title: 'Gerencia rechazó la aprobación', tone: 'blocked', target: 'actions' });
+    expect(quoteNextStep(rejected).detail).toContain('«Propón máximo 10%». Ajusta');
+    expect(quoteStageSteps(rejected)[1].note).toBe('Rechazada por gerencia');
+    // Un rechazo sin motivo sigue explicando qué hacer; volver a pedirla regresa a "Esperando aprobación".
+    expect(quoteNextStep({ ...rejected, approvalRejectedReason: '' }).detail).toContain('vuelve a solicitarla');
+    expect(quoteNextStep({ ...rejected, approvalRequested: true })).toMatchObject({ title: 'Esperando aprobación' });
+  });
+
   it('explains what happens after sending, accepting, rejecting or expiring', () => {
     expect(quoteNextStep({ ...base, versionStatus: 'ENVIADA' }).title).toBe('Esperando al cliente');
+    // Si el cliente pidió cambios desde su portal, la pelota vuelve al equipo con su petición textual.
+    const changes = quoteNextStep({ ...base, versionStatus: 'EN_NEGOCIACION', changesRequested: 'Azulejo color arena.' });
+    expect(changes).toMatchObject({ title: 'El cliente pidió cambios', tone: 'action', target: 'actions' });
+    expect(changes.detail).toContain('«Azulejo color arena». Crea una nueva versión');
     expect(quoteNextStep({ ...base, versionStatus: 'ACEPTADA' }).title).toBe('Convierte en proyecto');
     expect(quoteNextStep({ ...base, versionStatus: 'ACEPTADA', projectCreated: true }).tone).toBe('done');
     expect(quoteNextStep({ ...base, versionStatus: 'RECHAZADA' }).title).toBe('Versión rechazada');

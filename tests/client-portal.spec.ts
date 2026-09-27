@@ -181,12 +181,14 @@ test.describe('customer portal opt-in flow', () => {
     await expect(page.getByRole('button', { name: 'Descargar PDF' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Revisar y aceptar' })).toBeVisible();
     const pdfResponsePromise = page.waitForResponse((response) => response.url().includes(`/api/portal/quotes/${quoteAId}/pdf`));
-    const pdfPopupPromise = page.waitForEvent('popup');
+    // "Descargar PDF" guarda el archivo en la misma pestaña (sin ventana emergente en blanco).
+    const pdfDownloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Descargar PDF' }).click();
-    const [pdfResponse, pdfPopup] = await Promise.all([pdfResponsePromise, pdfPopupPromise]);
+    const [pdfResponse, pdfDownload] = await Promise.all([pdfResponsePromise, pdfDownloadPromise]);
     const pdfBody = await pdfResponse.json() as { downloadUrl: string };
     expect(pdfBody.downloadUrl).toContain('X-Amz-');
-    await pdfPopup.close();
+    expect(pdfBody.downloadUrl).toContain('response-content-disposition=attachment');
+    expect(pdfDownload.suggestedFilename()).toMatch(/\.pdf$/u);
     await page.getByRole('button', { name: 'Revisar y aceptar' }).click();
     await expect(page.getByRole('dialog', { name: 'Aceptar versión 1' })).toBeVisible();
     await page.keyboard.press('Escape');

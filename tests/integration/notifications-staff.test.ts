@@ -55,21 +55,25 @@ describe('staff notification operations', () => {
       });
 
       const result = await listStaffNotificationDeliveries(actor(user.id, ['notifications.read']), { status: 'FAILED' }, { prisma, now: new Date('2026-09-08T12:00:00.000Z') });
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0]).toMatchObject({
+      // La base compartida puede tener otras entregas FAILED (p. ej. las del piloto); se valida la propia.
+      expect(result.items.every((item) => item.status === 'FAILED')).toBe(true);
+      const own = result.items.find((item) => item.id === delivery.id);
+      expect(own).toMatchObject({
         id: delivery.id,
         status: 'FAILED',
         templateKey: 'message.created',
         attempts: 3,
         errorCategory: 'TEMPORARY_PROVIDER',
         retryable: true,
+        // Sin agregado de expediente ubicable, no se inventa uno.
+        subject: null,
       });
-      expect(result.items[0]).not.toHaveProperty('recipientAddressCiphertext');
-      expect(result.items[0]).not.toHaveProperty('recipientAddressHash');
-      expect(result.items[0]).not.toHaveProperty('recipientUserId');
-      expect(result.items[0]).not.toHaveProperty('payload');
-      expect(result.items[0]).not.toHaveProperty('providerMessageId');
-      expect(result.items[0]).not.toHaveProperty('subjectSnapshot');
+      expect(own).not.toHaveProperty('recipientAddressCiphertext');
+      expect(own).not.toHaveProperty('recipientAddressHash');
+      expect(own).not.toHaveProperty('recipientUserId');
+      expect(own).not.toHaveProperty('payload');
+      expect(own).not.toHaveProperty('providerMessageId');
+      expect(own).not.toHaveProperty('subjectSnapshot');
     } finally {
       await prisma.notificationDelivery.deleteMany({ where: { outboxEventId: outbox.id } });
       await prisma.outboxEvent.delete({ where: { id: outbox.id } });

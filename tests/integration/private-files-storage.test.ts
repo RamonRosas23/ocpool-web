@@ -18,7 +18,12 @@ describe('private S3-compatible storage', () => {
       const downloadUrl = await storage.createDownloadUrl({ key, expiresInSeconds: 60 });
       const download = await fetch(downloadUrl);
       expect(download.status).toBe(200);
+      expect(download.headers.get('content-disposition')).toBe('attachment');
       expect(await download.arrayBuffer()).toEqual(body.buffer);
+      // La vista previa del PDF generado se sirve `inline` para que el navegador la muestre.
+      const inline = await fetch(await storage.createDownloadUrl({ key, expiresInSeconds: 60, disposition: 'inline' }));
+      expect(inline.status).toBe(200);
+      expect(inline.headers.get('content-disposition')).toBe('inline');
     } finally {
       await storage.delete(key);
       await expect(storage.head(key)).resolves.toBeNull();

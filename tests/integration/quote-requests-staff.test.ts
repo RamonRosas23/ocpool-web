@@ -494,6 +494,10 @@ describe('staff quote request operations', () => {
 
     await expect(markInformationReviewedQuoteRequest(operator, request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
     await expect(markInformationReviewedQuoteRequest(staffActor(actor.id, []), request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    // El detalle dice que se espera al cliente (y desde cuándo) para que la vista clásica no sugiera
+    // "Marcar en revisión" justo después de pedir los datos.
+    const waiting = await getStaffQuoteRequest(operator, request.quoteRequestId, { prisma });
+    expect(waiting.informationRequest).toEqual({ requestedAt: new Date('2026-09-17T12:00:00.000Z'), customerReplied: false });
 
     const customerUser = await prisma.user.create({
       data: { email: `mark-reviewed-customer-${suffix}@example.test`, emailNormalized: `mark-reviewed-customer-${suffix}@example.test`, displayName: 'Mark reviewed customer', type: 'CUSTOMER', status: 'ACTIVE', clientId: request.clientId },
@@ -504,8 +508,11 @@ describe('staff quote request operations', () => {
       data: { conversationId: conversation.id, senderUserId: customerUser.id, visibility: 'CUSTOMER', body: 'Las dimensiones son 10x5m.', createdAt: new Date('2026-09-17T12:05:00.000Z') },
     });
 
+    expect((await getStaffQuoteRequest(operator, request.quoteRequestId, { prisma })).informationRequest).toMatchObject({ customerReplied: true });
+
     const result = await markInformationReviewedQuoteRequest(operator, request.quoteRequestId, { prisma });
     expect(result).toMatchObject({ quoteRequestId: request.quoteRequestId, fromStatus: 'INFORMACION_REQUERIDA', toStatus: 'EN_REVISION' });
+    expect((await getStaffQuoteRequest(operator, request.quoteRequestId, { prisma })).informationRequest).toBeNull();
     expect(await prisma.quoteRequest.findUnique({ where: { id: request.quoteRequestId }, select: { status: true } })).toMatchObject({ status: 'EN_REVISION' });
     expect(await prisma.auditLog.findFirst({ where: { entityId: request.quoteRequestId, action: 'quote_request.customer_response_reviewed' } })).not.toBeNull();
     expect(await prisma.outboxEvent.findFirst({ where: { aggregateId: request.quoteRequestId, eventType: 'REQUEST.CUSTOMER_RESPONSE' } })).not.toBeNull();

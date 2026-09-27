@@ -84,9 +84,11 @@ test.describe('staff request workflow opt-in flow', () => {
     // UX audit fix: este campo ahora se relabela como mensaje obligatorio para el cliente en vez
     // del "Motivo opcional" genérico (que sigue existiendo para el campo de responsable, aparte).
     await expect(page.getByText('Este texto lo recibirá el cliente tal cual')).toBeVisible();
+    // El mensaje llega con un borrador armado a partir de lo que falta en el expediente.
+    await expect(page.getByRole('textbox', { name: 'Mensaje para el cliente' })).toHaveValue(new RegExp(`gracias por tu solicitud ${folio}`));
     await page.getByPlaceholder('Mensaje para el cliente (obligatorio)').fill('Faltan medidas aproximadas del proyecto.');
-    await page.getByRole('button', { name: 'Actualizar estado' }).click();
-    await expect(page.locator('.staff-notice')).toContainText('Estado actualizado.');
+    await page.getByRole('button', { name: 'Enviar y esperar respuesta' }).click();
+    await expect(page.locator('.staff-notice')).toContainText('Mensaje enviado.');
     await expect(page.locator('.staff-status-pill')).toHaveText('Información requerida');
     await expect(page.getByRole('heading', { name: 'Historial del expediente' })).toBeVisible();
     // Motivo real (no un genérico "Cambio registrado"), acotado al historial de estado -- el

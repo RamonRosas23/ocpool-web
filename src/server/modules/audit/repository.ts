@@ -59,7 +59,7 @@ function dateWhere(query: AuditRepositoryQuery): { createdAt: { gte: Date; lt: D
 }
 
 function actionFilter(category: AuditCategory | null): { in: string[] } {
-  return { in: auditActionsForCategory(category === 'security' ? null : category) };
+  return { in: auditActionsForCategory(category === 'security' || category === 'signins' ? null : category) };
 }
 
 export async function readAuditPage(prisma: PrismaClient, query: AuditRepositoryQuery): Promise<AuditPage> {
@@ -92,7 +92,7 @@ export async function readAuditPage(prisma: PrismaClient, query: AuditRepository
       ],
     }] : [],
     ...dateWhere(query),
-    eventType: { in: knownAuthEventTypes() as AuthEventType[] },
+    eventType: { in: knownAuthEventTypes(query.category) as AuthEventType[] },
     ...(query.outcome ? { outcome: query.outcome } : {}),
   };
   const rows = await prisma.authEvent.findMany({

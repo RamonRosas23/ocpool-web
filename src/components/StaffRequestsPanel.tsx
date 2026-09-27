@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ArrowRight, Compass, Inbox, X } from 'lucide-react';
+import { ArrowRight, Compass, Hourglass, Inbox, MessageSquareReply, X } from 'lucide-react';
 import { statusToneIcon } from '@/lib/labels';
 import { formatDateTime } from '@/lib/format-date';
 import { relativeTimeLabel } from '@/lib/relative-time';
@@ -12,6 +12,7 @@ import { getRequestWorkspacePrimaryAction } from '@/lib/request-workspace-primar
 import { usePersistentState } from '@/lib/use-persistent-state';
 import StaffFilesPanel, { type StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import StaffMessagingPanel, { type StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
+import StaffRequestEditDialog, { type StaffRequestEditFocus } from '@/components/StaffRequestEditDialog';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffHeader from '@/components/StaffHeader';
@@ -19,6 +20,7 @@ import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { PrivateBlockingState, PrivateLinkButton, PrivatePagination, PrivateSelect } from '@/components/private/ui';
 import {
   QUOTE_REQUEST_BUDGET_RANGE_LABELS,
+  QUOTE_REQUEST_INFORMATION_FIELDS,
   QUOTE_REQUEST_PROJECT_STAGE_LABELS,
   QUOTE_REQUEST_TIMELINE_LABELS,
   type QuoteRequestStatus,
@@ -48,6 +50,26 @@ function initialsOf(name: string): string {
 // "Solicitar información" (endpoint /request-information), no con el cambio de estado genérico.
 // Cuando el servidor la habilita vía availableActions ('request.information'), la agregamos
 // como una opción más del mismo selector "Siguiente estado" sin declarar nosotros la lista.
+type InformationField = (typeof QUOTE_REQUEST_INFORMATION_FIELDS)[number];
+
+/** Lo que falta en el expediente, con la etiqueta corta de "Faltan: …" y cómo pedírselo al cliente. */
+const INFORMATION_ASKS: ReadonlyArray<{ field: InformationField & StaffRequestEditFocus; label: string; ask: string }> = [
+  { field: 'contact.phone', label: 'teléfono', ask: 'Un teléfono de contacto' },
+  { field: 'detail.dimensions', label: 'medidas', ask: 'Medidas aproximadas del área disponible (largo y ancho)' },
+  { field: 'detail.timeline', label: 'fecha de inicio', ask: 'La fecha aproximada en la que te gustaría iniciar' },
+  { field: 'detail.budgetRange', label: 'presupuesto', ask: 'El presupuesto aproximado que tienes contemplado' },
+];
+
+/**
+ * Borrador del mensaje para "Solicitar información", armado con lo que de verdad falta: antes el
+ * campo llegaba vacío (y de una sola línea) aunque la tarjeta "Siguiente paso" ya lo enumeraba.
+ */
+function informationRequestDraft(contactName: string, folio: string, asks: readonly string[]): string {
+  const greeting = contactName.trim() ? `Hola ${contactName.trim()},` : 'Hola,';
+  if (asks.length === 0) return `${greeting} gracias por tu solicitud ${folio}. Para avanzar con tu cotización necesitamos confirmar algunos datos:\n\n• \n\n¿Nos los compartes respondiendo a este mensaje?`;
+  return `${greeting} gracias por tu solicitud ${folio}. Para preparar tu cotización nos falta:\n\n${asks.map((ask) => `• ${ask}`).join('\n')}\n\n¿Nos compartes estos datos respondiendo a este mensaje? Si tienes fotos o planos del espacio, también nos ayudan mucho.`;
+}
+
 function withInformationRequestOption(availableStatusTransitions: string[], availableActions: string[]): string[] {
   if (!availableActions.includes('request.information') || availableStatusTransitions.includes(INFORMATION_REQUEST_STATUS)) {
     return availableStatusTransitions;
@@ -69,6 +91,8 @@ type RequestSummary = {
 };
 
 type RequestDetail = RequestSummary & {
+  /** Sólo en INFORMACION_REQUERIDA: cuándo se pidieron los datos y si el cliente ya respondió. */
+  informationRequest?: { requestedAt: string | null; customerReplied: boolean } | null;
   availableStatusTransitions: string[];
   availableActions: string[];
   contact: RequestSummary['contact'] & { roleTitle: string | null; status: string; user: { id: string; type: string; status: string } | null };
@@ -104,7 +128,7 @@ type RequestDetail = RequestSummary & {
 };
 
 type Assignee = { id: string; displayName: string; email: string };
-type StaffRequestCapabilities = StaffMessagingCapabilities & StaffFilesCapabilities & { identityUsersManage: boolean; requestsAssign: boolean; requestsReadGlobal: boolean; requestsStatusUpdate: boolean };
+type StaffRequestCapabilities = StaffMessagingCapabilities & StaffFilesCapabilities & { identityUsersManage: boolean; requestsAssign: boolean; requestsReadGlobal: boolean; requestsStatusUpdate: boolean; requestsEdit?: boolean };
 type ListResponse = { items: RequestSummary[]; page: number; pageSize: number; total: number; totalPages: number };
 
 function statusLabel(status: string): string {
@@ -145,6 +169,10 @@ export default function StaffRequestsPanel() {
   const [searchInput, setSearchInput] = useState('');
   const [view, setView, viewHydrated] = usePersistentState<InboxView>('ocpool.staff.requests.view', 'all');
   const statusReasonRef = useRef<HTMLInputElement>(null);
+  const informationMessageRef = useRef<HTMLTextAreaElement>(null);
+  // Último borrador propuesto: si el usuario cambia de estado sin tocarlo, se retira en vez de
+  // quedarse como "motivo" de otro cambio.
+  const informationDraftRef = useRef('');
   const selectedIdRef = useRef<string | null>(null);
   const detailRef = useRef<HTMLElement>(null);
   // El salto al detalle (pantallas apiladas) espera a que cargue: con el esqueleto la página aún no
@@ -164,6 +192,8 @@ export default function StaffRequestsPanel() {
   const [assignmentReason, setAssignmentReason] = useState('');
   const [nextStatus, setNextStatus] = useState('');
   const [statusReason, setStatusReason] = useState('');
+  const [editOpen, setEditOpen] = useState(false);
+  const [editFocus, setEditFocus] = useState<StaffRequestEditFocus | null>(null);
   const [messagingCapabilities, setMessagingCapabilities] = useState<StaffRequestCapabilities>({
     messagingRead: false,
     messagingSend: false,
@@ -257,6 +287,7 @@ export default function StaffRequestsPanel() {
       // real ahora vive en la tarjeta "Siguiente paso".
       setNextStatus('');
       setStatusReason('');
+      setEditOpen(false);
     } catch (caught) {
       if (loadDetailGenerationRef.current !== generation) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el expediente.');
@@ -448,7 +479,7 @@ export default function StaffRequestsPanel() {
           method: 'POST',
           credentials: 'include',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ message: reasonText.trim(), idempotencyKey: getOrCreateIdempotencyKey(null, 'request-information') }),
+          body: JSON.stringify({ message: reasonText.trim(), idempotencyKey: getOrCreateIdempotencyKey(null, 'request-information'), missingFields: missingAsks.map(({ field }) => field) }),
         })
         : await fetch(`/api/staff/quote-requests/${selected.id}/status`, {
           method: 'POST',
@@ -457,14 +488,44 @@ export default function StaffRequestsPanel() {
           body: JSON.stringify({ toStatus: targetStatus, reason: reasonText || undefined }),
         });
       await readApiResponseOrThrow(response, 'No fue posible actualizar el estado.');
-      setNotice('Estado actualizado.');
+      setNotice(isInformationRequest ? 'Mensaje enviado. El expediente queda esperando la respuesta del cliente.' : 'Estado actualizado.');
       setStatusReason('');
+      informationDraftRef.current = '';
       await refreshCurrent();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible actualizar el estado.');
     } finally {
       setSaving(false);
     }
+  };
+
+  // El cliente respondió a la solicitud de información: se registra la revisión (vuelve a
+  // "En revisión") con la acción dedicada, que además confirma en servidor que sí hay respuesta.
+  const markInformationReviewed = async () => {
+    if (!selected) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/staff/quote-requests/${selected.id}/mark-information-reviewed`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await readApiResponseOrThrow(response, 'No fue posible continuar con la revisión.');
+      setNotice('Listo: el expediente vuelve a revisión con la respuesta del cliente.');
+      await refreshCurrent();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No fue posible continuar con la revisión.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEdit = (focus: StaffRequestEditFocus | null = null) => {
+    setEditFocus(focus);
+    setEditOpen(true);
+  };
+
+  const scrollToConversation = () => {
+    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    document.querySelector('.staff-messaging')?.scrollIntoView({ behavior, block: 'start' });
   };
 
   const inviteCustomerAccess = async () => {
@@ -516,12 +577,31 @@ export default function StaffRequestsPanel() {
 
   // "Siguiente paso": el mismo resolvedor (probado) de la bandeja V2 decide la acción recomendada a
   // partir de lo que el servidor ya permite; aquí sólo se ofrece a un clic y se explica.
-  const missingInformation = useMemo(() => selected ? [
-    ...(selected.contact.phone ? [] : ['teléfono']),
-    ...(selected.detail?.dimensions ? [] : ['medidas']),
-    ...(selected.detail?.timeline ? [] : ['fecha de inicio']),
-    ...(selected.detail?.budgetRange ? [] : ['presupuesto']),
-  ] : [], [selected]);
+  const missingAsks = useMemo(() => selected ? INFORMATION_ASKS.filter(({ field }) => {
+    if (field === 'contact.phone') return !selected.contact.phone;
+    if (field === 'detail.dimensions') return !selected.detail?.dimensions;
+    if (field === 'detail.timeline') return !selected.detail?.timeline;
+    return !selected.detail?.budgetRange;
+  }) : [], [selected]);
+  const missingInformation = useMemo(() => missingAsks.map(({ label }) => label), [missingAsks]);
+
+  const draftInformationRequest = () => {
+    if (!selected) return '';
+    const draft = informationRequestDraft(selected.contact.displayName, selected.folio, missingAsks.map(({ ask }) => ask));
+    informationDraftRef.current = draft;
+    return draft;
+  };
+
+  // Elegir "Información requerida" propone el borrador (si el campo está vacío); salir de ahí sin
+  // haberlo editado lo retira.
+  const selectNextStatus = (value: string) => {
+    setNextStatus(value);
+    if (value === INFORMATION_REQUEST_STATUS) {
+      if (!statusReason.trim()) setStatusReason(draftInformationRequest());
+    } else if (statusReason === informationDraftRef.current) {
+      setStatusReason('');
+    }
+  };
 
   const primaryAction = useMemo(() => {
     if (!selected || !messagingCapabilitiesLoaded) return null;
@@ -540,10 +620,10 @@ export default function StaffRequestsPanel() {
     if (primaryAction.kind === 'information') {
       // Solicitar información necesita el mensaje para el cliente: se prepara el formulario de estado
       // y se lleva el foco ahí en vez de enviar algo a ciegas.
-      setNextStatus(INFORMATION_REQUEST_STATUS);
+      selectNextStatus(INFORMATION_REQUEST_STATUS);
       window.requestAnimationFrame(() => {
-        statusReasonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        statusReasonRef.current?.focus({ preventScroll: true });
+        informationMessageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        informationMessageRef.current?.focus({ preventScroll: true });
       });
     }
   };
@@ -590,13 +670,23 @@ export default function StaffRequestsPanel() {
             {(loadingDetail || (loadingList && !selected)) && <div className="staff-detail__loading"><span /><span /><span /></div>}
             {!loadingDetail && !loadingList && !selected && <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>Selecciona un expediente.</h2><p>El detalle y las acciones operativas aparecerán aquí.</p></div>}
             {!loadingDetail && selected && <>
-              <div className="staff-detail__header"><div><p className="staff-kicker">{selected.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{selected.folio}</h2><p className="staff-detail__date">Recibida el {formatDateTime(selected.createdAt)}</p>{selected.availableActions.includes('quote.open') && primaryAction?.kind !== 'quote' && <Link className="staff-button staff-detail__quote-link" href={`/staff/quotes?request=${selected.id}`}>Abrir constructor</Link>}</div><StatusPill status={selected.status} /></div>
-              {primaryAction && <section className="staff-next-step" aria-labelledby="staff-next-step-title"><span className="staff-next-step__icon" aria-hidden="true"><Compass size={20} /></span><div className="staff-next-step__body"><p className="staff-section-label">Siguiente paso</p><h3 id="staff-next-step-title">{primaryAction.description}</h3>{primaryAction.kind === 'information' && missingInformation.length > 0 && <p className="staff-next-step__missing">Faltan: {missingInformation.join(', ')}.</p>}</div>{primaryAction.kind === 'quote' ? <Link className="staff-button staff-button--dark" href={`/staff/quotes?request=${selected.id}`}>{primaryAction.label}<ArrowRight size={16} aria-hidden="true" /></Link> : <button className="staff-button staff-button--dark" type="button" disabled={saving} onClick={activatePrimaryAction}>{primaryAction.label}<ArrowRight size={16} aria-hidden="true" /></button>}</section>}
+              <div className="staff-detail__header"><div><p className="staff-kicker">{selected.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{selected.folio}</h2><p className="staff-detail__date">Recibida el {formatDateTime(selected.createdAt)}</p>{(selected.availableActions.includes('quote.open') && primaryAction?.kind !== 'quote') || messagingCapabilities.requestsEdit ? <div className="staff-detail__header-actions">{selected.availableActions.includes('quote.open') && primaryAction?.kind !== 'quote' && <Link className="staff-button staff-detail__quote-link" href={`/staff/quotes?request=${selected.id}`}>Abrir constructor</Link>}{messagingCapabilities.requestsEdit && <button className="staff-button staff-button--outline staff-detail__edit" type="button" onClick={() => openEdit()}>Editar datos</button>}</div> : null}</div><StatusPill status={selected.status} /></div>
+              {selected.status === INFORMATION_REQUEST_STATUS ? (() => {
+                // En espera de información el siguiente paso real depende de si el cliente ya respondió;
+                // el resolvedor genérico sugería "Marcar en revisión" aunque aún no hubiera respuesta.
+                const waiting = selected.informationRequest ?? { requestedAt: null, customerReplied: false };
+                // Si el equipo ya capturó todo lo que faltaba (p. ej. se lo dictaron por teléfono), no
+                // tiene sentido seguir "esperando": se ofrece volver a revisión.
+                const capturedByTeam = !waiting.customerReplied && missingAsks.length === 0 && selected.availableStatusTransitions.includes('EN_REVISION') && messagingCapabilities.requestsStatusUpdate;
+                if (capturedByTeam) return <section className="staff-next-step" aria-labelledby="staff-next-step-title"><span className="staff-next-step__icon" aria-hidden="true"><Compass size={20} /></span><div className="staff-next-step__body"><p className="staff-section-label">Siguiente paso</p><h3 id="staff-next-step-title">Ya tienes los datos que faltaban.</h3><p className="staff-next-step__missing">Continúa con la revisión; el cliente ya no necesita responder.</p></div><button className="staff-button staff-button--dark" type="button" disabled={saving} onClick={() => void transition('EN_REVISION', 'Datos completados por el equipo.')}>Continuar con la revisión<ArrowRight size={16} aria-hidden="true" /></button></section>;
+                return <section className={`staff-next-step${waiting.customerReplied ? '' : ' staff-next-step--waiting'}`} aria-labelledby="staff-next-step-title"><span className="staff-next-step__icon" aria-hidden="true">{waiting.customerReplied ? <MessageSquareReply size={20} /> : <Hourglass size={20} />}</span><div className="staff-next-step__body"><p className="staff-section-label">{waiting.customerReplied ? 'Siguiente paso' : 'En espera del cliente'}</p><h3 id="staff-next-step-title">{waiting.customerReplied ? 'El cliente respondió a tu solicitud de información.' : 'Esperando la respuesta del cliente.'}</h3><p className="staff-next-step__missing">{waiting.customerReplied ? 'Lee su respuesta en Correspondencia, captura lo que te compartió y continúa con la revisión.' : `Le pediste los datos ${waiting.requestedAt ? relativeTimeLabel(waiting.requestedAt).toLocaleLowerCase('es-MX') : 'hace poco'}. Te avisaremos por correo en cuanto responda.`}{messagingCapabilities.requestsEdit && <> <button className="staff-next-step__inline" type="button" onClick={() => openEdit(missingAsks[0]?.field ?? null)}>{waiting.customerReplied ? 'Capturar sus datos' : '¿Te respondió por otro medio? Captúralo'}</button></>}</p></div>{waiting.customerReplied && messagingCapabilities.requestsStatusUpdate ? <button className="staff-button staff-button--dark" type="button" disabled={saving} onClick={() => void markInformationReviewed()}>Revisar y continuar<ArrowRight size={16} aria-hidden="true" /></button> : <button className="staff-button staff-button--outline" type="button" onClick={scrollToConversation}>Ver conversación</button>}</section>;
+              })() : primaryAction && <section className="staff-next-step" aria-labelledby="staff-next-step-title"><span className="staff-next-step__icon" aria-hidden="true"><Compass size={20} /></span><div className="staff-next-step__body"><p className="staff-section-label">Siguiente paso</p><h3 id="staff-next-step-title">{primaryAction.description}</h3>{primaryAction.kind === 'information' && missingInformation.length > 0 && <p className="staff-next-step__missing">Faltan: {missingInformation.join(', ')}.{messagingCapabilities.requestsEdit && missingAsks[0] && <> <button className="staff-next-step__inline" type="button" onClick={() => openEdit(missingAsks[0].field)}>¿Ya los tienes? Captúralos</button></>}</p>}</div>{primaryAction.kind === 'quote' ? <Link className="staff-button staff-button--dark" href={`/staff/quotes?request=${selected.id}`}>{primaryAction.label}<ArrowRight size={16} aria-hidden="true" /></Link> : <button className="staff-button staff-button--dark" type="button" disabled={saving} onClick={activatePrimaryAction}>{primaryAction.label}<ArrowRight size={16} aria-hidden="true" /></button>}</section>}
               <div className="staff-detail__grid"><section className="staff-detail__section"><p className="staff-section-label">Contacto</p><h3>{selected.contact.displayName}</h3><a href={`mailto:${selected.contact.email}`}>{selected.contact.email}</a>{selected.contact.phone && <a href={`tel:${selected.contact.phone}`}>{selected.contact.phone}</a>}<div className="staff-contact-access"><span className={`staff-contact-access__status staff-contact-access__status--${selected.contact.user?.status?.toLowerCase() ?? 'none'}`}>{selected.contact.user?.status === 'ACTIVE' ? 'Portal habilitado' : selected.contact.user?.status === 'INVITED' ? 'Invitación pendiente' : 'Portal sin habilitar'}</span>{messagingCapabilities.identityUsersManage && <button className="staff-button staff-button--dark" type="button" disabled={customerAccessBusy} onClick={() => void inviteCustomerAccess()}>{customerAccessBusy ? 'Enviando…' : selected.contact.user?.status === 'ACTIVE' ? 'Enviar nuevo acceso' : selected.contact.user?.status === 'INVITED' ? 'Reenviar acceso' : 'Habilitar portal'}</button>}</div></section><section className="staff-detail__section"><p className="staff-section-label">Proyecto</p><h3>{selected.detail?.projectType ?? 'Sin tipo de proyecto'}</h3><p>{selected.detail?.location ?? 'Sin ubicación'}</p>{selected.detail?.dimensions && <p>{selected.detail.dimensions}</p>}<dl className="staff-qualification"><div><dt>Etapa</dt><dd>{qualificationLabel(selected.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</dd></div><div><dt>Inicio</dt><dd>{qualificationLabel(selected.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)}</dd></div><div><dt>Presupuesto</dt><dd>{qualificationLabel(selected.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</dd></div></dl></section></div>
               <section className="staff-detail__section staff-detail__section--description"><p className="staff-section-label">Alcance compartido</p><p className="staff-description">{selected.detail?.description ?? 'Sin descripción.'}</p></section>
-              <div className="staff-actions-grid">{messagingCapabilitiesLoaded && messagingCapabilities.requestsAssign && <section className="staff-action"><p className="staff-section-label">Responsable</p>{messagingCapabilities.requestsReadGlobal ? <><PrivateSelect id="requests-assignment" label="Responsable" hideLabel required value={assignmentId} onValueChange={setAssignmentId} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin responsable" /><input aria-label="Motivo del cambio de responsable (opcional)" value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></> : selected.currentAssignee ? <p className="staff-action__owner"><span className="staff-action__avatar" aria-hidden="true">{initialsOf(selected.currentAssignee.displayName)}</span><span><strong>{selected.currentAssignee.displayName}{selected.availableActions.includes('request.taken') ? ' (tú)' : ''}</strong><small>Responsable del expediente</small></span></p> : <><p>{primaryAction?.kind === 'take' ? 'Nadie lo ha tomado todavía. Hazte responsable con «Tomar solicitud» en el siguiente paso.' : 'Nadie ha tomado este expediente todavía.'}</p>{primaryAction?.kind !== 'take' && <button className="staff-button staff-button--dark" type="button" disabled={saving || !selected.availableActions.includes('request.take')} onClick={() => void takeRequest()}>Tomar solicitud</button>}</>}</section>}<section className="staff-action"><p className="staff-section-label">Siguiente estado</p><PrivateSelect id="requests-next-status" label="Siguiente estado" hideLabel required value={nextStatus} onValueChange={setNextStatus} options={nextStatuses.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder={nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'} disabled={nextStatuses.length === 0} />{nextStatus === INFORMATION_REQUEST_STATUS && <p className="staff-action__hint">Este texto lo recibirá el cliente tal cual — no es una nota interna.</p>}<input ref={statusReasonRef} aria-label={nextStatus === INFORMATION_REQUEST_STATUS ? 'Mensaje para el cliente' : 'Motivo del cambio de estado (opcional)'} value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder={nextStatus === INFORMATION_REQUEST_STATUS ? 'Mensaje para el cliente (obligatorio)' : 'Motivo opcional'} maxLength={500} required={nextStatus === INFORMATION_REQUEST_STATUS} /><button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus} onClick={() => void transition()}>Actualizar estado</button></section></div>
+              <div className="staff-actions-grid">{messagingCapabilitiesLoaded && messagingCapabilities.requestsAssign && <section className="staff-action"><p className="staff-section-label">Responsable</p>{messagingCapabilities.requestsReadGlobal ? <><PrivateSelect id="requests-assignment" label="Responsable" hideLabel required value={assignmentId} onValueChange={setAssignmentId} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin responsable" /><input aria-label="Motivo del cambio de responsable (opcional)" value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} /><button className="staff-button staff-button--dark" type="button" disabled={saving || !assignmentId} onClick={() => void assign()}>Guardar responsable</button></> : selected.currentAssignee ? <p className="staff-action__owner"><span className="staff-action__avatar" aria-hidden="true">{initialsOf(selected.currentAssignee.displayName)}</span><span><strong>{selected.currentAssignee.displayName}{selected.availableActions.includes('request.taken') ? ' (tú)' : ''}</strong><small>Responsable del expediente</small></span></p> : <><p>{primaryAction?.kind === 'take' ? 'Nadie lo ha tomado todavía. Hazte responsable con «Tomar solicitud» en el siguiente paso.' : 'Nadie ha tomado este expediente todavía.'}</p>{primaryAction?.kind !== 'take' && <button className="staff-button staff-button--dark" type="button" disabled={saving || !selected.availableActions.includes('request.take')} onClick={() => void takeRequest()}>Tomar solicitud</button>}</>}</section>}<section className="staff-action"><p className="staff-section-label">Siguiente estado</p><PrivateSelect id="requests-next-status" label="Siguiente estado" hideLabel required value={nextStatus} onValueChange={selectNextStatus} options={nextStatuses.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder={nextStatuses.length ? 'Selecciona un estado' : 'Sin transiciones disponibles'} disabled={nextStatuses.length === 0} />{nextStatus === INFORMATION_REQUEST_STATUS ? <><p className="staff-action__hint">Este texto lo recibirá el cliente tal cual, por correo y en la conversación del expediente. {missingAsks.length ? 'Te propusimos un borrador con lo que falta; ajústalo antes de enviarlo.' : 'Escribe qué necesitas que te confirme.'}</p><textarea ref={informationMessageRef} className="staff-action__message" aria-label="Mensaje para el cliente" value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Mensaje para el cliente (obligatorio)" rows={8} maxLength={10000} required /><p className="staff-action__recipient">Para <strong>{selected.contact.displayName}</strong> · {selected.contact.email}</p></> : <input ref={statusReasonRef} aria-label="Motivo del cambio de estado (opcional)" value={statusReason} onChange={(event) => setStatusReason(event.target.value)} placeholder="Motivo opcional" maxLength={500} />}<button className="staff-button staff-button--copper" type="button" disabled={saving || !nextStatus || (nextStatus === INFORMATION_REQUEST_STATUS && !statusReason.trim())} onClick={() => void transition()}>{nextStatus === INFORMATION_REQUEST_STATUS ? (saving ? 'Enviando…' : 'Enviar y esperar respuesta') : 'Actualizar estado'}</button></section></div>
               {messagingCapabilitiesLoaded && <StaffFilesPanel requestId={selected.id} capabilities={messagingCapabilities} />}
               {messagingCapabilitiesLoaded && <StaffMessagingPanel requestId={selected.id} capabilities={messagingCapabilities} />}
+              {messagingCapabilities.requestsEdit && <StaffRequestEditDialog open={editOpen} target={{ id: selected.id, folio: selected.folio, status: selected.status, contact: { displayName: selected.contact.displayName, email: selected.contact.email, phone: selected.contact.phone, roleTitle: selected.contact.roleTitle }, detail: selected.detail }} focus={editFocus} onClose={() => setEditOpen(false)} onSaved={async (message) => { setEditOpen(false); setError(null); setNotice(message); await refreshCurrent(); }} />}
               <section className="staff-history"><div><p className="staff-section-label">Actividad</p><h3>Historial del expediente</h3></div><ol>{selected.statusHistory.map((entry) => <li key={entry.id}><span className="staff-history__line" aria-hidden="true" /><div><strong>{statusLabel(entry.toStatus)}</strong><p>{entry.reason ?? 'Cambio registrado'} · {entry.changedBy?.displayName ?? 'Sistema'}</p><time dateTime={entry.createdAt}>{formatDateTime(entry.createdAt)}</time></div></li>)}</ol></section>
             </>}
           </section>

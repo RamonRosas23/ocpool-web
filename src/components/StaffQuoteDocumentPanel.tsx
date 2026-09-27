@@ -119,14 +119,16 @@ export default function StaffQuoteDocumentPanel({ versionId, versionNumber, canR
     try {
       const response = await fetch(`/api/staff/quotes/versions/${versionId}/pdf`, { credentials: 'include', cache: 'no-store' });
       const result = await readResponse<DownloadResponse>(response);
-      // UX audit fix: `window.open`'s valor de retorno no detecta de forma confiable un popup
-      // bloqueado -- con `noopener` (necesario por seguridad, no se quita) el navegador devuelve
-      // `null` incluso cuando SÍ abrió la pestaña, así que comprobar `=== null` habría marcado
-      // como "bloqueado" prácticamente cada descarga exitosa. En vez de intentar detectar el
-      // bloqueo, se deja siempre un enlace manual de respaldo junto al aviso -- funciona sin
-      // importar si el navegador abrió la pestaña automáticamente o no.
-      window.open(result.downloadUrl, '_blank', 'noopener,noreferrer');
-      setNotice('PDF listo. Si no se abrió una pestaña nueva automáticamente, usa el enlace de abajo.');
+      // La URL firmada ya pide descargar (`attachment`): un enlace en la misma pestaña guarda el
+      // archivo sin abrir una pestaña en blanco ni depender de ventanas emergentes (que Safari bloquea
+      // después de un await). Se conserva el enlace manual de respaldo por si el navegador lo impide.
+      const link = document.createElement('a');
+      link.href = result.downloadUrl;
+      link.rel = 'noopener';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setNotice('PDF descargado. Si tu navegador no lo guardó, usa el enlace de abajo.');
       setDownloadFallbackUrl(result.downloadUrl);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible preparar la descarga.');

@@ -101,6 +101,7 @@ type FailedNotification = {
   templateKey: string;
   errorCategory: string | null;
   updatedAt: string;
+  subject: { requestId: string | null; folio: string | null; clientDisplayName: string } | null;
 };
 
 const APPROVAL_TYPE_LABELS: Record<PendingApproval['type'], string> = {
@@ -163,6 +164,20 @@ function formatDuration(seconds: number | null): string {
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes} min`;
   return `${new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 }).format(minutes / 60)} h`;
+}
+
+/**
+ * Importe corto para el KPI "Vendido" ("$1.2 M", "$845 mil"), calculado con BigInt -- nunca se
+ * convierte el importe a `number`. El importe exacto acompaña siempre al corto (texto y `title`).
+ */
+function compactMinor(minor: string): string {
+  const major = BigInt(minor) / 100n;
+  if (major >= 1_000_000n) {
+    const tenths = major / 100_000n;
+    return `$${new Intl.NumberFormat('es-MX').format(tenths / 10n)}${tenths % 10n ? `.${tenths % 10n}` : ''} M`;
+  }
+  if (major >= 10_000n) return `$${new Intl.NumberFormat('es-MX').format(major / 1_000n)} mil`;
+  return `$${new Intl.NumberFormat('es-MX').format(major)}`;
 }
 
 function formatMinor(minor: string, currencyCode: string): string {
@@ -326,8 +341,9 @@ export default function StaffDashboardPanel() {
 
   const applyPreset = (days: number) => {
     if (!draftTo) return;
+    // "7 días" son 7 días calendario contando el de "Hasta" (el periodo es inclusivo en ambos extremos).
     const end = new Date(`${draftTo}T00:00:00.000Z`);
-    const start = new Date(end.getTime() - days * 86_400_000);
+    const start = new Date(end.getTime() - (days - 1) * 86_400_000);
     const nextFrom = start.toISOString().slice(0, 10);
     setSelectedPreset(String(days));
     setDraftFrom(nextFrom);
@@ -359,12 +375,17 @@ export default function StaffDashboardPanel() {
   ];
   const summarySentence = summaryParts.length === 0 ? 'Todo al día: no hay pendientes en tus colas.' : `${summaryParts.slice(0, -1).join(', ')}${summaryParts.length > 1 ? ' y ' : ''}${summaryParts[summaryParts.length - 1]}.`;
   const firstName = session?.user.displayName.trim().split(/\s+/u)[0] ?? '';
+  // El importe aceptado es lo que más le importa a ventas; sin mezclar monedas: la de más
+  // aceptaciones va al frente y las demás se suman como texto exacto.
+  const soldByCount = [...(dashboard?.quotes.acceptedTotals ?? [])].sort((left, right) => right.count - left.count);
+  const soldPrimary = soldByCount[0] ?? null;
+  const soldOthers = soldByCount.slice(1);
   const origins = dashboard?.requests.byOrigin.map((item) => ({ label: labelForOrigin(item.origin), count: item.count })) ?? [];
   const aging = dashboard?.requests.aging.map((item) => ({ label: `${item.bucket} días`, count: item.count })) ?? [];
   const notificationStatus = dashboard?.notifications.byStatus.filter((item) => item.count > 0).map((item) => ({ label: NOTIFICATION_LABELS[item.status] ?? item.status, count: item.count })) ?? [];
   const alerts = dashboard ? [
     ...(dashboard.requests.unassigned > 0 ? [{ label: `${formatInteger(dashboard.requests.unassigned)} solicitud${dashboard.requests.unassigned === 1 ? '' : 'es'} sin asignar`, detail: 'Requieren responsable para avanzar.', href: '/staff/requests?view=unassigned' }] : []),
-    ...(dashboard.notifications.failedInPeriod > 0 ? [{ label: `${formatInteger(dashboard.notifications.failedInPeriod)} entrega${dashboard.notifications.failedInPeriod === 1 ? '' : 's'} fallida${dashboard.notifications.failedInPeriod === 1 ? '' : 's'}`, detail: 'Revisa la operación de correo del periodo.', href: '/staff/notifications' }] : []),
+    ...(dashboard.notifications.failedInPeriod > 0 ? [{ label: `${formatInteger(dashboard.notifications.failedInPeriod)} entrega${dashboard.notifications.failedInPeriod === 1 ? '' : 's'} fallida${dashboard.notifications.failedInPeriod === 1 ? '' : 's'}`, detail: 'Revisa la operación de correo del periodo.', href: '/staff/notifications?status=FAILED' }] : []),
   ] : [];
 
   return <PrivateSurfaceRoot className="staff-shell analytics-shell">
@@ -376,7 +397,7 @@ export default function StaffDashboardPanel() {
 
       {error && <p className="staff-error" role="alert">{error}</p>}
 
-      {dashboard && <section className="analytics-kpis" aria-label="Indicadores principales"><article><span>Solicitudes recibidas</span><strong>{formatInteger(dashboard.requests.received)}</strong><small>Entradas del periodo</small></article><article><span>Cotizaciones enviadas</span><strong>{formatInteger(dashboard.quotes.sent)}</strong><small>{formatInteger(dashboard.quotes.accepted)} aceptadas</small></article><article><span>Tasa de aceptación</span><strong>{formatRate(dashboard.quotes.acceptanceRateBps)}</strong><small>Sobre cotizaciones enviadas</small></article><article className={dashboard.requests.unassigned ? 'has-alert' : undefined}><span>Sin asignar</span><strong>{formatInteger(dashboard.requests.unassigned)}</strong>{dashboard.requests.unassigned ? <Link className="analytics-kpis__link" href="/staff/requests?view=unassigned">Asignar responsables →</Link> : <small>Sin pendientes</small>}</article></section>}
+      {dashboard && <section className="analytics-kpis" aria-label="Indicadores principales"><article><span>Solicitudes recibidas</span><strong>{formatInteger(dashboard.requests.received)}</strong><small>Entradas del periodo</small></article><article><span>Cotizaciones enviadas</span><strong>{formatInteger(dashboard.quotes.sent)}</strong><small>{formatInteger(dashboard.quotes.accepted)} aceptadas</small></article><article><span>Tasa de aceptación</span><strong>{formatRate(dashboard.quotes.acceptanceRateBps)}</strong><small>{dashboard.quotes.acceptanceRateBps === null ? 'Aparece al enviar cotizaciones' : 'Sobre cotizaciones enviadas'}</small></article><article className="analytics-kpis__sold"><span>{dashboard.meta.scope === 'global' ? 'Vendido' : 'Vendiste'}</span>{soldPrimary ? <strong title={formatMinor(soldPrimary.totalMinor, soldPrimary.currencyCode)}>{compactMinor(soldPrimary.totalMinor)}<abbr title={soldPrimary.currencyCode === 'MXN' ? 'Pesos mexicanos' : soldPrimary.currencyCode}>{soldPrimary.currencyCode}</abbr></strong> : <strong>$0</strong>}<small>{soldPrimary ? `${plural(soldPrimary.count, 'aceptada', 'aceptadas')} · ${formatMinor(soldPrimary.totalMinor, soldPrimary.currencyCode)}${soldOthers.length ? ` + ${soldOthers.map((item) => formatMinor(item.totalMinor, item.currencyCode)).join(' + ')}` : ''}` : 'Sin cotizaciones aceptadas en el periodo'}</small></article></section>}
 
       <section className="staff-workqueue" aria-label="Qué atender ahora">
         <div className="staff-workqueue__title"><h2>Qué atender ahora</h2><span>Expedientes reales, ordenados por lo que más tiempo lleva esperando.</span></div>
@@ -387,14 +408,14 @@ export default function StaffDashboardPanel() {
             {queuesLoading && !mineQueue && <div className="staff-workqueue__loading" role="status"><span /><span /><span /></div>}
             {mineQueue && mineQueue.items.length === 0 && <p className="staff-workqueue__empty">No tienes solicitudes activas asignadas.</p>}
             {mineQueue && mineQueue.items.length > 0 && <ul className="staff-workqueue__list">{mineQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{labelForStatus(item.status)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>}
-            {mineQueue && mineQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests?view=mine">Ver las {formatInteger(mineQueue.total)} solicitudes →</Link>}
+            {mineQueue && mineQueue.total > 0 && <Link className="staff-workqueue__more" href="/staff/requests?view=mine">{mineQueue.total > 5 ? `Ver las ${formatInteger(mineQueue.total)} solicitudes →` : 'Abrir en Solicitudes →'}</Link>}
           </article>
           <article className="staff-workqueue__card" aria-labelledby="workqueue-unassigned-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Nadie las tiene todavía</p><h3 id="workqueue-unassigned-title">Sin asignar</h3></div><QueueCount value={unassignedQueue ? unassignedQueue.total : null} /></div>
             {queuesLoading && !unassignedQueue && <div className="staff-workqueue__loading" role="status"><span /><span /><span /></div>}
             {unassignedQueue && unassignedQueue.items.length === 0 && <p className="staff-workqueue__empty">No hay solicitudes sin asignar.</p>}
             {unassignedQueue && unassignedQueue.items.length > 0 && <ul className="staff-workqueue__list">{unassignedQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{labelForStatus(item.status)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>}
-            {unassignedQueue && unassignedQueue.total > 5 && <Link className="staff-workqueue__more" href="/staff/requests?view=unassigned">Ver las {formatInteger(unassignedQueue.total)} solicitudes →</Link>}
+            {unassignedQueue && unassignedQueue.total > 0 && <Link className="staff-workqueue__more" href="/staff/requests?view=unassigned">{unassignedQueue.total > 5 ? `Ver las ${formatInteger(unassignedQueue.total)} solicitudes →` : 'Asignar en Solicitudes →'}</Link>}
           </article>
           {customerReplied && customerReplied.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-customer-replied-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Esperando tu respuesta</p><h3 id="workqueue-customer-replied-title">Cliente respondió</h3></div><QueueCount value={customerReplied ? customerReplied.length : null} /></div>
@@ -418,8 +439,10 @@ export default function StaffDashboardPanel() {
           </article>}
           {failedNotifications && failedNotifications.items.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-notification-failures-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Un cliente no recibió aviso</p><h3 id="workqueue-notification-failures-title">Fallos de aviso</h3></div><QueueCount value={failedNotifications ? failedNotifications.total : null} /></div>
-            <ul className="staff-workqueue__list">{failedNotifications.items.map((item) => <li key={item.id}><Link href="/staff/notifications"><span className="staff-workqueue__folio">{eventLabel(item.eventType)}</span><span className="staff-workqueue__client">{templateLabel(item.templateKey)}</span><span className="staff-workqueue__stage">{item.errorCategory ? errorCategoryLabel(item.errorCategory) : 'Error de entrega'}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>
-            {failedNotifications.total > failedNotifications.items.length && <Link className="staff-workqueue__more" href="/staff/notifications">Ver los {formatInteger(failedNotifications.total)} fallos →</Link>}
+            {/* Con expediente, la fila lleva a él (ahí están el contacto y la conversación para avisar al
+                cliente); sin expediente, a la operación de notificaciones. */}
+            <ul className="staff-workqueue__list">{failedNotifications.items.map((item) => <li key={item.id}><Link href={item.subject?.requestId ? `/staff/requests?request=${item.subject.requestId}` : '/staff/notifications?status=FAILED'}><span className="staff-workqueue__folio">{item.subject?.folio ?? eventLabel(item.eventType)}</span><span className="staff-workqueue__client">{item.subject?.clientDisplayName ?? templateLabel(item.templateKey)}</span><span className="staff-workqueue__stage">{item.subject ? `${templateLabel(item.templateKey)} · ` : ''}{item.errorCategory ? errorCategoryLabel(item.errorCategory) : 'Error de entrega'}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>
+            <Link className="staff-workqueue__more" href="/staff/notifications?status=FAILED">{failedNotifications.total > failedNotifications.items.length ? `Ver los ${formatInteger(failedNotifications.total)} fallos →` : 'Revisar en Notificaciones →'}</Link>
           </article>}
         </div>
       </section>
@@ -433,9 +456,11 @@ export default function StaffDashboardPanel() {
 
         <section className="analytics-section-grid"><article className="analytics-panel" aria-labelledby="analytics-aging-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Tiempo abierto</p><h3 id="analytics-aging-title">Antigüedad</h3></div><span className="analytics-panel__index">03</span></div><BarList items={aging} label="Solicitudes por antigüedad" empty="Sin antigüedad que mostrar." /></article><article className="analytics-panel" aria-labelledby="analytics-timing-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Ritmo de respuesta</p><h3 id="analytics-timing-title">Tiempos protegidos</h3></div><span className="analytics-panel__index">04</span></div><ul className="analytics-metrics"><MetricLine label="Asignación" metric={dashboard.timing.assignment} /><MetricLine label="Envío de cotización" metric={dashboard.timing.quoteSent} /><MetricLine label="Aceptación" metric={dashboard.timing.acceptance} /></ul></article></section>
 
-        <section className="analytics-section-grid analytics-section-grid--lower"><article className="analytics-panel" aria-labelledby="analytics-origin-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Procedencia</p><h3 id="analytics-origin-title">Origen de solicitudes</h3></div><span className="analytics-panel__index">05</span></div><BarList items={origins} label="Solicitudes por origen" empty="Sin origen que mostrar." /><div className="analytics-submetric"><span>Cotizaciones aceptadas</span><strong>{dashboard.quotes.acceptedTotals.length ? dashboard.quotes.acceptedTotals.map((item) => `${formatMinor(item.totalMinor, item.currencyCode)} · ${item.count}`).join(' / ') : 'Sin importes en el periodo'}</strong></div></article><article className="analytics-panel" aria-labelledby="analytics-notifications-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Entrega transaccional</p><h3 id="analytics-notifications-title">Salud de notificaciones</h3></div><Link className="analytics-panel__link" href="/staff/notifications">Abrir operación</Link></div><BarList items={notificationStatus} label="Entregas por estado" empty="No hay entregas registradas." /><p className="analytics-panel__note">Pendiente más antigua: {formatDate(dashboard.notifications.oldestPendingAt, dashboard.meta.timezone, true)} · Fallidas en periodo: {formatInteger(dashboard.notifications.failedInPeriod)}</p></article></section>
+        <section className="analytics-section-grid analytics-section-grid--lower"><article className="analytics-panel" aria-labelledby="analytics-origin-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Procedencia</p><h3 id="analytics-origin-title">Origen de solicitudes</h3></div><span className="analytics-panel__index">05</span></div><BarList items={origins} label="Solicitudes por origen" empty="Sin origen que mostrar." /></article><article className="analytics-panel" aria-labelledby="analytics-notifications-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Entrega transaccional</p><h3 id="analytics-notifications-title">Salud de notificaciones</h3></div><Link className="analytics-panel__link" href="/staff/notifications">Abrir operación</Link></div><BarList items={notificationStatus} label="Entregas por estado" empty="No hay entregas registradas." /><p className="analytics-panel__note">Pendiente más antigua: {formatDate(dashboard.notifications.oldestPendingAt, dashboard.meta.timezone, true)} · Fallidas en periodo: {formatInteger(dashboard.notifications.failedInPeriod)}</p></article></section>
 
-        <section className="analytics-workload" aria-labelledby="analytics-workload-title"><div className="analytics-workload__heading"><div><p className="staff-section-label">Distribución de trabajo</p><h3 id="analytics-workload-title">Carga por responsable</h3><p>La identidad visible se limita al personal operativo. Las muestras pequeñas permanecen protegidas.</p></div><span className="analytics-workload__scope">{dashboard.meta.scope === 'global' ? 'Vista global' : 'Tu alcance'}</span></div>{dashboard.workload.length === 0 ? <div className="analytics-empty"><strong>Sin carga abierta visible.</strong><p>Las solicitudes y cotizaciones activas aparecerán cuando exista actividad asignada.</p></div> : <div className="analytics-workload-table" role="table" aria-label="Carga por responsable"><div className="analytics-workload-table__row analytics-workload-table__row--head" role="row"><span role="columnheader">Responsable</span><span role="columnheader">Solicitudes activas</span><span role="columnheader">Borradores</span><span role="columnheader">Más antigua</span></div>{dashboard.workload.map((row) => <div className="analytics-workload-table__row" role="row" key={row.actorKey}><strong role="rowheader">{row.displayName}</strong>{row.suppressed ? <><span className="is-suppressed" role="cell">Muestra protegida</span><span className="is-suppressed" role="cell">Muestra protegida</span><span className="is-suppressed" role="cell">Muestra protegida</span></> : <><span role="cell">{formatInteger(row.activeRequests)}</span><span role="cell">{formatInteger(row.draftQuotes)}</span><span role="cell">{formatDate(row.oldestOpenAt, dashboard.meta.timezone)}</span></>}</div>)}</div>}</section>
+        {/* En el alcance propio la tabla sólo tenía una fila (la propia) y con "Muestra protegida" en
+            todas sus celdas; "Mi trabajo" ya responde eso. Es una lectura para gerencia. */}
+        {dashboard.meta.scope === 'global' && <section className="analytics-workload" aria-labelledby="analytics-workload-title"><div className="analytics-workload__heading"><div><p className="staff-section-label">Distribución de trabajo</p><h3 id="analytics-workload-title">Carga por responsable</h3><p>La identidad visible se limita al personal operativo. Las muestras pequeñas permanecen protegidas.</p></div><span className="analytics-workload__scope">{dashboard.meta.scope === 'global' ? 'Vista global' : 'Tu alcance'}</span></div>{dashboard.workload.length === 0 ? <div className="analytics-empty"><strong>Sin carga abierta visible.</strong><p>Las solicitudes y cotizaciones activas aparecerán cuando exista actividad asignada.</p></div> : <div className="analytics-workload-table" role="table" aria-label="Carga por responsable"><div className="analytics-workload-table__row analytics-workload-table__row--head" role="row"><span role="columnheader">Responsable</span><span role="columnheader">Solicitudes activas</span><span role="columnheader">Borradores</span><span role="columnheader">Más antigua</span></div>{dashboard.workload.map((row) => <div className="analytics-workload-table__row" role="row" key={row.actorKey}><strong role="rowheader">{row.displayName}</strong>{row.suppressed ? <><span className="is-suppressed" role="cell">Muestra protegida</span><span className="is-suppressed" role="cell">Muestra protegida</span><span className="is-suppressed" role="cell">Muestra protegida</span></> : <><span role="cell">{formatInteger(row.activeRequests)}</span><span role="cell">{formatInteger(row.draftQuotes)}</span><span role="cell">{formatDate(row.oldestOpenAt, dashboard.meta.timezone)}</span></>}</div>)}</div>}</section>}
       </>}
     </div>
   </PrivateSurfaceRoot>;

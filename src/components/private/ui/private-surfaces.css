@@ -981,7 +981,7 @@
 .staff-workqueue__title { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 12px; }
 .staff-workqueue__title h2 { margin: 0; color: var(--private-color-brand); font-size: 18px; font-weight: 700; letter-spacing: -.015em; }
 .staff-workqueue__title span { color: var(--private-color-ink-muted); font-size: 13px; }
-.staff-workqueue__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
+.staff-workqueue__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 12px; }
 .staff-workqueue__card { display: flex; min-width: 0; flex-direction: column; overflow: clip; }
 .staff-workqueue__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--private-color-border); padding: 14px 18px 12px; }
 .staff-workqueue__head .staff-section-label { margin-bottom: 2px; }
@@ -2032,3 +2032,63 @@ button.staff-notification-health__item.is-selected { border-color: var(--private
 .catalog-form__code small { color: var(--private-color-ink-muted); font-size: 12.5px; }
 .quotes-content__count { margin-left: auto; border-radius: 999px; padding: 2px 10px; background: var(--private-tint-copper); color: var(--private-color-copper); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .quotes-content__count.is-complete { background: var(--private-tint-success); color: var(--private-color-success); }
+/* Dashboard: KPI "Vendido" (importe corto con BigInt + moneda; el importe exacto va debajo). */
+.analytics-kpis article.analytics-kpis__sold::before { background: var(--private-color-success); }
+.analytics-kpis__sold strong { display: flex; align-items: baseline; gap: 6px; }
+.analytics-kpis__sold abbr { color: var(--private-color-ink-muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-decoration: none; cursor: help; }
+.analytics-kpis__sold small { overflow-wrap: anywhere; }
+/* Notificaciones: a quién afecta cada aviso (folio + cliente) y el camino para avisarle. */
+.staff-notification-row__subject { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; color: var(--private-color-brand); font-size: 13px; font-weight: 600; line-height: 1.35; }
+.staff-notification-row__subject b { color: var(--private-color-copper); font-size: 12.5px; font-weight: 700; letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+.staff-notification-row__action { flex-direction: column; align-items: flex-end; gap: 8px; }
+.staff-notification-row__open { max-width: 190px; border-radius: 4px; color: var(--private-color-accent); font-size: 12.5px; font-weight: 650; line-height: 1.4; text-align: right; text-decoration: none; }
+.staff-notification-row__open:hover { color: var(--private-color-brand); text-decoration: underline; text-underline-offset: 3px; }
+.staff-notification-row__open:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+@media (max-width: 1100px) {
+  .staff-notification-row__action { align-items: flex-start; }
+  .staff-notification-row__open { max-width: none; text-align: left; }
+}
+
+/* Dashboard: la última cola suelta ocupa la fila completa en vez de dejar media fila vacía. */
+@media (min-width: 901px) {
+  .staff-workqueue__grid > .staff-workqueue__card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+/* Solicitudes: "Solicitar información" con borrador editable y destinatario visible. */
+.staff-action > textarea.staff-action__message { display: block; min-height: 184px; max-height: 440px; resize: vertical; line-height: 1.55; field-sizing: content; }
+.staff-action > p.staff-action__recipient { margin: -2px 0 0; color: var(--private-color-ink-muted); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.staff-action__recipient strong { color: var(--private-color-brand); font-weight: 650; }
+/* La tarjeta "Responsable" no se estira vacía junto a un mensaje largo. */
+.staff-actions-grid { align-items: start; }
+
+/* Solicitudes: el siguiente paso "en espera del cliente" se ve como pausa, no como tarea. */
+.staff-next-step--waiting { border-color: rgba(124, 88, 39, .22); background: linear-gradient(120deg, rgba(124, 88, 39, .07), rgba(255, 253, 249, .6)); box-shadow: inset 3px 0 0 var(--private-color-copper); }
+.staff-next-step--waiting .staff-next-step__icon { color: var(--private-color-copper); }
+/* Solicitudes: acciones del encabezado y "Editar datos" (contacto y proyecto) en la vista clásica. */
+.staff-detail__header-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.staff-detail__header-actions .staff-detail__quote-link { margin-top: 0; }
+.staff-next-step__inline { display: inline; margin: 0; border: 0; border-radius: 4px; padding: 0; background: none; color: var(--private-color-accent); cursor: pointer; font: inherit; font-weight: 650; text-decoration: underline; text-decoration-color: rgba(27, 82, 102, .35); text-underline-offset: 3px; }
+.staff-next-step__inline:hover { color: var(--private-color-brand); text-decoration-color: currentColor; }
+.staff-next-step__inline:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.quotes-preflight-dialog.staff-request-edit { width: min(100%, 720px); }
+.staff-request-edit__form { display: grid; gap: 18px; margin-top: 16px; }
+.staff-request-edit__group { display: grid; gap: 12px; min-width: 0; margin: 0; border: 0; padding: 0; }
+.staff-request-edit__group + .staff-request-edit__group { border-top: 1px solid var(--private-color-border); padding-top: 16px; }
+.staff-request-edit__group legend { margin-bottom: 10px; padding: 0; color: var(--private-color-copper); font-size: 11.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.staff-request-edit__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.staff-request-edit__impact { margin: 0; color: var(--private-color-ink-muted); font-size: 13px; line-height: 1.5; }
+.staff-request-edit__impact.is-sensitive { border-radius: var(--private-radius-sm); padding: 8px 10px; background: var(--private-tint-copper); color: var(--private-color-copper); font-weight: 550; }
+.staff-request-edit__error { margin: 0; border-radius: var(--private-radius-sm); padding: 10px 12px; background: rgba(155, 61, 51, .08); color: var(--private-color-danger); font-size: 13.5px; font-weight: 600; line-height: 1.45; }
+.staff-request-edit .quotes-preflight-dialog__actions { margin-top: 4px; }
+@media (max-width: 640px) {
+  .staff-request-edit__grid { grid-template-columns: 1fr; }
+}
+/* Auditoría: rol junto a la persona ("¿quién entró como administrador?"). */
+.audit-entry__role { display: inline-block; margin-left: 8px; border-radius: 999px; padding: 1px 8px; background: var(--private-color-surface-sunken); color: var(--private-color-brand); font-size: 11.5px; font-weight: 650; line-height: 1.6; vertical-align: 1px; }
+/* Portal: el cliente debe leer completo cada concepto de su propuesta (antes se cortaba con "…"). */
+.client-quote-line { align-items: flex-start; }
+.client-quote-line strong { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.client-quote-line > span { padding-top: 1px; }
+/* Portal: en pantallas táctiles la propuesta se abre en el visor del teléfono (no en un iframe). */
+.client-accept-preview__touch { display: grid; justify-items: start; gap: 12px; padding: 16px; background: var(--private-color-surface-muted); }
+.client-accept-preview__touch p { margin: 0; color: var(--private-color-ink-muted); font-size: 13.5px; line-height: 1.5; }
+.client-accept-preview__touch .client-quote-action { width: 100%; }

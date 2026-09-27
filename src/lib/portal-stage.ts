@@ -40,12 +40,15 @@ export function portalStages(status: string): PortalStage[] {
   }));
 }
 
-export function portalNextStep(input: { status: string; hasQuote: boolean; quoteExpired: boolean; quoteAccepted: boolean; quoteActionable: boolean }): PortalNextStep {
-  const { status, hasQuote, quoteExpired, quoteAccepted, quoteActionable } = input;
+export function portalNextStep(input: { status: string; hasQuote: boolean; quoteExpired: boolean; quoteAccepted: boolean; quoteActionable: boolean; changesRequested?: boolean }): PortalNextStep {
+  const { status, hasQuote, quoteExpired, quoteAccepted, quoteActionable, changesRequested = false } = input;
   if (status === 'CONVERTIDA_EN_PROYECTO') return { title: 'Tu proyecto está en marcha', detail: 'El equipo ya prepara el arranque. Cualquier duda, escríbenos en la conversación.', target: 'conversation', cta: 'Escribir al equipo', owner: 'done' };
   if (quoteAccepted || status === 'ACEPTADA') return { title: 'Aceptaste la propuesta', detail: 'Gracias. Estamos preparando el arranque de tu proyecto y te avisaremos del siguiente paso.', target: null, owner: 'team' };
   if (status === 'INFORMACION_REQUERIDA') return { title: 'Necesitamos algunos datos', detail: 'Revisa el mensaje del equipo y responde en la conversación para que podamos avanzar.', target: 'conversation', cta: 'Ir a la conversación', owner: 'customer' };
   if (hasQuote && quoteExpired) return { title: 'Tu propuesta venció', detail: 'Solicita una versión actualizada y el equipo la preparará para ti.', target: 'quote', cta: 'Ver propuesta', owner: 'customer' };
+  // Ya pidió cambios a la versión vigente: la pelota está del lado del equipo (antes se le seguía
+  // diciendo "tu propuesta está lista" como si no hubiera hecho nada).
+  if (hasQuote && quoteActionable && changesRequested) return { title: 'Pediste cambios a tu propuesta', detail: 'Tu equipo prepara una nueva versión y te avisaremos por correo en cuanto esté lista. Mientras tanto, la actual sigue disponible por si decides aceptarla.', target: 'conversation', cta: 'Ver conversación', owner: 'team' };
   if (hasQuote && quoteActionable) return { title: 'Tu propuesta está lista', detail: 'Revísala con calma: puedes aceptarla o pedir cambios desde aquí mismo.', target: 'quote', cta: 'Revisar propuesta', owner: 'customer' };
   if (status === 'RECHAZADA') return { title: 'Esta solicitud se cerró', detail: 'Si quieres retomarla, escríbenos en la conversación.', target: 'conversation', cta: 'Escribir al equipo', owner: 'customer' };
   return { title: 'Estamos preparando tu propuesta', detail: 'El equipo está revisando tu proyecto. Te avisaremos por correo en cuanto haya novedades.', target: null, owner: 'team' };

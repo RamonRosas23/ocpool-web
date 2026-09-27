@@ -12,7 +12,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const actor = await requireCustomerActor(request);
     const { id: quoteId } = await context.params;
     const versionId = request.nextUrl.searchParams.get('versionId') ?? undefined;
-    return NextResponse.json(await getQuotePdfDownloadForQuote(actor, quoteId, versionId), { headers: { 'cache-control': 'no-store' } });
+    // `?disposition=inline` para verlo dentro del portal; cualquier otro valor descarga.
+    const disposition = request.nextUrl.searchParams.get('disposition') === 'inline' ? 'inline' : 'attachment';
+    return NextResponse.json(await getQuotePdfDownloadForQuote(actor, quoteId, versionId, { disposition }), { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toErrorResponse(error, id);
   }

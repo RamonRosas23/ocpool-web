@@ -6,6 +6,7 @@ export type PrivateStaffCapabilities = Readonly<{
   quotesRead?: boolean;
   catalogRead?: boolean;
   notificationsRead?: boolean;
+  notificationsManage?: boolean;
   auditRead?: boolean;
   approvalsRead?: boolean;
   projectsRead?: boolean;

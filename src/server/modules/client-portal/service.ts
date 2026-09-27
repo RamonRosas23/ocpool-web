@@ -7,6 +7,7 @@ import { AppError } from '@/server/http/errors';
 import { isGeneratedQuotePdfReady } from '@/server/modules/quote-documents/domain';
 import { CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES, isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
 import { resolveCommercialTermsRecord } from '@/server/modules/quotes/service';
+import { findLatestChangeRequest } from '@/server/modules/messaging/change-requests';
 
 export type ClientPortalServiceDependencies = Readonly<{ prisma?: PrismaClient; now?: Date }>;
 
@@ -343,6 +344,10 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
     { ...currentVersion, pdfReady: isGeneratedQuotePdfReady(currentVersion.generatedDocuments[0]) },
     await resolveCommercialTermsRecord(prisma, currentVersion.termsVersionId),
   ) : null;
+  // Si el cliente ya pidió cambios a la versión vigente, su siguiente paso es esperar la nueva versión.
+  const changeRequest = currentVersion && ['ENVIADA', 'EN_NEGOCIACION'].includes(currentVersion.status)
+    ? await findLatestChangeRequest(prisma, request.id, currentVersion.versionNumber)
+    : null;
   return {
     request: {
       id: request.id,
@@ -359,6 +364,7 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
       id: quote.id,
       currentVersionId: serializedCurrentVersion?.id ?? null,
       currentVersion: serializedCurrentVersion,
+      changesRequestedAt: changeRequest ? changeRequest.at.toISOString() : null,
       versions: serializedVersions,
       history: serializeStatusHistory(versions.flatMap((version) => version.statusHistory)),
     } : null,

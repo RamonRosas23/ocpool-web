@@ -1,7 +1,9 @@
 'use client';
 
 import { Inbox, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useStaffSession } from '@/components/staff/StaffSessionContext';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffHeader from '@/components/StaffHeader';
 import { statusToneIcon } from '@/lib/labels';
@@ -34,6 +36,8 @@ type NotificationItem = {
   retryable: boolean;
   eventType: string;
   aggregateType: string;
+  /** Expediente al que pertenece el aviso (o sólo el cliente, en avisos de acceso); null si no aplica o no es visible. */
+  subject: { requestId: string | null; folio: string | null; clientDisplayName: string } | null;
 };
 
 type Health = {
@@ -125,6 +129,10 @@ function formatAge(seconds: number): string {
 }
 
 export default function StaffNotificationsPanel() {
+  // Reintentar exige `notifications.manage`: ventas lo ve todo pero no puede reintentar (antes veía
+  // el botón y recibía un error de permisos al usarlo).
+  const session = useStaffSession();
+  const canRetry = session?.capabilities.notificationsManage !== false;
   const [statusFilter, setStatusFilter, statusFilterHydrated] = usePersistentState<NotificationStatus>('ocpool.staff.notifications.statusFilter', '');
   const [data, setData] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,6 +145,21 @@ export default function StaffNotificationsPanel() {
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [bulkRetrying, setBulkRetrying] = useState(false);
   const [, setClockTick] = useState(0);
+  const [urlStatusApplied, setUrlStatusApplied] = useState(false);
+
+  // Los enlaces del dashboard ("Revisar en Notificaciones") llegan con `?status=FAILED`: ese filtro
+  // manda sobre el recordado, se aplica antes de la primera consulta y se retira de la URL.
+  useEffect(() => {
+    if (!statusFilterHydrated || urlStatusApplied) return;
+    const url = new URL(window.location.href);
+    const fromUrl = url.searchParams.get('status');
+    if (fromUrl !== null) {
+      if ((STATUS_OPTIONS as readonly string[]).includes(fromUrl) && fromUrl !== statusFilter) setStatusFilter(fromUrl as NotificationStatus);
+      url.searchParams.delete('status');
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+    setUrlStatusApplied(true);
+  }, [setStatusFilter, statusFilter, statusFilterHydrated, urlStatusApplied]);
 
   // Reloj de 30 s sólo para refrescar las etiquetas relativas ("Actualizado hace 2 min").
   useEffect(() => {
@@ -152,7 +175,7 @@ export default function StaffNotificationsPanel() {
   }, [notice]);
 
   useEffect(() => {
-    if (!statusFilterHydrated) return;
+    if (!statusFilterHydrated || !urlStatusApplied) return;
     const controller = new AbortController();
     const load = async () => {
       setLoading(true);
@@ -178,7 +201,7 @@ export default function StaffNotificationsPanel() {
     };
     void load();
     return () => controller.abort();
-  }, [page, reloadToken, statusFilter, statusFilterHydrated]);
+  }, [page, reloadToken, statusFilter, statusFilterHydrated, urlStatusApplied]);
 
   const refresh = () => setReloadToken((current) => current + 1);
 
@@ -235,7 +258,7 @@ export default function StaffNotificationsPanel() {
 
   const health = data?.health;
   const items = data?.items ?? [];
-  const retryableItems = items.filter((item) => item.retryable);
+  const retryableItems = canRetry ? items.filter((item) => item.retryable) : [];
   const emptyCopy = EMPTY_COPY[statusFilter] ?? { title: 'No hay entregas en esta vista.', body: 'Cuando existan notificaciones con este estado aparecerán aquí con su diagnóstico operativo.' };
 
   return (
@@ -282,9 +305,9 @@ export default function StaffNotificationsPanel() {
             {loading && !data && <div className="staff-notification-loading" role="status"><span /><span /><span /><b>Consultando la cola…</b></div>}
             {!(loading && !data) && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>{emptyCopy.title}</h2><p>{emptyCopy.body}</p>{statusFilter && <button type="button" className="staff-button" onClick={() => applyStatus('')}>Ver todas las entregas</button>}</div>}
             {items.length > 0 && <ul>{items.map((item) => <li className={`staff-notification-row staff-notification-row--${item.status.toLowerCase()}`} key={item.id}>
-              <div className="staff-notification-row__identity"><StatusPill status={item.status} /><strong>{templateLabel(item.templateKey)}</strong><small>{eventLabel(item.eventType)} · <code>{item.templateKey}</code></small></div>
+              <div className="staff-notification-row__identity"><StatusPill status={item.status} /><strong>{templateLabel(item.templateKey)}</strong>{item.subject && <span className="staff-notification-row__subject">{item.subject.folio && <b>{item.subject.folio}</b>}<span>{item.subject.clientDisplayName}</span></span>}<small>{eventLabel(item.eventType)} · <code>{item.templateKey}</code></small></div>
               <dl className="staff-notification-row__facts"><div><dt>Intentos</dt><dd>{item.attempts}</dd></div><div><dt>Antigüedad</dt><dd>{formatAge(item.ageSeconds)}</dd></div><div><dt>Actualizada</dt><dd><time dateTime={item.updatedAt} title={formatDateTime(item.updatedAt)}>{relativeTimeLabel(item.updatedAt)}</time></dd></div><div><dt>Diagnóstico</dt><dd>{diagnosisLabel(item)}</dd></div></dl>
-              <div className="staff-notification-row__action">{item.retryable ? <button className="staff-button staff-button--copper" type="button" disabled={retryingId === item.id || bulkRetrying} onClick={() => void retry(item)}>{retryingId === item.id ? 'Reintentando…' : 'Reintentar entrega'}</button> : <span>{item.status === 'FAILED' ? 'Requiere corrección técnica' : 'Sin acción manual'}</span>}</div>
+              <div className="staff-notification-row__action">{item.retryable && canRetry ? <button className="staff-button staff-button--copper" type="button" disabled={retryingId === item.id || bulkRetrying} onClick={() => void retry(item)}>{retryingId === item.id ? 'Reintentando…' : 'Reintentar entrega'}</button> : <span>{item.retryable ? 'Gerencia puede reintentarla' : item.status === 'FAILED' ? 'Requiere corrección técnica' : 'Sin acción manual'}</span>}{item.status === 'FAILED' && item.subject?.requestId && <Link className="staff-notification-row__open" href={`/staff/requests?request=${item.subject.requestId}`}>Abrir expediente para avisar al cliente →</Link>}</div>
             </li>)}</ul>}
           </div>
           {data && data.totalPages > 1 && <PrivatePagination page={data.page} totalPages={data.totalPages} disabled={loading} onPrevious={() => setPage((current) => Math.max(1, current - 1))} onNext={() => setPage((current) => current + 1)} />}

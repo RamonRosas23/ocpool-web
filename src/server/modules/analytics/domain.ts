@@ -94,18 +94,29 @@ export function normalizeDashboardQuery(input: DashboardQueryInput = {}): Dashbo
   const timezone = assertTimezone(input.timezone ?? DEFAULT_DASHBOARD_TIMEZONE);
   const today = calendarDateFor(now, timezone);
   const toCalendarDate = input.to ?? today;
-  const fromCalendarDate = input.from ?? addCalendarDays(toCalendarDate, -DEFAULT_RANGE_DAYS);
+  // `from` y `to` son días calendario INCLUSIVOS ("Hasta 26 sep" incluye el 26, como en cualquier
+  // selector de fechas y como ya hace Auditoría). Antes `to` era el límite exclusivo, así que el día
+  // de "Hasta" -- hoy, por omisión -- nunca contaba y ventas veía "0 solicitudes recibidas" en pleno
+  // día mientras el rango decía "— 26 sep". El predeterminado son los últimos 30 días incluyendo hoy.
+  const fromCalendarDate = input.from ?? addCalendarDays(toCalendarDate, -(DEFAULT_RANGE_DAYS - 1));
   const fromSerial = calendarSerial(fromCalendarDate);
   const toSerial = calendarSerial(toCalendarDate);
-  const rangeDays = Math.round((toSerial - fromSerial) / (DAY_SECONDS * 1000));
+  const rangeDays = Math.round((toSerial - fromSerial) / (DAY_SECONDS * 1000)) + 1;
   if (rangeDays < 1 || rangeDays > MAX_RANGE_DAYS) throw new Error('El rango de fechas no es válido.');
   if (toCalendarDate > today) throw new Error('El rango de fechas no puede estar en el futuro.');
   return {
     from: zonedCalendarDateToUtc(fromCalendarDate, timezone),
+    // Inicio del último día (lo que vuelve al selector "Hasta" vía `meta.to`); las consultas usan
+    // `dashboardRangeUpperBound`, el inicio del día siguiente, como límite exclusivo.
     to: zonedCalendarDateToUtc(toCalendarDate, timezone),
     timezone,
     scope: 'global',
   };
+}
+
+/** Límite superior exclusivo de las consultas: el inicio del día calendario siguiente a `query.to`. */
+export function dashboardRangeUpperBound(query: Pick<DashboardQuery, 'to' | 'timezone'>): Date {
+  return zonedCalendarDateToUtc(addCalendarDays(calendarDateFor(query.to, query.timezone), 1), query.timezone);
 }
 
 export function calculateAcceptanceRateBps(sent: number, accepted: number): number | null {

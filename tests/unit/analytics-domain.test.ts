@@ -3,11 +3,12 @@ import {
   agingBucketForSeconds,
   calculateAcceptanceRateBps,
   calculatePercentileSeconds,
+  dashboardRangeUpperBound,
   normalizeDashboardQuery,
 } from '@/server/modules/analytics/domain';
 
 describe('analytics domain contracts', () => {
-  it('normalizes an explicit UTC calendar range as a half-open interval', () => {
+  it('normalizes an explicit UTC calendar range with an inclusive last day', () => {
     const query = normalizeDashboardQuery({
       from: '2026-09-01',
       to: '2026-09-08',
@@ -21,15 +22,35 @@ describe('analytics domain contracts', () => {
       to: new Date('2026-09-08T00:00:00.000Z'),
     });
     expect(query.from.getTime()).toBeLessThan(query.to.getTime());
+    // Las consultas cubren el día de "Hasta" completo: el límite exclusivo es el inicio del siguiente.
+    expect(dashboardRangeUpperBound(query)).toEqual(new Date('2026-09-09T00:00:00.000Z'));
   });
 
-  it('defaults to complete business days and rejects invalid ranges', () => {
+  it('counts the last day in the business timezone, including today by default', () => {
+    const now = new Date('2026-09-08T18:00:00.000Z');
+    const query = normalizeDashboardQuery({ timezone: 'America/Chihuahua', now });
+    const until = dashboardRangeUpperBound(query);
+    expect(until.getTime()).toBeGreaterThan(now.getTime());
+    expect(until.getTime() - query.to.getTime()).toBe(86_400_000);
+  });
+
+  it('accepts a single day and caps the range at 93 inclusive days', () => {
+    const now = new Date('2026-09-08T18:00:00.000Z');
+    const single = normalizeDashboardQuery({ from: '2026-09-08', to: '2026-09-08', timezone: 'UTC', now });
+    expect(single.from).toEqual(single.to);
+    expect(dashboardRangeUpperBound(single)).toEqual(new Date('2026-09-09T00:00:00.000Z'));
+    expect(() => normalizeDashboardQuery({ from: '2026-06-08', to: '2026-09-08', timezone: 'UTC', now })).not.toThrow();
+    expect(() => normalizeDashboardQuery({ from: '2026-06-07', to: '2026-09-08', timezone: 'UTC', now })).toThrow();
+    expect(() => normalizeDashboardQuery({ from: '2026-09-01', to: '2026-09-09', timezone: 'UTC', now })).toThrow();
+  });
+
+  it('defaults to the last 30 days including today and rejects invalid ranges', () => {
     const query = normalizeDashboardQuery({
       timezone: 'UTC',
       now: new Date('2026-09-08T18:00:00.000Z'),
     });
 
-    expect(query.from).toEqual(new Date('2026-08-09T00:00:00.000Z'));
+    expect(query.from).toEqual(new Date('2026-08-10T00:00:00.000Z'));
     expect(query.to).toEqual(new Date('2026-09-08T00:00:00.000Z'));
     expect(() => normalizeDashboardQuery({ from: '2026-09-08', to: '2026-09-01', timezone: 'UTC' })).toThrow();
     expect(() => normalizeDashboardQuery({ from: '2026-01-01', to: '2026-05-01', timezone: 'UTC' })).toThrow();

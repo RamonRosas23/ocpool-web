@@ -28,6 +28,8 @@ describe('portalNextStep', () => {
 
   it('tells the customer when the ball is on the team side', () => {
     expect(portalNextStep({ ...base, status: 'EN_REVISION' })).toMatchObject({ owner: 'team', target: null });
+    // Después de "Solicitar cambios" ya no se le dice que su propuesta "está lista".
+    expect(portalNextStep({ ...base, status: 'COTIZACION_DISPONIBLE', hasQuote: true, quoteActionable: true, changesRequested: true })).toMatchObject({ title: 'Pediste cambios a tu propuesta', owner: 'team', target: 'conversation' });
     expect(portalNextStep({ ...base, status: 'ACEPTADA', hasQuote: true, quoteAccepted: true })).toMatchObject({ title: 'Aceptaste la propuesta', owner: 'team' });
     expect(portalNextStep({ ...base, status: 'CONVERTIDA_EN_PROYECTO' }).owner).toBe('done');
   });

@@ -104,6 +104,16 @@ describe('staff audit read service', () => {
     expect(result.items.every((item) => item.entityLabel === 'Identidad' && item.details.length === 0)).toBe(true);
   });
 
+  it('narrows identity events to sign-ins and says which role each person has', async () => {
+    await expect(getStaffAudit(actor(manager.id, ['audit.read']), { from: '2026-01-01', to: '2026-02-01', category: 'signins' }, dependencies)).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    const result = await getStaffAudit(actor(admin.id, ['audit.read', 'audit.security.read']), { from: '2026-01-01', to: '2026-02-01', category: 'signins' }, dependencies);
+    expect(result.meta.scope).toBe('security');
+    expect(result.items.map((item) => [item.action, item.actorLabel, item.actorRole])).toEqual([
+      ['Inicio de sesión exitoso', 'Audit Admin', 'Administrador'],
+      ['Intento de inicio de sesión fallido', 'Cliente', null],
+    ]);
+  });
+
   it('pages through security events that share an identical createdAt without duplicating or skipping any', async () => {
     const tiedAt = new Date('2026-01-16T09:00:00.000Z');
     const tied = await prisma.authEvent.createManyAndReturn({

@@ -3,8 +3,8 @@ import { customerContext, requestWorkspaceNotificationPath } from '@/server/modu
 import { DEFAULT_COMMERCIAL_V2_FLAGS } from '@/server/flags/commercial-v2';
 
 describe('notification workspace links', () => {
-  it('keeps the legacy queue as the safe fallback when the workspace is not active', () => {
-    expect(requestWorkspaceNotificationPath('00000000-0000-4000-8000-000000000001', 'conversation', DEFAULT_COMMERCIAL_V2_FLAGS)).toBe('/staff/requests');
+  it('opens the exact request in the classic view when the workspace is not active', () => {
+    expect(requestWorkspaceNotificationPath('00000000-0000-4000-8000-000000000001', 'conversation', DEFAULT_COMMERCIAL_V2_FLAGS)).toBe('/staff/requests?request=00000000-0000-4000-8000-000000000001');
   });
 
   it('deep-links staff notifications only when both workspace flags are active', () => {

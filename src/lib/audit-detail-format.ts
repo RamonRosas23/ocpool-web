@@ -27,7 +27,7 @@ const STATUS_LABELS: Record<string, string> = {
 const VALUE_LABELS: Record<string, Record<string, string>> = {
   Origen: { PUBLIC_FORM: 'Formulario público', STAFF_CREATED: 'Creada por staff' },
   Resultado: { INVITED: 'Invitación enviada', ALREADY_PENDING: 'Invitación ya vigente', ALREADY_ACTIVE: 'Acceso reenviado' },
-  Visibilidad: { SHARED: 'Compartido con el cliente', INTERNAL: 'Nota interna' },
+  Visibilidad: { CUSTOMER: 'Visible para el cliente', SHARED: 'Compartido con el cliente', INTERNAL: 'Nota interna' },
   Tipo: { DISCOUNT: 'Descuento', PRICE_OVERRIDE: 'Ajuste de precio', SPECIAL_CONCEPT: 'Concepto especial' },
   Categoría: { REFERENCE_IMAGE: 'Referencia', TECHNICAL_DOCUMENT: 'Técnico', CLIENT_DOCUMENT: 'Cliente', INTERNAL_DOCUMENT: 'Interno' },
   'Origen del cambio': { 'quote.version.status_changed': 'Cambio de estado de la cotización', manual: 'Cambio manual' },

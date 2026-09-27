@@ -293,6 +293,51 @@ describe('notification mappers and templates', () => {
       expect(rendered.subject.length).toBeGreaterThan(0);
       expect(rendered.text.length).toBeGreaterThan(0);
       expect(rendered.html).toContain('<!doctype html>');
+      // Todo correo trae el enlace en texto plano y visible (clientes de correo que bloquean botones).
+      expect(rendered.text).toContain('http://localhost:3000/');
+      expect(rendered.html).toContain('Si el botón no funciona');
+      expect(`${rendered.subject} ${rendered.text} ${rendered.html}`).not.toMatch(/snapshot|fuente de verdad/iu);
     }
+  });
+
+  it('writes staff emails for the team, not with the customer copy', () => {
+    const staffUrl = 'http://localhost:3000/staff/requests?request=00000000-0000-4000-8000-000000000001';
+    const reply = renderNotificationTemplate({
+      templateKey: 'message.created',
+      templateVersion: 'v1',
+      data: { appUrl: 'http://localhost:3000', recipientName: 'Laura', folio: 'OCQ-2026-000001', senderName: 'Ana\r\nBcc: x', preview: '¿Pueden venir el lunes?', actionUrl: staffUrl },
+    });
+    expect(reply.subject).toBe('Ana Bcc: x respondió en OCQ-2026-000001');
+    expect(reply.html).not.toContain('tu expediente');
+    expect(reply.html).toContain('Aviso automático del espacio interno');
+    expect(reply.text).toContain(staffUrl);
+
+    const accepted = renderNotificationTemplate({
+      templateKey: 'quote.accepted',
+      templateVersion: 'v1',
+      data: { appUrl: 'http://localhost:3000', recipientName: 'Laura', folio: 'OCQ-2026-000001', versionNumber: 2, totalLabel: '1,250.00 MXN', actionUrl: staffUrl },
+    });
+    expect(accepted.subject).toBe('Cotización OCQ-2026-000001 aceptada');
+    expect(accepted.text).toContain('Total aceptado: 1,250.00 MXN');
+    expect(accepted.text).toContain(staffUrl);
+
+    const assigned = renderNotificationTemplate({
+      templateKey: 'request.assigned',
+      templateVersion: 'v1',
+      data: { appUrl: 'http://localhost:3000', recipientName: 'Laura', folio: 'OCQ-2026-000001', actionUrl: staffUrl },
+    });
+    expect(assigned.subject).toBe('Te asignaron la solicitud OCQ-2026-000001');
+    expect(assigned.text).toContain(staffUrl);
+  });
+
+  it('tells the customer what they can do with an available quote', () => {
+    const rendered = renderNotificationTemplate({
+      templateKey: 'quote.version_sent',
+      templateVersion: 'v1',
+      data: { appUrl: 'http://localhost:3000', recipientName: 'Ana', folio: 'OCQ-2026-000001', actionUrl: 'http://localhost:3000/portal?request=00000000-0000-4000-8000-000000000001' },
+    });
+    expect(rendered.subject).toBe('Tu cotización OCQ-2026-000001 está disponible');
+    expect(rendered.html).toContain('aceptarla o pedirnos cambios');
+    expect(rendered.html).toContain('la información vigente de tu expediente siempre está en tu portal');
   });
 });

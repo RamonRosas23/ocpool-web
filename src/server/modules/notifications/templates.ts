@@ -323,8 +323,18 @@ function validateActionUrl(appUrl: string, actionUrl: string): string {
   return normalized;
 }
 
-function layout(title: string, body: string, actionLabel: string, actionUrl: string): string {
-  return `<!doctype html><html lang="es"><body style="margin:0;background:#f4f0ea;color:#252321;font-family:Arial,sans-serif"><main style="max-width:620px;margin:32px auto;padding:32px;background:#fffdf9;border:1px solid #ded5ca"><p style="letter-spacing:.12em;text-transform:uppercase;color:#8b5e3c;font-size:12px">OCPOOL</p><h1 style="font-size:26px;font-weight:500">${escapeHtml(title)}</h1>${body}<p><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:12px 18px;background:#252321;color:#fffdf9;text-decoration:none">${escapeHtml(actionLabel)}</a></p><p style="font-size:12px;color:#6f6963">Este correo es informativo. El portal de OCPOOL es la fuente de verdad de tu expediente.</p></main></body></html>`;
+type EmailAudience = 'customer' | 'staff';
+
+/**
+ * Marco común de los correos, con la paleta de las superficies privadas. Incluye el enlace en texto
+ * (hay clientes de correo que bloquean botones) y un pie distinto para clientes y para el equipo:
+ * antes el equipo también recibía "…la fuente de verdad de tu expediente".
+ */
+function layout(title: string, body: string, actionLabel: string, actionUrl: string, audience: EmailAudience = 'customer'): string {
+  const footer = audience === 'staff'
+    ? 'Aviso automático del espacio interno de OCPOOL.'
+    : 'Este correo es sólo un aviso: la información vigente de tu expediente siempre está en tu portal de OCPOOL. Si no esperabas este mensaje, puedes ignorarlo.';
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title></head><body style="margin:0;background:#f4f1ea;color:#14232a;font-family:Arial,Helvetica,sans-serif;line-height:1.55"><main style="max-width:620px;margin:32px auto;padding:32px;background:#fffdf9;border:1px solid #e3dccf;border-radius:12px"><p style="margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase;color:#7c5827;font-size:12px;font-weight:700">OCPOOL</p><h1 style="margin:0 0 16px;color:#092433;font-size:26px;font-weight:600;line-height:1.25">${escapeHtml(title)}</h1>${body}<p style="margin:24px 0 8px"><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#092433;color:#fffdf9;font-weight:700;text-decoration:none">${escapeHtml(actionLabel)}</a></p><p style="margin:0 0 20px;font-size:12px;color:#56615f">Si el botón no funciona, copia este enlace en tu navegador:<br><span style="word-break:break-all">${escapeHtml(actionUrl)}</span></p><p style="margin:0;border-top:1px solid #e3dccf;padding-top:16px;font-size:12px;color:#56615f">${footer}</p></main></body></html>`;
 }
 
 export function renderNotificationTemplate(input: RenderNotificationTemplateInput): RenderedNotificationTemplate {
@@ -339,6 +349,8 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
   const sender = escapeHtml(data.senderName ?? 'Tu equipo OCPOOL');
   const preview = data.preview ?? '';
   const portalAccessPending = new URL(actionUrl).pathname === '/portal/access';
+  // Un mismo evento (p. ej. un mensaje) puede ir al cliente o al equipo; el destino lo distingue.
+  const staffAudience = new URL(actionUrl).pathname.startsWith('/staff');
 
   switch (input.templateKey) {
     case 'auth.customer.magic_link': {
@@ -353,7 +365,7 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
       const subject = 'Restablece tu acceso interno a OCPOOL';
       const title = 'Restablece tu contraseña';
       const body = `<p>Hola ${recipientName},</p><p>Solicitaste restablecer tu acceso interno. El enlace expira en ${expires} minutos y sólo puede utilizarse una vez.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nRestablece tu contraseña: ${actionUrl}\n\nEl enlace expira en ${expires} minutos y sólo puede utilizarse una vez.`, html: layout(title, body, 'Restablecer acceso', actionUrl) };
+      return { subject, text: `Hola ${data.recipientName},\n\nRestablece tu contraseña: ${actionUrl}\n\nEl enlace expira en ${expires} minutos y sólo puede utilizarse una vez.`, html: layout(title, body, 'Restablecer acceso', actionUrl, 'staff') };
     }
     case 'request.received': {
       const subject = safeHeader(`Recibimos tu solicitud ${folio}`);
@@ -366,35 +378,35 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
       return { subject, text, html: layout('Solicitud recibida', body, data.actionLabel ?? 'Ver expediente', actionUrl) };
     }
     case 'request.assigned': {
-      const subject = safeHeader(`Solicitud asignada ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>La solicitud ${escapeHtml(folio)} requiere tu atención dentro del espacio interno.</p>`;
-      return { subject, text: `Solicitud ${folio} asignada. Revisa el expediente en el espacio interno.`, html: layout('Nueva solicitud asignada', body, 'Abrir expediente', actionUrl) };
+      const subject = safeHeader(`Te asignaron la solicitud ${folio}`);
+      const body = `<p>Hola ${recipientName},</p><p>La solicitud ${escapeHtml(folio)} ahora está a tu cargo. Revisa el alcance y define el siguiente paso con el cliente.</p>`;
+      return { subject, text: `Hola ${data.recipientName},\n\nLa solicitud ${folio} ahora está a tu cargo. Abre el expediente: ${actionUrl}`, html: layout('Nueva solicitud a tu cargo', body, 'Abrir expediente', actionUrl, 'staff') };
     }
     case 'quote.version_sent': {
-      const subject = safeHeader(`Tu cotización está disponible ${folio}`);
+      const subject = safeHeader(`Tu cotización ${folio} está disponible`);
       const body = portalAccessPending
         ? `<p>Hola ${recipientName},</p><p>La cotización ${escapeHtml(folio)} ya está disponible para tu expediente.</p><p>Solicita acceso al portal para consultarla. Nuestro equipo habilitará tu cuenta y recibirás un enlace seguro de un solo uso en este correo.</p>`
-        : `<p>Hola ${recipientName},</p><p>Ya puedes revisar la cotización ${escapeHtml(folio)} en tu portal. La versión y sus importes corresponden al snapshot enviado.</p>`;
+        : `<p>Hola ${recipientName},</p><p>Ya puedes revisar la cotización ${escapeHtml(folio)} en tu portal: el detalle, los importes y el PDF.</p><p>Desde ahí mismo puedes aceptarla o pedirnos cambios.</p>`;
       const text = portalAccessPending
         ? `Hola ${data.recipientName},\n\nLa cotización ${folio} ya está disponible para tu expediente. Solicita acceso al portal: ${actionUrl}\n\nNuestro equipo habilitará tu cuenta y recibirás un enlace seguro de un solo uso en este correo.`
-        : `Hola ${data.recipientName},\n\nTu cotización ${folio} está disponible en el portal: ${actionUrl}`;
+        : `Hola ${data.recipientName},\n\nTu cotización ${folio} está disponible en el portal: ${actionUrl}\n\nDesde ahí puedes revisar el PDF, aceptarla o pedirnos cambios.`;
       return { subject, text, html: layout('Cotización disponible', body, data.actionLabel ?? 'Revisar cotización', actionUrl) };
     }
     case 'quote.approval_requested': {
-      const subject = safeHeader(`Aprobación comercial requerida ${folio}`);
+      const subject = safeHeader(`Aprobación de ${approvalType} pendiente: ${folio}`);
       const body = `<p>Hola ${recipientName},</p><p>La versión${version} de la cotización ${escapeHtml(folio)} requiere tu aprobación para continuar.</p><p>Tipo: <strong>${escapeHtml(approvalType)}</strong></p>`;
-      return { subject, text: `La cotización ${folio}${version} requiere aprobación de ${approvalType}. Revisa el expediente: ${actionUrl}`, html: layout('Aprobación requerida', body, data.actionLabel ?? 'Revisar aprobación', actionUrl) };
+      return { subject, text: `La cotización ${folio}${version} requiere aprobación de ${approvalType}. Revisa el expediente: ${actionUrl}`, html: layout('Aprobación requerida', body, data.actionLabel ?? 'Revisar aprobación', actionUrl, 'staff') };
     }
     case 'quote.approval_resolved': {
       const approved = data.approvalStatus === 'APPROVED';
       const subject = safeHeader(`${approved ? 'Aprobación autorizada' : 'Aprobación rechazada'} ${folio}`);
       const body = `<p>Hola ${recipientName},</p><p>La aprobación de ${escapeHtml(approvalType)} para la cotización ${escapeHtml(folio)}${version} fue <strong>${approved ? 'autorizada' : 'rechazada'}</strong>.</p>`;
-      return { subject, text: `La aprobación de ${approvalType} para ${folio}${version} fue ${approved ? 'autorizada' : 'rechazada'}. Revisa el expediente: ${actionUrl}`, html: layout(approved ? 'Aprobación autorizada' : 'Aprobación rechazada', body, data.actionLabel ?? 'Abrir expediente', actionUrl) };
+      return { subject, text: `La aprobación de ${approvalType} para ${folio}${version} fue ${approved ? 'autorizada' : 'rechazada'}. Revisa el expediente: ${actionUrl}`, html: layout(approved ? 'Aprobación autorizada' : 'Aprobación rechazada', body, data.actionLabel ?? 'Abrir expediente', actionUrl, 'staff') };
     }
     case 'quote.accepted': {
-      const subject = safeHeader(`Cotización aceptada ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>La cotización ${escapeHtml(folio)}${version} fue aceptada por el cliente.</p>${total ? `<p>Total snapshot: <strong>${total}</strong></p>` : ''}`;
-      return { subject, text: `Cotización ${folio}${version} aceptada. ${data.totalLabel ?? ''}`.trim(), html: layout('Cotización aceptada', body, 'Abrir espacio interno', actionUrl) };
+      const subject = safeHeader(`Cotización ${folio} aceptada`);
+      const body = `<p>Hola ${recipientName},</p><p>El cliente aceptó la cotización ${escapeHtml(folio)}${version}.</p>${total ? `<p>Total aceptado: <strong>${total}</strong></p>` : ''}<p>Siguiente paso: conviértela en proyecto para coordinar el arranque con el cliente.</p>`;
+      return { subject, text: `Hola ${data.recipientName},\n\nEl cliente aceptó la cotización ${folio}${version}.${data.totalLabel ? ` Total aceptado: ${data.totalLabel}.` : ''}\n\nSiguiente paso: conviértela en proyecto. Abre el expediente: ${actionUrl}`, html: layout('Cotización aceptada', body, 'Abrir expediente', actionUrl, 'staff') };
     }
     case 'quote.acceptance_confirmed': {
       // UX audit fix: confirma la aceptación al cliente y explica qué sigue -- ninguna acción
@@ -405,6 +417,15 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
       return { subject, text, html: layout('Aceptación confirmada', body, data.actionLabel ?? 'Ver mi expediente', actionUrl) };
     }
     case 'message.created': {
+      if (staffAudience) {
+        // Respuesta del cliente al responsable: antes recibía el texto pensado para el cliente
+        // ("dejó un mensaje en tu expediente").
+        // El nombre va al encabezado Subject: sin caracteres de control y acotado (safeHeader rechaza > 240).
+        const senderForHeader = (data.senderName ?? 'El cliente').replace(/[\u0000-\u001F\u007F]+/gu, ' ').trim() || 'El cliente';
+        const subject = safeHeader(`${senderForHeader} respondió en ${folio}`.slice(0, 240));
+        const body = `<p>Hola ${recipientName},</p><p>${sender} respondió en el expediente ${escapeHtml(folio)}:</p><blockquote style="margin:16px 0;padding:12px;border-left:3px solid #7c5827">${escapeHtml(preview)}</blockquote>`;
+        return { subject, text: `Hola ${data.recipientName},\n\n${data.senderName ?? 'El cliente'} respondió en ${folio}:\n\n${preview}\n\nResponder: ${actionUrl}`, html: layout('El cliente respondió', body, data.actionLabel ?? 'Responder', actionUrl, 'staff') };
+      }
       const subject = safeHeader(`Nuevo mensaje sobre tu expediente ${folio}`);
       const body = portalAccessPending
         ? `<p>Hola ${recipientName},</p><p>${sender} dejó un mensaje en tu expediente ${escapeHtml(folio)}:</p><blockquote style="margin:16px 0;padding:12px;border-left:3px solid #8b5e3c">${escapeHtml(preview)}</blockquote><p>Si eres cliente nuevo, primero habilitaremos tu cuenta. Después podrás continuar la conversación en el portal.</p>`

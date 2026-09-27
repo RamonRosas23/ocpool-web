@@ -16,9 +16,9 @@ El dashboard operativo (`/staff`) ayuda al personal autorizado a priorizar traba
 ## Fechas, zona y frescura
 
 - PostgreSQL conserva timestamps en UTC.
-- `from` es inclusivo y `to` exclusivo: `[from, to)`.
-- El rango permitido es de 1 a 93 días.
-- Sin parámetros se consultan los últimos 30 días completos con la zona configurada en `APP_TIMEZONE`.
+- `from` y `to` son días calendario **inclusivos** ("Hasta 26 sep" incluye todo el 26); la consulta usa `[inicio de from, inicio del día siguiente a to)` (`dashboardRangeUpperBound`). Hasta el 2026-09-26 `to` era exclusivo y el día de "Hasta" —hoy, por omisión— nunca contaba.
+- El rango permitido es de 1 a 93 días (un solo día es válido).
+- Sin parámetros se consultan los últimos 30 días incluyendo hoy, con la zona configurada en `APP_TIMEZONE`. Las vistas rápidas "7/30/90 días" cuentan el día de "Hasta".
 - La zona inicial es `America/Chihuahua`; no se acepta una zona enviada por el navegador para cambiar el alcance.
 - `meta.generatedAt` indica cuándo se produjo la lectura. `fresh` significa lectura transaccional directa; la fase actual no usa cache global ni rollups.
 
@@ -27,13 +27,13 @@ El dashboard operativo (`/staff`) ayuda al personal autorizado a priorizar traba
 | Bloque | Métrica | Fuente y regla |
 | --- | --- | --- |
 | Solicitudes | Recibidas | `QuoteRequest.createdAt` dentro del periodo y scope. |
-| Solicitudes | Sin asignar | Solicitudes del periodo global cuyo responsable actual es `null`; no se expone en scope propio de ventas. |
+| Solicitudes | Sin asignar | Solicitudes del periodo global cuyo responsable actual es `null`; no se expone en scope propio de ventas. La UI la usa como señal del periodo; el total vigente (sin importar la fecha) es la cola "Sin asignar" de "Qué atender ahora". |
 | Solicitudes | Pipeline/origen | Agrupación de `status` y `origin` de solicitudes del periodo. |
 | Solicitudes | Antigüedad | Solicitudes abiertas contra `now` del servidor en buckets `0–1`, `2–3`, `4–7`, `8–14`, `15–30`, `31+`. |
 | Cotizaciones | Enviadas | Transiciones a `ENVIADA` dentro del periodo, respetando solicitudes del scope. |
 | Cotizaciones | Aceptadas | Aceptaciones cuyo `acceptedAt` está dentro del periodo. |
 | Cotizaciones | Tasa | `accepted / sent`, serializada en basis points; sin denominador devuelve `null`. |
-| Cotizaciones | Totales aceptados | Suma de `totalMinor` snapshot por `currencyCode`; nunca convierte ni mezcla monedas. |
+| Cotizaciones | Totales aceptados | Suma de `totalMinor` snapshot por `currencyCode`; nunca convierte ni mezcla monedas. La UI la muestra como KPI "Vendido" (importe corto calculado con BigInt + importe exacto). |
 | Ritmo | P50/P90 | Segundos entre creación/asignación, creación/envío o envío/aceptación. Se suprime la métrica con menos de 5 observaciones. |
 | Carga | Responsable | Solicitudes abiertas y borradores/revisión por empleado activo. Si la suma de observaciones es menor a 5, los valores quedan `null`. |
 | Notificaciones | Salud | Estados operativos actuales de Outbox materializado y fallos `FAILED` actualizados dentro del periodo. No expone destinatarios, payloads o ciphertext. |

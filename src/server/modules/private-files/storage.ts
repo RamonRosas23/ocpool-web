@@ -20,7 +20,8 @@ export type PrivateStorage = Readonly<{
   ensureBucket: () => Promise<void>;
   put: (input: { key: string; body: Uint8Array; contentType: string }) => Promise<void>;
   createUploadUrl: (input: { key: string; contentType: string; expiresInSeconds: number }) => Promise<string>;
-  createDownloadUrl: (input: { key: string; expiresInSeconds: number }) => Promise<string>;
+  /** `inline` sólo para documentos que genera OCPOOL (la vista previa del PDF); lo subido siempre se descarga. */
+  createDownloadUrl: (input: { key: string; expiresInSeconds: number; disposition?: 'attachment' | 'inline' }) => Promise<string>;
   head: (key: string) => Promise<PrivateStorageHead | null>;
   read: (key: string) => Promise<Uint8Array>;
   delete: (key: string) => Promise<void>;
@@ -68,11 +69,11 @@ export function createS3PrivateStorage(): PrivateStorage {
     async createUploadUrl({ key, contentType, expiresInSeconds }) {
       return getSignedUrl(client, new PutObjectCommand({ Bucket: env.STORAGE_S3_BUCKET, Key: key, ContentType: contentType }), { expiresIn: expiresInSeconds });
     },
-    async createDownloadUrl({ key, expiresInSeconds }) {
+    async createDownloadUrl({ key, expiresInSeconds, disposition = 'attachment' }) {
       return getSignedUrl(client, new GetObjectCommand({
         Bucket: env.STORAGE_S3_BUCKET,
         Key: key,
-        ResponseContentDisposition: 'attachment',
+        ResponseContentDisposition: disposition === 'inline' ? 'inline' : 'attachment',
       }), { expiresIn: expiresInSeconds });
     },
     async head(key) {

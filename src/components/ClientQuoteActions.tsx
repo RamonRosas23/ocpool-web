@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { PrivateDialog } from '@/components/private/ui';
+import { changeRequestBody } from '@/lib/change-request';
 
 type QuoteVersionActionData = Readonly<{
   id: string;
@@ -63,6 +64,11 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
   // cacheada de la anterior no debe reaparecer bajo el mismo componente.
   useEffect(() => { setPreviewUrl(null); }, [version.id]);
 
+  // En pantallas táctiles muchos navegadores (Chrome en Android) no muestran un PDF dentro de un
+  // iframe: ahí se ofrece abrirlo en el visor del teléfono en vez de un recuadro que no carga.
+  const [touchPreview, setTouchPreview] = useState(false);
+  useEffect(() => { setTouchPreview(window.matchMedia('(pointer: coarse)').matches); }, []);
+
   // Revisar el PDF sin salir de la página: se incrusta la misma URL firmada que ya usa la descarga,
   // en vez de obligar a abrir una pestaña nueva antes de poder decidir.
   //
@@ -78,7 +84,7 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
     const requestedVersionId = version.id;
     setPreviewLoading(true);
     try {
-      const response = await fetch(`/api/portal/quotes/${quoteId}/pdf?versionId=${encodeURIComponent(requestedVersionId)}`, { credentials: 'include', cache: 'no-store' });
+      const response = await fetch(`/api/portal/quotes/${quoteId}/pdf?versionId=${encodeURIComponent(requestedVersionId)}&disposition=inline`, { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<{ downloadUrl: string }>(response);
       if (versionIdRef.current === requestedVersionId) setPreviewUrl(data.downloadUrl);
     } catch (caught) {
@@ -100,7 +106,24 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
     setPreviewUrl(null);
     idempotencyKeyRef.current = createIdempotencyKey();
     setDialogOpen(true);
-    void loadPreview();
+    if (!touchPreview) void loadPreview();
+  };
+
+  // Abre el PDF en el visor del dispositivo. La pestaña se abre dentro del gesto del usuario (Safari
+  // bloquea window.open después de un await) y luego recibe la URL firmada, que dura poco.
+  const openPdfInViewer = async () => {
+    const viewer = window.open('', '_blank');
+    if (viewer) viewer.opener = null;
+    setPdfError(null);
+    try {
+      const response = await fetch(`/api/portal/quotes/${quoteId}/pdf?versionId=${encodeURIComponent(version.id)}&disposition=inline`, { credentials: 'include', cache: 'no-store' });
+      const data = await readResponse<{ downloadUrl: string }>(response);
+      if (viewer) viewer.location.href = data.downloadUrl;
+      else window.location.assign(data.downloadUrl);
+    } catch (caught) {
+      viewer?.close();
+      setAcceptanceError(caught instanceof Error ? caught.message : 'No fue posible abrir el PDF.');
+    }
   };
 
   const downloadPdf = async () => {
@@ -109,7 +132,14 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
     try {
       const response = await fetch(`/api/portal/quotes/${quoteId}/pdf?versionId=${encodeURIComponent(version.id)}`, { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<{ downloadUrl: string }>(response);
-      window.open(data.downloadUrl, '_blank', 'noopener,noreferrer');
+      // La URL firmada ya pide descargar: un enlace en la misma pestaña guarda el archivo sin dejar
+      // una pestaña en blanco (y sin depender de ventanas emergentes).
+      const link = document.createElement('a');
+      link.href = data.downloadUrl;
+      link.rel = 'noopener';
+      document.body.append(link);
+      link.click();
+      link.remove();
     } catch (caught) {
       setPdfError(caught instanceof Error ? caught.message : 'No fue posible abrir el PDF.');
     } finally {
@@ -151,7 +181,7 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
         cache: 'no-store',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          body: `Solicitud de cambios en la propuesta V${version.versionNumber}:\n\n${changeMessage.trim()}`,
+          body: changeRequestBody(version.versionNumber, changeMessage),
           idempotencyKey: `portal-change-request-${requestId}-${version.id}-${Date.now()}`,
         }),
       });
@@ -219,11 +249,13 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
     <PrivateDialog open={dialogOpen} onClose={() => { if (!accepting) setDialogOpen(false); }} className="client-accept-dialog" overlayClassName="client-accept-overlay" labelledBy="client-accept-title" describedBy="client-accept-description" initialFocusRef={signerInputRef}>
       <div className="client-accept-dialog__head"><div><p className="client-eyebrow">Decisión sobre tu propuesta</p><h2 id="client-accept-title">Aceptar versión {version.versionNumber}</h2></div><button className="client-accept-dialog__close" type="button" onClick={() => setDialogOpen(false)} disabled={accepting} aria-label="Cerrar aceptación"><X size={20} aria-hidden="true" /></button></div>
       {accepted ? <div className="client-accept-success" role="status"><span className="client-accept-success__mark" aria-hidden="true">✓</span><h3>Propuesta aceptada.</h3><p>La aceptación quedó registrada y tu expediente se actualizó. Conserva el PDF para tus archivos.</p><button className="client-quote-action client-quote-action--primary" type="button" onClick={() => { setDialogOpen(false); onAccepted(); }}>Continuar</button></div> : <form onSubmit={submitAcceptance}>
-        <p id="client-accept-description" className="client-accept-dialog__copy">Revisa el PDF aquí mismo y confirma que deseas avanzar con esta propuesta. Esta acción fija la versión aceptada y no permite modificarla.</p>
+        <p id="client-accept-description" className="client-accept-dialog__copy">{touchPreview ? 'Revisa el PDF' : 'Revisa el PDF aquí mismo'} y confirma que deseas avanzar con esta propuesta. Esta acción fija la versión aceptada y no permite modificarla.</p>
         <div className="client-accept-preview" aria-label="Vista previa del PDF">
+          {touchPreview ? <div className="client-accept-preview__touch"><p>Abre la propuesta en el visor de PDF de tu teléfono, revísala y regresa aquí para confirmar.</p><button className="client-quote-action client-quote-action--secondary" type="button" onClick={() => void openPdfInViewer()}>Abrir PDF de la versión {version.versionNumber}</button></div> : <>
           {previewLoading && <div className="client-accept-preview__loading" role="status">Cargando vista previa…</div>}
           {!previewLoading && previewUrl && <iframe src={previewUrl} title={`Propuesta versión ${version.versionNumber}`} />}
           {!previewLoading && !previewUrl && <div className="client-accept-preview__loading">No fue posible mostrar la vista previa; usa &quot;Descargar PDF&quot;.</div>}
+          </>}
         </div>
         <label className="client-accept-field"><span>Nombre de quien acepta</span><input ref={signerInputRef} value={signerName} onChange={(event) => setSignerName(event.target.value)} autoComplete="name" maxLength={180} placeholder="Escribe tu nombre completo" /></label>
         <label className="client-accept-check"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} /><span>Confirmo que revisé la propuesta, el PDF y las condiciones comerciales de la versión {version.versionNumber}.</span></label>

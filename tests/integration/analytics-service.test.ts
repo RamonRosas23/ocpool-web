@@ -229,7 +229,9 @@ describe('analytics dashboard service', () => {
       { status: 'ACEPTADA', count: 1 },
       { status: 'ENVIADA', count: 1 },
     ]);
-    expect(result.workload.every((row) => row.suppressed || row.displayName.includes('Analytics'))).toBe(true);
+    // La carga global incluye a todo el personal con trabajo abierto (en una base compartida también
+    // piloto/QA): el invariante de privacidad es que sólo se ve el detalle con 5 o más observaciones.
+    expect(result.workload.every((row) => row.suppressed ? row.activeRequests === null && row.draftQuotes === null : (row.activeRequests ?? 0) + (row.draftQuotes ?? 0) >= 5)).toBe(true);
   });
 
   it('denies dashboard access to an actor without the metrics permission', async () => {

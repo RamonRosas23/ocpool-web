@@ -11,7 +11,9 @@ const MAX_DETAIL_LENGTH = 160;
 export const AUDIT_DEFAULT_LIMIT = 25;
 export const AUDIT_MAX_LIMIT = 50;
 
-export const AUDIT_CATEGORIES = ['commercial', 'communication', 'documents', 'notifications', 'security'] as const;
+// 'signins' es un corte de 'security' (misma fuente y permiso): sólo accesos y sus fallos, para
+// responder "¿quién entró?" sin el ruido de solicitudes de enlace, sesiones y cierres.
+export const AUDIT_CATEGORIES = ['commercial', 'communication', 'documents', 'notifications', 'security', 'signins'] as const;
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
 
 export const AUDIT_OUTCOMES = ['SUCCESS', 'DENIED', 'FAILURE'] as const;
@@ -25,7 +27,7 @@ type DetailDefinition = {
 };
 
 export type AuditActionDefinition = {
-  category: Exclude<AuditCategory, 'security'>;
+  category: Exclude<AuditCategory, 'security' | 'signins'>;
   label: string;
   details: readonly DetailDefinition[];
 };
@@ -178,6 +180,8 @@ export type AuditEntry = {
   action: string;
   outcome: AuditOutcome;
   actorLabel: string;
+  /** Rol del empleado ("Administrador", "Ventas"…): responde "¿quién entró como admin?". */
+  actorRole: string | null;
   actorKey: string | null;
   entityLabel: string;
   entityLink: AuditEntityLink | null;
@@ -351,14 +355,21 @@ export function classifyAuditAction(action: string): AuditActionDefinition | nul
   return AUDIT_ACTION_DEFINITIONS[action] ?? null;
 }
 
-export function auditActionsForCategory(category: Exclude<AuditCategory, 'security'> | null): string[] {
+export function auditActionsForCategory(category: Exclude<AuditCategory, 'security' | 'signins'> | null): string[] {
   return Object.entries(AUDIT_ACTION_DEFINITIONS)
     .filter(([, definition]) => category === null || definition.category === category)
     .map(([action]) => action);
 }
 
-export function knownAuthEventTypes(): string[] {
-  return Object.keys(AUTH_EVENT_LABELS);
+const SIGN_IN_EVENT_TYPES = ['LOGIN_SUCCESS', 'LOGIN_FAILURE', 'MFA_FAILURE', 'MAGIC_LINK_CONSUMED'] as const;
+
+export function knownAuthEventTypes(category: AuditCategory | null = null): string[] {
+  return category === 'signins' ? [...SIGN_IN_EVENT_TYPES] : Object.keys(AUTH_EVENT_LABELS);
+}
+
+/** Las dos categorías que se leen de los eventos de identidad (y exigen `audit.security.read`). */
+export function isSecurityAuditCategory(category: AuditCategory | null | undefined): boolean {
+  return category === 'security' || category === 'signins';
 }
 
 function safeDetailValue(value: unknown): string | null {

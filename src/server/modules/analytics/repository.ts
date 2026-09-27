@@ -1,6 +1,6 @@
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
-import type { DashboardQuery } from '@/server/modules/analytics/domain';
+import { dashboardRangeUpperBound, type DashboardQuery } from '@/server/modules/analytics/domain';
 import { getNotificationOperationalHealth } from '@/server/modules/notifications/operations';
 
 const OPEN_REQUEST_STATUSES = ['RECIBIDA', 'EN_REVISION', 'INFORMACION_REQUERIDA', 'EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION', 'PENDIENTE_DE_APROBACION'] as const;
@@ -49,17 +49,19 @@ function sortCounts<T extends { count: number }>(rows: T[], key: keyof T): T[] {
 }
 
 export async function readDashboardAggregates(prisma: PrismaClient, query: DashboardRepositoryQuery): Promise<DashboardAggregates> {
+  // `query.to` es el inicio del último día (inclusivo); el filtro necesita el inicio del siguiente.
+  const until = dashboardRangeUpperBound(query);
   const requestPeriodWhere: Prisma.QuoteRequestWhereInput = {
     ...requestScopeWhere(query),
-    createdAt: { gte: query.from, lt: query.to },
+    createdAt: { gte: query.from, lt: until },
   };
   const quotePeriodWhere: Prisma.QuoteWhereInput = quoteScopeWhere(query);
   const quoteVersionPeriodWhere: Prisma.QuoteVersionWhereInput = {
-    createdAt: { gte: query.from, lt: query.to },
+    createdAt: { gte: query.from, lt: until },
     quote: quotePeriodWhere,
   };
   const statusHistoryPeriodWhere: Prisma.QuoteStatusHistoryWhereInput = {
-    createdAt: { gte: query.from, lt: query.to },
+    createdAt: { gte: query.from, lt: until },
     toStatus: 'ENVIADA',
     quoteVersion: { quote: quotePeriodWhere },
   };
@@ -93,7 +95,7 @@ export async function readDashboardAggregates(prisma: PrismaClient, query: Dashb
     }),
     prisma.requestAssignment.findMany({
       where: {
-        assignedAt: { gte: query.from, lt: query.to },
+        assignedAt: { gte: query.from, lt: until },
         ...(query.scope === 'self' && query.actorUserId ? { assignedToId: query.actorUserId } : {}),
         quoteRequest: requestScopeWhere(query),
       },
@@ -104,7 +106,7 @@ export async function readDashboardAggregates(prisma: PrismaClient, query: Dashb
       select: { createdAt: true, quoteVersion: { select: { quote: { select: { quoteRequest: { select: { createdAt: true } } } } } } },
     }),
     prisma.quoteAcceptance.findMany({
-      where: { acceptedAt: { gte: query.from, lt: query.to }, quote: quotePeriodWhere },
+      where: { acceptedAt: { gte: query.from, lt: until }, quote: quotePeriodWhere },
       select: {
         acceptedAt: true,
         quoteVersion: {
@@ -129,7 +131,7 @@ export async function readDashboardAggregates(prisma: PrismaClient, query: Dashb
       take: 5_000,
     }),
     getNotificationOperationalHealth(prisma),
-    prisma.notificationDelivery.count({ where: { status: 'FAILED', updatedAt: { gte: query.from, lt: query.to } } }),
+    prisma.notificationDelivery.count({ where: { status: 'FAILED', updatedAt: { gte: query.from, lt: until } } }),
   ]);
 
   const workloadMap = new Map<string, { activeRequests: number; draftQuotes: number; oldestOpenAt: Date | null }>();

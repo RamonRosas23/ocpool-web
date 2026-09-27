@@ -11,6 +11,7 @@ import {
   classifyAuditAction,
   classifyAuthEvent,
   encodeAuditCursor,
+  isSecurityAuditCategory,
   entityLabelForType,
   normalizeAuditQuery,
   opaqueAuditKey,
@@ -41,22 +42,27 @@ export type AuditServiceDependencies = {
 const AUDIT_RATE_LIMIT_SCOPE = 'audit-read';
 
 function sourceForInput(input: AuditQueryInput): AuditSource {
-  return input.category === 'security' ? 'security' : 'operational';
+  return isSecurityAuditCategory(input.category) ? 'security' : 'operational';
 }
+
+type AuditUser = { id: string; displayName: string; type: string; roles: Array<{ role: { name: string } }> };
 
 function requireAuditAccess(actor: Actor, source: AuditSource): void {
   if (actor.type !== 'EMPLOYEE') throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
   requirePermission(actor, source === 'security' ? 'audit.security.read' : 'audit.read');
 }
 
-function projectActor(actorId: string | null, users: Map<string, { id: string; displayName: string; type: string }>, secret: string): { actorLabel: string; actorKey: string | null } {
-  if (!actorId) return { actorLabel: 'Sistema', actorKey: null };
+function projectActor(actorId: string | null, users: Map<string, AuditUser>, secret: string, source: AuditSource = 'operational'): { actorLabel: string; actorRole: string | null; actorKey: string | null } {
+  // En identidad, un evento sin usuario no lo hizo "el sistema": es un intento con un correo que no
+  // corresponde a ninguna cuenta (o una cuenta ya retirada).
+  if (!actorId) return { actorLabel: source === 'security' ? 'Cuenta no identificada' : 'Sistema', actorRole: null, actorKey: null };
   const user = users.get(actorId);
-  if (!user || user.type !== 'EMPLOYEE') return { actorLabel: 'Cuenta autenticada', actorKey: null };
-  return { actorLabel: user.displayName, actorKey: opaqueAuditKey('actor', user.id, secret) };
+  if (!user || user.type !== 'EMPLOYEE') return { actorLabel: user?.type === 'CUSTOMER' ? 'Cliente' : 'Cuenta autenticada', actorRole: null, actorKey: null };
+  const roleNames = user.roles.map(({ role }) => role.name).sort((left, right) => left.localeCompare(right, 'es-MX'));
+  return { actorLabel: user.displayName, actorRole: roleNames.length ? roleNames.join(' · ') : null, actorKey: opaqueAuditKey('actor', user.id, secret) };
 }
 
-function projectRow(row: AuditRow, users: Map<string, { id: string; displayName: string; type: string }>, secret: string): AuditEntry {
+function projectRow(row: AuditRow, users: Map<string, AuditUser>, secret: string): AuditEntry {
   if (row.source === 'operational') {
     const definition = classifyAuditAction(row.action);
     if (!definition) throw new AppError('INTERNAL_ERROR', 'No fue posible proyectar la auditoría.', 500);
@@ -68,6 +74,7 @@ function projectRow(row: AuditRow, users: Map<string, { id: string; displayName:
       action: auditActionLabel(row.action),
       outcome: row.outcome,
       actorLabel: actor.actorLabel,
+      actorRole: actor.actorRole,
       actorKey: actor.actorKey,
       entityLabel: entityLabelForType(row.entityType),
       entityLink: auditEntryLink(row.entityType, row.entityId, row.metadata),
@@ -77,7 +84,9 @@ function projectRow(row: AuditRow, users: Map<string, { id: string; displayName:
 
   const definition = classifyAuthEvent(row.eventType);
   if (!definition) throw new AppError('INTERNAL_ERROR', 'No fue posible proyectar la auditoría de seguridad.', 500);
-  const actor = projectActor(row.userId, users, secret);
+  // Sin usuario: si el evento fue exitoso la cuenta existió y después se retiró; si no, el correo no
+  // correspondía a ninguna cuenta.
+  const actor = row.userId ? projectActor(row.userId, users, secret, 'security') : { actorLabel: row.outcome === 'SUCCESS' ? 'Cuenta retirada' : 'Cuenta no identificada', actorRole: null, actorKey: null };
   return {
     eventKey: opaqueAuditKey('event', row.id, secret),
     occurredAt: row.createdAt.toISOString(),
@@ -85,6 +94,7 @@ function projectRow(row: AuditRow, users: Map<string, { id: string; displayName:
     action: authEventActionLabel(row.eventType),
     outcome: row.outcome,
     actorLabel: actor.actorLabel,
+    actorRole: actor.actorRole,
     actorKey: actor.actorKey,
     entityLabel: entityLabelForType('auth_event'),
     entityLink: null,
@@ -120,7 +130,7 @@ export async function getStaffAudit(actor: Actor, input: AuditQueryInput = {}, d
   const page = await readAuditPage(prisma, { ...query, source });
   const users = page.actorIds.length === 0
     ? []
-    : await prisma.user.findMany({ where: { id: { in: page.actorIds } }, select: { id: true, displayName: true, type: true } });
+    : await prisma.user.findMany({ where: { id: { in: page.actorIds } }, select: { id: true, displayName: true, type: true, roles: { select: { role: { select: { name: true } } } } } });
   const userMap = new Map(users.map((user) => [user.id, user]));
   const items = page.rows.map((row) => projectRow(row, userMap, cursorSecret));
   const last = page.rows.at(-1);

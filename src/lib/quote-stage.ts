@@ -21,6 +21,10 @@ export type QuoteStageInput = {
   canSend: boolean;
   canEdit: boolean;
   projectCreated?: boolean;
+  /** Última decisión de gerencia si fue un rechazo (y aún no se vuelve a pedir): su motivo guía a ventas. */
+  approvalRejectedReason?: string | null;
+  /** Lo que el cliente pidió cambiar de la versión enviada (desde el portal), si lo pidió. */
+  changesRequested?: string | null;
 };
 
 const STEP_LABELS: Record<QuoteStageStep['key'], string> = {
@@ -46,7 +50,7 @@ export function quoteStageSteps(input: QuoteStageInput): QuoteStageStep[] {
     if (accepted) state = 'done';
     if (closed && position === index) state = 'closed';
     let note: string | undefined;
-    if (key === 'review' && input.approvalNeeded) note = input.approvalGranted ? 'Aprobada' : input.approvalRequested ? 'En aprobación' : 'Requiere aprobación';
+    if (key === 'review' && input.approvalNeeded) note = input.approvalGranted ? 'Aprobada' : input.approvalRequested ? 'En aprobación' : input.approvalRejectedReason !== undefined && input.approvalRejectedReason !== null ? 'Rechazada por gerencia' : 'Requiere aprobación';
     if (key === 'sent') {
       if (input.versionStatus === 'EN_NEGOCIACION') note = 'En negociación';
       if (input.versionStatus === 'RECHAZADA') note = 'Rechazada';
@@ -66,12 +70,21 @@ export function quoteNextStep(input: QuoteStageInput): QuoteNextStep {
   }
   if (status === 'EN_REVISION') {
     if (input.approvalNeeded && !input.approvalGranted) {
+      if (!input.approvalRequested && input.approvalRejectedReason !== undefined && input.approvalRejectedReason !== null) {
+        // Sin el punto final del motivo: «…10%». y no «…10%.».
+        const reason = input.approvalRejectedReason.trim().replace(/[.\s]+$/u, '');
+        return { title: 'Gerencia rechazó la aprobación', detail: reason ? `Motivo: «${reason}». Ajusta la propuesta (regrésala a borrador) o vuelve a solicitarla explicando por qué.` : 'Ajusta la propuesta (regrésala a borrador) o vuelve a solicitarla explicando por qué.', tone: 'blocked', target: 'actions' };
+      }
       if (!input.approvalRequested) return { title: 'Solicita la aprobación', detail: 'Esta versión lleva descuento o conceptos especiales: gerencia debe autorizarla antes de enviarla al cliente.', tone: 'blocked', target: 'actions' };
       if (input.canApprove) return { title: 'Decide la aprobación', detail: 'Revisa el descuento o el concepto especial y apruébalo o recházalo con un motivo.', tone: 'action', target: 'actions' };
       return { title: 'Esperando aprobación', detail: 'Gerencia ya recibió la solicitud. En cuanto decida podrás enviar la cotización.', tone: 'waiting' };
     }
     if (input.canSend) return { title: 'Envía la cotización', detail: 'Todo listo: confirma destinatario, total y vigencia, y publícala para el cliente.', tone: 'action', target: 'actions' };
     return { title: 'Lista para enviar', detail: 'Un perfil con permiso de envío puede publicarla para el cliente.', tone: 'waiting' };
+  }
+  if ((status === 'ENVIADA' || status === 'EN_NEGOCIACION') && input.changesRequested !== undefined && input.changesRequested !== null) {
+    const asked = input.changesRequested.trim().replace(/[.\s]+$/u, '');
+    return { title: 'El cliente pidió cambios', detail: asked ? `«${asked}». Crea una nueva versión con los ajustes; la actual sigue disponible para el cliente mientras tanto.` : 'Crea una nueva versión con los ajustes; la actual sigue disponible para el cliente mientras tanto.', tone: 'action', target: 'actions' };
   }
   if (status === 'ENVIADA' || status === 'EN_NEGOCIACION') {
     return { title: 'Esperando al cliente', detail: 'El cliente puede aceptarla o pedir cambios desde su portal. Si pide cambios, crea una nueva versión.', tone: 'waiting' };

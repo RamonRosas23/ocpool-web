@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
       filesInternalRead: hasPermission(actor, 'files.internal.read'),
       filesManage: hasPermission(actor, 'files.manage'),
       notificationsRead: hasPermission(actor, 'notifications.read'),
+      notificationsManage: hasPermission(actor, 'notifications.manage'),
       auditRead: hasPermission(actor, 'audit.read'),
       auditSecurityRead: hasPermission(actor, 'audit.security.read'),
       identityUsersManage: hasPermission(actor, 'identity.users.manage'),

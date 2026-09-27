@@ -197,7 +197,7 @@ test.describe('staff quote builder opt-in flow', () => {
 
     const staffActor = { userId, type: 'EMPLOYEE' as const, clientId: null, permissionKeys: new Set(['quotes.read', 'quotes.pdf.generate']), mfaVerified: true };
     const publishStartedAt = new Date();
-    await page.getByRole('button', { name: 'Pasar a revisión' }).click();
+    await page.locator('#quotes-actions').getByRole('button', { name: 'Pasar a revisión' }).click();
     await expect(page.locator('.private-toast').last()).toContainText('revisión', { timeout: 10_000 });
     await expect(page.locator('.quotes-request-row.is-selected')).toContainText('Quote builder client', { timeout: 10_000 });
     const pdfRecoveryStartedAt = new Date();
@@ -224,7 +224,7 @@ test.describe('staff quote builder opt-in flow', () => {
     await expect(page.getByRole('textbox', { name: 'Cantidad de 000 E2E concept', exact: true })).toBeEnabled();
     await expect(page.locator('.quote-document-status')).toHaveText(/Aún no generado/, { timeout: 10_000 });
     await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 10_000 });
-    await page.getByRole('button', { name: 'Pasar a revisión' }).click();
+    await page.locator('#quotes-actions').getByRole('button', { name: 'Pasar a revisión' }).click();
     await expect(page.locator('.private-toast').last()).toContainText('revisión', { timeout: 10_000 });
 
     await recordBaselineMeasurement({
@@ -289,11 +289,12 @@ test.describe('staff quote builder opt-in flow', () => {
     await expect(page.getByRole('heading', { name: 'PDF y aceptación · V1' })).toBeVisible();
     await expect(page.locator('.quote-document-status')).toHaveText(/Listo para compartir/);
     const pdfResponsePromise = page.waitForResponse((response) => response.url().includes(`/api/staff/quotes/versions/`) && response.url().endsWith('/pdf') && response.request().method() === 'GET');
-    const pdfPopupPromise = page.waitForEvent('popup');
+    // La descarga ocurre en la misma pestaña (sin ventana emergente en blanco).
+    const pdfDownloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Descargar PDF' }).click();
-    const [pdfResponse, pdfPopup] = await Promise.all([pdfResponsePromise, pdfPopupPromise]);
+    const [pdfResponse, pdfDownload] = await Promise.all([pdfResponsePromise, pdfDownloadPromise]);
     expect((await pdfResponse.json() as { downloadUrl: string }).downloadUrl).toContain('X-Amz-');
-    await pdfPopup.close();
+    expect(pdfDownload.suggestedFilename()).toMatch(/\.pdf$/u);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
     await expect(page.locator('.quotes-request-row.is-selected')).toContainText('Quote builder client', { timeout: 20_000 });
@@ -354,11 +355,21 @@ test.describe('staff quote builder opt-in flow', () => {
 
     // Q1-05: el descuento y la línea especial autoguardan; "Pasar a revisión" espera a que el autosave asiente.
     await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 10_000 });
-    await page.getByRole('button', { name: 'Pasar a revisión' }).click();
+    await page.locator('#quotes-actions').getByRole('button', { name: 'Pasar a revisión' }).click();
     await expect(page.locator('.private-toast').last()).toContainText('revisión', { timeout: 10_000 });
-    await page.getByRole('button', { name: 'Solicitar aprobación', exact: true }).click();
+    // El "Siguiente paso" lleva directo a la acción: pedir la aprobación abre un resumen con el
+    // motivo para gerencia (que después aparece como "Motivo de ventas" en su cola).
+    await page.locator('.quotes-next').getByRole('button', { name: 'Solicitar aprobación', exact: true }).click();
+    const discountRequestDialog = page.getByRole('dialog', { name: 'Solicitar aprobación del descuento' });
+    await expect(discountRequestDialog).toBeVisible();
+    await discountRequestDialog.getByLabel('Motivo para gerencia (recomendado)').fill('Cliente frecuente con compra por volumen.');
+    await discountRequestDialog.getByRole('button', { name: 'Enviar a aprobación' }).click();
     await expect(page.locator('.private-toast').last()).toContainText('Aprobación solicitada', { timeout: 10_000 });
     await page.getByRole('button', { name: 'Solicitar aprobación de concepto especial' }).click();
+    const specialRequestDialog = page.getByRole('dialog', { name: 'Solicitar aprobación del concepto especial' });
+    // El motivo que ventas ya escribió en la línea especial se propone como punto de partida.
+    await expect(specialRequestDialog.getByLabel('Motivo para gerencia (recomendado)')).toHaveValue('Condición de sitio no catalogada');
+    await specialRequestDialog.getByRole('button', { name: 'Enviar a aprobación' }).click();
     await expect(page.locator('.private-toast').last()).toContainText('Aprobación solicitada', { timeout: 10_000 });
 
     const browser = page.context().browser();
@@ -386,12 +397,13 @@ test.describe('staff quote builder opt-in flow', () => {
       await expect(rejectDialog.getByRole('button', { name: 'Confirmar rechazo' })).toBeEnabled();
       await rejectDialog.getByRole('button', { name: 'Confirmar rechazo' }).click();
       await expect(approverPage.locator('.private-toast').last()).toContainText('Aprobación rechazada', { timeout: 10_000 });
-      await expect(approverPage.getByRole('button', { name: 'Solicitar aprobación', exact: true })).toBeVisible({ timeout: 10_000 });
+      await expect(approverPage.locator('#quotes-actions').getByRole('button', { name: 'Solicitar aprobación', exact: true })).toBeVisible({ timeout: 10_000 });
 
       // Re-request the now-rejected discount approval as the original salesperson, then approve for real.
       await page.reload();
-      await expect(page.getByRole('button', { name: 'Solicitar aprobación', exact: true })).toBeVisible({ timeout: 10_000 });
-      await page.getByRole('button', { name: 'Solicitar aprobación', exact: true }).click();
+      await expect(page.locator('#quotes-actions').getByRole('button', { name: 'Solicitar aprobación', exact: true })).toBeVisible({ timeout: 10_000 });
+      await page.locator('#quotes-actions').getByRole('button', { name: 'Solicitar aprobación', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Solicitar aprobación del descuento' }).getByRole('button', { name: 'Enviar a aprobación' }).click();
       await expect(page.locator('.private-toast').last()).toContainText('Aprobación solicitada', { timeout: 10_000 });
       await approverPage.reload();
       await expect(approverPage.getByRole('button', { name: 'Aprobar descuento' })).toBeVisible({ timeout: 10_000 });

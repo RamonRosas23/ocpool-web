@@ -44,7 +44,19 @@ async function main(): Promise<void> {
 
   console.log('Retirando notificaciones, aceptaciones y documentos…');
   const quoteIds = (await prisma.quote.findMany({ where: { quoteRequestId: { in: manifest.requestIds } }, select: { id: true } })).map(({ id }) => id);
-  await prisma.notificationDelivery.deleteMany({ where: { outboxEvent: { aggregateId: { in: [...manifest.requestIds, ...quoteIds] } } } });
+  // Lo que las sesiones del piloto generan además de expedientes y cotizaciones: mensajes, archivos,
+  // aprobaciones y cuentas de portal aprovisionadas al publicar. Sus avisos (outbox) se agregan por
+  // conversación, archivo, documento o usuario, no por expediente -- sin esto quedaban entregas
+  // pendientes de conversaciones ya borradas que el worker seguía intentando enviar.
+  const conversationIds = (await prisma.conversation.findMany({ where: { quoteRequestId: { in: manifest.requestIds } }, select: { id: true } })).map(({ id }) => id);
+  const messageIds = (await prisma.conversationMessage.findMany({ where: { conversationId: { in: conversationIds } }, select: { id: true } })).map(({ id }) => id);
+  const files = await prisma.fileAttachment.findMany({ where: { quoteRequestId: { in: manifest.requestIds } }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } });
+  const fileIds = files.map(({ id }) => id);
+  const approvalIds = (await prisma.quoteApproval.findMany({ where: { quoteVersionId: { in: versionIds } }, select: { id: true } })).map(({ id }) => id);
+  const customerUserIds = (await prisma.user.findMany({ where: { clientId: { in: manifest.clientIds }, type: 'CUSTOMER' }, select: { id: true } })).map(({ id }) => id);
+  const pilotUserIds = [...new Set([...manifest.userIds, ...customerUserIds])];
+  const aggregateIds = [...manifest.requestIds, ...quoteIds, ...conversationIds, ...fileIds, ...documents.map(({ id }) => id), ...pilotUserIds];
+  await prisma.notificationDelivery.deleteMany({ where: { outboxEvent: { aggregateId: { in: aggregateIds } } } });
   await prisma.quoteApproval.deleteMany({ where: { quoteVersionId: { in: versionIds } } });
   await prisma.quoteAcceptance.deleteMany({ where: { quoteId: { in: quoteIds } } });
   await prisma.quotePublication.deleteMany({ where: { documentId: { in: documents.map(({ id }) => id) } } });
@@ -53,15 +65,21 @@ async function main(): Promise<void> {
 
   console.log('Retirando cotizaciones y expedientes…');
   await prisma.quote.deleteMany({ where: { quoteRequestId: { in: manifest.requestIds } } });
-  await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [...manifest.requestIds, ...quoteIds] } } });
-  await prisma.auditLog.deleteMany({ where: { entityId: { in: [...manifest.requestIds, ...quoteIds, ...versionIds] } } });
+  await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+  // La auditoría no tiene FK: se retira lo del piloto por entidad y por cuenta del piloto.
+  await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: [...manifest.requestIds, ...quoteIds, ...versionIds, ...conversationIds, ...messageIds, ...fileIds, ...approvalIds, ...documents.map(({ id }) => id)] } }, { actorUserId: { in: pilotUserIds } }] } });
   await prisma.quoteRequest.deleteMany({ where: { id: { in: manifest.requestIds } } });
+  // Los archivos subidos durante el piloto se fueron en cascada con su expediente; sus objetos no.
+  for (const file of files) {
+    if (file.storageObject?.storageKey) await storage.delete(file.storageObject.storageKey).catch(() => undefined);
+  }
+  await prisma.storageObject.deleteMany({ where: { id: { in: files.map(({ storageObjectId }) => storageObjectId) } } });
   await prisma.clientContact.deleteMany({ where: { id: { in: manifest.contactIds } } });
 
   console.log('Retirando tokens, eventos de autenticación y cuentas…');
   await prisma.authToken.deleteMany({ where: { id: { in: manifest.tokenIds } } });
-  await prisma.authEvent.deleteMany({ where: { userId: { in: manifest.userIds } } });
-  await prisma.session.deleteMany({ where: { userId: { in: manifest.userIds } } });
+  await prisma.authEvent.deleteMany({ where: { userId: { in: pilotUserIds } } });
+  await prisma.session.deleteMany({ where: { userId: { in: pilotUserIds } } });
   // Los usuarios cliente creados para los enlaces mágicos referencian Client vía clientId --
   // deben retirarse antes que los propios clientes, o la FK lo rechaza. Publicar una cotización
   // puede además aprovisionar en automático un usuario de portal adicional (mismo efecto de P1)

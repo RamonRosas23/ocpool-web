@@ -80,7 +80,7 @@ describe('transactional notification fan-out', () => {
       expect(deliveries.find((delivery) => delivery.outboxEventId === quoteSentEvent.id)?.payload).toMatchObject({ folio: request.folio, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
       const acceptedDeliveries = deliveries.filter((delivery) => delivery.outboxEventId === acceptedEvent.id);
       expect(acceptedDeliveries).toHaveLength(2);
-      expect(acceptedDeliveries.find((delivery) => delivery.recipientUserId === employee.id)?.payload).toMatchObject({ totalLabel: '1,250.00 MXN', actionPath: '/staff/requests' });
+      expect(acceptedDeliveries.find((delivery) => delivery.recipientUserId === employee.id)?.payload).toMatchObject({ totalLabel: '1,250.00 MXN', actionPath: `/staff/requests?request=${request.quoteRequestId}` });
       expect(acceptedDeliveries.find((delivery) => delivery.recipientUserId === null)?.payload).toMatchObject({ totalLabel: '1,250.00 MXN', folio: request.folio, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
       expect(deliveries.find((delivery) => delivery.outboxEventId === fileEvent.id)?.payload).toMatchObject({ fileName: 'avance.jpg', actionPath: '/portal/access', actionLabel: 'Solicitar acceso' });
       expect(deliveries.find((delivery) => delivery.outboxEventId === internalEvent.id)).toMatchObject({ status: 'CANCELLED', cancelReason: 'INTERNAL_VISIBILITY', recipientAddressCiphertext: null });

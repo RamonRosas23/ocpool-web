@@ -9,6 +9,7 @@ import { staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 import { deriveGeneratedDocumentState } from '@/server/modules/quote-documents/domain';
 import { isRecoverableNotificationErrorCode } from '@/server/modules/notifications/domain';
 import { getLatestAggregateNotificationDelivery } from '@/server/modules/notifications/operations';
+import { findLatestChangeRequest } from '@/server/modules/messaging/change-requests';
 import { resolveQuoteWorkspaceProjection, type WorkspaceApprovalStatus, type WorkspaceVersionInput } from '@/server/modules/quotes/workspace-projection';
 import type { QuoteVersionStatus } from '@/server/modules/quotes/domain';
 import { resolveDiscountApprovalThresholdBps } from '@/server/modules/quotes/service';
@@ -529,7 +530,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       name: priceList.name,
       currencyCode: priceList.currencyCode,
     }));
-  const [historyPage, latestDelivery, lastCustomerVisibleMessage, taxProfiles] = await Promise.all([
+  const [historyPage, latestDelivery, lastCustomerVisibleMessage, taxProfiles, changeRequest] = await Promise.all([
     loadQuoteHistoryPage(prisma, versionSummaries.map((version) => version.id), undefined, DEFAULT_QUOTE_HISTORY_PAGE_SIZE),
     quote ? getLatestAggregateNotificationDelivery(prisma, 'QUOTE', quote.id) : Promise.resolve(null),
     prisma.conversationMessage.findFirst({
@@ -542,6 +543,10 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       orderBy: { code: 'asc' },
       select: { id: true, code: true, name: true, ratePercentBasisPoints: true },
     }),
+    // Lo que el cliente pidió cambiar de la versión publicada (desde "Solicitar cambios" del portal).
+    publishedVersionRaw && ['ENVIADA', 'EN_NEGOCIACION'].includes(publishedVersionRaw.status)
+      ? findLatestChangeRequest(prisma, request.id, publishedVersionRaw.versionNumber)
+      : Promise.resolve(null),
   ]);
 
   const projection = resolveQuoteWorkspaceProjection({
@@ -584,6 +589,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
     } : null,
     priceLists,
     taxProfiles,
+    changeRequest: changeRequest ? { at: changeRequest.at.toISOString(), message: changeRequest.message } : null,
     projection,
     meta: {
       timezone: readServerEnv().APP_TIMEZONE,
