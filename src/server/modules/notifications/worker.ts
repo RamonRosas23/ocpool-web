@@ -167,11 +167,17 @@ function assertPollInterval(pollIntervalMs: number): void {
 function waitForPoll(signal: AbortSignal | undefined, pollIntervalMs: number): Promise<void> {
   if (signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
-    const timeout = setTimeout(resolve, pollIntervalMs);
-    signal?.addEventListener('abort', () => {
+    // El listener de "abort" se retira cuando vence el intervalo: antes quedaba colgado del AbortSignal
+    // en cada ciclo ocioso (cada 2 s) y Node lo reportaba como MaxListenersExceededWarning.
+    const onAbort = () => {
       clearTimeout(timeout);
       resolve();
-    }, { once: true });
+    };
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, pollIntervalMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -181,6 +187,7 @@ export async function runNotificationWorker(input: RunNotificationWorkerInput): 
   while (!input.signal?.aborted) {
     const result = await processBatch(input);
     input.onBatch?.(result);
-    if (result.claimed === 0 && result.fanoutClaimed === 0) await waitForPoll(input.signal, input.pollIntervalMs);
+    // `fanoutClaimed` es opcional: si falta, el lote igual cuenta como vacío (antes giraba sin pausa).
+    if (result.claimed === 0 && (result.fanoutClaimed ?? 0) === 0) await waitForPoll(input.signal, input.pollIntervalMs);
   }
 }

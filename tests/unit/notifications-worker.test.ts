@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { encryptSecret } from '@/server/auth/crypto';
 import { readServerEnv } from '@/server/env';
@@ -97,6 +98,33 @@ describe('notification worker policies', () => {
       },
     });
     expect(calls).toBe(1);
+  });
+
+  it('waits between idle polls without piling abort listeners on the shutdown signal', async () => {
+    // Antes cada ciclo ocioso dejaba colgado un listener de "abort" (43 mil al día con el intervalo de
+    // 2 s): Node lo reportaba como MaxListenersExceededWarning en producción.
+    const controller = new AbortController();
+    let calls = 0;
+    let listenersSeen = 0;
+    const startedAt = Date.now();
+    await runNotificationWorker({
+      prisma: {} as PrismaClient,
+      batchSize: 1,
+      leaseSeconds: 60,
+      maxAttempts: 3,
+      pollIntervalMs: 100,
+      signal: controller.signal,
+      processBatch: async () => {
+        calls += 1;
+        listenersSeen = Math.max(listenersSeen, getEventListeners(controller.signal, 'abort').length);
+        if (calls === 4) controller.abort();
+        // Sin `fanoutClaimed` (es opcional): un lote vacío igual debe esperar el intervalo, no girar en seco.
+        return { claimed: 0, sent: 0, retried: 0, failed: 0 };
+      },
+    });
+    expect(calls).toBe(4);
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(3 * 100 - 20);
+    expect(listenersSeen).toBe(0);
   });
 
   it('deep-links a customer magic link to the exact request when the outbox carries one (D2-06/U1)', async () => {
