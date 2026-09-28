@@ -134,6 +134,7 @@ async function getDownload(
       quoteId: true,
       versionNumber: true,
       status: true,
+      quote: { select: { quoteRequest: { select: { folio: true } } } },
       generatedDocuments: {
         where: { documentType: 'QUOTE_PDF' },
         include: { storageObject: true },
@@ -152,7 +153,12 @@ async function getDownload(
   if (document.byteSize > BigInt(Number.MAX_SAFE_INTEGER)) throw new AppError('CONFLICT', 'El PDF de la cotización no está disponible.', 409);
   const head = await storage.head(document.storageObject.storageKey);
   if (!head || head.contentLength !== Number(document.byteSize) || head.contentType !== PDF_CONTENT_TYPE) throw new AppError('CONFLICT', 'El PDF de la cotización no está disponible.', 409);
-  const downloadUrl = await storage.createDownloadUrl({ key: document.storageObject.storageKey, expiresInSeconds, disposition: dependencies.disposition ?? 'attachment' });
+  const downloadUrl = await storage.createDownloadUrl({
+    key: document.storageObject.storageKey,
+    expiresInSeconds,
+    disposition: dependencies.disposition ?? 'attachment',
+    fileName: `Cotización ${version.quote.quoteRequest.folio} v${version.versionNumber}.pdf`,
+  });
   const expiresAt = new Date(now.getTime() + expiresInSeconds * 1000);
   await auditDownload(prisma, actor, { id: document.id, quoteId: version.quoteId, quoteVersionId: version.id, versionNumber: version.versionNumber }, expiresInSeconds);
   return {

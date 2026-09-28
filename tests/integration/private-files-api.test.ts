@@ -14,6 +14,7 @@ import { GET as portalFileDownload } from '@/app/api/portal/requests/[id]/files/
 import { GET as staffFilesGet, POST as staffFilesPost } from '@/app/api/staff/quote-requests/[id]/files/route';
 import { POST as staffFileComplete } from '@/app/api/staff/quote-requests/[id]/files/[fileId]/complete/route';
 import { GET as capabilitiesGet } from '@/app/api/staff/capabilities/route';
+import { PUT as storageObjectPut } from '@/app/api/storage/object/route';
 
 describe('private files API', () => {
   const prisma = getPrisma();
@@ -30,6 +31,13 @@ describe('private files API', () => {
   let contactAId = '';
   let contactBId = '';
   let limitedRoleId = '';
+
+  // La subida va por la pasarela del propio sitio (el navegador ya no habla con MinIO directamente).
+  const uploadThroughApp = (uploadUrl: string, body: string) => storageObjectPut(new Request(new URL(uploadUrl, readServerEnv().APP_URL), {
+    method: 'PUT',
+    headers: { origin: new URL(readServerEnv().APP_URL).origin, 'content-type': 'application/pdf' },
+    body,
+  }));
 
   const endpoint = (path: string, token?: string, method = 'GET', body?: unknown, origin = readServerEnv().APP_URL) => new NextRequest(`${readServerEnv().APP_URL}${path}`, {
     method,
@@ -111,7 +119,7 @@ describe('private files API', () => {
     const reservedBody = await reserved.json() as { file: { id: string; status: string }; uploadUrl: string };
     expect(reservedBody.file.status).toBe('PENDING_SCAN');
     expect(reservedBody).not.toHaveProperty('storageKey');
-    const upload = await fetch(reservedBody.uploadUrl, { method: 'PUT', headers: { 'content-type': 'application/pdf' }, body: '%PDF-' });
+    const upload = await uploadThroughApp(reservedBody.uploadUrl, '%PDF-');
     expect(upload.ok).toBe(true);
     const complete = await portalFileComplete(endpoint(`/api/portal/requests/${requestAId}/files/${reservedBody.file.id}/complete`, customerAToken, 'POST', {}), fileContext(requestAId, reservedBody.file.id));
     expect(complete.status).toBe(200);
@@ -134,7 +142,7 @@ describe('private files API', () => {
     const reserved = await staffFilesPost(endpoint(`/api/staff/quote-requests/${requestAId}/files`, managerToken, 'POST', reserveBody('files-internal-01', 'INTERNAL')), context(requestAId));
     expect(reserved.status).toBe(201);
     const reservedBody = await reserved.json() as { file: { id: string }; uploadUrl: string };
-    const upload = await fetch(reservedBody.uploadUrl, { method: 'PUT', headers: { 'content-type': 'application/pdf' }, body: '%PDF-' });
+    const upload = await uploadThroughApp(reservedBody.uploadUrl, '%PDF-');
     expect(upload.ok).toBe(true);
     expect((await staffFileComplete(endpoint(`/api/staff/quote-requests/${requestAId}/files/${reservedBody.file.id}/complete`, managerToken, 'POST', {}), fileContext(requestAId, reservedBody.file.id))).status).toBe(200);
     const customerList = await portalFilesGet(endpoint(`/api/portal/requests/${requestAId}/files`, customerAToken), context(requestAId));
