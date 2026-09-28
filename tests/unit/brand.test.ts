@@ -14,7 +14,7 @@ describe('brand identity', () => {
     const files: ReadonlyArray<readonly [string, number]> = [
       ['public/brand/email/ocpool-logo-blanco.png', 40_000],
       ['src/server/modules/quote-documents/assets/ocpool-logo-print.png', 90_000],
-      ['src/server/modules/quote-documents/assets/fonts/CormorantGaramond-SemiBold.ttf', 400_000],
+      ['src/server/modules/quote-documents/assets/fonts/CormorantGaramond-SemiBold.ttf', 1_200_000],
       ['src/server/modules/quote-documents/assets/fonts/Manrope-Regular.ttf', 200_000],
       ['src/server/modules/quote-documents/assets/fonts/Manrope-SemiBold.ttf', 200_000],
       ['src/server/modules/quote-documents/assets/fonts/Manrope-Bold.ttf', 200_000],

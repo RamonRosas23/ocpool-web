@@ -27,6 +27,14 @@ describe('texto enriquecido de la cotización', () => {
     ]);
   });
 
+  it('drops markdown horizontal rules instead of printing dashes', () => {
+    expect(parseRichText('Fin del cuerpo.\n\n---\n\n## Aviso\n***\nTexto')).toEqual([
+      { kind: 'paragraph', text: 'Fin del cuerpo.' },
+      { kind: 'heading', level: 2, text: 'Aviso' },
+      { kind: 'paragraph', text: 'Texto' },
+    ]);
+  });
+
   it('returns nothing for empty or null input and removes control characters', () => {
     expect(parseRichText(null)).toEqual([]);
     expect(parseRichText('   \n\n  ')).toEqual([]);

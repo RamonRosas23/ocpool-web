@@ -31,7 +31,8 @@ export function parseRichText(input: string | null | undefined): RichTextBlock[]
   };
   for (const rawLine of source.split('\n')) {
     const line = rawLine.trim();
-    if (!line) {
+    // Renglón vacío o separador horizontal de Markdown (---, ***, ___): corta el párrafo y no se imprime.
+    if (!line || /^([-*_])(?:\s*\1){2,}$/u.test(line)) {
       flush();
       continue;
     }

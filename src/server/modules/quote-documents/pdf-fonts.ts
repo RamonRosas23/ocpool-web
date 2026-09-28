@@ -7,6 +7,9 @@ import type { PDFDocument, PDFFont } from 'pdf-lib';
  * Tipografía de la marca (Cormorant Garamond para títulos, Manrope para texto) incrustada en el PDF.
  * Helvetica estándar sólo codifica WinAnsi y rompía el render con un "≥" o un emoji en una
  * descripción; aquí cada texto se filtra contra los glifos que la fuente realmente tiene.
+ *
+ * Cormorant viene del proyecto original (github.com/CatharsisFonts/Cormorant): la instancia estática
+ * que genera Google Fonts rompe el recorte de glifos de fontkit y el PDF salía con letras vacías.
  */
 const FONT_DIRECTORY = path.resolve(process.cwd(), 'src/server/modules/quote-documents/assets/fonts');
 const FONT_FILES = {
@@ -15,6 +18,15 @@ const FONT_FILES = {
   semibold: 'Manrope-SemiBold.ttf',
   bold: 'Manrope-Bold.ttf',
 } as const;
+
+// Cifras de documento financiero: alineadas en Cormorant (sus cifras por defecto son de estilo antiguo)
+// y tabulares en Manrope, para que las columnas de importes cuadren a la derecha.
+const FONT_FEATURES: Readonly<Record<keyof typeof FONT_FILES, Readonly<Record<string, boolean>>>> = {
+  display: { lnum: true },
+  regular: { tnum: true },
+  semibold: { tnum: true },
+  bold: { tnum: true },
+};
 
 export type QuotePdfFontRole = keyof typeof FONT_FILES;
 export type QuotePdfTypeface = Readonly<{ font: PDFFont; clean: (text: string) => string }>;
@@ -66,7 +78,7 @@ export async function embedQuotePdfTypefaces(pdf: PDFDocument): Promise<QuotePdf
   // Secuencial a propósito: el orden de incrustación fija el orden de los objetos (PDF determinista).
   for (const role of ROLES) {
     const { bytes, coverage } = fonts[role];
-    const font = await pdf.embedFont(bytes, { subset: true, customName: `OCPOOL-${role}` });
+    const font = await pdf.embedFont(bytes, { subset: true, customName: `OCPOOL-${role}`, features: FONT_FEATURES[role] });
     typefaces[role] = { font, clean: (text) => cleanForFont(text, coverage) };
   }
   return typefaces;
