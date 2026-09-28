@@ -1,3 +1,5 @@
+import { brandContact } from '@/lib/brand';
+
 export type ProjectStatus = 'Entregado' | 'En desarrollo';
 export type ProjectCategory = 'Residencial' | 'Hospitalidad';
 export type MediaKind = 'render' | 'obra' | 'final';
@@ -53,13 +55,7 @@ export type ProofItem = {
   caption: string;
 };
 
-export const contactDetails = {
-  email: 'contacto@ocpool.com.mx',
-  phone: '667 453 2567',
-  phoneHref: 'tel:+526674532567',
-  whatsappHref: 'https://wa.me/526674532567',
-  website: 'https://ocpool.com.mx',
-};
+export const contactDetails = brandContact;
 
 const cdpGallery: ProjectMedia[] = [
   { src: '/proyectos/cdp/gallery/render-01.jpg', alt: 'Render general del Club de Playa CDP', label: 'Propuesta 01', kind: 'render' },
