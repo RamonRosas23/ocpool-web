@@ -190,8 +190,8 @@ test.describe('customer portal opt-in flow', () => {
     await page.getByRole('button', { name: 'Descargar PDF' }).click();
     const [pdfResponse, pdfDownload] = await Promise.all([pdfResponsePromise, pdfDownloadPromise]);
     const pdfBody = await pdfResponse.json() as { downloadUrl: string };
-    expect(pdfBody.downloadUrl).toContain('X-Amz-');
-    expect(pdfBody.downloadUrl).toContain('response-content-disposition=attachment');
+    expect(pdfBody.downloadUrl).toContain('/api/storage/object?');
+    expect(pdfBody.downloadUrl).toContain('disposition=attachment');
     expect(pdfDownload.suggestedFilename()).toMatch(/\.pdf$/u);
     await page.getByRole('button', { name: 'Revisar y aceptar' }).click();
     await expect(page.getByRole('dialog', { name: 'Aceptar versión 1' })).toBeVisible();
@@ -273,7 +273,7 @@ test.describe('customer portal opt-in flow', () => {
     await expect(page.getByText('Aún no hay archivos.')).toBeVisible();
     await page.route('**/*', async (route) => {
       const requestUrl = new URL(route.request().url());
-      if (route.request().method() === 'PUT' && requestUrl.port === '19000') {
+      if (route.request().method() === 'PUT' && requestUrl.pathname === '/api/storage/object') {
         await route.fulfill({ status: 500, body: '' });
         return;
       }

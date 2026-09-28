@@ -14,10 +14,14 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: process.cwd(),
   async headers() {
-    return [{
-      source: '/(.*)',
-      headers: Object.entries(globalSecurityHeaders).map(([key, value]) => ({ key, value })),
-    }];
+    const { 'X-Frame-Options': frameOptions, 'Content-Security-Policy': contentSecurityPolicy, ...commonHeaders } = globalSecurityHeaders;
+    const toHeaders = (entries: Record<string, string | undefined>) => Object.entries(entries).flatMap(([key, value]) => (value ? [{ key, value }] : []));
+    return [
+      { source: '/(.*)', headers: toHeaders(commonHeaders) },
+      // La pasarela de archivos privados decide su propio encuadre: la vista previa del PDF se muestra
+      // en un iframe del mismo sitio y todo lo demás se niega (ver storage-gateway.ts).
+      { source: '/:path((?!api/storage/object$).*)', headers: toHeaders({ 'X-Frame-Options': frameOptions, 'Content-Security-Policy': contentSecurityPolicy }) },
+    ];
   },
   // Ignorar advertencias de hidratación causadas por extensiones del navegador
   compiler: {

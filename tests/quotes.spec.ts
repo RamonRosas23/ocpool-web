@@ -293,7 +293,7 @@ test.describe('staff quote builder opt-in flow', () => {
     const pdfDownloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Descargar PDF' }).click();
     const [pdfResponse, pdfDownload] = await Promise.all([pdfResponsePromise, pdfDownloadPromise]);
-    expect((await pdfResponse.json() as { downloadUrl: string }).downloadUrl).toContain('X-Amz-');
+    expect((await pdfResponse.json() as { downloadUrl: string }).downloadUrl).toContain('/api/storage/object?');
     expect(pdfDownload.suggestedFilename()).toMatch(/\.pdf$/u);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();

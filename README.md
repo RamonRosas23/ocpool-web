@@ -185,7 +185,7 @@ Endpoints disponibles:
 
 Los tokens se guardan como huellas SHA-256. Los eventos Outbox de correo contienen el token únicamente cifrado para que el worker pueda entregarlo; nunca se incluye el token crudo en payloads, respuestas o logs. La interfaz staff sólo expone códigos de error controlados, no destinatarios, ciphertext, payloads ni respuestas crudas del proveedor.
 
-Las cargas de archivos usan una reserva de metadata y una URL presigned de vida corta. El bucket MinIO/S3 es privado; el backend valida tamaño, tipo declarado, firma mágica, hash y estado `AVAILABLE` antes de generar una URL de descarga. Las keys físicas, hashes de idempotencia y credenciales no forman parte de las proyecciones públicas.
+Las cargas de archivos usan una reserva de metadata y un enlace firmado de vida corta del propio sitio (`/api/storage/object`, ver `src/server/modules/private-files/storage-url.ts`): el navegador nunca habla con MinIO, cuyo endpoint es interno. El bucket MinIO/S3 es privado; el backend valida tamaño, tipo declarado, firma mágica, hash y estado `AVAILABLE` antes de generar un enlace de descarga. Las keys físicas, hashes de idempotencia y credenciales no forman parte de las proyecciones públicas.
 
 Para validar una variable necesaria antes de un comando:
 

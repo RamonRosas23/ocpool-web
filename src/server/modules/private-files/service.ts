@@ -426,7 +426,7 @@ export async function getPrivateFileDownload(actor: Actor, quoteRequestId: strin
   if (!scopedRequest) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
   const file = await prisma.fileAttachment.findFirst({ where: { id: fileId, quoteRequestId, ...(clientId ? { clientId } : {}), status: 'AVAILABLE', deletedAt: null, storageObject: { is: { scanStatus: 'PASSED', deletedAt: null } }, ...(actor.type === 'EMPLOYEE' && actor.permissionKeys.has('files.internal.read') ? {} : { visibility: 'CUSTOMER' }) }, include: { storageObject: true } });
   if (!file) throw new AppError('NOT_FOUND', 'El archivo no existe.', 404);
-  const downloadUrl = await storage.createDownloadUrl({ key: file.storageObject.storageKey, expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS });
+  const downloadUrl = await storage.createDownloadUrl({ key: file.storageObject.storageKey, expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS, fileName: file.originalFileName });
   await prisma.auditLog.create({ data: { actorUserId: actor.userId, action: 'file.download_url_created', entityType: 'file_attachment', entityId: file.id, outcome: 'SUCCESS', metadata: { quoteRequestId, category: file.category } } });
   return { file: serializeFile(file, actor, actor.type === 'EMPLOYEE'), downloadUrl, expiresAt: new Date((dependencies.now ?? new Date()).getTime() + DOWNLOAD_URL_TTL_SECONDS * 1000) };
 }

@@ -86,7 +86,7 @@ test.describe('staff messaging opt-in flow', () => {
       ['nota-interna.pdf', 'INTERNAL_DOCUMENT', 'INTERNAL'],
     ] as const) {
       const reservation = await reservePrivateFile(fileActor, { quoteRequestId: requestId, originalFileName, contentType: 'application/pdf', byteSize: 5, category, visibility, idempotencyKey: `staff-file-${visibility.toLowerCase()}-${suffix}` }, { prisma, now, rateLimit });
-      const upload = await fetch(reservation.uploadUrl!, { method: 'PUT', headers: { 'content-type': 'application/pdf' }, body: Buffer.from('%PDF-') });
+      const upload = await fetch(new URL(reservation.uploadUrl!, origin), { method: 'PUT', headers: { origin, 'content-type': 'application/pdf' }, body: Buffer.from('%PDF-') });
       if (!upload.ok) throw new Error(`Unable to seed ${originalFileName}.`);
       await completePrivateFile(fileActor, requestId, reservation.file.id, { prisma, storage, now });
       fileIds.push(reservation.file.id);
@@ -158,7 +158,7 @@ test.describe('staff messaging opt-in flow', () => {
     await filesPanel.getByRole('button', { name: 'Añadir archivo' }).click();
     const storageUploadPattern = '**/*';
     await page.route(storageUploadPattern, async (route) => {
-      if (route.request().method() === 'PUT' && new URL(route.request().url()).port === '19000') await route.abort();
+      if (route.request().method() === 'PUT' && new URL(route.request().url()).pathname === '/api/storage/object') await route.abort();
       else await route.continue();
     });
     await filesPanel.locator('input[type="file"]').setInputFiles({ name: 'staff-retry.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-') });

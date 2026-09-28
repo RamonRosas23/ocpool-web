@@ -124,8 +124,11 @@ export default function ClientQuoteActions({ quoteId, requestId, version, reques
     try {
       const response = await fetch(`/api/portal/quotes/${quoteId}/pdf?versionId=${encodeURIComponent(version.id)}&disposition=inline`, { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<{ downloadUrl: string }>(response);
-      if (viewer) viewer.location.href = data.downloadUrl;
-      else window.location.assign(data.downloadUrl);
+      // El enlace es una ruta del propio sitio: se resuelve aquí para que la pestaña nueva (about:blank)
+      // no dependa de cómo cada navegador interpreta una ruta relativa.
+      const url = new URL(data.downloadUrl, window.location.href).toString();
+      if (viewer) viewer.location.href = url;
+      else window.location.assign(url);
     } catch (caught) {
       viewer?.close();
       setAcceptanceError(caught instanceof Error ? caught.message : 'No fue posible abrir el PDF.');
