@@ -11,9 +11,29 @@ export const QUOTE_REQUEST_STATUS_LABELS: Record<QuoteRequestStatus, string> = {
   EN_NEGOCIACION: 'En negociación',
   PENDIENTE_DE_APROBACION: 'Pendiente de aprobación',
   ACEPTADA: 'Aceptada',
-  RECHAZADA: 'Rechazada',
+  // "Cerrada" y no "Rechazada": se cierra con un motivo (el cliente desistió, sin respuesta, duplicada…).
+  RECHAZADA: 'Cerrada',
   VENCIDA: 'Vencida',
   CONVERTIDA_EN_PROYECTO: 'Convertida en proyecto',
+};
+
+/**
+ * El mismo estado en el idioma del cliente (portal): el equipo habla de "cotización disponible" o
+ * "convertida en proyecto"; el cliente, de su propuesta y su proyecto. Vive aquí, junto al de staff,
+ * para que ningún estado quede sin etiqueta en ninguna de las dos superficies.
+ */
+export const QUOTE_REQUEST_STATUS_CUSTOMER_LABELS: Record<QuoteRequestStatus, string> = {
+  RECIBIDA: 'Recibida',
+  EN_REVISION: 'En revisión',
+  INFORMACION_REQUERIDA: 'Datos pendientes',
+  EN_ELABORACION: 'Preparando propuesta',
+  COTIZACION_DISPONIBLE: 'Propuesta lista',
+  EN_NEGOCIACION: 'En negociación',
+  PENDIENTE_DE_APROBACION: 'Aceptación en proceso',
+  ACEPTADA: 'Aceptada',
+  RECHAZADA: 'Cerrada',
+  VENCIDA: 'Vencida',
+  CONVERTIDA_EN_PROYECTO: 'Proyecto en marcha',
 };
 
 export const QUOTE_VERSION_STATUS_LABELS: Record<QuoteVersionStatus, string> = {

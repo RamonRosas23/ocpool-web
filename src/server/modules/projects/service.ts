@@ -58,75 +58,88 @@ async function findExistingProjectByAcceptance(prisma: PrismaClient | Prisma.Tra
   return project;
 }
 
+type CreateProjectInput = Readonly<{
+  quoteAcceptanceId: string;
+  createdById: string;
+  /** `undefined` = el responsable del expediente (si es un empleado activo); `null` = sin responsable. */
+  ownerId: string | null | undefined;
+  checklistLabels: readonly string[];
+  source: 'staff' | 'customer_acceptance';
+  /** Sólo en la conversión manual: el actor debe poder leer el expediente. */
+  scopeActor: Actor | null;
+  now: Date;
+}>;
+
+async function activeEmployeeId(transaction: Prisma.TransactionClient, userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const user = await transaction.user.findUnique({ where: { id: userId }, select: { type: true, status: true } });
+  return user?.type === 'EMPLOYEE' && user.status === 'ACTIVE' ? userId : null;
+}
+
 /**
- * J1-02: idempotent by design -- retrying (a second click, a network retry) after the first attempt
- * already committed returns that same project rather than erroring, and a first attempt that fails
- * partway never leaves the acceptance "converted" without a real Project row: the insert either
- * fully commits inside its own transaction or the unique constraint on `quoteAcceptanceId` rejects a
- * concurrent duplicate outright, which is caught below and resolved to the row the other request won.
+ * Crea el proyecto de arranque de una aceptación y cierra el ciclo comercial del expediente
+ * (ACEPTADA → CONVERTIDA_EN_PROYECTO) en la misma transacción. Antes la conversión nunca movía la
+ * solicitud: se quedaba "Aceptada" para siempre, el portal nunca llegaba a "Proyecto" y el
+ * constructor seguía pidiendo convertir un expediente ya convertido.
  */
-export async function convertQuoteAcceptanceToProject(actor: Actor, quoteAcceptanceIdInput: string, input: ConvertQuoteAcceptanceInput = {}, dependencies: ProjectServiceDependencies = {}): Promise<ProjectSummary> {
-  requirePermission(actor, 'projects.create');
-  const quoteAcceptanceId = requireUuid(quoteAcceptanceIdInput, 'La aceptación no es válida.');
-  const prisma = dependencies.prisma ?? getPrisma();
-  const now = dependencies.now ?? new Date();
-
-  const existing = await findExistingProjectByAcceptance(prisma, quoteAcceptanceId);
+async function createProjectFromAcceptance(prisma: PrismaClient, input: CreateProjectInput): Promise<ProjectSummary> {
+  const existing = await findExistingProjectByAcceptance(prisma, input.quoteAcceptanceId);
   if (existing) return existing;
-
-  const checklistLabels = (input.checklistLabels ?? []).map(normalizeChecklistLabel);
-  if (checklistLabels.length > MAX_CHECKLIST_ITEMS) throw new AppError('VALIDATION_ERROR', 'No se pueden crear más de 30 tareas de checklist.', 400);
-  const ownerId = input.ownerId ? requireUuid(input.ownerId, 'El responsable no es válido.') : null;
-
   try {
     return await prisma.$transaction(async (transaction) => {
       const acceptance = await transaction.quoteAcceptance.findUnique({
-        where: { id: quoteAcceptanceId },
+        where: { id: input.quoteAcceptanceId },
         select: {
           id: true,
           quote: {
             select: {
               clientId: true,
               quoteRequestId: true,
-              quoteRequest: { select: { contactId: true, currentAssigneeId: true } },
+              quoteRequest: { select: { folio: true, status: true, contactId: true, currentAssigneeId: true } },
             },
           },
         },
       });
       if (!acceptance) throw new AppError('NOT_FOUND', 'La aceptación no existe.', 404);
-      requireStaffRequestReadScope(actor, acceptance.quote.quoteRequest.currentAssigneeId);
+      const request = acceptance.quote.quoteRequest;
+      if (input.scopeActor) requireStaffRequestReadScope(input.scopeActor, request.currentAssigneeId);
 
-      if (ownerId) {
-        const owner = await transaction.user.findUnique({ where: { id: ownerId }, select: { id: true, type: true, status: true } });
-        if (!owner || owner.type !== 'EMPLOYEE' || owner.status !== 'ACTIVE') conflict('El responsable indicado no es válido.');
+      let ownerId: string | null;
+      if (input.ownerId === undefined) {
+        ownerId = await activeEmployeeId(transaction, request.currentAssigneeId);
+      } else if (input.ownerId === null) {
+        ownerId = null;
+      } else {
+        ownerId = await activeEmployeeId(transaction, input.ownerId);
+        if (!ownerId) conflict('El responsable indicado no es válido.');
       }
 
-      const folio = await allocateProjectFolio(transaction, now);
+      const folio = await allocateProjectFolio(transaction, input.now);
       const project = await transaction.project.create({
         data: {
           folio,
           quoteAcceptanceId: acceptance.id,
           quoteRequestId: acceptance.quote.quoteRequestId,
           clientId: acceptance.quote.clientId,
-          contactId: acceptance.quote.quoteRequest.contactId,
+          contactId: request.contactId,
           ownerId,
-          createdById: actor.userId,
+          createdById: input.createdById,
         },
         select: { id: true, folio: true, status: true, createdAt: true, completedAt: true },
       });
-      if (checklistLabels.length > 0) {
+      if (input.checklistLabels.length > 0) {
         await transaction.projectChecklistItem.createMany({
-          data: checklistLabels.map((label, position) => ({ projectId: project.id, label, position })),
+          data: input.checklistLabels.map((label, position) => ({ projectId: project.id, label, position })),
         });
       }
       await transaction.auditLog.create({
         data: {
-          actorUserId: actor.userId,
+          actorUserId: input.createdById,
           action: 'project.created',
           entityType: 'project',
           entityId: project.id,
           outcome: 'SUCCESS',
-          metadata: { folio: project.folio, quoteAcceptanceId: acceptance.id, quoteRequestId: acceptance.quote.quoteRequestId },
+          metadata: { folio: project.folio, quoteAcceptanceId: acceptance.id, quoteRequestId: acceptance.quote.quoteRequestId, source: input.source },
         },
       });
       await transaction.outboxEvent.create({
@@ -137,15 +150,68 @@ export async function convertQuoteAcceptanceToProject(actor: Actor, quoteAccepta
           payload: { projectId: project.id, folio: project.folio, quoteRequestId: acceptance.quote.quoteRequestId },
         },
       });
+      if (request.status === 'ACEPTADA') {
+        await transaction.quoteRequest.update({ where: { id: acceptance.quote.quoteRequestId }, data: { status: 'CONVERTIDA_EN_PROYECTO', updatedAt: input.now } });
+        await transaction.requestStatusHistory.create({ data: { quoteRequestId: acceptance.quote.quoteRequestId, fromStatus: 'ACEPTADA', toStatus: 'CONVERTIDA_EN_PROYECTO', changedById: input.createdById, reason: `Proyecto ${project.folio} creado.`, createdAt: input.now } });
+        await transaction.auditLog.create({ data: { actorUserId: input.createdById, action: 'quote_request.status_changed', entityType: 'quote_request', entityId: acceptance.quote.quoteRequestId, outcome: 'SUCCESS', metadata: { folio: request.folio, fromStatus: 'ACEPTADA', toStatus: 'CONVERTIDA_EN_PROYECTO', source: 'project.created' } } });
+        await transaction.outboxEvent.create({ data: { eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: acceptance.quote.quoteRequestId, payload: { quoteRequestId: acceptance.quote.quoteRequestId, folio: request.folio, fromStatus: 'ACEPTADA', toStatus: 'CONVERTIDA_EN_PROYECTO' } } });
+      }
       return project;
     });
   } catch (error) {
     if (isUniqueConstraintError(error)) {
-      const raced = await findExistingProjectByAcceptance(prisma, quoteAcceptanceId);
+      const raced = await findExistingProjectByAcceptance(prisma, input.quoteAcceptanceId);
       if (raced) return raced;
     }
     throw error;
   }
+}
+
+/**
+ * J1-02: idempotent by design -- retrying (a second click, a network retry) after the first attempt
+ * already committed returns that same project rather than erroring, and a first attempt that fails
+ * partway never leaves the acceptance "converted" without a real Project row: the insert either
+ * fully commits inside its own transaction or the unique constraint on `quoteAcceptanceId` rejects a
+ * concurrent duplicate outright, which is caught below and resolved to the row the other request won.
+ * Sin `ownerId`, el responsable es quien lleva el expediente (si sigue activo).
+ */
+export async function convertQuoteAcceptanceToProject(actor: Actor, quoteAcceptanceIdInput: string, input: ConvertQuoteAcceptanceInput = {}, dependencies: ProjectServiceDependencies = {}): Promise<ProjectSummary> {
+  requirePermission(actor, 'projects.create');
+  const quoteAcceptanceId = requireUuid(quoteAcceptanceIdInput, 'La aceptación no es válida.');
+  const checklistLabels = (input.checklistLabels ?? []).map(normalizeChecklistLabel);
+  if (checklistLabels.length > MAX_CHECKLIST_ITEMS) throw new AppError('VALIDATION_ERROR', 'No se pueden crear más de 30 tareas de checklist.', 400);
+  const ownerId = input.ownerId === undefined ? undefined : input.ownerId === null ? null : requireUuid(input.ownerId, 'El responsable no es válido.');
+  return createProjectFromAcceptance(dependencies.prisma ?? getPrisma(), {
+    quoteAcceptanceId,
+    createdById: actor.userId,
+    ownerId,
+    checklistLabels,
+    source: 'staff',
+    scopeActor: actor,
+    now: dependencies.now ?? new Date(),
+  });
+}
+
+/**
+ * La aceptación del cliente es el cierre de la venta: el proyecto de arranque se crea en ese momento
+ * (lo llama la ruta de aceptación del portal, ya confirmada la aceptación). Así "Aceptada" nunca se
+ * queda esperando a que alguien recuerde convertirla. Si esto fallara, el expediente queda
+ * "Aceptada" y el equipo ve "Convertir en proyecto" en Solicitudes, Cotizaciones y el dashboard.
+ */
+export async function createProjectForCustomerAcceptance(quoteAcceptanceIdInput: string, dependencies: ProjectServiceDependencies = {}): Promise<ProjectSummary> {
+  const quoteAcceptanceId = requireUuid(quoteAcceptanceIdInput, 'La aceptación no es válida.');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const acceptance = await prisma.quoteAcceptance.findUnique({ where: { id: quoteAcceptanceId }, select: { acceptedById: true } });
+  if (!acceptance) throw new AppError('NOT_FOUND', 'La aceptación no existe.', 404);
+  return createProjectFromAcceptance(prisma, {
+    quoteAcceptanceId,
+    createdById: acceptance.acceptedById,
+    ownerId: undefined,
+    checklistLabels: [],
+    source: 'customer_acceptance',
+    scopeActor: null,
+    now: dependencies.now ?? new Date(),
+  });
 }
 
 export type ProjectWorkspace = Readonly<{
@@ -155,7 +221,8 @@ export type ProjectWorkspace = Readonly<{
   createdAt: Date;
   completedAt: Date | null;
   owner: Readonly<{ id: string; displayName: string }> | null;
-  createdBy: Readonly<{ id: string; displayName: string }>;
+  /** `type` distingue un proyecto creado por la aceptación del cliente (CUSTOMER) de uno manual. */
+  createdBy: Readonly<{ id: string; displayName: string; type: string }>;
   client: Readonly<{ id: string; displayName: string }>;
   contact: Readonly<{ id: string; displayName: string; email: string; phone: string | null }>;
   quoteRequest: Readonly<{ id: string; folio: string; projectType: string; location: string; description: string }>;
@@ -277,7 +344,7 @@ export async function getProjectWorkspace(actor: Actor, projectIdInput: string, 
       createdAt: true,
       completedAt: true,
       owner: { select: { id: true, displayName: true } },
-      createdBy: { select: { id: true, displayName: true } },
+      createdBy: { select: { id: true, displayName: true, type: true } },
       client: { select: { id: true, displayName: true } },
       contact: { select: { id: true, displayName: true, email: true, phone: true } },
       quoteRequest: { select: { id: true, folio: true, detail: { select: { projectType: true, location: true, description: true } } } },

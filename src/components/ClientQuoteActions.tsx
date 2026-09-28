@@ -21,14 +21,20 @@ type Props = Readonly<{
   quoteId: string;
   requestId: string;
   version: QuoteVersionActionData;
+  /** Estado del expediente: uno cerrado o ya fuera de negociación no admite aceptación aunque la versión siga "enviada". */
+  requestStatus: string;
   validity: { label: string; expired: boolean };
   contactDisplayName: string;
   onAccepted: () => void;
   onChangeRequested: () => void;
 }>;
 
-function acceptanceIsAvailable(version: QuoteVersionActionData, validity: Props['validity']): boolean {
-  return version.pdfReady && (version.status === 'ENVIADA' || version.status === 'EN_NEGOCIACION') && !validity.expired;
+// Mismos estados de expediente que acepta el servidor: ofrecer "Revisar y aceptar" fuera de ellos
+// terminaba en un error al final del diálogo.
+const ACCEPTABLE_REQUEST_STATUSES = new Set(['COTIZACION_DISPONIBLE', 'EN_NEGOCIACION', 'PENDIENTE_DE_APROBACION']);
+
+function acceptanceIsAvailable(version: QuoteVersionActionData, validity: Props['validity'], requestStatus: string): boolean {
+  return version.pdfReady && (version.status === 'ENVIADA' || version.status === 'EN_NEGOCIACION') && !validity.expired && ACCEPTABLE_REQUEST_STATUSES.has(requestStatus);
 }
 
 async function readResponse<T>(response: Response): Promise<T> {
@@ -41,7 +47,7 @@ function createIdempotencyKey(): string {
   return `portal-quote-${Date.now()}-${globalThis.crypto.randomUUID()}`;
 }
 
-export default function ClientQuoteActions({ quoteId, requestId, version, validity, contactDisplayName, onAccepted, onChangeRequested }: Props) {
+export default function ClientQuoteActions({ quoteId, requestId, version, requestStatus, validity, contactDisplayName, onAccepted, onChangeRequested }: Props) {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -224,8 +230,11 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
     }
   };
 
-  const available = acceptanceIsAvailable(version, validity);
+  const available = acceptanceIsAvailable(version, validity, requestStatus);
   const alreadyAccepted = version.status === 'ACEPTADA';
+  // Retirada: el equipo cerró el expediente (o esta versión). Pedir cambios sobre ella no tiene sentido;
+  // la vía para retomarlo es la conversación.
+  const retired = version.status === 'RECHAZADA' || requestStatus === 'RECHAZADA';
 
   return <>
     <div className="client-quote-actions" aria-label={`Acciones para la versión ${version.versionNumber}`}>
@@ -234,7 +243,7 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
           {pdfLoading ? 'Preparando PDF…' : 'Descargar PDF'}
         </button>
         : <span className="client-quote-action-state client-quote-action-state--muted">PDF en preparación</span>}
-      {!alreadyAccepted && <button className="client-quote-action client-quote-action--secondary" type="button" onClick={openChangeDialog}>Solicitar cambios</button>}
+      {!alreadyAccepted && !retired && <button className="client-quote-action client-quote-action--secondary" type="button" onClick={openChangeDialog}>Solicitar cambios</button>}
       {available && <button className="client-quote-action client-quote-action--primary" type="button" onClick={openDialog}>Revisar y aceptar</button>}
       {alreadyAccepted && <span className="client-quote-action-state" role="status"><i aria-hidden="true" />Aceptada</span>}
       {/* UX audit fix: RECHAZADA es un estado real y visible para el cliente (CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES
@@ -242,13 +251,13 @@ export default function ClientQuoteActions({ quoteId, requestId, version, validi
           el cliente no veía ningún estado ni explicación, sólo "Descargar PDF"/"Solicitar cambios" sin contexto.
           Se revisa antes que `validity.expired` porque ambas condiciones pueden ser ciertas a la vez (una versión
           rechazada también puede tener su fecha de vigencia ya pasada) y el motivo real es el rechazo, no la fecha. */}
-      {!available && !alreadyAccepted && version.status === 'RECHAZADA' && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta rechazada por nuestro equipo. Solicita cambios para recibir una versión actualizada.</span>}
-      {!available && !alreadyAccepted && version.status !== 'RECHAZADA' && validity.expired && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta vencida. Solicita cambios para recibir una versión actualizada.</span>}
+      {!available && !alreadyAccepted && retired && <span className="client-quote-action-state client-quote-action-state--muted">Esta versión ya no está vigente. Si quieres retomarla, escríbenos en la conversación.</span>}
+      {!available && !alreadyAccepted && !retired && (validity.expired || requestStatus === 'VENCIDA') && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta vencida. Solicita cambios para recibir una versión actualizada.</span>}
     </div>
     {pdfError && <p className="client-quote-action-error" role="alert">{pdfError}</p>}
     <PrivateDialog open={dialogOpen} onClose={() => { if (!accepting) setDialogOpen(false); }} className="client-accept-dialog" overlayClassName="client-accept-overlay" labelledBy="client-accept-title" describedBy="client-accept-description" initialFocusRef={signerInputRef}>
       <div className="client-accept-dialog__head"><div><p className="client-eyebrow">Decisión sobre tu propuesta</p><h2 id="client-accept-title">Aceptar versión {version.versionNumber}</h2></div><button className="client-accept-dialog__close" type="button" onClick={() => setDialogOpen(false)} disabled={accepting} aria-label="Cerrar aceptación"><X size={20} aria-hidden="true" /></button></div>
-      {accepted ? <div className="client-accept-success" role="status"><span className="client-accept-success__mark" aria-hidden="true">✓</span><h3>Propuesta aceptada.</h3><p>La aceptación quedó registrada y tu expediente se actualizó. Conserva el PDF para tus archivos.</p><button className="client-quote-action client-quote-action--primary" type="button" onClick={() => { setDialogOpen(false); onAccepted(); }}>Continuar</button></div> : <form onSubmit={submitAcceptance}>
+      {accepted ? <div className="client-accept-success" role="status"><span className="client-accept-success__mark" aria-hidden="true">✓</span><h3>Propuesta aceptada.</h3><p>Tu proyecto quedó en marcha: el equipo te contactará para coordinar el arranque. Conserva el PDF para tus archivos.</p><button className="client-quote-action client-quote-action--primary" type="button" onClick={() => { setDialogOpen(false); onAccepted(); }}>Continuar</button></div> : <form onSubmit={submitAcceptance}>
         <p id="client-accept-description" className="client-accept-dialog__copy">{touchPreview ? 'Revisa el PDF' : 'Revisa el PDF aquí mismo'} y confirma que deseas avanzar con esta propuesta. Esta acción fija la versión aceptada y no permite modificarla.</p>
         <div className="client-accept-preview" aria-label="Vista previa del PDF">
           {touchPreview ? <div className="client-accept-preview__touch"><p>Abre la propuesta en el visor de PDF de tu teléfono, revísala y regresa aquí para confirmar.</p><button className="client-quote-action client-quote-action--secondary" type="button" onClick={() => void openPdfInViewer()}>Abrir PDF de la versión {version.versionNumber}</button></div> : <>

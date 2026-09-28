@@ -1,9 +1,11 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { ChevronLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { PrivateBlockingState, PrivateButton, PrivateSelect, PrivateSurfaceRoot, PrivateTextArea, PrivateTextField } from '@/components/private/ui';
+import StaffHeader from '@/components/StaffHeader';
+import { PrivateBlockingState, PrivateButton, PrivateLinkButton, PrivateSelect, PrivateSurfaceRoot, PrivateTextArea, PrivateTextField } from '@/components/private/ui';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
 import {
@@ -53,7 +55,12 @@ function readResponse<T>(response: Response): Promise<T> {
   });
 }
 
-export default function StaffRequestCreateV2Panel() {
+/**
+ * Alta manual de una solicitud (llamada, WhatsApp, visita). `classic`: la vista por omisión
+ * (Solicitudes clásica), que antes no tenía forma de registrar un prospecto que no llegara por el
+ * formulario público; al crear, lleva al expediente en esa misma vista.
+ */
+export default function StaffRequestCreateV2Panel({ classic = false }: { classic?: boolean }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [matches, setMatches] = useState<ContactMatch[] | null>(null);
@@ -62,6 +69,22 @@ export default function StaffRequestCreateV2Panel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createIdempotencyKey, setCreateIdempotencyKey] = useState<string | null>(null);
+  // La página ya no depende de la bandeja V2: se protege aquí con los permisos reales del empleado
+  // (sin sesión → acceso restringido; sin "requests.create" → se explica en vez de mostrar un formulario
+  // que fallaría al enviar). El API sigue validando por su cuenta.
+  const [access, setAccess] = useState<'checking' | 'allowed' | 'denied' | 'forbidden'>('checking');
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 401) { setAccess('denied'); return; }
+        if (!response.ok) { setAccess('allowed'); return; }
+        const data = await response.json().catch(() => ({})) as { requestsCreate?: boolean };
+        setAccess(data.requestsCreate ? 'allowed' : 'forbidden');
+      })
+      .catch(() => { if (!controller.signal.aborted) setAccess('allowed'); });
+    return () => controller.abort();
+  }, []);
 
   const update = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -98,7 +121,9 @@ export default function StaffRequestCreateV2Panel() {
         }),
       });
       const created = await readResponse<CreateResponse>(response);
-      router.replace(`/staff/requests/${encodeURIComponent(created.quoteRequestId)}?tab=summary&created=1`);
+      router.replace(classic
+        ? `/staff/requests?request=${encodeURIComponent(created.quoteRequestId)}&created=1`
+        : `/staff/requests/${encodeURIComponent(created.quoteRequestId)}?tab=summary&created=1`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible crear la solicitud.');
     } finally {
@@ -138,9 +163,20 @@ export default function StaffRequestCreateV2Panel() {
     }
   };
 
-  return <PrivateSurfaceRoot className="request-workspace-v2 request-workspace-v2--create">
-    <div className="request-workspace-v2__content">
-      <Link className="request-workspace-v2__back" href="/staff/requests">← Volver a solicitudes</Link>
+  const shell = (children: React.ReactNode) => classic
+    ? <PrivateSurfaceRoot className="staff-shell"><StaffHeader /><div className="staff-content staff-create-request">{children}</div></PrivateSurfaceRoot>
+    : <PrivateSurfaceRoot className="request-workspace-v2 request-workspace-v2--create"><div className="request-workspace-v2__content">{children}</div></PrivateSurfaceRoot>;
+
+  if (access === 'denied') {
+    return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Inicia sesión con una cuenta de empleado autorizada para registrar solicitudes.</PrivateBlockingState></PrivateSurfaceRoot>;
+  }
+  if (access === 'forbidden') {
+    return shell(<PrivateBlockingState title="Tu rol no registra solicitudes." action={<PrivateLinkButton href="/staff/requests">Volver a solicitudes</PrivateLinkButton>}>Pide a quien coordina al equipo que capture esta solicitud o que ajuste tus permisos.</PrivateBlockingState>);
+  }
+  if (access === 'checking') return shell(<div className="staff-create-request__checking" role="status" aria-live="polite">Preparando el formulario…</div>);
+
+  return shell(<>
+      {classic ? <Link className="handoff-back" href="/staff/requests"><ChevronLeft size={16} aria-hidden="true" />Todas las solicitudes</Link> : <Link className="request-workspace-v2__back" href="/staff/requests">← Volver a solicitudes</Link>}
       <header className="request-workspace-v2__detail-header"><div><p className="private-kicker">Admisión manual</p><h1>Nueva solicitud</h1><p>Captura lo esencial y confirma cualquier coincidencia antes de crear o reutilizar un contacto.</p></div></header>
       {error && <PrivateBlockingState title="No fue posible continuar.">{error}</PrivateBlockingState>}
       <form className="request-workspace-v2__create-form" onSubmit={lookupOrCreate}>
@@ -149,6 +185,5 @@ export default function StaffRequestCreateV2Panel() {
         {matches && <section className="request-workspace-v2__matches" aria-labelledby="request-matches-title"><p className="private-kicker">Dedupe</p><h2 id="request-matches-title">Encontramos {matches.length} contacto{matches.length === 1 ? '' : 's'} coincidente{matches.length === 1 ? '' : 's'}.</h2><p>Selecciona un contacto existente o confirma de forma explícita que debe crearse un cliente nuevo. No se combinan perfiles automáticamente.</p><fieldset><legend>Contactos posibles</legend>{matches.map((match) => <label className="request-workspace-v2__match" key={match.id}><input type="radio" name="contact-match" value={match.id} checked={selectedMatchId === match.id} onChange={() => { setSelectedMatchId(match.id); setConfirmNewContact(false); }} /><span><strong>{match.displayName}</strong><small>{match.email} · Cliente: {match.client.displayName}</small></span></label>)}</fieldset><label className="request-workspace-v2__consent"><input type="checkbox" checked={confirmNewContact} onChange={(event) => { setConfirmNewContact(event.target.checked); if (event.target.checked) setSelectedMatchId(''); }} /><span>Confirmo crear un cliente nuevo aunque exista una coincidencia.</span></label></section>}
         <div className="request-workspace-v2__create-actions"><PrivateButton type="submit" variant="primary" disabled={!canSubmit || busy}>{busy ? 'Revisando…' : matches && selectedMatchId ? 'Usar contacto seleccionado' : matches && confirmNewContact ? 'Crear cliente nuevo' : 'Revisar y crear solicitud'}</PrivateButton><Link className="private-button private-button--quiet" href="/staff/requests">Cancelar</Link></div>
       </form>
-    </div>
-  </PrivateSurfaceRoot>;
+  </>);
 }

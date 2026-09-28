@@ -89,6 +89,9 @@ export const ROLE_DEFINITIONS = {
       'quotes.read',
       'quotes.create',
       'quotes.send',
+      // Ventas propone descuentos; los que superan el umbral de la política comercial activa
+      // requieren la aprobación de gerencia (quotes.approve_discount) antes de enviarse.
+      'quotes.apply_discount',
       'quotes.pdf.read',
       'quotes.pdf.generate',
       'notifications.read',

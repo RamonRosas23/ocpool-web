@@ -361,6 +361,50 @@ export async function listPrivateFilesPage(actor: Actor, quoteRequestId: string,
   return { items, nextCursor: hasNext ? encodeCursor(files[limit - 1]) : null };
 }
 
+export type DeletedPrivateFileSummary = Readonly<{
+  id: string;
+  originalFileName: string;
+  category: FileCategory;
+  visibility: FileVisibility;
+  uploadedAt: Date;
+  uploadedBy: string;
+  deletedAt: Date;
+  deletedBy: string | null;
+}>;
+
+/**
+ * Archivos eliminados de un expediente (sólo el equipo). El borrado es lógico en la base y físico en el
+ * almacenamiento: el archivo ya no se puede descargar ni restaurar, pero queda su rastro -- nombre,
+ * quién lo subió, quién lo eliminó y cuándo -- para responder "¿qué pasó con el plano que estaba
+ * aquí?" sin depender de la auditoría. No incluye cargas abandonadas que nunca estuvieron disponibles.
+ */
+export async function listDeletedPrivateFiles(actor: Actor, quoteRequestId: string, dependencies: PrivateFilesServiceDependencies = {}): Promise<{ items: DeletedPrivateFileSummary[] }> {
+  if (actor.type !== 'EMPLOYEE') throw new AppError('FORBIDDEN', 'No tienes permisos para ver archivos eliminados.', 403);
+  requireActorScope(actor, 'files.read', quoteRequestId);
+  const prisma = dependencies.prisma ?? getPrisma();
+  const request = await prisma.quoteRequest.findFirst({ where: { id: quoteRequestId, ...staffRequestReadScopeWhere(actor) }, select: { id: true } });
+  if (!request) throw new AppError('NOT_FOUND', 'El expediente no existe.', 404);
+  const includeInternal = actor.permissionKeys.has('files.internal.read');
+  const files = await prisma.fileAttachment.findMany({
+    where: { quoteRequestId, status: 'DELETED', deletedAt: { not: null }, ...(includeInternal ? {} : { visibility: 'CUSTOMER' }) },
+    select: { id: true, originalFileName: true, category: true, visibility: true, createdAt: true, deletedAt: true, uploadedBy: { select: { displayName: true } } },
+    orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
+    take: 50,
+  });
+  const deletions = files.length
+    ? await prisma.auditLog.findMany({ where: { action: 'file.deleted', entityType: 'file_attachment', entityId: { in: files.map(({ id }) => id) } }, select: { entityId: true, actorUserId: true } })
+    : [];
+  const deleterIds = [...new Set(deletions.flatMap(({ actorUserId }) => actorUserId ? [actorUserId] : []))];
+  const deleters = deleterIds.length ? await prisma.user.findMany({ where: { id: { in: deleterIds } }, select: { id: true, displayName: true } }) : [];
+  const deleterNames = new Map(deleters.map((user) => [user.id, user.displayName]));
+  const deletedBy = new Map(deletions.map((entry) => [entry.entityId, entry.actorUserId ? deleterNames.get(entry.actorUserId) ?? null : null]));
+  return {
+    items: files
+      .filter((file) => deletedBy.has(file.id))
+      .map((file) => ({ id: file.id, originalFileName: file.originalFileName, category: file.category, visibility: file.visibility, uploadedAt: file.createdAt, uploadedBy: file.uploadedBy.displayName, deletedAt: file.deletedAt as Date, deletedBy: deletedBy.get(file.id) ?? null })),
+  };
+}
+
 export async function listPrivateFiles(actor: Actor, quoteRequestId: string, filters: PrivateFileListFilters = {}, dependencies: PrivateFilesServiceDependencies = {}) {
   const page = await listPrivateFilesPage(actor, quoteRequestId, filters, dependencies);
   return page.items;

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   QUOTE_REQUEST_BUDGET_RANGES,
+  QUOTE_REQUEST_CLOSABLE_STATUSES,
+  QUOTE_REQUEST_CLOSE_REASONS,
+  QUOTE_REQUEST_CLOSE_REASON_LABELS,
   QUOTE_REQUEST_PROJECT_STAGES,
+  QUOTE_REQUEST_REOPENABLE_STATUSES,
   QUOTE_REQUEST_STATUSES,
   QUOTE_REQUEST_TIMELINES,
   canStaffTransitionQuoteRequest,
@@ -59,6 +63,20 @@ describe('quote request domain contracts', () => {
     expect(canTransitionQuoteRequest('RECIBIDA', 'ACEPTADA')).toBe(false);
     expect(canTransitionQuoteRequest('ACEPTADA', 'EN_REVISION')).toBe(false);
     expect(canTransitionQuoteRequest('CONVERTIDA_EN_PROYECTO', 'RECHAZADA')).toBe(false);
+  });
+
+  it('lets staff close any open file with a reason and reopen a closed one back to review', () => {
+    for (const status of QUOTE_REQUEST_CLOSABLE_STATUSES) expect(canTransitionQuoteRequest(status, 'RECHAZADA')).toBe(true);
+    // Una venta aceptada o ya convertida no se "cierra": su camino sigue en Proyectos.
+    expect(QUOTE_REQUEST_CLOSABLE_STATUSES).not.toContain('ACEPTADA');
+    expect(QUOTE_REQUEST_CLOSABLE_STATUSES).not.toContain('CONVERTIDA_EN_PROYECTO');
+    for (const status of QUOTE_REQUEST_REOPENABLE_STATUSES) {
+      expect(canTransitionQuoteRequest(status, 'EN_REVISION')).toBe(true);
+      // Con cotización se reabre directo en elaboración, donde se puede crear la nueva versión.
+      expect(canTransitionQuoteRequest(status, 'EN_ELABORACION')).toBe(true);
+    }
+    expect(canTransitionQuoteRequest('CONVERTIDA_EN_PROYECTO', 'EN_REVISION')).toBe(false);
+    expect(Object.keys(QUOTE_REQUEST_CLOSE_REASON_LABELS).sort()).toEqual([...QUOTE_REQUEST_CLOSE_REASONS].sort());
   });
 
   it('keeps quote-dependent transitions closed until the quote module exists', () => {

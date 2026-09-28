@@ -246,6 +246,30 @@ export default function StaffDashboardPanel() {
     return () => controller.abort();
   }, [canReadProjects]);
 
+  // Sin respuesta del cliente: datos pedidos o propuesta enviada, 4+ días sin movimiento y con el equipo
+  // como último en hablar. Responde "¿qué pasa si se queda en un proceso?" con a quién dar seguimiento.
+  const [waitingQueue, setWaitingQueue] = useState<{ items: Array<{ id: string; folio: string; status: string; client: { displayName: string }; lastActivityAt: string }>; total: number } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch('/api/staff/quote-requests/waiting-customer', { credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then((response) => readApiResponse<{ items: Array<{ id: string; folio: string; status: string; client: { displayName: string }; lastActivityAt: string }>; total: number }>(response, 'No fue posible cargar los expedientes sin respuesta.'))
+      .then((result) => { if (result.ok) setWaitingQueue(result.data); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
+  // Aceptadas sin proyecto: la aceptación crea el proyecto sola; esto sólo aparece con aceptaciones
+  // anteriores a eso o si la creación automática falló, para que ninguna venta se quede sin arranque.
+  const [acceptedQueue, setAcceptedQueue] = useState<QueueResponse | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch('/api/staff/quote-requests?status=ACEPTADA&pageSize=5', { credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then((response) => readApiResponse<QueueResponse>(response, 'No fue posible cargar las aceptadas.'))
+      .then((result) => { if (result.ok) setAcceptedQueue(result.data); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
   // W1-02 (primer corte): "qué atender ahora" reutiliza el mismo endpoint y scope de R1 (mine/sin
   // asignar) — sin score opaco, cada fila es un expediente real con enlace directo al expediente exacto.
   useEffect(() => {
@@ -371,6 +395,8 @@ export default function StaffDashboardPanel() {
     ...(customerReplied && customerReplied.length > 0 ? [`${plural(customerReplied.length, 'cliente espera', 'clientes esperan')} tu respuesta`] : []),
     ...(pendingApprovals && pendingApprovals.length > 0 ? [`${plural(pendingApprovals.length, 'aprobación espera', 'aprobaciones esperan')} tu decisión`] : []),
     ...(readyToPublish && readyToPublish.length > 0 ? [`${plural(readyToPublish.length, 'cotización está lista', 'cotizaciones están listas')} para enviar`] : []),
+    ...(acceptedQueue && acceptedQueue.total > 0 ? [`${plural(acceptedQueue.total, 'venta aceptada espera', 'ventas aceptadas esperan')} su proyecto`] : []),
+    ...(waitingQueue && waitingQueue.total > 0 ? [`${plural(waitingQueue.total, 'expediente necesita', 'expedientes necesitan')} seguimiento`] : []),
     ...(unassignedQueue && unassignedQueue.total > 0 ? [`${plural(unassignedQueue.total, 'solicitud sigue', 'solicitudes siguen')} sin responsable`] : []),
   ];
   const summarySentence = summaryParts.length === 0 ? 'Todo al día: no hay pendientes en tus colas.' : `${summaryParts.slice(0, -1).join(', ')}${summaryParts.length > 1 ? ' y ' : ''}${summaryParts[summaryParts.length - 1]}.`;
@@ -431,6 +457,16 @@ export default function StaffDashboardPanel() {
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Sólo falta el envío</p><h3 id="workqueue-ready-title">Listas para publicar</h3></div><QueueCount value={readyToPublish ? readyToPublish.length : null} /></div>
             <ul className="staff-workqueue__list">{readyToPublish.slice(0, 5).map((item) => <li key={item.versionId}><Link href={`/staff/quotes?request=${item.requestId}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.clientDisplayName}</span><span className="staff-workqueue__stage">V{item.versionNumber} · {approvalMoneyLabel(item.totalMinor, item.currencyCode)}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>
             {readyToPublish.length > 5 && <span className="staff-workqueue__more">Y {formatInteger(readyToPublish.length - 5)} más listas para publicar</span>}
+          </article>}
+          {waitingQueue && waitingQueue.total > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-waiting-title">
+            <div className="staff-workqueue__head"><div><p className="staff-section-label">Dales seguimiento</p><h3 id="workqueue-waiting-title">Sin respuesta del cliente</h3></div><QueueCount value={waitingQueue.total} /></div>
+            <ul className="staff-workqueue__list">{waitingQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">{item.status === 'INFORMACION_REQUERIDA' ? 'Datos pendientes' : 'Propuesta sin respuesta'}</span><span className="staff-workqueue__age">{ageLabel(item.lastActivityAt)}</span></Link></li>)}</ul>
+            {waitingQueue.total > 5 && <span className="staff-workqueue__more">Y {formatInteger(waitingQueue.total - 5)} más esperando seguimiento</span>}
+          </article>}
+          {acceptedQueue && acceptedQueue.total > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-accepted-title">
+            <div className="staff-workqueue__head"><div><p className="staff-section-label">Falta el arranque</p><h3 id="workqueue-accepted-title">Aceptadas sin proyecto</h3></div><QueueCount value={acceptedQueue.total} /></div>
+            <ul className="staff-workqueue__list">{acceptedQueue.items.slice(0, 5).map((item) => <li key={item.id}><Link href={`/staff/requests?request=${item.id}`}><span className="staff-workqueue__folio">{item.folio}</span><span className="staff-workqueue__client">{item.client.displayName}</span><span className="staff-workqueue__stage">Convertir en proyecto</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>
+            <Link className="staff-workqueue__more" href="/staff/requests?status=ACEPTADA">{acceptedQueue.total > 5 ? `Ver las ${formatInteger(acceptedQueue.total)} aceptadas →` : 'Ver en Solicitudes →'}</Link>
           </article>}
           {projectsQueue && projectsQueue.total > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-projects-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Después de la venta</p><h3 id="workqueue-projects-title">Proyectos en arranque</h3></div><QueueCount value={projectsQueue.total} /></div>

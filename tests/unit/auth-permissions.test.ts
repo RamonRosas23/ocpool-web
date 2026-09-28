@@ -47,6 +47,8 @@ describe('authorization policy', () => {
       'quotes.read',
       'quotes.create',
       'quotes.send',
+      // Ventas propone descuentos; aprobarlos (quotes.approve_discount) sigue siendo de gerencia.
+      'quotes.apply_discount',
       'quotes.pdf.read',
       'quotes.pdf.generate',
       'notifications.read',

@@ -60,7 +60,7 @@ const STAGE_LABELS: Record<WorkspaceStage, string> = {
   PROPUESTA_VENCIDA: 'Propuesta vencida',
   ACEPTADA: 'Aceptada',
   PROPUESTA_RECHAZADA: 'Propuesta rechazada',
-  SOLICITUD_RECHAZADA: 'Solicitud rechazada',
+  SOLICITUD_RECHAZADA: 'Expediente cerrado',
   SOLICITUD_CONVERTIDA: 'Convertida en proyecto',
 };
 

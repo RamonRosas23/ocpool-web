@@ -7,6 +7,7 @@ import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffHeader from '@/components/StaffHeader';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { useStaffSession } from '@/components/staff/StaffSessionContext';
+import ExpedienteJourney from '@/components/staff/ExpedienteJourney';
 import { PrivateBlockingState, PrivateDialog, PrivateLinkButton, PrivateSelect, usePrivateToast } from '@/components/private/ui';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { formatDateTime } from '@/lib/format-date';
@@ -14,6 +15,14 @@ import { moneyLabel } from '@/lib/money';
 import { projectNextStep, type ProjectNextStepAction } from '@/lib/project-stage';
 
 type ProjectStatus = 'EN_TRANSICION' | 'COMPLETADO';
+
+const SUGGESTED_HANDOFF_TASKS = [
+  'Confirmar anticipo y forma de pago',
+  'Agendar visita de arranque con el cliente',
+  'Validar medidas y condiciones del sitio',
+  'Programar equipo, materiales y cuadrilla',
+  'Presentar al responsable de obra con el cliente',
+];
 
 type ChecklistItem = {
   id: string;
@@ -33,7 +42,7 @@ type ProjectWorkspace = {
   createdAt: string;
   completedAt: string | null;
   owner: { id: string; displayName: string } | null;
-  createdBy: { id: string; displayName: string };
+  createdBy: { id: string; displayName: string; type?: string };
   client: { id: string; displayName: string };
   contact: { id: string; displayName: string; email: string; phone: string | null };
   quoteRequest: { id: string; folio: string; projectType: string; location: string; description: string };
@@ -163,6 +172,23 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
     }
   };
 
+  // Tareas típicas del arranque de una obra: con el checklist vacío se agregan de un clic (y se
+  // completan o se ignoran), en vez de escribirlas cada vez desde cero.
+  const addSuggestedItems = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/staff/projects/${projectId}/checklist`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ labels: SUGGESTED_HANDOFF_TASKS }) });
+      await readApiResponseOrThrow(response, 'No fue posible agregar las tareas.');
+      showToast(`${SUGGESTED_HANDOFF_TASKS.length} tareas de arranque agregadas al checklist.`);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No fue posible agregar las tareas.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const addItem = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const labels = newItemLabel.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -265,6 +291,8 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
             </div>
           </div>
 
+          <ExpedienteJourney here="project" requestId={workspace.quoteRequest.id} requestStatus="CONVERTIDA_EN_PROYECTO" quote={{ versionNumber: workspace.acceptedVersion.versionNumber, status: 'ACEPTADA' }} project={{ id: workspace.id, folio: workspace.folio, status: workspace.status }} />
+
           {nextStep && <section className={`handoff-next handoff-next--${nextStep.tone}`} aria-labelledby="handoff-next-title">
             <span className="handoff-next__icon" aria-hidden="true">{nextStep.tone === 'done' ? <CircleCheck size={19} /> : nextStep.tone === 'waiting' ? <Hourglass size={19} /> : <Compass size={19} />}</span>
             <div className="handoff-next__body"><p className="staff-section-label">Siguiente paso</p><h2 id="handoff-next-title">{nextStep.title}</h2><p>{nextStep.detail}</p></div>
@@ -305,10 +333,10 @@ export default function StaffProjectWorkspacePanel({ projectId }: { projectId: s
                   {canManage
                     ? <PrivateSelect key={workspace.owner?.id ?? 'unassigned'} id="project-owner" optionalHint={false} label="Responsable" value={workspace.owner?.id ?? ''} onValueChange={(value) => void setOwner(value)} options={assignees.map((assignee) => ({ value: assignee.id, label: assignee.displayName }))} placeholder="Sin asignar" disabled={busy} />
                     : <p className="handoff-owner__readonly"><span>Responsable</span><strong>{workspace.owner?.displayName ?? 'Sin asignar'}</strong></p>}
-                  <small>Creado por {workspace.createdBy.displayName} · {formatDateTime(workspace.createdAt)}</small>
+                  <small>{workspace.createdBy.type === 'CUSTOMER' ? 'Se creó al aceptar el cliente la propuesta' : `Creado por ${workspace.createdBy.displayName}`} · {formatDateTime(workspace.createdAt)}</small>
                   {assigneesError && <small className="handoff-owner__error" role="alert">{assigneesError}</small>}
                 </div>
-                {totalCount === 0 && <div className="handoff-checklist-empty"><strong>Sin tareas de checklist todavía.</strong><span>{canManage ? 'Agrega los pendientes de transición para este proyecto.' : 'El responsable agregará aquí los pendientes de transición.'}</span></div>}
+                {totalCount === 0 && <div className="handoff-checklist-empty"><strong>Sin tareas de checklist todavía.</strong><span>{canManage ? 'Empieza con las tareas típicas de arranque o escribe las tuyas.' : 'El responsable agregará aquí los pendientes de transición.'}</span>{canManage && <button className="staff-button staff-button--outline handoff-checklist-empty__suggest" type="button" disabled={busy} onClick={() => void addSuggestedItems()}>Agregar tareas de arranque sugeridas</button>}</div>}
                 {totalCount > 0 && <ul className="staff-checklist" id="project-checklist">{workspace.checklistItems.map((item) => <li className={`staff-checklist__item${item.completedAt ? ' is-complete' : ''}`} key={item.id}>
                   <label>
                     <input type="checkbox" checked={Boolean(item.completedAt)} disabled={busy || !canManage} onChange={() => void toggleItem(item)} />

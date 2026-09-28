@@ -55,8 +55,12 @@ async function main(): Promise<void> {
   const approvalIds = (await prisma.quoteApproval.findMany({ where: { quoteVersionId: { in: versionIds } }, select: { id: true } })).map(({ id }) => id);
   const customerUserIds = (await prisma.user.findMany({ where: { clientId: { in: manifest.clientIds }, type: 'CUSTOMER' }, select: { id: true } })).map(({ id }) => id);
   const pilotUserIds = [...new Set([...manifest.userIds, ...customerUserIds])];
-  const aggregateIds = [...manifest.requestIds, ...quoteIds, ...conversationIds, ...fileIds, ...documents.map(({ id }) => id), ...pilotUserIds];
+  // Aceptar una propuesta crea el proyecto de arranque: se retira antes que la aceptación.
+  const projectIds = (await prisma.project.findMany({ where: { quoteRequestId: { in: manifest.requestIds } }, select: { id: true } })).map(({ id }) => id);
+  const aggregateIds = [...manifest.requestIds, ...quoteIds, ...conversationIds, ...fileIds, ...documents.map(({ id }) => id), ...pilotUserIds, ...projectIds];
   await prisma.notificationDelivery.deleteMany({ where: { outboxEvent: { aggregateId: { in: aggregateIds } } } });
+  await prisma.projectChecklistItem.deleteMany({ where: { projectId: { in: projectIds } } });
+  await prisma.project.deleteMany({ where: { id: { in: projectIds } } });
   await prisma.quoteApproval.deleteMany({ where: { quoteVersionId: { in: versionIds } } });
   await prisma.quoteAcceptance.deleteMany({ where: { quoteId: { in: quoteIds } } });
   await prisma.quotePublication.deleteMany({ where: { documentId: { in: documents.map(({ id }) => id) } } });
@@ -67,7 +71,7 @@ async function main(): Promise<void> {
   await prisma.quote.deleteMany({ where: { quoteRequestId: { in: manifest.requestIds } } });
   await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
   // La auditoría no tiene FK: se retira lo del piloto por entidad y por cuenta del piloto.
-  await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: [...manifest.requestIds, ...quoteIds, ...versionIds, ...conversationIds, ...messageIds, ...fileIds, ...approvalIds, ...documents.map(({ id }) => id)] } }, { actorUserId: { in: pilotUserIds } }] } });
+  await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: [...manifest.requestIds, ...quoteIds, ...versionIds, ...conversationIds, ...messageIds, ...fileIds, ...approvalIds, ...documents.map(({ id }) => id), ...projectIds] } }, { actorUserId: { in: pilotUserIds } }] } });
   await prisma.quoteRequest.deleteMany({ where: { id: { in: manifest.requestIds } } });
   // Los archivos subidos durante el piloto se fueron en cascada con su expediente; sus objetos no.
   for (const file of files) {

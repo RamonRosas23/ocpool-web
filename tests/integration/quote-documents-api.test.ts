@@ -191,7 +191,9 @@ describe('quote PDF and acceptance API', () => {
     expect(JSON.stringify(acceptedStatusBody)).not.toContain('storageKey');
     expect(JSON.stringify(acceptedStatusBody)).not.toContain('sha256');
     expect((await prisma.quoteVersion.findUnique({ where: { id: versionId }, select: { status: true } }))).toMatchObject({ status: 'ACEPTADA' });
-    expect((await prisma.quoteRequest.findUnique({ where: { id: requestId }, select: { status: true } }))).toMatchObject({ status: 'ACEPTADA' });
+    // Aceptar crea el proyecto de arranque en el mismo momento: el expediente queda convertido, no "aceptado y ahí queda".
+    expect((await prisma.quoteRequest.findUnique({ where: { id: requestId }, select: { status: true } }))).toMatchObject({ status: 'CONVERTIDA_EN_PROYECTO' });
+    expect(await prisma.project.count({ where: { quoteRequestId: requestId, quoteAcceptanceId: acceptedBody.id as string } })).toBe(1);
   });
 
   afterAll(async () => {
@@ -199,12 +201,15 @@ describe('quote PDF and acceptance API', () => {
     const documents = quoteId ? await prisma.generatedDocument.findMany({ where: { quoteId }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } }) : [];
     const storage = getPrivateStorage();
     for (const document of documents) if (document.storageObject?.storageKey) await storage.delete(document.storageObject.storageKey);
+    const projectIds = requestId ? (await prisma.project.findMany({ where: { quoteRequestId: requestId }, select: { id: true } })).map(({ id }) => id) : [];
+    await prisma.projectChecklistItem.deleteMany({ where: { projectId: { in: projectIds } } });
+    await prisma.project.deleteMany({ where: { id: { in: projectIds } } });
     if (quoteId) await prisma.quoteAcceptance.deleteMany({ where: { quoteId } });
     await prisma.generatedDocument.deleteMany({ where: { id: { in: documents.map(({ id }) => id) } } });
     await prisma.storageObject.deleteMany({ where: { id: { in: documents.flatMap(({ storageObjectId }) => storageObjectId ? [storageObjectId] : []) } } });
     if (quoteId) await prisma.quote.delete({ where: { id: quoteId } });
-    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, requestBId, quoteId].filter(Boolean) } } });
-    await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: [requestId, requestBId, quoteId, ...documents.map(({ id }) => id)].filter(Boolean) } }, { actorUserId: { in: userIds } }] } });
+    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, requestBId, quoteId, ...projectIds].filter(Boolean) } } });
+    await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: [requestId, requestBId, quoteId, ...projectIds, ...documents.map(({ id }) => id)].filter(Boolean) } }, { actorUserId: { in: userIds } }] } });
     if (requestId) await prisma.quoteRequest.delete({ where: { id: requestId } });
     if (requestBId) await prisma.quoteRequest.delete({ where: { id: requestBId } });
     if (contactAId) await prisma.clientContact.delete({ where: { id: contactAId } });

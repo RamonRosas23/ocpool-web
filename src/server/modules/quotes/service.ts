@@ -520,7 +520,16 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
     if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
     requireStaffRequestReadScope(actor, request.currentAssigneeId);
     assertBuildableRequest(request);
-    const { snapshot, taxProfileId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, undefined, input.taxProfileId);
+    // La versión nueva parte de la anterior: conservar sus precios ya congelados no es un cambio de
+    // precio (misma regla que el autoguardado del borrador); sólo modificarlos exige quotes.edit_prices.
+    // Sin esto, Ventas no podía crear la V2 tras cambios pedidos, una propuesta vencida o rechazada: el
+    // constructor reenvía el precio congelado y el servidor lo trataba como un override.
+    const baseQuote = await transaction.quote.findUnique({ where: { quoteRequestId }, select: { workingVersionId: true, publishedVersionId: true, currentVersionId: true } });
+    const basePricesVersionId = baseQuote ? baseQuote.workingVersionId ?? baseQuote.publishedVersionId ?? baseQuote.currentVersionId : null;
+    const previousPricesByItem = basePricesVersionId
+      ? new Map((await transaction.quoteLineSnapshot.findMany({ where: { quoteVersionId: basePricesVersionId, catalogItemId: { not: null } }, select: { catalogItemId: true, unitPriceMinor: true } })).map((line) => [line.catalogItemId as string, line.unitPriceMinor]))
+      : undefined;
+    const { snapshot, taxProfileId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
     assertSameCurrency(request.currencyCode, snapshot.currency);
     const sections = normalizeSections(input.sections);
     const sectionIdsByLine = resolveLineSectionIds(input.lines, sections);

@@ -5,9 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronUp, CircleCheck, Compass, Hourglass, Inbox, X } from 'lucide-react';
 import StaffQuoteDocumentPanel from '@/components/StaffQuoteDocumentPanel';
+import ExpedienteJourney from '@/components/staff/ExpedienteJourney';
 import CatalogItemSearchCombobox, { type CatalogSearchResultItem } from '@/components/CatalogItemSearchCombobox';
 import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
 import { zonedCalendarDateEndOfDayToUtc } from '@/lib/calendar-timezone';
+import { builderValidUntil } from '@/lib/quote-validity';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffHeader from '@/components/StaffHeader';
@@ -133,6 +135,9 @@ type Workspace = {
   taxProfiles: Array<{ id: string; code: string; name: string; ratePercentBasisPoints: number }>;
   /** Petición de cambios del cliente sobre la versión publicada (portal → "Solicitar cambios"). */
   changeRequest?: { at: string; message: string } | null;
+  /** Después de la aceptación: el proyecto de arranque y la aceptación (para convertirla a mano). */
+  project?: { id: string; folio: string; status: string } | null;
+  acceptance?: { id: string; acceptedAt: string } | null;
 };
 
 type PriceList = { id: string; code: string; name: string; currencyCode: string; status: string };
@@ -247,6 +252,7 @@ const NEXT_STEP_CTA: Record<QuoteNextStepTarget, string> = {
   lines: 'Agregar conceptos',
   actions: 'Ir a las acciones',
   document: 'Ir al documento',
+  request: 'Ir al expediente',
 };
 
 const STAGE_STATE_LABELS: Record<QuoteStageStepState, string> = {
@@ -285,6 +291,9 @@ export default function StaffQuotesPanel() {
   const [validUntil, setValidUntil] = useState('');
   const [search, setSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
+  // "En curso" (por cotizar, enviadas, en negociación) o "Cerradas" (aceptadas, en proyecto, cerradas):
+  // lo vendido ya no desaparece de esta pestaña.
+  const [listScope, setListScope] = useState<'open' | 'closed'>('open');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -331,6 +340,7 @@ export default function StaffQuotesPanel() {
     try {
       const params = new URLSearchParams({ page: String(currentPage), pageSize: '20' });
       if (query) params.set('query', query);
+      if (listScope === 'closed') params.set('scope', 'closed');
       const [capabilitiesResponse, requestsResponse, listsResponse] = await Promise.all([
         fetch('/api/staff/capabilities', { credentials: 'include', cache: 'no-store' }),
         fetch(`/api/staff/quotes?${params.toString()}`, { credentials: 'include', cache: 'no-store' }),
@@ -362,12 +372,15 @@ export default function StaffQuotesPanel() {
       setTotalPages(Math.max(1, requestData.totalPages));
       setPriceLists(listData);
       setRestricted(false);
+      // Un expediente abierto por deep link (ej. desde notificaciones o la cola de aprobaciones)
+      // se conserva la primera vez aunque no esté en esta página/lista -- por ejemplo, uno ya
+      // aceptado sale de las 3 categorías "en construcción" de esta lista, pero loadWorkspace lo
+      // trae por su cuenta igual. Mismo patrón que StaffRequestsPanel.tsx (W1-02); la referencia se
+      // consume fuera del updater, que debe ser puro (React puede invocarlo dos veces).
+      const deepLinkedId = deepLinkedIdRef.current;
+      deepLinkedIdRef.current = null;
       setSelectedId((current) => {
-        // Un expediente abierto por deep link (ej. desde notificaciones o la cola de aprobaciones)
-        // se conserva la primera vez aunque no esté en esta página/lista -- por ejemplo, uno ya
-        // aceptado sale de las 3 categorías "en construcción" de esta lista, pero loadWorkspace lo
-        // trae por su cuenta igual. Mismo patrón que StaffRequestsPanel.tsx (W1-02).
-        if (deepLinkedIdRef.current && current === deepLinkedIdRef.current) { deepLinkedIdRef.current = null; return current; }
+        if (deepLinkedId && current === deepLinkedId) return current;
         // El expediente abierto se conserva aunque la búsqueda o la página ya no lo incluyan: buscar
         // en el riel es para encontrar el siguiente, no debe cerrar (ni arriesgar) el borrador en curso.
         return current ?? requestData.items[0]?.id ?? null;
@@ -380,7 +393,7 @@ export default function StaffQuotesPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [listScope]);
 
   const loadWorkspace = useCallback(async (requestId: string) => {
     // UX audit fix: sin esta guarda, cambiar rápido de una cotización a otra podía dejar que la
@@ -400,7 +413,7 @@ export default function StaffQuotesPanel() {
       const freshPriceListId = data.priceLists.some((list) => list.id === selectedPriceListIdRef.current) ? selectedPriceListIdRef.current : preferredList?.id ?? '';
       const preferredTaxProfile = data.taxProfiles.find((profile) => profile.code === 'IVA_GENERAL') ?? data.taxProfiles[0];
       const freshTaxProfileId = currentVersion?.taxProfileId ?? (data.taxProfiles.some((profile) => profile.id === selectedTaxProfileIdRef.current) ? selectedTaxProfileIdRef.current : preferredTaxProfile?.id ?? '');
-      const freshValidUntil = currentVersion?.validUntil ? currentVersion.validUntil.slice(0, 10) : '';
+      const freshValidUntil = builderValidUntil(currentVersion);
       const freshDraftSections: DraftSection[] = (currentVersion?.sections ?? []).map((section) => ({ id: section.id, title: section.title, description: section.description ?? '' }));
       const freshDraftLines: DraftLine[] = (currentVersion?.lines ?? []).map((line) => ({
         id: line.id,
@@ -520,7 +533,9 @@ export default function StaffQuotesPanel() {
   // nueva versión") ya acepta una versión rechazada como base -- su única restricción real es que
   // no haya ya un borrador o una versión en revisión pendiente -- así que sin RECHAZADA aquí, una
   // vez rechazada una versión el expediente quedaba sin ninguna forma de retomarla.
-  const canStartVersion = Boolean(capabilities?.quotesCreate && workspace && currentVersion && ['ENVIADA', 'EN_NEGOCIACION', 'RECHAZADA'].includes(currentVersion.status));
+  // Sólo donde el servidor acepta versiones nuevas (expediente en elaboración o con propuesta enviada):
+  // un expediente cerrado o de vuelta en revisión ya no ofrece un botón que terminaría en error.
+  const canStartVersion = Boolean(capabilities?.quotesCreate && workspace && currentVersion && ['ENVIADA', 'EN_NEGOCIACION', 'RECHAZADA'].includes(currentVersion.status) && ['EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'].includes(workspace.request.status));
   // UX audit fix: el preflight de envío nunca revisaba si alcance/condiciones de pago/garantías
   // (contenido real de la propuesta) estaban vacíos -- sólo el documento y los datos del
   // destinatario. Ninguno de estos campos es obligatorio a nivel de dato (una propuesta legítima
@@ -546,8 +561,10 @@ export default function StaffQuotesPanel() {
     canApprove: Boolean(capabilities?.quotesApproveDiscount),
     canSend: canPublish,
     canEdit: Boolean(capabilities?.quotesCreate),
-    projectCreated: workspace?.request.status === 'CONVERTIDA_EN_PROYECTO',
+    projectCreated: Boolean(workspace?.project) || workspace?.request.status === 'CONVERTIDA_EN_PROYECTO',
     changesRequested: workspace?.changeRequest && currentVersion && ['ENVIADA', 'EN_NEGOCIACION'].includes(currentVersion.status) ? workspace.changeRequest.message : null,
+    publishedExpired: Boolean(currentVersion && ['ENVIADA', 'EN_NEGOCIACION'].includes(currentVersion.status) && currentVersion.validUntil && new Date(currentVersion.validUntil).getTime() < Date.now()),
+    requestStatus: workspace?.request.status ?? null,
     // La última decisión fue un rechazo y aún no se vuelve a pedir: su motivo es la guía de ventas.
     approvalRejectedReason: (() => {
       const rejected = [discountApproval, specialApproval].find((approval) => approval?.status === 'REJECTED' && ((approval.type === 'DISCOUNT' && requiresDiscountApproval && !activeDiscountApproval) || (approval.type === 'SPECIAL_CONCEPT' && hasSpecialLines && !activeSpecialApproval)));
@@ -559,6 +576,7 @@ export default function StaffQuotesPanel() {
   const nextStepTarget = nextStep.target;
 
   const goToNextStep = (target: QuoteNextStepTarget) => {
+    if (target === 'request') return;
     const element = target === 'price-list' ? document.getElementById('quotes-price-list')
       : target === 'lines' ? document.querySelector<HTMLElement>('.quotes-catalog-search__input')
         : target === 'actions' ? document.getElementById('quotes-actions')
@@ -1053,6 +1071,18 @@ export default function StaffQuotesPanel() {
     finally { setSaving(false); }
   };
 
+  const convertAcceptedToProject = async () => {
+    if (!workspace?.acceptance) return;
+    setSaving(true); setError(null);
+    try {
+      const response = await fetch('/api/staff/projects', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ quoteAcceptanceId: workspace.acceptance.id }) });
+      const created = await readApiResponseOrThrow<{ id: string; folio: string }>(response, 'No fue posible crear el proyecto.');
+      showToast(`Proyecto ${created.folio} creado. El arranque sigue en Proyectos.`);
+      await refresh();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'No fue posible crear el proyecto.'); }
+    finally { setSaving(false); }
+  };
+
   const openApprovalRequest = (kind: 'DISCOUNT' | 'SPECIAL_CONCEPT') => {
     // Para el concepto especial se propone el motivo que ventas ya escribió en la línea.
     const specialReasons = kind === 'SPECIAL_CONCEPT' && currentVersion ? [...new Set(currentVersion.lines.filter((line) => line.catalogItemId === null && line.specialReason).map((line) => line.specialReason as string))] : [];
@@ -1160,15 +1190,16 @@ export default function StaffQuotesPanel() {
   return <PrivateSurfaceRoot className="staff-shell">
     <StaffHeader onNavigate={guardNavigation} />
     <div className="staff-content">
-      <div className="staff-intro"><div><p className="staff-kicker">Trabajo comercial</p><h1>Cotizaciones</h1><p className="staff-intro__copy">Convierte el alcance de cada expediente en una propuesta trazable, precisa y lista para revisión.</p></div><div className="staff-intro__metric"><strong>{loading && requests.length === 0 ? '—' : total}</strong><span>{total === 1 ? 'expediente listo' : 'expedientes listos'}</span></div></div>
+      <div className="staff-intro"><div><p className="staff-kicker">Trabajo comercial</p><h1>Cotizaciones</h1><p className="staff-intro__copy">Convierte el alcance de cada expediente en una propuesta trazable, precisa y lista para revisión.</p></div><div className="staff-intro__metric"><strong>{loading && requests.length === 0 ? '—' : total}</strong><span>{listScope === 'closed' ? (total === 1 ? 'expediente cerrado' : 'expedientes cerrados') : total === 1 ? 'expediente listo' : 'expedientes listos'}</span></div></div>
       {error && <p className="staff-error" role="alert">{error}</p>}
       <section className="quotes-workspace" aria-label="Constructor de cotizaciones">
         <aside className="quotes-rail">
           <form className="staff-filters" onSubmit={submitSearch} role="search" aria-label="Buscar expedientes"><label><span>Buscar expediente</span><span className="staff-search"><input aria-label="Buscar expediente" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Folio o cliente" maxLength={100} />{search && <button type="button" className="staff-search__clear" aria-label="Limpiar búsqueda" onClick={() => setSearch('')}><X size={15} aria-hidden="true" /></button>}</span></label></form>
+          <div className="staff-views quotes-scope" role="group" aria-label="Qué cotizaciones ver">{(['open', 'closed'] as const).map((scope) => <button key={scope} type="button" className={listScope === scope ? 'is-selected' : ''} aria-pressed={listScope === scope} onClick={() => { if (listScope !== scope) { setPage(1); setListScope(scope); } }}>{scope === 'open' ? 'En curso' : 'Cerradas'}</button>)}</div>
           <div className="staff-inbox__head"><span>{loading ? 'Actualizando…' : `Mostrando ${requests.length} de ${total}`}</span></div>
           <div className="quotes-request-list" aria-live="polite">
             {loading && <div className="staff-list-placeholder"><span /><span /><span /></div>}
-            {!loading && requests.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span><h2>Sin expedientes listos.</h2><p>Las solicitudes en elaboración o negociación aparecerán aquí.</p></div>}
+            {!loading && requests.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span>{listScope === 'closed' ? <><h2>Sin cotizaciones cerradas.</h2><p>Aquí verás las aceptadas, las que ya son proyecto y las que se cerraron.</p></> : <><h2>Sin expedientes listos.</h2><p>Las solicitudes en elaboración o negociación aparecerán aquí.</p></>}</div>}
             {!loading && requests.map((item) => <button className={`quotes-request-row${selectedId === item.id ? ' is-selected' : ''}`} type="button" key={item.id} onClick={() => { if (item.id === selectedId) { revealWhenStacked(mainRef.current, '(max-width: 1100px)'); return; } void selectRequest(item.id).then((switched) => { revealPendingRef.current = switched; }); }}><span className="quotes-request-row__signal" aria-hidden="true" /><span><strong>{item.folio}</strong><b>{item.client.displayName}</b><small>{item.detail?.projectType ?? 'Sin tipo'} · {item.detail?.location ?? 'Sin ubicación'}</small></span><em>{item.quote?.currentVersion ? `V${item.quote.currentVersion.versionNumber}` : 'Nuevo'}</em></button>)}
           </div>
           <PrivatePagination page={page} totalPages={totalPages} disabled={loading} onPrevious={() => setPage((value) => value - 1)} onNext={() => setPage((value) => value + 1)} />
@@ -1182,10 +1213,15 @@ export default function StaffQuotesPanel() {
               : <div className="staff-empty staff-empty--detail"><WorkspaceLogo className="staff-empty__logo staff-empty__logo--compact" /><h2>Selecciona un expediente.</h2><p>El alcance y las líneas de cotización aparecerán aquí.</p></div>)}
           {!loadingWorkspace && workspace && <>
             <div className="quotes-main__top"><div><p className="staff-kicker">{workspace.request.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{workspace.request.folio}</h2><p className="staff-detail__date">{workspace.request.client.displayName} · Actualizado {formatDateTime(workspace.request.updatedAt)}</p><Link className="quotes-main__request-link" href={`/staff/requests?request=${workspace.request.id}`} onClick={(event) => guardNavigation(event, `/staff/requests?request=${workspace.request.id}`)}>Ver expediente<ArrowUpRight size={14} aria-hidden="true" /></Link></div><StatusPill status={workspace.request.status} /></div>
+            <ExpedienteJourney here="quote" requestId={workspace.request.id} requestStatus={workspace.request.status} quote={currentVersion ? { versionNumber: currentVersion.versionNumber, status: currentVersion.status, validUntil: currentVersion.validUntil } : null} project={workspace.project ?? null} />
             <section className="quotes-stage" aria-label="Avance de la cotización"><ol className="quotes-stage__steps">{stageSteps.map((step, index) => <li key={step.key} className={`quotes-stage__step is-${step.state}`} aria-current={step.state === 'current' ? 'step' : undefined}><span className="quotes-stage__marker" aria-hidden="true">{step.state === 'done' ? <Check size={13} strokeWidth={2.6} /> : step.state === 'closed' ? <X size={13} strokeWidth={2.6} /> : index + 1}</span><span className="quotes-stage__label">{step.label}<span className="sr-only">{STAGE_STATE_LABELS[step.state]}</span>{step.note && <small>{step.note}</small>}</span></li>)}</ol><div className={`quotes-next quotes-next--${nextStep.tone}`}><span className="quotes-next__icon" aria-hidden="true">{nextStep.tone === 'waiting' ? <Hourglass size={18} /> : nextStep.tone === 'blocked' ? <AlertTriangle size={18} /> : nextStep.tone === 'done' ? <CircleCheck size={18} /> : <Compass size={18} />}</span><div className="quotes-next__body"><p className="staff-section-label">Siguiente paso</p><h3>{nextStep.title}</h3><p>{nextStep.detail}</p></div>{(() => {
+              // Aceptada: lleva al proyecto de arranque o lo crea con un clic (aceptaciones anteriores o
+              // si la creación automática falló).
+              if (currentVersion?.status === 'ACEPTADA' && workspace?.project) return <Link className="staff-button staff-button--dark quotes-next__cta" href={`/staff/projects/${workspace.project.id}`}>Abrir proyecto<ArrowRight size={15} aria-hidden="true" /></Link>;
+              if (currentVersion?.status === 'ACEPTADA' && capabilities?.projectsCreate && workspace?.acceptance) return <button className="staff-button staff-button--dark quotes-next__cta" type="button" disabled={saving} onClick={() => void convertAcceptedToProject()}>{saving ? 'Creando…' : 'Convertir en proyecto'}<ArrowRight size={15} aria-hidden="true" /></button>;
               // Si el siguiente paso es una acción de un clic (y sin confirmación extra), el botón la
               // ejecuta; si pide decidir o revisar algo, lleva a la barra de acciones y la resalta.
-              const direct = canStartVersion && stageInput.changesRequested !== null && stageInput.changesRequested !== undefined
+              const direct = canStartVersion && ((stageInput.changesRequested !== null && stageInput.changesRequested !== undefined) || stageInput.publishedExpired || currentVersion?.status === 'RECHAZADA')
                 ? { label: 'Crear nueva versión', run: () => void createVersionFromSent(), disabled: saving || !preview.valid || draftLines.length === 0 || !selectedPriceListId }
                 : currentVersion?.status === 'BORRADOR' && capabilities?.quotesCreate && draftLines.length > 0 && nextStepTarget === 'actions'
                 ? { label: 'Pasar a revisión', run: () => void transition('EN_REVISION'), disabled: saving || autosaveState === 'saving' || autosaveState === 'dirty' || autosaveState === 'conflict' }
@@ -1197,6 +1233,7 @@ export default function StaffQuotesPanel() {
                       ? { label: 'Revisar y enviar', run: () => void openPublishPreflight(), disabled: saving }
                       : null;
               if (direct) return <button className="staff-button staff-button--dark quotes-next__cta" type="button" disabled={direct.disabled} onClick={direct.run}>{direct.label}<ArrowRight size={15} aria-hidden="true" /></button>;
+              if (nextStepTarget === 'request' && workspace) return <Link className="staff-button staff-button--outline quotes-next__cta" href={`/staff/requests?request=${workspace.request.id}`} onClick={(event) => guardNavigation(event, `/staff/requests?request=${workspace.request.id}`)}>{NEXT_STEP_CTA.request}<ArrowRight size={15} aria-hidden="true" /></Link>;
               return nextStepTarget ? <button className="staff-button staff-button--outline quotes-next__cta" type="button" onClick={() => goToNextStep(nextStepTarget)}>{NEXT_STEP_CTA[nextStepTarget]}<ArrowRight size={15} aria-hidden="true" /></button> : null;
             })()}</div></section>
             <div className="quotes-brief"><div><p className="staff-section-label">Alcance</p><strong>{workspace.request.detail?.projectType ?? 'Sin tipo de proyecto'}</strong><span>{workspace.request.detail?.location ?? 'Sin ubicación'}{workspace.request.detail?.dimensions ? ` · ${workspace.request.detail.dimensions}` : ''}</span></div><div><p className="staff-section-label">Calificación</p><strong>{qualificationLabel(workspace.request.detail?.projectStage, QUOTE_REQUEST_PROJECT_STAGE_LABELS)}</strong><span>{qualificationLabel(workspace.request.detail?.timeline, QUOTE_REQUEST_TIMELINE_LABELS)} · {qualificationLabel(workspace.request.detail?.budgetRange, QUOTE_REQUEST_BUDGET_RANGE_LABELS)}</span></div><div><p className="staff-section-label">Contacto</p><strong>{workspace.request.contact.displayName}</strong><span>{workspace.request.contact.email}</span></div><div><p className="staff-section-label">Moneda</p><strong>{selectedCurrency}</strong><span>{workspace.request.detail?.budgetCents ? `Presupuesto ${moneyLabel(workspace.request.detail.budgetCents, workspace.request.detail.currencyCode)}` : 'Sin presupuesto declarado'}</span></div></div>
@@ -1281,7 +1318,7 @@ export default function StaffQuotesPanel() {
               {hasDiscount && currentVersion?.approvals.length ? <div className="quotes-approval-summary" aria-label="Historial de aprobación de descuento"><strong>Control de descuento</strong>{currentVersion.approvals.filter((approval) => approval.type === 'DISCOUNT').slice(0, 3).map((approval) => <span key={approval.id}>{approvalStatusLabel(approval.status)} · {formatDateTime(approval.requestedAt)}</span>)}</div> : null}
               {hasSpecialLines && currentVersion?.approvals.length ? <div className="quotes-approval-summary" aria-label="Historial de aprobación de conceptos especiales"><strong>Control de concepto especial</strong>{currentVersion.approvals.filter((approval) => approval.type === 'SPECIAL_CONCEPT').slice(0, 3).map((approval) => <span key={approval.id}>{approvalStatusLabel(approval.status)} · {formatDateTime(approval.requestedAt)}</span>)}</div> : null}
             </section>
-            {currentVersion && <StaffQuoteDocumentPanel versionId={currentVersion.id} versionNumber={currentVersion.versionNumber} canRead={Boolean(capabilities?.quotesPdfRead)} canGenerate={Boolean(capabilities?.quotesPdfGenerate)} canReadProject={Boolean(capabilities?.projectsRead)} canCreateProject={Boolean(capabilities?.projectsCreate)} />}
+            {currentVersion && <StaffQuoteDocumentPanel key={`${currentVersion.id}-${workspace.project?.id ?? 'sin-proyecto'}`} versionId={currentVersion.id} versionNumber={currentVersion.versionNumber} canRead={Boolean(capabilities?.quotesPdfRead)} canGenerate={Boolean(capabilities?.quotesPdfGenerate)} canReadProject={Boolean(capabilities?.projectsRead)} canCreateProject={Boolean(capabilities?.projectsCreate)} />}
             {workspace.request.detail?.description && <section className="quotes-scope"><p className="staff-section-label">Alcance compartido</p><p>{workspace.request.detail.description}</p></section>}
             <section className="quotes-history"><div><p className="staff-section-label">Trazabilidad</p><h3>Historial de versiones</h3></div><ol>{workspace.quote?.versions.map((version) => <li key={version.id}><span className="quotes-history__mark">V{version.versionNumber}</span><div><strong>{statusLabel(version.status)}</strong><span>{moneyLabel(version.totalMinor, version.currencyCode)} · {version.createdBy.displayName}</span><time dateTime={version.createdAt}>{formatDateTime(version.createdAt)}</time></div></li>) ?? <li className="quotes-history__empty">Todavía no hay versiones guardadas.</li>}</ol></section>
           </>}

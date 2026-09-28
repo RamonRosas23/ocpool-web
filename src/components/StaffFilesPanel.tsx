@@ -86,6 +86,37 @@ function FileStatusBadge({ file }: { file: FileItem }) {
 
 const DEFAULT_CAPABILITIES: StaffFilesCapabilities = { filesRead: false, filesUpload: false, filesDownload: false, filesDelete: false, filesInternalRead: false, filesManage: false };
 
+type DeletedFile = { id: string; originalFileName: string; category: FileCategory; visibility: FileVisibility; uploadedAt: string; uploadedBy: string; deletedAt: string; deletedBy: string | null };
+
+// "¿Qué pasó con el archivo que estaba aquí?": el borrado es definitivo en el almacenamiento, pero queda
+// su rastro (quién lo subió, quién lo eliminó y cuándo). Se consulta bajo demanda para no cargar nada
+// extra en cada expediente.
+function DeletedFilesDisclosure({ requestId, version }: { requestId: string; version: number }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<{ status: 'idle' | 'loading' | 'ready' | 'error'; items: DeletedFile[] }>({ status: 'idle', items: [] });
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setState((current) => ({ status: 'loading', items: current.items }));
+    void fetch(`/api/staff/quote-requests/${requestId}/files/deleted`, { credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('deleted files');
+        return response.json() as Promise<{ items: DeletedFile[] }>;
+      })
+      .then((data) => setState({ status: 'ready', items: data.items }))
+      .catch(() => { if (!controller.signal.aborted) setState({ status: 'error', items: [] }); });
+    return () => controller.abort();
+  }, [open, requestId, version]);
+  return <details className="staff-files__deleted" onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>Archivos eliminados</summary>
+    {state.status === 'loading' && <p className="staff-files__deleted-state" role="status">Cargando…</p>}
+    {state.status === 'error' && <p className="staff-files__deleted-state">No fue posible cargar los archivos eliminados.</p>}
+    {state.status === 'ready' && state.items.length === 0 && <p className="staff-files__deleted-state">No se ha eliminado ningún archivo de este expediente.</p>}
+    {state.status === 'ready' && state.items.length > 0 && <ul className="staff-files__deleted-list">{state.items.map((file) => <li key={file.id}><strong title={file.originalFileName}>{file.originalFileName}</strong><span>{fileCategoryLabel(file.category)}{file.visibility === 'INTERNAL' ? ' · interno' : ''} · subido por {file.uploadedBy}</span><span>Eliminado{file.deletedBy ? ` por ${file.deletedBy}` : ''} · {formatDateTime(file.deletedAt, undefined, 'fecha no disponible')}</span></li>)}</ul>}
+    <p className="staff-files__deleted-note">Un archivo eliminado ya no se puede descargar ni recuperar; aquí queda su rastro. Si lo necesitas, pídelo de nuevo a quien lo compartió.</p>
+  </details>;
+}
+
 export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPABILITIES }: { requestId: string; capabilities?: StaffFilesCapabilities }) {
   const headingId = useId();
   const sharedTabId = useId();
@@ -102,6 +133,7 @@ export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPA
   const [uploading, setUploading] = useState(false);
   const [uploadState, setUploadState] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletedVersion, setDeletedVersion] = useState(0);
   const [showUpload, setShowUpload] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadIdempotencyKey, setUploadIdempotencyKey] = useState<string | null>(null);
@@ -255,6 +287,7 @@ export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPA
       const response = await fetch(endpoint(requestId, `/${file.id}`), { method: 'DELETE', credentials: 'include' });
       await readResponse<{ fileId: string }>(response);
       setConfirmDeleteId(null);
+      setDeletedVersion((current) => current + 1);
       await loadFiles();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible eliminar el archivo.');
@@ -285,5 +318,6 @@ export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPA
     {capabilities.filesRead && <><div className="staff-files__tabs" role="tablist" aria-label="Visibilidad de archivos" aria-orientation="horizontal"><button id={sharedTabId} type="button" role="tab" tabIndex={mode === 'CUSTOMER' ? 0 : -1} aria-selected={mode === 'CUSTOMER'} aria-controls={mode === 'CUSTOMER' ? `${headingId}-shared` : undefined} className={mode === 'CUSTOMER' ? 'is-active' : ''} onKeyDown={handleTabKeyDown} onClick={() => setMode('CUSTOMER')}>{`Compartidos ${items.filter((file) => file.visibility === 'CUSTOMER').length}`}</button>{capabilities.filesInternalRead && <button id={internalTabId} type="button" role="tab" tabIndex={mode === 'INTERNAL' ? 0 : -1} aria-selected={mode === 'INTERNAL'} aria-controls={mode === 'INTERNAL' ? `${headingId}-internal` : undefined} className={mode === 'INTERNAL' ? 'is-active' : ''} onKeyDown={handleTabKeyDown} onClick={() => setMode('INTERNAL')}>{`Internos ${items.filter((file) => file.visibility === 'INTERNAL').length}`}</button>}</div><div id={mode === 'CUSTOMER' ? `${headingId}-shared` : `${headingId}-internal`} role="tabpanel" aria-labelledby={mode === 'CUSTOMER' ? sharedTabId : internalTabId}>{loading && <div className="staff-files__loading" role="status" aria-label="Cargando archivos"><i /><i /><i /></div>}{!loading && visibleItems.length === 0 && <div className="staff-files__empty"><strong>{mode === 'CUSTOMER' ? 'Aún no hay archivos compartidos.' : 'Aún no hay archivos internos.'}</strong><span>Los archivos de esta visibilidad aparecerán aquí cuando se agreguen al expediente.</span></div>}{!loading && visibleItems.length > 0 && <ul className={`staff-files__list${mode === 'INTERNAL' ? ' is-internal' : ''}`}>{visibleItems.map((file) => <li className="staff-file" key={file.id}><div className="staff-file__icon" aria-hidden="true">{file.contentType === 'application/pdf' ? 'PDF' : 'IMG'}</div><div className="staff-file__info"><strong title={file.originalFileName}>{file.originalFileName}</strong><span>{fileCategoryLabel(file.category)} · {formatBytes(file.byteSize)} · {formatDateTime(file.createdAt, undefined, 'Fecha no disponible')}</span></div><FileStatusBadge file={file} /><div className="staff-file__actions">{file.downloadAvailable && capabilities.filesDownload && <button type="button" className="staff-file__action" disabled={busyFileId === file.id} onClick={() => void download(file)}>Descargar {file.originalFileName}</button>}{file.canDelete && <>{confirmDeleteId === file.id ? <span className="staff-file__confirm"><small className="staff-file__confirm-warning">No se puede deshacer.</small><button type="button" className="staff-file__action staff-file__action--danger" disabled={busyFileId === file.id} onClick={() => void remove(file)}>Confirmar eliminación</button><button type="button" className="staff-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(null)}>Cancelar</button></span> : <button type="button" className="staff-file__cancel" disabled={busyFileId === file.id} onClick={() => setConfirmDeleteId(file.id)}>Eliminar archivo</button>}</>}</div></li>)}</ul>}</div></>}
     {capabilities.filesRead && nextCursor && <button type="button" className="staff-files__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando archivos…' : 'Ver más archivos'}</button>}
     <p className="staff-files__note">Formatos permitidos: PDF, JPG, PNG y WebP · máximo 25 MB.</p>
+    {capabilities.filesRead && <DeletedFilesDisclosure requestId={requestId} version={deletedVersion} />}
   </section>;
 }

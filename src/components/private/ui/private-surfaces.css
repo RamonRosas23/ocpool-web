@@ -2092,3 +2092,64 @@ button.staff-notification-health__item.is-selected { border-color: var(--private
 .client-accept-preview__touch { display: grid; justify-items: start; gap: 12px; padding: 16px; background: var(--private-color-surface-muted); }
 .client-accept-preview__touch p { margin: 0; color: var(--private-color-ink-muted); font-size: 13.5px; line-height: 1.5; }
 .client-accept-preview__touch .client-quote-action { width: 100%; }
+/* Recorrido del expediente: Solicitud → Cotización → Proyecto, igual en las tres pestañas. */
+.expediente-journey { margin: 16px 0 0; }
+.expediente-journey ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.expediente-journey__step { min-width: 0; }
+.expediente-journey__item { display: flex; align-items: center; gap: 10px; min-width: 0; height: 100%; border: 1px solid var(--private-color-border); border-radius: 10px; padding: 8px 12px; background: var(--private-color-surface); color: inherit; text-decoration: none; transition: border-color var(--private-motion-standard), background var(--private-motion-standard); }
+a.expediente-journey__item:hover { border-color: rgba(27, 82, 102, .35); background: var(--private-tint-accent); }
+a.expediente-journey__item:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.expediente-journey__marker { display: grid; flex: 0 0 auto; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: var(--private-color-surface-sunken); color: var(--private-color-ink-muted); font-size: 11.5px; font-weight: 750; }
+.expediente-journey__text { display: grid; min-width: 0; line-height: 1.3; }
+.expediente-journey__text strong { color: var(--private-color-brand); font-size: 13px; font-weight: 700; }
+.expediente-journey__text small { overflow: hidden; color: var(--private-color-ink-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.expediente-journey__step.is-done .expediente-journey__marker { background: var(--private-color-success); color: #fff; }
+.expediente-journey__step.is-current .expediente-journey__marker { background: var(--private-color-brand); color: #fff; }
+.expediente-journey__step.is-closed .expediente-journey__marker { background: var(--private-color-danger); color: #fff; }
+.expediente-journey__step.is-upcoming .expediente-journey__item { border-style: dashed; background: transparent; }
+.expediente-journey__step.is-here .expediente-journey__item { border-color: rgba(9, 36, 51, .3); background: var(--private-color-surface); box-shadow: inset 0 -2px 0 var(--private-color-brand); }
+@media (max-width: 640px) {
+  .expediente-journey ol { grid-template-columns: 1fr; }
+}
+/* Solicitudes: "Nueva solicitud" junto a la métrica y siguiente paso "hecho" (proyecto en marcha). */
+.staff-intro__side { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 14px; }
+.staff-intro__create { gap: 8px; white-space: nowrap; }
+.staff-next-step--done { border-color: rgba(39, 107, 73, .22); background: linear-gradient(120deg, rgba(39, 107, 73, .07), rgba(255, 253, 249, .6)); box-shadow: inset 3px 0 0 var(--private-color-success); }
+.staff-next-step--done .staff-next-step__icon { color: var(--private-color-success); }
+.staff-create-request { max-width: 1080px; }
+@media (max-width: 640px) {
+  .staff-intro__side { width: 100%; justify-content: space-between; }
+}
+/* Cotizaciones: "En curso / Cerradas" en el riel (lo vendido ya no desaparece). */
+.quotes-scope { flex: 0 0 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 12px 16px 0; }
+/* Proyecto: tareas de arranque sugeridas desde el checklist vacío. */
+.handoff-checklist-empty__suggest { justify-self: start; margin-top: 8px; }
+/* Solicitudes: seguimiento, cierre con motivo y expediente cerrado. */
+.staff-next-step__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.staff-next-step--closed { border-color: var(--private-color-border); background: var(--private-color-surface-muted); box-shadow: inset 3px 0 0 var(--private-color-border-strong); }
+.staff-next-step--closed .staff-next-step__icon { color: var(--private-color-ink-muted); }
+.staff-button--quiet-danger { border-color: transparent; background: transparent; color: var(--private-color-danger); }
+.staff-button--quiet-danger:hover:not(:disabled) { border-color: rgba(155, 61, 51, .2); background: rgba(155, 61, 51, .07); color: var(--private-color-danger-hover); }
+.staff-lifecycle-dialog__fields { display: grid; gap: 12px; margin-top: 14px; }
+.quotes-preflight-field textarea.staff-lifecycle-dialog__message { min-height: 160px; line-height: 1.55; }
+@media (max-width: 640px) {
+  .staff-next-step__actions { grid-column: 1 / -1; }
+  .staff-next-step__actions > * { flex: 1 1 auto; justify-content: center; }
+}
+
+/* Nueva solicitud: estado breve mientras se confirman permisos. */
+.staff-create-request__checking { padding: 48px 0; color: var(--private-color-ink-muted); font-size: .95rem; }
+
+/* Solicitudes: sin cambios manuales, el bloque de estado explica cómo avanza el expediente. */
+.staff-action__auto { margin: 6px 0 0; color: var(--private-color-ink-muted); font-size: .92rem; line-height: 1.55; }
+
+/* Archivos: rastro de los eliminados, bajo demanda y de sólo lectura. */
+.staff-files__deleted { margin-top: 14px; border-top: 1px solid var(--private-color-border); padding-top: 12px; }
+.staff-files__deleted > summary { width: max-content; cursor: pointer; color: var(--private-color-ink-muted); font-size: .88rem; font-weight: 700; list-style-position: inside; }
+.staff-files__deleted > summary:hover { color: var(--private-color-ink); }
+.staff-files__deleted > summary:focus-visible { outline: 2px solid var(--private-color-focus, #2f6f8f); outline-offset: 3px; border-radius: 4px; }
+.staff-files__deleted-list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.staff-files__deleted-list li { display: grid; gap: 2px; padding: 10px 12px; border: 1px dashed var(--private-color-border); border-radius: 12px; background: var(--private-color-surface-muted); }
+.staff-files__deleted-list strong { overflow: hidden; color: var(--private-color-ink-muted); font-size: .9rem; text-decoration: line-through; text-decoration-color: rgba(0, 0, 0, .25); text-overflow: ellipsis; white-space: nowrap; }
+.staff-files__deleted-list span { color: var(--private-color-ink-muted); font-size: .82rem; }
+.staff-files__deleted-state, .staff-files__deleted-note { margin: 10px 0 0; color: var(--private-color-ink-muted); font-size: .84rem; line-height: 1.5; }

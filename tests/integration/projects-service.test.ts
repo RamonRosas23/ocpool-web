@@ -138,9 +138,11 @@ describe('project handoff service (J1)', () => {
       expect(reopened.status).toBe('EN_TRANSICION');
       expect(reopened.completedAt).toBeNull();
 
-      // U1-05 -- el proyecto nace sin responsable (convertQuoteAcceptanceToProject no recibió
-      // ownerId); antes de este hallazgo no existía forma alguna de asignarlo después.
-      expect(reopened.owner).toBeNull();
+      // Sin ownerId explícito, el proyecto nace con quien llevaba el expediente como responsable
+      // (antes nacía sin responsable) y la conversión cierra el ciclo comercial de la solicitud.
+      expect(reopened.owner).toMatchObject({ id: salesUser.id });
+      expect(await prisma.quoteRequest.findUnique({ where: { id: request.quoteRequestId }, select: { status: true } })).toMatchObject({ status: 'CONVERTIDA_EN_PROYECTO' });
+      expect(await prisma.requestStatusHistory.findFirst({ where: { quoteRequestId: request.quoteRequestId, toStatus: 'CONVERTIDA_EN_PROYECTO' } })).toMatchObject({ fromStatus: 'ACEPTADA', changedById: salesUser.id });
 
       // Sin permiso: bloqueado, igual que el resto de comandos de este módulo.
       await expect(setProjectOwner(employeeActor(salesUser.id, []), project.id, salesUser.id, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN' });

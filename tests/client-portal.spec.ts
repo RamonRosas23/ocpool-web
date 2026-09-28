@@ -127,11 +127,15 @@ test.describe('customer portal opt-in flow', () => {
     for (const document of generatedDocuments) if (document.storageObject?.storageKey) await storage.delete(document.storageObject.storageKey);
     await prisma.fileAttachment.deleteMany({ where: { id: { in: attachments.map(({ id }) => id) } } });
     await prisma.storageObject.deleteMany({ where: { id: { in: attachments.map(({ storageObjectId }) => storageObjectId) } } });
+    // Aceptar desde el portal crea el proyecto de arranque: se retira antes que la aceptación y la solicitud.
+    const projectIds = (await prisma.project.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true } })).map(({ id }) => id);
+    await prisma.projectChecklistItem.deleteMany({ where: { projectId: { in: projectIds } } });
+    await prisma.project.deleteMany({ where: { id: { in: projectIds } } });
     if (quoteIds.length) await prisma.quoteAcceptance.deleteMany({ where: { quoteId: { in: quoteIds } } });
     await prisma.generatedDocument.deleteMany({ where: { id: { in: generatedDocuments.map(({ id }) => id) } } });
     await prisma.storageObject.deleteMany({ where: { id: { in: generatedDocuments.flatMap(({ storageObjectId }) => storageObjectId ? [storageObjectId] : []) } } });
     await prisma.quote.deleteMany({ where: { quoteRequestId: { in: requestIds } } });
-    const aggregateIds = [...requestIds, ...(quoteAId ? [quoteAId] : []), ...conversationIds];
+    const aggregateIds = [...requestIds, ...(quoteAId ? [quoteAId] : []), ...conversationIds, ...projectIds];
     const entityIds = [...aggregateIds, ...versionIds, ...messageIds];
     await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
     await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: entityIds } }, { actorUserId: { in: [customerAUserId, customerBUserId, employeeId] } }] } });
@@ -177,7 +181,7 @@ test.describe('customer portal opt-in flow', () => {
     await expect(page.getByText('Portal E2E snapshot item')).toBeVisible();
     await expect(page.locator('.client-quote__total strong')).toHaveText('MXN 348.00');
     await expect(page.getByText('Vigente hasta 01 oct 2026')).toBeVisible();
-    await expect(page.locator('.client-status')).toHaveText('Cotización disponible');
+    await expect(page.locator('.client-status')).toHaveText('Propuesta lista');
     await expect(page.getByRole('button', { name: 'Descargar PDF' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Revisar y aceptar' })).toBeVisible();
     const pdfResponsePromise = page.waitForResponse((response) => response.url().includes(`/api/portal/quotes/${quoteAId}/pdf`));
@@ -248,7 +252,9 @@ test.describe('customer portal opt-in flow', () => {
       abandoned: false,
     });
     await page.getByRole('button', { name: 'Continuar' }).click();
-    await expect(page.locator('.client-status')).toHaveText('Aceptada');
+    // Aceptar crea el proyecto de arranque en el mismo momento (antes "se aceptaba y ahí quedaba").
+    await expect(page.locator('.client-status')).toHaveText('Proyecto en marcha');
+    await expect(page.getByRole('heading', { name: 'Tu proyecto está en marcha' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Conversación del expediente' })).toBeVisible();
     await expect(page.getByText('Hemos revisado el alcance de tu proyecto.')).toBeVisible();
     await expect(page.getByText('Nota interna: validar acabado con ingeniería.')).toBeHidden();

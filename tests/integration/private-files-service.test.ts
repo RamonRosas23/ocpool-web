@@ -8,6 +8,7 @@ import {
   cleanupExpiredPrivateFiles,
   deletePrivateFile,
   getPrivateFileDownload,
+  listDeletedPrivateFiles,
   listPrivateFiles,
   listPrivateFilesPage,
   reservePrivateFile,
@@ -123,6 +124,12 @@ describe('private file transactional service', () => {
       expect(await prisma.outboxEvent.count({ where: { aggregateId: reserved.file.id, eventType: 'FILE.AVAILABLE' } })).toBe(1);
       await expect(deletePrivateFile(customer, request.quoteRequestId, reserved.file.id, { prisma, storage, now })).resolves.toMatchObject({ status: 'DELETED' });
       await expect(getPrivateFileDownload(customer, request.quoteRequestId, reserved.file.id, { prisma, storage, now })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+      // El rastro del eliminado queda para el equipo (quién lo subió y quién lo borró), nunca para el cliente.
+      const manager = actor(crypto.randomUUID(), 'EMPLOYEE', null, ['manager']);
+      const deleted = await listDeletedPrivateFiles(manager, request.quoteRequestId, { prisma });
+      expect(deleted.items).toEqual([expect.objectContaining({ id: reserved.file.id, originalFileName: 'planos.pdf', uploadedBy: 'Private customer', deletedBy: 'Private customer' })]);
+      expect(JSON.stringify(deleted)).not.toContain('private-files/');
+      await expect(listDeletedPrivateFiles(customer, request.quoteRequestId, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     } finally {
       const storageObjects = await prisma.fileAttachment.findMany({ where: { quoteRequestId: request.quoteRequestId }, select: { storageObjectId: true } });
       await prisma.fileAttachment.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });

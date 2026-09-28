@@ -145,7 +145,7 @@ test.describe('project handoff (J1)', () => {
 
     const statusPill = page.locator('.staff-status-pill');
     await expect(page.getByRole('heading', { name: `Project handoff client ${suffix}` })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(projectFolio)).toBeVisible();
+    await expect(page.getByText(projectFolio, { exact: true })).toBeVisible();
     await expect(statusPill).toHaveText('En transición');
     await expect(page.getByText('Alcance aceptado · V1')).toBeVisible();
     await expect(page.getByText('Firmado por Ana López Rivera')).toBeVisible();
@@ -164,7 +164,7 @@ test.describe('project handoff (J1)', () => {
     // Checklist: agregar una tarea real de transición y completarla.
     const taskLabel = `Agendar visita de medición ${suffix}`;
     await page.getByLabel('Nuevas tareas').fill(taskLabel);
-    await page.getByRole('button', { name: 'Agregar tarea' }).click();
+    await page.getByRole('button', { name: 'Agregar tarea', exact: true }).click();
     const checklistItem = page.locator('.staff-checklist__item', { hasText: taskLabel });
     await expect(checklistItem).toBeVisible({ timeout: 10_000 });
     await expect(checklistItem).not.toHaveClass(/is-complete/);

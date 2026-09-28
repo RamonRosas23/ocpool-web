@@ -20,9 +20,14 @@ export type QuoteWorkspaceListFilters = Readonly<{
   query?: string;
   page?: number;
   pageSize?: number;
+  /** `open` (predeterminado): en curso. `closed`: aceptadas, convertidas en proyecto o cerradas con cotización. */
+  scope?: 'open' | 'closed';
 }>;
 
 const BUILDABLE_REQUEST_STATUSES = ['EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'] as const;
+// Lo vendido o cerrado no desaparece de Cotizaciones: se consulta aparte ("Cerradas"), sólo si tuvo
+// cotización (una solicitud descartada antes de cotizar no es una cotización).
+const CLOSED_QUOTE_REQUEST_STATUSES = ['PENDIENTE_DE_APROBACION', 'ACEPTADA', 'CONVERTIDA_EN_PROYECTO', 'RECHAZADA', 'VENCIDA'] as const;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function requireQuoteRead(actor: Actor): void {
@@ -258,7 +263,9 @@ export async function listQuoteWorkspaces(actor: Actor, filters: QuoteWorkspaceL
   const where: Prisma.QuoteRequestWhereInput = {
     AND: [
       staffRequestReadScopeWhere(actor),
-      { status: { in: [...BUILDABLE_REQUEST_STATUSES] } },
+      filters.scope === 'closed'
+        ? { status: { in: [...CLOSED_QUOTE_REQUEST_STATUSES] }, quotes: { some: {} } }
+        : { status: { in: [...BUILDABLE_REQUEST_STATUSES] } },
       ...(query ? [{
         OR: [
           { folio: { contains: query, mode: 'insensitive' as const } },
@@ -530,7 +537,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       name: priceList.name,
       currencyCode: priceList.currencyCode,
     }));
-  const [historyPage, latestDelivery, lastCustomerVisibleMessage, taxProfiles, changeRequest] = await Promise.all([
+  const [historyPage, latestDelivery, lastCustomerVisibleMessage, taxProfiles, changeRequest, project, acceptance] = await Promise.all([
     loadQuoteHistoryPage(prisma, versionSummaries.map((version) => version.id), undefined, DEFAULT_QUOTE_HISTORY_PAGE_SIZE),
     quote ? getLatestAggregateNotificationDelivery(prisma, 'QUOTE', quote.id) : Promise.resolve(null),
     prisma.conversationMessage.findFirst({
@@ -547,6 +554,9 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
     publishedVersionRaw && ['ENVIADA', 'EN_NEGOCIACION'].includes(publishedVersionRaw.status)
       ? findLatestChangeRequest(prisma, request.id, publishedVersionRaw.versionNumber)
       : Promise.resolve(null),
+    // Después de la aceptación: el proyecto de arranque (o la aceptación, para convertirla a mano).
+    prisma.project.findUnique({ where: { quoteRequestId: request.id }, select: { id: true, folio: true, status: true } }),
+    quote ? prisma.quoteAcceptance.findFirst({ where: { quoteId: quote.id }, orderBy: { acceptedAt: 'desc' }, select: { id: true, acceptedAt: true } }) : Promise.resolve(null),
   ]);
 
   const projection = resolveQuoteWorkspaceProjection({
@@ -590,6 +600,8 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
     priceLists,
     taxProfiles,
     changeRequest: changeRequest ? { at: changeRequest.at.toISOString(), message: changeRequest.message } : null,
+    project,
+    acceptance,
     projection,
     meta: {
       timezone: readServerEnv().APP_TIMEZONE,

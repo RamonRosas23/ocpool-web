@@ -75,7 +75,10 @@ describe('request workspace V2 route contract', () => {
     const panel = readProjectFile('src/components/StaffRequestCreateV2Panel.tsx');
 
     expect(page).toContain('readCommercialV2Flags');
-    expect(page).toContain('notFound');
+    // El alta manual existe en ambas vistas (clásica y V2); la protege el permiso requests.create.
+    expect(page).toContain('classic=');
+    expect(panel).toContain('/api/staff/capabilities');
+    expect(panel).toContain('requestsCreate');
     expect(panel).toContain('/api/staff/quote-requests/matches');
     expect(panel).toContain('/api/staff/quote-requests');
     expect(panel).toContain('contactMatchId');
@@ -349,10 +352,16 @@ describe('request workspace V2 route contract', () => {
     expect(catalog).toContain('CONVERTIDA_EN_PROYECTO');
     expect(lib).toContain("export { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/labels'");
 
-    for (const file of [clientPortal, staffRequests, staffDashboard, detail, queuePanel]) {
+    for (const file of [staffRequests, staffDashboard, detail, queuePanel]) {
       expect(file).toContain('QUOTE_REQUEST_STATUS_LABELS');
       expect(file).not.toContain("ENVIADA: 'Enviada'");
     }
+    // El portal habla el idioma del cliente, pero con el diccionario canónico hermano (labels.ts), no
+    // con un mapa propio: ningún estado queda sin etiqueta en ninguna de las dos superficies.
+    expect(catalog).toContain('QUOTE_REQUEST_STATUS_CUSTOMER_LABELS');
+    expect(readProjectFile('src/lib/portal-stage.ts')).toContain('QUOTE_REQUEST_STATUS_CUSTOMER_LABELS');
+    expect(clientPortal).toContain('portalStatusLabel');
+    expect(clientPortal).not.toContain("ENVIADA: 'Enviada'");
   });
 
   it('labels every quote version status, including ACEPTADA, without leaking the raw code (U1-05 parte 2)', () => {

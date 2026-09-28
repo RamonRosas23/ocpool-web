@@ -5,6 +5,8 @@ import { assertSameOrigin } from '@/server/auth/csrf';
 import { parseBody, requestContext, requestId } from '@/server/auth/http';
 import { readServerEnv } from '@/server/env';
 import { toErrorResponse } from '@/server/http/errors';
+import { logger } from '@/server/logging/logger';
+import { createProjectForCustomerAcceptance } from '@/server/modules/projects/service';
 import { acceptCustomerQuote } from '@/server/modules/quote-documents/acceptance-service';
 
 const bodySchema = z.object({
@@ -24,6 +26,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const body = await parseBody(request, bodySchema);
     const contextData = requestContext(request);
     const result = await acceptCustomerQuote(actor, quoteId, { ...body, ...contextData });
+    // La venta quedó cerrada: se crea el proyecto de arranque en este momento. Es posterior a la
+    // aceptación (ya confirmada) y nunca la bloquea; si falla, el equipo lo convierte a mano desde
+    // Solicitudes, Cotizaciones o el dashboard ("Aceptadas sin proyecto").
+    try {
+      await createProjectForCustomerAcceptance(result.id);
+    } catch (error) {
+      logger.error({ requestId: id, quoteAcceptanceId: result.id, error: error instanceof Error ? error.message : String(error) }, 'Automatic project creation after acceptance failed');
+    }
     return NextResponse.json({
       id: result.id,
       quoteId: result.quoteId,

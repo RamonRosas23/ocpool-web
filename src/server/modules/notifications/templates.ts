@@ -405,8 +405,8 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
     }
     case 'quote.accepted': {
       const subject = safeHeader(`Cotización ${folio} aceptada`);
-      const body = `<p>Hola ${recipientName},</p><p>El cliente aceptó la cotización ${escapeHtml(folio)}${version}.</p>${total ? `<p>Total aceptado: <strong>${total}</strong></p>` : ''}<p>Siguiente paso: conviértela en proyecto para coordinar el arranque con el cliente.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nEl cliente aceptó la cotización ${folio}${version}.${data.totalLabel ? ` Total aceptado: ${data.totalLabel}.` : ''}\n\nSiguiente paso: conviértela en proyecto. Abre el expediente: ${actionUrl}`, html: layout('Cotización aceptada', body, 'Abrir expediente', actionUrl, 'staff') };
+      const body = `<p>Hola ${recipientName},</p><p>El cliente aceptó la cotización ${escapeHtml(folio)}${version}.</p>${total ? `<p>Total aceptado: <strong>${total}</strong></p>` : ''}<p>Siguiente paso: el arranque. El proyecto se crea automáticamente con la aceptación; ábrelo desde el expediente para confirmar responsable y tareas.</p>`;
+      return { subject, text: `Hola ${data.recipientName},\n\nEl cliente aceptó la cotización ${folio}${version}.${data.totalLabel ? ` Total aceptado: ${data.totalLabel}.` : ''}\n\nSiguiente paso: el arranque (el proyecto se crea automáticamente). Abre el expediente: ${actionUrl}`, html: layout('Cotización aceptada', body, 'Abrir expediente', actionUrl, 'staff') };
     }
     case 'quote.acceptance_confirmed': {
       // UX audit fix: confirma la aceptación al cliente y explica qué sigue -- ninguna acción

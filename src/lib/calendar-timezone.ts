@@ -45,6 +45,15 @@ export function addCalendarDays(value: string, days: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
+/**
+ * Fecha calendario (AAAA-MM-DD) de un instante en `timezone`: la inversa de zonedCalendarDateToUtc.
+ * Recortar el ISO en UTC (`.slice(0, 10)`) mostraba el día siguiente para un fin de día local.
+ */
+export function utcToZonedCalendarDate(value: Date | string, timezone: string = BUSINESS_TIMEZONE): string {
+  const parts = timeZoneParts(typeof value === 'string' ? new Date(value) : value, timezone);
+  return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
 export function zonedCalendarDateToUtc(value: string, timezone: string = BUSINESS_TIMEZONE): Date {
   const naiveUtc = calendarSerial(value);
   let candidate = new Date(naiveUtc);

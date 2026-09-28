@@ -77,7 +77,7 @@ export const QUOTE_REQUEST_BUDGET_RANGE_LABELS: Record<(typeof QUOTE_REQUEST_BUD
 export type QuoteRequestStatus = (typeof QUOTE_REQUEST_STATUSES)[number];
 
 const ALLOWED_TRANSITIONS: Record<QuoteRequestStatus, readonly QuoteRequestStatus[]> = {
-  RECIBIDA: ['EN_REVISION'],
+  RECIBIDA: ['EN_REVISION', 'RECHAZADA'],
   EN_REVISION: ['INFORMACION_REQUERIDA', 'EN_ELABORACION', 'RECHAZADA'],
   INFORMACION_REQUERIDA: ['EN_REVISION', 'EN_ELABORACION', 'RECHAZADA'],
   EN_ELABORACION: ['INFORMACION_REQUERIDA', 'COTIZACION_DISPONIBLE', 'RECHAZADA'],
@@ -85,9 +85,41 @@ const ALLOWED_TRANSITIONS: Record<QuoteRequestStatus, readonly QuoteRequestStatu
   EN_NEGOCIACION: ['EN_ELABORACION', 'PENDIENTE_DE_APROBACION', 'RECHAZADA', 'VENCIDA'],
   PENDIENTE_DE_APROBACION: ['ACEPTADA', 'RECHAZADA'],
   ACEPTADA: ['CONVERTIDA_EN_PROYECTO'],
-  RECHAZADA: [],
-  VENCIDA: [],
+  // Un expediente cerrado puede reabrirse (el cliente volvió o se cerró por error): vuelve a revisión o,
+  // si ya tenía cotización, directo a elaboración para preparar la nueva versión.
+  RECHAZADA: ['EN_REVISION', 'EN_ELABORACION'],
+  VENCIDA: ['EN_REVISION', 'EN_ELABORACION'],
   CONVERTIDA_EN_PROYECTO: [],
+};
+
+/**
+ * Cerrar un expediente (RECHAZADA) con motivo se puede en cualquier etapa abierta -- antes, después de
+ * enviar la propuesta no había forma de cerrarlo y los perdidos se quedaban "disponibles" para siempre.
+ * Es una acción dedicada (cierra también la propuesta enviada), no una transición genérica.
+ */
+export const QUOTE_REQUEST_CLOSABLE_STATUSES: readonly QuoteRequestStatus[] = ['RECIBIDA', 'EN_REVISION', 'INFORMACION_REQUERIDA', 'EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'];
+export const QUOTE_REQUEST_REOPENABLE_STATUSES: readonly QuoteRequestStatus[] = ['RECHAZADA', 'VENCIDA'];
+
+export const QUOTE_REQUEST_CLOSE_REASONS = [
+  'CUSTOMER_DECLINED',
+  'CHOSE_ALTERNATIVE',
+  'NO_RESPONSE',
+  'OUT_OF_SCOPE',
+  'DUPLICATE_OR_INVALID',
+  'OTHER',
+] as const;
+export type QuoteRequestCloseReason = (typeof QUOTE_REQUEST_CLOSE_REASONS)[number];
+
+/** Días sin movimiento (y con el equipo como último en hablar) para sugerir dar seguimiento al cliente. */
+export const WAITING_ON_CUSTOMER_DAYS = 4;
+
+export const QUOTE_REQUEST_CLOSE_REASON_LABELS: Record<QuoteRequestCloseReason, string> = {
+  CUSTOMER_DECLINED: 'El cliente desistió',
+  CHOSE_ALTERNATIVE: 'Eligió otra opción',
+  NO_RESPONSE: 'Sin respuesta del cliente',
+  OUT_OF_SCOPE: 'Fuera de alcance o de zona',
+  DUPLICATE_OR_INVALID: 'Duplicada o no válida',
+  OTHER: 'Otro motivo',
 };
 
 const STAFF_OPERATIONAL_TRANSITIONS: Record<QuoteRequestStatus, readonly QuoteRequestStatus[]> = {

@@ -12,6 +12,13 @@ import { normalizeIdempotencyKey, normalizeMessageBody } from '@/server/modules/
 import { createQuoteRequest, type CreateQuoteRequestInput, type QuoteRequestResult } from '@/server/modules/quote-requests/service';
 import {
   canStaffTransitionQuoteRequest,
+  canTransitionQuoteRequest,
+  QUOTE_REQUEST_CLOSABLE_STATUSES,
+  QUOTE_REQUEST_CLOSE_REASON_LABELS,
+  QUOTE_REQUEST_CLOSE_REASONS,
+  QUOTE_REQUEST_REOPENABLE_STATUSES,
+  type QuoteRequestCloseReason,
+  WAITING_ON_CUSTOMER_DAYS,
   normalizeQuoteRequestEmail,
   normalizeQuoteRequestText,
   QUOTE_REQUEST_BUDGET_RANGES,
@@ -323,7 +330,10 @@ function projectAvailableActions(actor: Actor, status: QuoteRequestStatus, curre
   if (hasPermission(actor, 'requests.status.update') && hasPermission(actor, 'messaging.send') && ['EN_REVISION', 'EN_ELABORACION'].includes(status)) {
     availableActions.push('request.information');
   }
-  if (currentAssigneeId === null && hasPermission(actor, 'requests.claim')) availableActions.push('request.take');
+  if (hasPermission(actor, 'requests.status.update') && QUOTE_REQUEST_CLOSABLE_STATUSES.includes(status)) availableActions.push('request.close');
+  if (hasPermission(actor, 'requests.status.update') && QUOTE_REQUEST_REOPENABLE_STATUSES.includes(status)) availableActions.push('request.reopen');
+  // Un expediente cerrado no se "toma": primero se reabre (y ya no aparece en las bandejas de trabajo).
+  if (currentAssigneeId === null && hasPermission(actor, 'requests.claim') && !QUOTE_REQUEST_REOPENABLE_STATUSES.includes(status)) availableActions.push('request.take');
   if (currentAssigneeId === actor.userId) availableActions.push('request.taken');
   if (currentAssigneeId !== null && currentAssigneeId !== actor.userId && hasPermission(actor, 'requests.reassign')) availableActions.push('request.reassign');
   if (hasPermission(actor, 'quotes.create') && QUOTE_BUILDER_REQUEST_STATUSES.includes(status)) {
@@ -500,19 +510,45 @@ export async function getStaffQuoteRequest(actor: Actor, quoteRequestId: string,
   if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
   requireStaffRequestReadScope(actor, request.currentAssignee?.id ?? null);
   const activity = activityPage(request.statusHistory, request.assignments, DEFAULT_ACTIVITY_PAGE_SIZE);
+  // Pulso de la conversación con el cliente: el último mensaje compartido y quién lo escribió. Con esto
+  // la vista dice si la pelota está de su lado ("te escribió"), si ya se le dio seguimiento o si lleva
+  // días sin responder.
+  const lastShared = await prisma.conversationMessage.findFirst({
+    where: { conversation: { quoteRequestId: request.id }, visibility: 'CUSTOMER' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: { createdAt: true, sender: { select: { type: true } } },
+  });
+  const conversationPulse = lastShared ? { lastSharedAt: lastShared.createdAt, lastFromCustomer: lastShared.sender?.type === 'CUSTOMER' } : null;
   // Mientras se espera información: ¿ya respondió el cliente? (misma regla que "revisar respuesta").
   // Sin esto, la vista clásica recomendaba "Marcar en revisión" justo después de pedir los datos.
   const informationRequest = request.status === 'INFORMACION_REQUERIDA'
     ? {
       requestedAt: request.statusHistory.find((entry) => entry.toStatus === 'INFORMACION_REQUERIDA')?.createdAt ?? null,
-      customerReplied: (await prisma.conversationMessage.findFirst({
-        where: { conversation: { quoteRequestId: request.id }, visibility: 'CUSTOMER' },
-        orderBy: { createdAt: 'desc' },
-        select: { sender: { select: { type: true } } },
-      }))?.sender?.type === 'CUSTOMER',
+      customerReplied: conversationPulse?.lastFromCustomer === true,
     }
     : null;
-  return { ...request, detail: serializeDetail(request.detail), assignments: activity.assignments, statusHistory: activity.statusHistory, activityNextCursor: activity.nextCursor, informationRequest, ...projectAvailableActions(actor, request.status, request.currentAssignee?.id ?? null) };
+  // El expediente completo en una lectura: cotización (versión vigente y la enviada), aceptación y
+  // proyecto. Con esto la vista de Solicitudes puede decir en qué va la venta y llevar a la pestaña
+  // correcta (Cotizaciones o Proyectos) en vez de quedarse muda después de enviar la propuesta.
+  const [quote, project] = await Promise.all([
+    prisma.quote.findUnique({
+      where: { quoteRequestId: request.id },
+      select: {
+        id: true,
+        currentVersion: { select: { versionNumber: true, status: true, validUntil: true } },
+        publishedVersion: { select: { versionNumber: true, status: true, validUntil: true, publishedAt: true } },
+        quoteAcceptances: { orderBy: { acceptedAt: 'desc' }, take: 1, select: { id: true, acceptedAt: true, signerName: true } },
+      },
+    }),
+    prisma.project.findUnique({ where: { quoteRequestId: request.id }, select: { id: true, folio: true, status: true } }),
+  ]);
+  const quoteSummary = quote ? {
+    quoteId: quote.id,
+    current: quote.currentVersion,
+    published: quote.publishedVersion,
+    acceptance: quote.quoteAcceptances[0] ?? null,
+  } : null;
+  return { ...request, detail: serializeDetail(request.detail), assignments: activity.assignments, statusHistory: activity.statusHistory, activityNextCursor: activity.nextCursor, informationRequest, conversationPulse, quoteSummary, project, ...projectAvailableActions(actor, request.status, request.currentAssignee?.id ?? null) };
 }
 
 export type StaffQuoteRequestActivityFilters = {
@@ -983,6 +1019,128 @@ export async function markInformationReviewedQuoteRequest(actor: Actor, quoteReq
     });
     return { quoteRequestId: request.id, folio: request.folio, fromStatus: 'INFORMACION_REQUERIDA' as const, toStatus: 'EN_REVISION' as const, changedAt: now };
   });
+}
+
+/**
+ * Cierra el expediente con un motivo (el cliente desistió, eligió otra opción, sin respuesta…) desde
+ * cualquier etapa abierta. Si hay una propuesta enviada, se retira en la misma transacción para que el
+ * cliente ya no pueda aceptarla. Queda en el historial con el motivo y se puede reabrir.
+ */
+export async function closeQuoteRequest(actor: Actor, quoteRequestId: string, input: { reason: string; note?: string }, dependencies: StaffServiceDependencies = {}) {
+  requireStaffPermission(actor, 'requests.status.update');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const requestId = requireUuid(quoteRequestId, 'La solicitud no es válida.');
+  if (!(QUOTE_REQUEST_CLOSE_REASONS as readonly string[]).includes(input.reason)) throw new AppError('VALIDATION_ERROR', 'Elige el motivo del cierre.', 400);
+  const note = input.note?.trim() ? normalizeReason(input.note) : null;
+  const reasonLabel = QUOTE_REQUEST_CLOSE_REASON_LABELS[input.reason as QuoteRequestCloseReason];
+  const reasonText = (note ? `${reasonLabel}: ${note}` : reasonLabel).slice(0, 500);
+  const now = dependencies.now ?? new Date();
+
+  return prisma.$transaction(async (transaction) => {
+    const request = await lockQuoteRequest(transaction, requestId);
+    if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
+    requireStaffRequestReadScope(actor, request.currentAssigneeId);
+    if (!QUOTE_REQUEST_CLOSABLE_STATUSES.includes(request.status) || !canTransitionQuoteRequest(request.status, 'RECHAZADA')) {
+      throw new AppError('CONFLICT', 'Este expediente ya no se puede cerrar.', 409);
+    }
+    await transaction.quoteRequest.update({ where: { id: request.id }, data: { status: 'RECHAZADA', updatedAt: now } });
+    await transaction.requestStatusHistory.create({ data: { quoteRequestId: request.id, fromStatus: request.status, toStatus: 'RECHAZADA', changedById: actor.userId, reason: reasonText, createdAt: now } });
+    await transaction.auditLog.create({
+      data: { actorUserId: actor.userId, action: 'quote_request.closed', entityType: 'quote_request', entityId: request.id, outcome: 'SUCCESS', metadata: { folio: request.folio, fromStatus: request.status, toStatus: 'RECHAZADA', reason: reasonLabel } },
+    });
+    await transaction.outboxEvent.create({
+      data: { eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: request.id, payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus: 'RECHAZADA' } },
+    });
+    const quote = await transaction.quote.findUnique({ where: { quoteRequestId: request.id }, select: { id: true, publishedVersion: { select: { id: true, status: true } } } });
+    const published = quote?.publishedVersion ?? null;
+    if (quote && published && (published.status === 'ENVIADA' || published.status === 'EN_NEGOCIACION')) {
+      await transaction.quoteVersion.update({ where: { id: published.id }, data: { status: 'RECHAZADA' } });
+      await transaction.quoteStatusHistory.create({ data: { quoteVersionId: published.id, fromStatus: published.status, toStatus: 'RECHAZADA', reason: `Expediente cerrado: ${reasonText}`.slice(0, 500), changedById: actor.userId, createdAt: now } });
+      await transaction.auditLog.create({
+        data: { actorUserId: actor.userId, action: 'quote.version.status_changed', entityType: 'quote_version', entityId: published.id, outcome: 'SUCCESS', metadata: { quoteId: quote.id, quoteRequestId: request.id, folio: request.folio, fromStatus: published.status, toStatus: 'RECHAZADA', reason: 'request_closed' } },
+      });
+    }
+    return { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus: 'RECHAZADA' as const, changedAt: now };
+  });
+}
+
+/**
+ * Reabre un expediente cerrado (el cliente volvió o se cerró por error). Si ya tenía cotización vuelve a
+ * elaboración, donde el constructor permite crear la nueva versión (en revisión quedaba sin salida: la
+ * cotización sólo acepta versiones nuevas en elaboración o después); si no, regresa a revisión.
+ */
+export async function reopenQuoteRequest(actor: Actor, quoteRequestId: string, input: { note?: string } = {}, dependencies: StaffServiceDependencies = {}) {
+  requireStaffPermission(actor, 'requests.status.update');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const requestId = requireUuid(quoteRequestId, 'La solicitud no es válida.');
+  const note = input.note?.trim() ? normalizeReason(input.note) : null;
+  const now = dependencies.now ?? new Date();
+
+  return prisma.$transaction(async (transaction) => {
+    const request = await lockQuoteRequest(transaction, requestId);
+    if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
+    requireStaffRequestReadScope(actor, request.currentAssigneeId);
+    const hasQuote = Boolean(await transaction.quote.findUnique({ where: { quoteRequestId: request.id }, select: { id: true } }));
+    const toStatus: QuoteRequestStatus = hasQuote ? 'EN_ELABORACION' : 'EN_REVISION';
+    if (!QUOTE_REQUEST_REOPENABLE_STATUSES.includes(request.status) || !canTransitionQuoteRequest(request.status, toStatus)) {
+      throw new AppError('CONFLICT', 'Sólo se puede reabrir un expediente cerrado.', 409);
+    }
+    await transaction.quoteRequest.update({ where: { id: request.id }, data: { status: toStatus, updatedAt: now } });
+    await transaction.requestStatusHistory.create({ data: { quoteRequestId: request.id, fromStatus: request.status, toStatus, changedById: actor.userId, reason: note ? `Expediente reabierto: ${note}`.slice(0, 500) : 'Expediente reabierto.', createdAt: now } });
+    await transaction.auditLog.create({
+      data: { actorUserId: actor.userId, action: 'quote_request.reopened', entityType: 'quote_request', entityId: request.id, outcome: 'SUCCESS', metadata: { folio: request.folio, fromStatus: request.status, toStatus } },
+    });
+    await transaction.outboxEvent.create({
+      data: { eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: request.id, payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus } },
+    });
+    return { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus, changedAt: now };
+  });
+}
+
+export type WaitingOnCustomerSummary = Readonly<{
+  id: string;
+  folio: string;
+  status: QuoteRequestStatus;
+  client: { displayName: string };
+  lastActivityAt: Date;
+}>;
+
+/**
+ * "¿Qué pasa si se queda en un proceso?": expedientes esperando al cliente (datos pedidos o propuesta
+ * enviada) sin movimiento en WAITING_ON_CUSTOMER_DAYS días y donde el último mensaje compartido no es del
+ * cliente (si él respondió, la pelota está del lado del equipo y va en "Cliente respondió").
+ */
+export async function listWaitingOnCustomerForActor(actor: Actor, dependencies: StaffServiceDependencies = {}): Promise<{ items: WaitingOnCustomerSummary[]; total: number }> {
+  if (!hasPermission(actor, 'requests.read')) return { items: [], total: 0 };
+  const prisma = dependencies.prisma ?? getPrisma();
+  const now = dependencies.now ?? new Date();
+  const threshold = new Date(now.getTime() - WAITING_ON_CUSTOMER_DAYS * 86_400_000);
+  const scope = canReadGlobalStaffRequests(actor) ? Prisma.sql`TRUE` : Prisma.sql`qr."currentAssigneeId" = ${actor.userId}::uuid`;
+  const rows = await prisma.$queryRaw<Array<{ id: string; folio: string; status: QuoteRequestStatus; clientDisplayName: string; lastActivityAt: Date; total: bigint }>>(Prisma.sql`
+    SELECT qr."id", qr."folio", qr."status", cl."displayName" AS "clientDisplayName",
+      GREATEST(qr."updatedAt", COALESCE(lastmsg."createdAt", qr."updatedAt")) AS "lastActivityAt",
+      COUNT(*) OVER () AS "total"
+    FROM "quote_requests" qr
+    INNER JOIN "clients" cl ON cl."id" = qr."clientId"
+    LEFT JOIN "conversations" c ON c."quoteRequestId" = qr."id"
+    LEFT JOIN LATERAL (
+      SELECT cm."createdAt", sender."type" AS "senderType" FROM "conversation_messages" cm
+      LEFT JOIN "users" sender ON sender."id" = cm."senderUserId"
+      WHERE cm."conversationId" = c."id" AND cm."visibility" = 'CUSTOMER'
+      ORDER BY cm."createdAt" DESC, cm."id" DESC
+      LIMIT 1
+    ) lastmsg ON TRUE
+    WHERE qr."status" IN ('INFORMACION_REQUERIDA', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION')
+      AND (lastmsg."createdAt" IS NULL OR lastmsg."senderType" = 'EMPLOYEE')
+      AND GREATEST(qr."updatedAt", COALESCE(lastmsg."createdAt", qr."updatedAt")) < ${threshold}
+      AND ${scope}
+    ORDER BY "lastActivityAt" ASC
+    LIMIT 20
+  `);
+  return {
+    items: rows.map((row) => ({ id: row.id, folio: row.folio, status: row.status, client: { displayName: row.clientDisplayName }, lastActivityAt: row.lastActivityAt })),
+    total: rows.length ? Number(rows[0].total) : 0,
+  };
 }
 
 export async function transitionQuoteRequest(actor: Actor, quoteRequestId: string, input: { toStatus: QuoteRequestStatus; reason?: string }, dependencies: StaffServiceDependencies = {}) {

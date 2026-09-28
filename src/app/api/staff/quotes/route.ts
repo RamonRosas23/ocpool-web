@@ -5,7 +5,7 @@ import { requestId } from '@/server/auth/http';
 import { AppError, toErrorResponse } from '@/server/http/errors';
 import { listQuoteWorkspaces } from '@/server/modules/quotes/staff-service';
 
-const querySchema = z.object({ query: z.string().trim().max(100).optional(), page: z.coerce.number().int().min(1).optional(), pageSize: z.coerce.number().int().min(1).max(50).optional() }).strict();
+const querySchema = z.object({ query: z.string().trim().max(100).optional(), page: z.coerce.number().int().min(1).optional(), pageSize: z.coerce.number().int().min(1).max(50).optional(), scope: z.enum(['open', 'closed']).optional() }).strict();
 
 function parseQuery(request: NextRequest) {
   const parsed = querySchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));

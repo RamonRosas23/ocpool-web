@@ -75,6 +75,24 @@ describe('quoteNextStep', () => {
     expect(quoteNextStep({ ...base, versionStatus: 'VENCIDA' }).title).toBe('Versión vencida');
   });
 
+  it('flags a sent proposal whose validity passed and points at a new version', () => {
+    expect(quoteNextStep({ ...base, versionStatus: 'ENVIADA', publishedExpired: true })).toMatchObject({ title: 'La propuesta venció', tone: 'blocked', target: 'actions' });
+    expect(quoteNextStep({ ...base, versionStatus: 'EN_NEGOCIACION', publishedExpired: true }).title).toBe('La propuesta venció');
+    expect(quoteStageSteps({ ...base, versionStatus: 'ENVIADA', publishedExpired: true })[2]).toMatchObject({ key: 'sent', note: 'Vencida' });
+    // Una versión aceptada no "vence" para el equipo: el siguiente paso sigue siendo el proyecto.
+    expect(quoteNextStep({ ...base, versionStatus: 'ACEPTADA', publishedExpired: true }).title).toBe('Convierte en proyecto');
+  });
+
+  it('sends a closed or back-in-review file to Solicitudes instead of offering a version the server rejects', () => {
+    expect(quoteNextStep({ ...base, versionStatus: 'RECHAZADA', requestStatus: 'RECHAZADA' })).toMatchObject({ title: 'Expediente cerrado', tone: 'blocked', target: 'request' });
+    expect(quoteNextStep({ ...base, versionStatus: 'ENVIADA', requestStatus: 'VENCIDA' }).target).toBe('request');
+    expect(quoteNextStep({ ...base, versionStatus: 'RECHAZADA', requestStatus: 'EN_REVISION' })).toMatchObject({ title: 'El expediente está en revisión', target: 'request' });
+    // En elaboración, la versión rechazada se retoma aquí mismo.
+    expect(quoteNextStep({ ...base, versionStatus: 'RECHAZADA', requestStatus: 'EN_ELABORACION' }).title).toBe('Versión rechazada');
+    // Una venta aceptada sigue su curso aunque el expediente diga otra cosa.
+    expect(quoteNextStep({ ...base, versionStatus: 'ACEPTADA', requestStatus: 'CONVERTIDA_EN_PROYECTO', projectCreated: true }).tone).toBe('done');
+  });
+
   it('points each actionable step at the control that resolves it', () => {
     expect(quoteNextStep({ ...base, priceListSelected: false }).target).toBe('price-list');
     expect(quoteNextStep({ ...base, lineCount: 0 }).target).toBe('lines');

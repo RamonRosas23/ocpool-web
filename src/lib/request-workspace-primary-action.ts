@@ -26,7 +26,7 @@ const STATUS_ACTION_LABELS: Record<QuoteRequestStatus, string> = {
   EN_NEGOCIACION: 'Pasar a negociación',
   PENDIENTE_DE_APROBACION: 'Solicitar aprobación',
   ACEPTADA: 'Marcar aceptada',
-  RECHAZADA: 'Rechazar solicitud',
+  RECHAZADA: 'Cerrar expediente',
   VENCIDA: 'Marcar vencida',
   CONVERTIDA_EN_PROYECTO: 'Convertir en proyecto',
 };
@@ -40,7 +40,7 @@ const STATUS_ACTION_DESCRIPTIONS: Record<QuoteRequestStatus, string> = {
   EN_NEGOCIACION: 'Registra que la propuesta está en negociación.',
   PENDIENTE_DE_APROBACION: 'Envía la propuesta al siguiente paso de aprobación.',
   ACEPTADA: 'Registra la aceptación de la propuesta.',
-  RECHAZADA: 'Cierra la solicitud como rechazada.',
+  RECHAZADA: 'Cierra el expediente con un motivo.',
   VENCIDA: 'Marca la propuesta como vencida.',
   CONVERTIDA_EN_PROYECTO: 'Convierte la solicitud en proyecto.',
 };

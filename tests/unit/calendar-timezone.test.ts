@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUSINESS_TIMEZONE, addCalendarDays, zonedCalendarDateEndOfDayToUtc, zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
+import { BUSINESS_TIMEZONE, addCalendarDays, utcToZonedCalendarDate, zonedCalendarDateEndOfDayToUtc, zonedCalendarDateToUtc } from '@/lib/calendar-timezone';
 
 describe('calendar-timezone contracts', () => {
   it('resolves local midnight to the same UTC instant when the timezone has no offset', () => {
@@ -33,5 +33,16 @@ describe('calendar-timezone contracts', () => {
   it('rejects malformed or nonexistent calendar dates', () => {
     expect(() => zonedCalendarDateToUtc('2026-02-30', 'UTC')).toThrow();
     expect(() => addCalendarDays('not-a-date', 1)).toThrow();
+  });
+});
+
+describe('utcToZonedCalendarDate', () => {
+  it('reads the calendar date of an instant in the business timezone, not the UTC one', () => {
+    // Fin del 20 de octubre en Phoenix (UTC-7) = 21 oct 06:59:59.999Z: recortar el ISO decía "21".
+    const endOfDay = zonedCalendarDateEndOfDayToUtc('2026-10-20', 'America/Phoenix');
+    expect(endOfDay.toISOString().slice(0, 10)).toBe('2026-10-21');
+    expect(utcToZonedCalendarDate(endOfDay, 'America/Phoenix')).toBe('2026-10-20');
+    expect(utcToZonedCalendarDate('2026-10-21T06:59:59.999Z', 'America/Phoenix')).toBe('2026-10-20');
+    expect(utcToZonedCalendarDate(zonedCalendarDateEndOfDayToUtc('2026-10-20'))).toBe('2026-10-20');
   });
 });
