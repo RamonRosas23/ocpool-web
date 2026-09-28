@@ -40,3 +40,18 @@ operación. No se cambia la landing ni se requiere migración de datos.
 Este documento no es aprobación de producto. G0-05 sigue pendiente de signoffs,
 de los objetivos comerciales de G0-03 y de la revisión humana de primitives y
 locale privado.
+
+## Cambios autorizados
+
+La congelación impide cambios accidentales desde el trabajo privado; los cambios que pide
+explícitamente el responsable de producto se registran aquí.
+
+- **2026-09-28 — selects del formulario de cotización.** A petición del responsable de producto, los
+  cuatro `<select>` nativos de `QuoteForm` (tipo de obra, etapa, horizonte, rango de inversión) se
+  reemplazan por el Select de shadcn/ui sobre Radix (`src/components/ui/select.tsx`), con estilos
+  propios en `globals.css` (sin activar Tailwind). Incluye dos ajustes ligados: el encabezado fijo
+  descuenta `--removed-body-scroll-bar-size` para no saltar mientras un select abierto bloquea el
+  scroll, y el botón "Continuar" deja de reutilizarse como "Enviar solicitud" (el formulario se
+  enviaba solo al pasar al paso 2 y mostraba errores no provocados). El manifiesto
+  `landing-freeze.json` conserva la captura del 2026-09-10; debe re-capturarse en el runner de
+  referencia antes del signoff de G0-05.

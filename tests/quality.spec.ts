@@ -1,6 +1,14 @@
 import { recordBaselineMeasurement } from './fixtures/commercial-baseline-recorder';
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { expectNoSeriousA11yViolations } from './a11y';
+
+/** Los selects del formulario son de shadcn/ui (Radix): se abre el combobox y se elige la opción por su texto. */
+async function chooseOption(page: Page, label: string, option: string): Promise<void> {
+  const trigger = page.getByRole('combobox', { name: label });
+  await trigger.click();
+  await page.getByRole('option', { name: option, exact: true }).click();
+  await expect(trigger).toHaveText(option);
+}
 
 const validPayload = {
   displayName: 'Prueba OCPOOL',
@@ -123,14 +131,14 @@ test.describe('OCPOOL quality contract', () => {
     await page.getByLabel('Nombre').fill('Cliente E2E OCPOOL');
     await page.getByLabel('Teléfono').fill('667 000 3344');
     await page.getByLabel('Correo').fill(`form-${suffix}@example.test`);
-    await page.getByLabel('Tipo de obra').selectOption('Alberca residencial');
+    await chooseOption(page, 'Tipo de obra', 'Alberca residencial');
     await page.getByLabel('Ubicación').fill('Mazatlán, Sinaloa');
     await page.getByRole('button', { name: 'Continuar' }).click();
     await expect(page.getByText('Paso 2 de 2')).toBeVisible();
-    await page.getByLabel('Etapa del proyecto').selectOption('UNDER_CONSTRUCTION');
+    await chooseOption(page, 'Etapa del proyecto', 'En construcción');
     await page.getByLabel('Medidas aproximadas').fill('12 x 5 m');
-    await page.getByLabel('Horizonte de inicio').selectOption('THREE_TO_SIX_MONTHS');
-    await page.getByLabel('Rango de inversión').selectOption('FROM_500K_TO_1M');
+    await chooseOption(page, 'Horizonte de inicio', 'En 3 a 6 meses');
+    await chooseOption(page, 'Rango de inversión', '$500,000 a $1,000,000 MXN');
     await page.getByLabel('Descripción del proyecto').fill('Solicitud E2E para validar el expediente público.');
     await page.getByLabel(/Autorizo a OCPOOL/).check();
     await page.getByRole('button', { name: /Enviar solicitud/ }).click();
@@ -170,17 +178,44 @@ test.describe('OCPOOL quality contract', () => {
     await page.getByLabel('Nombre').fill('Cliente que revisa');
     await page.getByLabel('Teléfono').fill('667 123 4567');
     await page.getByLabel('Correo').fill('revision@example.test');
-    await page.getByLabel('Tipo de obra').selectOption('Remodelación o rehabilitación');
+    await chooseOption(page, 'Tipo de obra', 'Remodelación o rehabilitación');
     await page.getByLabel('Ubicación').fill('Los Mochis, Sinaloa');
     await page.getByRole('button', { name: 'Continuar' }).click();
 
     await expect(page.getByText('Paso 2 de 2')).toBeVisible();
+    // Llegar al paso 2 no debe enviar el formulario ni mostrar errores que la persona no provocó.
+    await expect(page.locator('.form-field-error')).toHaveCount(0);
     await page.getByRole('button', { name: 'Regresar' }).click();
     await expect(page.getByText('Paso 1 de 2')).toBeVisible();
     await expect(page.getByLabel('Nombre')).toHaveValue('Cliente que revisa');
-    await expect(page.getByLabel('Tipo de obra')).toHaveValue('Remodelación o rehabilitación');
+    await expect(page.getByRole('combobox', { name: 'Tipo de obra' })).toHaveText('Remodelación o rehabilitación');
     await page.getByRole('button', { name: 'Continuar' }).click();
     await expect(page.getByLabel('Descripción del proyecto')).toBeVisible();
+  });
+
+  test('lets people pick quote form options with the keyboard and assistive technology', async ({ page }) => {
+    await page.goto('/#contacto');
+    const projectType = page.getByRole('combobox', { name: 'Tipo de obra' });
+    await expect(projectType).toHaveText('Selecciona una opción');
+    await projectType.focus();
+    await page.keyboard.press('Enter');
+    const listbox = page.getByRole('listbox');
+    await expect(listbox).toBeVisible();
+    await expect(listbox.getByRole('option')).toHaveText(['Alberca residencial', 'Club de playa u hospitalidad', 'Remodelación o rehabilitación', 'Otro espacio acuático']);
+    // Abierto, el select es modal (como en shadcn/Radix): el resto de la página queda aria-hidden y el foco no
+    // puede salir del listbox, así que se revisa el listbox; la página completa se audita con los selects cerrados.
+    await expectNoSeriousA11yViolations(page, { include: '[role="listbox"]' });
+    await page.keyboard.press('ArrowDown');
+    await expect(listbox.getByRole('option', { name: 'Club de playa u hospitalidad' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(listbox).toBeHidden();
+    await expect(projectType).toHaveText('Club de playa u hospitalidad');
+    await expect(projectType).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(listbox.getByRole('option', { name: 'Club de playa u hospitalidad' })).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Escape');
+    await expect(listbox).toBeHidden();
+    await expect(projectType).toBeFocused();
   });
 
   test('protects the internal inbox when no employee session exists', async ({ page }) => {

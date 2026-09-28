@@ -1,8 +1,9 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { DirectionalIcon } from '@/components/DirectionalIcon';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { contactDetails } from '@/lib/pool-content';
 
 type QuoteFormData = {
@@ -36,8 +37,75 @@ const initialForm: QuoteFormData = {
   mensaje: '',
 };
 
+type SelectOption = Readonly<{ value: string; label: string }>;
+
+const PROJECT_TYPES: readonly SelectOption[] = [
+  { value: 'Alberca residencial', label: 'Alberca residencial' },
+  { value: 'Club de playa u hospitalidad', label: 'Club de playa u hospitalidad' },
+  { value: 'Remodelación o rehabilitación', label: 'Remodelación o rehabilitación' },
+  { value: 'Otro espacio acuático', label: 'Otro espacio acuático' },
+];
+
+const PROJECT_STAGES: readonly SelectOption[] = [
+  { value: 'IDEA', label: 'Idea o planeación' },
+  { value: 'SITE_READY', label: 'Terreno listo' },
+  { value: 'UNDER_CONSTRUCTION', label: 'En construcción' },
+  { value: 'REMODEL', label: 'Remodelación' },
+  { value: 'EQUIPMENT_ONLY', label: 'Sólo equipamiento' },
+  { value: 'UNSURE', label: 'Por definir' },
+];
+
+const TIMELINES: readonly SelectOption[] = [
+  { value: 'ASAP', label: 'Lo antes posible' },
+  { value: 'ONE_TO_THREE_MONTHS', label: 'En 1 a 3 meses' },
+  { value: 'THREE_TO_SIX_MONTHS', label: 'En 3 a 6 meses' },
+  { value: 'SIX_PLUS_MONTHS', label: 'Después de 6 meses' },
+  { value: 'UNSURE', label: 'Por definir' },
+];
+
+const BUDGET_RANGES: readonly SelectOption[] = [
+  { value: 'UNDER_250K', label: 'Hasta $250,000 MXN' },
+  { value: 'FROM_250K_TO_500K', label: '$250,000 a $500,000 MXN' },
+  { value: 'FROM_500K_TO_1M', label: '$500,000 a $1,000,000 MXN' },
+  { value: 'OVER_1M', label: 'Más de $1,000,000 MXN' },
+  { value: 'UNSURE', label: 'Por definir' },
+];
+
 function firstError(errors: FormErrors, fields: Array<keyof FormErrors>): keyof FormErrors | null {
   return fields.find((field) => errors[field]) ?? null;
+}
+
+/**
+ * Campo de selección con la anatomía de shadcn/ui: la etiqueta nombra al disparador (`combobox`) y el
+ * panel se abre con clic, Enter, Espacio o flechas. El `id` va en el disparador para poder enfocarlo
+ * al señalar un error.
+ */
+function FormSelect({ id, name, label, value, options, onValueChange, invalid = false, describedBy, error }: {
+  id: string;
+  name: string;
+  label: string;
+  value: string;
+  options: readonly SelectOption[];
+  onValueChange: (value: string) => void;
+  invalid?: boolean;
+  describedBy?: string;
+  error?: ReactNode;
+}) {
+  const labelId = `${id}-label`;
+  return (
+    <div className="form-field">
+      <label id={labelId} htmlFor={id}>{label}</label>
+      <Select name={name} value={value} onValueChange={onValueChange}>
+        <SelectTrigger id={id} aria-labelledby={labelId} aria-invalid={invalid} aria-describedby={describedBy}>
+          <SelectValue placeholder="Selecciona una opción" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      {error}
+    </div>
+  );
 }
 
 export default function QuoteForm() {
@@ -223,17 +291,7 @@ export default function QuoteForm() {
               <input id="quote-email" type="email" name="email" value={formData.email} onChange={(event) => updateField('email', event.target.value)} placeholder="tu@correo.com" autoComplete="email" maxLength={320} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'quote-email-error' : undefined} />
               {errorMessage('email')}
             </label>
-            <label>
-              <span>Tipo de obra</span>
-              <select id="quote-project-type" name="tipoProyecto" value={formData.tipoProyecto} onChange={(event) => updateField('tipoProyecto', event.target.value)} aria-invalid={Boolean(errors.tipoProyecto)} aria-describedby={errors.tipoProyecto ? 'quote-tipoProyecto-error' : undefined}>
-                <option value="">Selecciona una opción</option>
-                <option value="Alberca residencial">Alberca residencial</option>
-                <option value="Club de playa u hospitalidad">Club de playa u hospitalidad</option>
-                <option value="Remodelación o rehabilitación">Remodelación o rehabilitación</option>
-                <option value="Otro espacio acuático">Otro espacio acuático</option>
-              </select>
-              {errorMessage('tipoProyecto')}
-            </label>
+            <FormSelect id="quote-project-type" name="tipoProyecto" label="Tipo de obra" value={formData.tipoProyecto} options={PROJECT_TYPES} onValueChange={(value) => updateField('tipoProyecto', value)} invalid={Boolean(errors.tipoProyecto)} describedBy={errors.tipoProyecto ? 'quote-tipoProyecto-error' : undefined} error={errorMessage('tipoProyecto')} />
             <label className="form-field--wide">
               <span>Ubicación</span>
               <input id="quote-location" name="ubicacion" value={formData.ubicacion} onChange={(event) => updateField('ubicacion', event.target.value)} placeholder="Ciudad, estado o destino" autoComplete="address-level2" minLength={2} maxLength={180} aria-invalid={Boolean(errors.ubicacion)} aria-describedby={errors.ubicacion ? 'quote-ubicacion-error' : undefined} />
@@ -242,45 +300,14 @@ export default function QuoteForm() {
           </div>}
 
           {step === 2 && <div className="form-grid">
-            <label>
-              <span>Etapa del proyecto</span>
-              <select id="quote-project-stage" name="projectStage" value={formData.projectStage} onChange={(event) => updateField('projectStage', event.target.value)}>
-                <option value="">Selecciona una opción</option>
-                <option value="IDEA">Idea o planeación</option>
-                <option value="SITE_READY">Terreno listo</option>
-                <option value="UNDER_CONSTRUCTION">En construcción</option>
-                <option value="REMODEL">Remodelación</option>
-                <option value="EQUIPMENT_ONLY">Sólo equipamiento</option>
-                <option value="UNSURE">Por definir</option>
-              </select>
-            </label>
+            <FormSelect id="quote-project-stage" name="projectStage" label="Etapa del proyecto" value={formData.projectStage} options={PROJECT_STAGES} onValueChange={(value) => updateField('projectStage', value)} />
             <label>
               <span>Medidas aproximadas</span>
               <input id="quote-dimensions" name="dimensions" value={formData.dimensions} onChange={(event) => updateField('dimensions', event.target.value)} placeholder="Ej. 12 x 5 m" minLength={2} maxLength={180} aria-invalid={Boolean(errors.dimensions)} aria-describedby={errors.dimensions ? 'quote-dimensions-error' : undefined} />
               {errorMessage('dimensions')}
             </label>
-            <label>
-              <span>Horizonte de inicio</span>
-              <select id="quote-timeline" name="timeline" value={formData.timeline} onChange={(event) => updateField('timeline', event.target.value)}>
-                <option value="">Selecciona una opción</option>
-                <option value="ASAP">Lo antes posible</option>
-                <option value="ONE_TO_THREE_MONTHS">En 1 a 3 meses</option>
-                <option value="THREE_TO_SIX_MONTHS">En 3 a 6 meses</option>
-                <option value="SIX_PLUS_MONTHS">Después de 6 meses</option>
-                <option value="UNSURE">Por definir</option>
-              </select>
-            </label>
-            <label>
-              <span>Rango de inversión</span>
-              <select id="quote-budget-range" name="budgetRange" value={formData.budgetRange} onChange={(event) => updateField('budgetRange', event.target.value)}>
-                <option value="">Selecciona una opción</option>
-                <option value="UNDER_250K">Hasta $250,000 MXN</option>
-                <option value="FROM_250K_TO_500K">$250,000 a $500,000 MXN</option>
-                <option value="FROM_500K_TO_1M">$500,000 a $1,000,000 MXN</option>
-                <option value="OVER_1M">Más de $1,000,000 MXN</option>
-                <option value="UNSURE">Por definir</option>
-              </select>
-            </label>
+            <FormSelect id="quote-timeline" name="timeline" label="Horizonte de inicio" value={formData.timeline} options={TIMELINES} onValueChange={(value) => updateField('timeline', value)} />
+            <FormSelect id="quote-budget-range" name="budgetRange" label="Rango de inversión" value={formData.budgetRange} options={BUDGET_RANGES} onValueChange={(value) => updateField('budgetRange', value)} />
             <label className="form-field--wide">
               <span>Descripción del proyecto</span>
               <textarea ref={descriptionRef} id="quote-description" name="mensaje" value={formData.mensaje} onChange={(event) => updateField('mensaje', event.target.value)} placeholder="Ej. terreno nuevo, remodelación o equipamiento." rows={5} minLength={10} maxLength={10_000} aria-invalid={Boolean(errors.mensaje)} aria-describedby={errors.mensaje ? 'quote-mensaje-error' : undefined} />
@@ -307,7 +334,10 @@ export default function QuoteForm() {
 
           <div className="form-actions">
             {step === 2 && <button className="button button--ghost" type="button" onClick={handleBack} disabled={isSubmitting}>Regresar</button>}
-            {step === 1 ? <button className="button button--dark" type="button" onClick={handleContinue}>Continuar <DirectionalIcon /></button> : <button className="button button--dark" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Enviando…' : 'Enviar solicitud'} <DirectionalIcon /></button>}
+            {/* Keys distintas: sin ellas React reutiliza el mismo <button> y le cambia el tipo a "submit"
+                durante el clic de "Continuar", así que el navegador enviaba el formulario y el paso 2
+                aparecía con errores que la persona no había provocado. */}
+            {step === 1 ? <button key="continue" className="button button--dark" type="button" onClick={handleContinue}>Continuar <DirectionalIcon /></button> : <button key="submit" className="button button--dark" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Enviando…' : 'Enviar solicitud'} <DirectionalIcon /></button>}
             <span className="form-note">Atención inicial por correo o WhatsApp.</span>
           </div>
         </form>
