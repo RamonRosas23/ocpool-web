@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
-import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, HardHat, Inbox, LayoutDashboard, LogOut, Menu, ScrollText, Users, X, type LucideIcon } from 'lucide-react';
+import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, HardHat, Inbox, LayoutDashboard, LogOut, Menu, ScrollText, UserRound, Users, X, type LucideIcon } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import { usePrivateShellContext } from '@/components/private/PrivateShellContext';
 import StaffQuickFind from '@/components/staff/StaffQuickFind';
@@ -62,6 +62,8 @@ export default function StaffHeader({ onNavigate }: Props) {
 
   const sections = session ? SECTIONS.filter((section) => session.capabilities[section.capability] !== false) : SECTIONS;
   const homeHref = sections[0]?.href ?? '/staff';
+  // "Mi cuenta" no es una sección de la barra (vive en el menú de tu nombre), pero sí se encuentra con Ctrl + K.
+  const quickFindSections = session ? [...sections, { href: '/staff/account', label: 'Mi cuenta', icon: UserRound }] : sections;
 
   useEffect(() => { setMobileOpen(false); setAccountOpen(false); }, [pathname]);
 
@@ -155,7 +157,7 @@ export default function StaffHeader({ onNavigate }: Props) {
           <WorkspaceBrand className="staff-brand" subtitle="Operaciones" href={homeHref} ariaLabel="OCPOOL, volver al dashboard" onClick={onNavigate ? (event) => onNavigate(event, homeHref) : undefined} />
           <nav className="staff-top-nav" ref={navRef} aria-label="Navegación de operaciones">{navLinks('bar')}</nav>
           <div className="staff-header__tools">
-            <StaffQuickFind sections={sections} onNavigate={onNavigate} />
+            <StaffQuickFind sections={quickFindSections} onNavigate={onNavigate} />
             {session && (
               <div className="staff-account" ref={accountRef}>
                 <button
@@ -178,6 +180,7 @@ export default function StaffHeader({ onNavigate }: Props) {
                       <span className="staff-account__avatar staff-account__avatar--large" aria-hidden="true">{initialsOf(session.user.displayName)}</span>
                       <span><strong>{session.user.displayName}</strong><small>{session.user.email}</small><em>{session.roleLabel}</em></span>
                     </div>
+                    <Link role="menuitem" className="staff-account__item" href="/staff/account" aria-current={isCurrent(pathname, '/staff/account') ? 'page' : undefined} onClick={onNavigate ? (event) => onNavigate(event, '/staff/account') : undefined}><UserRound size={16} aria-hidden="true" /><span className="staff-account__item-text">Mi cuenta<small>Contraseña, verificación y sesiones</small></span></Link>
                     <Link role="menuitem" className="staff-account__item" href="/"><ExternalLink size={16} aria-hidden="true" />Ir al sitio público</Link>
                     <button role="menuitem" className="staff-account__item staff-account__item--danger" type="button" disabled={logoutBusy} onClick={() => void logout()}><LogOut size={16} aria-hidden="true" />{logoutBusy ? 'Cerrando sesión…' : 'Cerrar sesión'}</button>
                   </div>
@@ -204,6 +207,7 @@ export default function StaffHeader({ onNavigate }: Props) {
               <div className="staff-mobile-nav__account">
                 <span className="staff-account__avatar" aria-hidden="true">{initialsOf(session.user.displayName)}</span>
                 <span className="staff-mobile-nav__identity"><strong>{session.user.displayName}</strong><small>{session.roleLabel} · {session.user.email}</small></span>
+                <Link className="staff-mobile-nav__logout staff-mobile-nav__account-link" href="/staff/account" aria-current={isCurrent(pathname, '/staff/account') ? 'page' : undefined} onClick={onNavigate ? (event) => onNavigate(event, '/staff/account') : undefined}><UserRound size={16} aria-hidden="true" />Mi cuenta</Link>
                 <button className="staff-mobile-nav__logout" type="button" disabled={logoutBusy} onClick={() => void logout()}><LogOut size={16} aria-hidden="true" />{logoutBusy ? 'Cerrando…' : 'Cerrar sesión'}</button>
               </div>
             )}

@@ -220,6 +220,8 @@ enum AuthEventType {
   MFA_FAILURE
   SESSION_CREATED
   SESSION_REVOKED
+  PASSWORD_CHANGED
+  MFA_DISABLED
 }
 
 enum AuthEventOutcome {

@@ -83,6 +83,7 @@ export const AUDIT_ACTION_DEFINITIONS: Record<string, AuditActionDefinition> = {
   'team.member_reactivated': { category: 'team', label: 'Acceso reactivado', details: [detail('member', 'Persona'), detail('toStatus', 'Estado')] },
   'team.access_reset_sent': { category: 'team', label: 'Enlace para nueva contraseña enviado', details: [detail('member', 'Persona')] },
   'team.sessions_revoked': { category: 'team', label: 'Sesiones cerradas por gerencia', details: [detail('member', 'Persona'), detail('sessions', 'Sesiones')] },
+  'team.mfa_reset': { category: 'team', label: 'Verificación en dos pasos quitada por gerencia', details: [detail('member', 'Persona')] },
   'quote.pdf.download_url_created': { category: 'documents', label: 'Descarga de cotización preparada', details: [detail('versionNumber', 'Versión'), detail('expiresInSeconds', 'Vigencia en segundos')] },
   'quote.pdf.generated': { category: 'documents', label: 'PDF de cotización generado', details: [detail('templateVersion', 'Plantilla'), detail('byteSize', 'Tamaño en bytes')] },
   'quote.pdf.generation_failed': { category: 'documents', label: 'Generación de PDF fallida', details: [detail('failureCode', 'Código de fallo')] },
@@ -143,11 +144,13 @@ const AUTH_EVENT_LABELS: Record<string, string> = {
   MAGIC_LINK_CONSUMED: 'Enlace de acceso consumido',
   PASSWORD_RESET_REQUEST: 'Solicitud de recuperación',
   PASSWORD_RESET_CONSUMED: 'Recuperación consumida',
-  MFA_ENROLLED: 'MFA inscrito',
+  MFA_ENROLLED: 'Verificación en dos pasos activada',
   MFA_CHALLENGE: 'Desafío MFA',
   MFA_FAILURE: 'Fallo MFA',
   SESSION_CREATED: 'Sesión creada',
   SESSION_REVOKED: 'Sesión revocada',
+  PASSWORD_CHANGED: 'Contraseña cambiada por su titular',
+  MFA_DISABLED: 'Verificación en dos pasos desactivada',
 };
 
 export type AuditCursor = {

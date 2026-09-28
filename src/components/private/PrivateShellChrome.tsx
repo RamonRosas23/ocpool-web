@@ -66,7 +66,10 @@ export default function PrivateShellChrome({ surface, user, roleLabel, navigatio
         </nav>
         <div className="private-shell__account">
           <div className="private-shell__identity"><strong>{user.displayName}</strong><span>{roleLabel}</span><small>{user.email}</small></div>
-          <button className="private-button private-button--quiet private-shell__logout" type="button" disabled={logoutBusy} onClick={() => void logout()}>{logoutBusy ? 'Cerrando…' : 'Cerrar sesión'}</button>
+          <div className="private-shell__account-actions">
+            {surface === 'staff' && <Link className="private-button private-button--quiet private-shell__logout" href="/staff/account" aria-current={pathMatches(pathname, '/staff/account') ? 'page' : undefined} onClick={() => setMenuOpen(false)}>Mi cuenta</Link>}
+            <button className="private-button private-button--quiet private-shell__logout" type="button" disabled={logoutBusy} onClick={() => void logout()}>{logoutBusy ? 'Cerrando…' : 'Cerrar sesión'}</button>
+          </div>
         </div>
       </div>
       {logoutError && <p className="private-shell__logout-error" role="alert">{logoutError} Puedes reintentar sin perder tu trabajo.</p>}

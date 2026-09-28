@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ChevronRight, KeyRound, Lock, Plus, ShieldCheck, UserRound, Users } from 'lucide-react';
+import { ChevronRight, KeyRound, Lock, Plus, ShieldCheck, ShieldOff, UserRound, Users } from 'lucide-react';
 import StaffHeader from '@/components/StaffHeader';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
@@ -17,7 +17,7 @@ import { usePersistentState } from '@/lib/use-persistent-state';
 import { TEAM_MEMBER_LOCK_MESSAGES, TEAM_MEMBER_STATE_LABELS, TEAM_ROLE_DESCRIPTIONS, TEAM_VIEWS, type TeamView } from '@/server/modules/team/domain';
 
 type TeamResponse = { items: TeamMember[]; counts: Record<TeamView, number> };
-type ConfirmKind = 'resend' | 'cancel' | 'reset' | 'sessions' | 'reactivate';
+type ConfirmKind = 'resend' | 'cancel' | 'reset' | 'sessions' | 'mfa' | 'reactivate';
 
 const VIEW_LABELS: Record<TeamView, string> = { active: 'Activas', invited: 'Invitaciones', suspended: 'Suspendidas', all: 'Todas' };
 
@@ -129,6 +129,7 @@ export default function StaffTeamPanel() {
       : confirm === 'cancel' ? { url: `${base}/invitation`, method: 'DELETE' }
         : confirm === 'reset' ? { url: `${base}/password-reset`, method: 'POST' }
           : confirm === 'sessions' ? { url: `${base}/sessions`, method: 'DELETE' }
+            : confirm === 'mfa' ? { url: `${base}/mfa`, method: 'DELETE' }
             : { url: `${base}/reactivate`, method: 'POST' };
     const response = await fetch(request.url, { method: request.method, credentials: 'include', headers: { 'content-type': 'application/json' }, ...(request.method === 'POST' ? { body: '{}' } : {}) });
     const result = await readApiResponseOrThrow<{ sessionsRevoked?: number; status?: string }>(response, 'No fue posible completar la acción.');
@@ -136,6 +137,7 @@ export default function StaffTeamPanel() {
     if (confirm === 'resend') await refresh(`Invitación reenviada a ${selected.email}. El enlace anterior ya no funciona.`);
     else if (confirm === 'cancel') await refresh(`Invitación de ${selected.displayName} cancelada.`);
     else if (confirm === 'reset') await refresh(`Enviamos a ${selected.email} un enlace para crear una nueva contraseña.`);
+    else if (confirm === 'mfa') await refresh(`Quitamos la verificación en dos pasos de ${selected.displayName}. Ya puede entrar con su contraseña y volver a activarla desde Mi cuenta.`);
     else if (confirm === 'sessions') await refresh(result.sessionsRevoked ? `Cerramos ${plural(result.sessionsRevoked, 'sesión abierta', 'sesiones abiertas')} de ${selected.displayName}.` : `${selected.displayName} no tenía sesiones abiertas.`);
     else await refresh(result.status === 'INVITED' ? `${selected.displayName} vuelve a estar invitada: le enviamos un nuevo enlace.` : `Acceso de ${selected.displayName} reactivado.`, { view: result.status === 'INVITED' ? 'invited' : 'active' });
   };
@@ -153,6 +155,7 @@ export default function StaffTeamPanel() {
     resend: { title: 'Reenviar invitación', body: `Enviaremos a ${selected.email} un nuevo enlace para crear su contraseña (vence en 72 horas). El enlace anterior deja de funcionar.`, label: 'Reenviar invitación', busy: 'Enviando…' },
     cancel: { title: 'Cancelar invitación', body: `El enlace de ${selected.displayName} dejará de funcionar y no podrá crear su contraseña. Podrás volver a invitarla después.`, label: 'Cancelar invitación', busy: 'Cancelando…', tone: 'danger' },
     reset: { title: 'Enviar enlace para nueva contraseña', body: `Enviaremos a ${selected.email} un enlace de un solo uso para crear una nueva contraseña. Su contraseña actual sigue funcionando hasta que la cambie.`, label: 'Enviar enlace', busy: 'Enviando…' },
+    mfa: { title: 'Quitar verificación en dos pasos', body: `Úsalo sólo si ${selected.displayName} perdió o cambió su teléfono y te lo pidió directamente. Podrá entrar con su contraseña y volver a activarla desde Mi cuenta; sus sesiones abiertas siguen igual.`, label: 'Quitar verificación', busy: 'Quitando…', tone: 'danger' },
     sessions: { title: 'Cerrar sus sesiones abiertas', body: `${selected.displayName} tendrá que volver a iniciar sesión en todos sus equipos. Útil si perdió un equipo o dejó una sesión abierta en otro lugar.`, label: 'Cerrar sesiones', busy: 'Cerrando…', tone: 'danger' },
     reactivate: { title: 'Reactivar acceso', body: `${selected.displayName} podrá volver a entrar con su contraseña. Si nunca la creó, le enviaremos una nueva invitación.`, label: 'Reactivar acceso', busy: 'Reactivando…' },
   } : null;
@@ -234,6 +237,7 @@ export default function StaffTeamPanel() {
                 {!selected.lock && <div className="team-detail__actions">
                   {selected.state === 'active' && <>
                     <button type="button" className="staff-button staff-button--outline" onClick={() => setConfirm('reset')}><KeyRound size={15} aria-hidden="true" />Enviar enlace para nueva contraseña</button>
+                    {selected.mfaEnabled && <button type="button" className="staff-button staff-button--outline" onClick={() => setConfirm('mfa')}><ShieldOff size={15} aria-hidden="true" />Quitar verificación en dos pasos</button>}
                     <button type="button" className="staff-button staff-button--outline" disabled={selected.activeSessions === 0} onClick={() => setConfirm('sessions')}>{selected.activeSessions ? `Cerrar ${plural(selected.activeSessions, 'sesión abierta', 'sesiones abiertas')}` : 'Sin sesiones abiertas'}</button>
                     <button type="button" className="staff-button staff-button--quiet-danger" onClick={() => void openSuspend()}>Suspender acceso</button>
                   </>}

@@ -12,14 +12,23 @@ function classifyStatus(status: number): ApiResponseErrorKind {
   return 'transient';
 }
 
-export async function readApiResponse<T>(response: Response, fallbackMessage: string): Promise<ApiResponseResult<T>> {
+export type ApiResponseOptions = Readonly<{
+  /**
+   * Errores que la persona corrige sola (400–499, p. ej. "La contraseña actual no es correcta") sin la
+   * referencia de soporte: ahí sólo es ruido. Los fallos del servidor (500+) la conservan siempre.
+   */
+  plainClientErrors?: boolean;
+}>;
+
+export async function readApiResponse<T>(response: Response, fallbackMessage: string, options: ApiResponseOptions = {}): Promise<ApiResponseResult<T>> {
   const data = await response.json().catch(() => ({})) as T & ApiErrorPayload;
   if (response.ok) return { ok: true, data };
-  return { ok: false, kind: classifyStatus(response.status), message: getApiErrorMessage(data, fallbackMessage) };
+  const message = options.plainClientErrors && response.status < 500 ? data.error?.message ?? fallbackMessage : getApiErrorMessage(data, fallbackMessage);
+  return { ok: false, kind: classifyStatus(response.status), message };
 }
 
-export async function readApiResponseOrThrow<T>(response: Response, fallbackMessage: string): Promise<T> {
-  const result = await readApiResponse<T>(response, fallbackMessage);
+export async function readApiResponseOrThrow<T>(response: Response, fallbackMessage: string, options: ApiResponseOptions = {}): Promise<T> {
+  const result = await readApiResponse<T>(response, fallbackMessage, options);
   if (!result.ok) throw new Error(result.message);
   return result.data;
 }

@@ -16,6 +16,9 @@ test.describe('auth browser surfaces', () => {
   const employeeEmail = `auth-surface-employee-${suffix}@example.test`;
   const adminEmail = `auth-surface-admin-${suffix}@example.test`;
   const customerEmail = `auth-surface-customer-${suffix}@example.test`;
+  const accountEmail = `auth-surface-account-${suffix}@example.test`;
+  const accountPassword = 'AuthSurfaceAccount123!';
+  const accountNewPassword = 'AuthSurfaceAccountNew456!';
   const employeePassword = 'AuthSurfaceEmployee123!';
   const adminPassword = 'AuthSurfaceAdmin123!';
   const customerToken = `auth-surface-customer-token-${suffix}-abcdefghijklmnopqrstuvwxyz`;
@@ -26,19 +29,21 @@ test.describe('auth browser surfaces', () => {
   const employeeMfa = createMfaEnrollment({ accountLabel: adminEmail, issuer: 'OCPOOL' });
 
   test.beforeAll(async () => {
-    const [managerRole, adminRole, customerRole] = await Promise.all([
+    const [managerRole, adminRole, customerRole, salesRole] = await Promise.all([
       prisma.role.findUniqueOrThrow({ where: { key: 'manager' } }),
       prisma.role.findUniqueOrThrow({ where: { key: 'admin' } }),
       prisma.role.findUniqueOrThrow({ where: { key: 'customer' } }),
+      prisma.role.findUniqueOrThrow({ where: { key: 'sales' } }),
     ]);
     const client = await prisma.client.create({ data: { displayName: `Auth Surface Client ${suffix}` } });
     clientIds.push(client.id);
-    const [employee, admin, customer] = await Promise.all([
+    const [employee, admin, customer, account] = await Promise.all([
       prisma.user.create({ data: { email: employeeEmail, emailNormalized: employeeEmail, displayName: 'Auth Surface Employee', type: 'EMPLOYEE', status: 'ACTIVE', passwordHash: await hashPassword(employeePassword), roles: { create: { roleId: managerRole.id } } } }),
       prisma.user.create({ data: { email: adminEmail, emailNormalized: adminEmail, displayName: 'Auth Surface Admin', type: 'EMPLOYEE', status: 'ACTIVE', passwordHash: await hashPassword(adminPassword), mfaRequired: true, mfaSecretCiphertext: encryptSecret(employeeMfa.secret, readServerEnv().MFA_ENCRYPTION_KEY), roles: { create: { roleId: adminRole.id } } } }),
       prisma.user.create({ data: { email: customerEmail, emailNormalized: customerEmail, displayName: 'Auth Surface Customer', type: 'CUSTOMER', status: 'ACTIVE', clientId: client.id, roles: { create: { roleId: customerRole.id } } } }),
+      prisma.user.create({ data: { email: accountEmail, emailNormalized: accountEmail, displayName: 'Auth Surface Account', type: 'EMPLOYEE', status: 'ACTIVE', passwordHash: await hashPassword(accountPassword), roles: { create: { roleId: salesRole.id } } } }),
     ]);
-    userIds.push(employee.id, admin.id, customer.id);
+    userIds.push(employee.id, admin.id, customer.id, account.id);
 
     const tokens = await Promise.all([
       prisma.authToken.create({ data: { userId: customer.id, type: 'MAGIC_LINK', tokenHash: fingerprintToken(customerToken), expiresAt: new Date(Date.now() + 15 * 60_000) } }),
@@ -48,7 +53,8 @@ test.describe('auth browser surfaces', () => {
   });
 
   test.afterAll(async () => {
-    await prisma.authRateLimit.deleteMany({ where: { keyHash: { in: [fingerprintToken(employeeEmail), fingerprintToken(adminEmail), fingerprintToken(customerEmail)] } } });
+    await prisma.authRateLimit.deleteMany({ where: { keyHash: { in: [employeeEmail, adminEmail, customerEmail, accountEmail, ...userIds].map((key) => fingerprintToken(key)) } } });
+    await prisma.authEvent.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.session.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.authToken.deleteMany({ where: { id: { in: tokenIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
@@ -116,6 +122,58 @@ test.describe('auth browser surfaces', () => {
     await page.getByLabel('Código de autenticación').fill(generateTotpCode(employeeMfa.secret, Date.now()));
     await page.getByRole('button', { name: 'Verificar código' }).click();
     await expect(page).toHaveURL(/\/staff\/?$/);
+  });
+
+  test('lets an employee change their password and turn on two-step verification from Mi cuenta', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/login');
+    await page.getByLabel('Correo').fill(accountEmail);
+    await page.getByLabel('Contraseña').fill(accountPassword);
+    await page.getByRole('button', { name: 'Entrar' }).click();
+    await expect(page).toHaveURL(/\/staff\/?$/);
+
+    await page.getByRole('button', { name: /Cuenta de/ }).click();
+    await page.getByRole('menuitem', { name: /Mi cuenta/ }).click();
+    await expect(page).toHaveURL(/\/staff\/account$/);
+    await expect(page.getByRole('heading', { name: 'Mi cuenta', level: 1 })).toBeVisible();
+    await expect(page.getByText('Protección básica')).toBeVisible();
+    await expect(page.getByText('Esta sesión', { exact: true })).toBeVisible();
+    await expectNoSeriousA11yViolations(page);
+
+    // Contraseña: exige la actual y se valida en vivo.
+    await page.getByRole('button', { name: 'Cambiar contraseña' }).click();
+    await page.getByLabel('Contraseña actual', { exact: true }).fill(accountPassword);
+    await page.getByLabel('Nueva contraseña', { exact: true }).fill(accountNewPassword);
+    await page.getByLabel('Confirmar nueva contraseña').fill(accountNewPassword);
+    await page.getByRole('button', { name: 'Guardar contraseña' }).click();
+    await expect(page.getByText(/Contraseña actualizada\./)).toBeVisible();
+
+    // Verificación en dos pasos: QR propio, clave de respaldo y primer código.
+    await page.getByRole('button', { name: 'Activar verificación' }).click();
+    await expect(page.getByRole('img', { name: /Código QR/ })).toBeVisible();
+    const secret = (await page.locator('.account-mfa__secret').innerText()).replace(/\s+/gu, '');
+    await page.getByLabel(/Escribe el código que muestra la app/).fill(generateTotpCode(secret, Date.now()));
+    await page.getByRole('button', { name: 'Activar', exact: true }).click();
+    await expect(page.locator('#account-mfa').getByText('Activa', { exact: true })).toBeVisible();
+    await expect(page.getByText('Cuenta protegida')).toBeVisible();
+    await expectNoSeriousA11yViolations(page);
+    for (const width of [360, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(1);
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    // El siguiente acceso usa la nueva contraseña y pide el código (uno nuevo: el anterior ya se usó).
+    await page.context().clearCookies();
+    await page.goto('/login');
+    await page.getByLabel('Correo').fill(accountEmail);
+    await page.getByLabel('Contraseña').fill(accountNewPassword);
+    await page.getByRole('button', { name: 'Entrar' }).click();
+    await page.getByLabel('Código de autenticación').fill(generateTotpCode(secret, Date.now() + 30_000));
+    await page.getByRole('button', { name: 'Verificar código' }).click();
+    await expect(page).toHaveURL(/\/staff\/?$/);
+    await page.context().clearCookies();
   });
 
   test('requests and consumes customer magic links without leaving the token in the browser', async ({ page }) => {

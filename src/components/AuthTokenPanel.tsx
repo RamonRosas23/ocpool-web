@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Check, Eye, EyeOff } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import { passwordChecks } from '@/lib/password-checks';
 
 type TokenKind = 'customer' | 'recovery';
 type TokenState = 'loading' | 'missing' | 'invalid' | 'ready' | 'success';
@@ -12,17 +13,6 @@ type ErrorResponse = { error?: { message?: string } };
 async function publicError(response: Response): Promise<string> {
   const body = await response.json().catch(() => ({})) as ErrorResponse;
   return body.error?.message ? 'El enlace no es válido o ya expiró.' : 'El enlace no es válido o ya expiró.';
-}
-
-// Mismas reglas que `passwordSchema` del servidor (12–128 caracteres, al menos una letra y un
-// número): se muestran en vivo para que el formulario no falle después de enviarlo.
-function passwordChecks(password: string, confirmation: string) {
-  return [
-    { key: 'length', label: 'Al menos 12 caracteres', met: password.length >= 12 && password.length <= 128 },
-    { key: 'letter', label: 'Incluye una letra', met: /[A-Za-z]/u.test(password) },
-    { key: 'digit', label: 'Incluye un número', met: /[0-9]/u.test(password) },
-    { key: 'match', label: 'Ambas coinciden', met: password.length > 0 && password === confirmation },
-  ];
 }
 
 function removeParamsFromAddress(params: readonly string[]) {

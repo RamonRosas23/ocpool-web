@@ -35,8 +35,8 @@ function identifierHash(value: string): string {
   return fingerprintToken(normalizeEmail(value));
 }
 
-async function recordAuthEvent(client: DbClient, input: {
-  eventType: 'LOGIN_SUCCESS' | 'LOGIN_FAILURE' | 'LOGOUT' | 'MAGIC_LINK_REQUEST' | 'MAGIC_LINK_CONSUMED' | 'PASSWORD_RESET_REQUEST' | 'PASSWORD_RESET_CONSUMED' | 'MFA_ENROLLED' | 'MFA_CHALLENGE' | 'MFA_FAILURE' | 'SESSION_CREATED' | 'SESSION_REVOKED';
+export async function recordAuthEvent(client: DbClient, input: {
+  eventType: 'LOGIN_SUCCESS' | 'LOGIN_FAILURE' | 'LOGOUT' | 'MAGIC_LINK_REQUEST' | 'MAGIC_LINK_CONSUMED' | 'PASSWORD_RESET_REQUEST' | 'PASSWORD_RESET_CONSUMED' | 'MFA_ENROLLED' | 'MFA_CHALLENGE' | 'MFA_FAILURE' | 'SESSION_CREATED' | 'SESSION_REVOKED' | 'PASSWORD_CHANGED' | 'MFA_DISABLED';
   outcome: 'SUCCESS' | 'DENIED' | 'FAILURE';
   userId?: string | null;
   identifier?: string;

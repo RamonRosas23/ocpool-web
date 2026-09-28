@@ -1,7 +1,7 @@
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { requirePermission } from '@/server/auth/permissions';
-import { issueEmployeeAccessTokenInTransaction, type AuthRequestContext } from '@/server/auth/service';
+import { issueEmployeeAccessTokenInTransaction, recordAuthEvent, type AuthRequestContext } from '@/server/auth/service';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
@@ -378,6 +378,24 @@ export async function sendTeamMemberPasswordReset(actor: Actor, userId: string, 
     });
     await audit(transaction, actor, 'team.access_reset_sent', member.id, { member: member.displayName });
     return { id: member.id, expiresAt: delivery.expiresAt };
+  });
+}
+
+/**
+ * Quita la verificación en dos pasos de alguien que perdió su teléfono: vuelve a entrar sólo con su
+ * contraseña y puede activarla de nuevo en Mi cuenta. Nunca a administradores ni a la propia cuenta.
+ */
+export async function resetTeamMemberMfa(actor: Actor, userId: string, context: AuthRequestContext, dependencies: TeamServiceDependencies = {}) {
+  requireTeamManager(actor);
+  const prisma = dependencies.prisma ?? getPrisma();
+  return prisma.$transaction(async (transaction) => {
+    const member = await loadManageableMember(transaction, actor, userId);
+    const user = await transaction.user.findUniqueOrThrow({ where: { id: member.id }, select: { mfaSecretCiphertext: true } });
+    if (!user.mfaSecretCiphertext) throw new AppError('CONFLICT', 'Esa persona no tiene activa la verificación en dos pasos.', 409);
+    await transaction.user.update({ where: { id: member.id }, data: { mfaSecretCiphertext: null, mfaEnrolledAt: null, mfaRequired: false, mfaLastAcceptedCounter: null } });
+    await recordAuthEvent(transaction, { eventType: 'MFA_DISABLED', outcome: 'SUCCESS', userId: member.id, context, metadata: { origin: 'team' } });
+    await audit(transaction, actor, 'team.mfa_reset', member.id, { member: member.displayName });
+    return { id: member.id, mfaEnabled: false };
   });
 }
 
