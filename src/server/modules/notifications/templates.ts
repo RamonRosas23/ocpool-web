@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { normalizeNotificationEmail } from '@/server/modules/notifications/domain';
+import { brandContact, brandIdentity, brandWebsiteLabel } from '@/lib/brand';
+import { details, html, paragraph, quote, renderEmailLayout, strong, type EmailAudience, type EmailBlock, type EmailDetail } from '@/server/modules/notifications/email-layout';
 
 export const NOTIFICATION_TEMPLATE_VERSIONS = ['v1'] as const;
 export type NotificationTemplateVersion = (typeof NOTIFICATION_TEMPLATE_VERSIONS)[number];
@@ -311,10 +313,6 @@ export type RenderedNotificationTemplate = {
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/u;
 const ALLOWED_PATHS = ['/portal', '/staff', '/auth/customer/consume-link', '/auth/recovery'];
 
-function escapeHtml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
-}
-
 function safeHeader(value: string): string {
   if (CONTROL_CHARACTERS.test(value) || value.length > 240) throw new Error('Unsafe email header value.');
   return value;
@@ -341,145 +339,283 @@ function validateActionUrl(appUrl: string, actionUrl: string): string {
   return normalized;
 }
 
-type EmailAudience = 'customer' | 'staff';
-
-/**
- * Marco común de los correos, con la paleta de las superficies privadas. Incluye el enlace en texto
- * (hay clientes de correo que bloquean botones) y un pie distinto para clientes y para el equipo:
- * antes el equipo también recibía "…la fuente de verdad de tu expediente".
- */
-function layout(title: string, body: string, actionLabel: string, actionUrl: string, audience: EmailAudience = 'customer'): string {
-  const footer = audience === 'staff'
-    ? 'Aviso automático del espacio interno de OCPOOL.'
-    : 'Este correo es sólo un aviso: la información vigente de tu expediente siempre está en tu portal de OCPOOL. Si no esperabas este mensaje, puedes ignorarlo.';
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title></head><body style="margin:0;background:#f4f1ea;color:#14232a;font-family:Arial,Helvetica,sans-serif;line-height:1.55"><main style="max-width:620px;margin:32px auto;padding:32px;background:#fffdf9;border:1px solid #e3dccf;border-radius:12px"><p style="margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase;color:#7c5827;font-size:12px;font-weight:700">OCPOOL</p><h1 style="margin:0 0 16px;color:#092433;font-size:26px;font-weight:600;line-height:1.25">${escapeHtml(title)}</h1>${body}<p style="margin:24px 0 8px"><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#092433;color:#fffdf9;font-weight:700;text-decoration:none">${escapeHtml(actionLabel)}</a></p><p style="margin:0 0 20px;font-size:12px;color:#56615f">Si el botón no funciona, copia este enlace en tu navegador:<br><span style="word-break:break-all">${escapeHtml(actionUrl)}</span></p><p style="margin:0;border-top:1px solid #e3dccf;padding-top:16px;font-size:12px;color:#56615f">${footer}</p></main></body></html>`;
-}
-
 /** "15 minutos", "72 horas": la invitación dura días y leerla en minutos confundía. */
 function expiresLabel(minutes: number): string {
   if (minutes >= 120 && minutes % 60 === 0) return `${minutes / 60} horas`;
   return `${minutes} minutos`;
 }
 
+const APPROVAL_TYPE_LABELS: Readonly<Record<string, string>> = { DISCOUNT: 'descuento', SPECIAL_CONCEPT: 'concepto especial' };
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** Vista previa de bandeja: un renglón, sin cortar a media palabra si se puede evitar. */
+function previewLine(value: string, maximum = 140): string {
+  const flat = value.replace(/\s+/gu, ' ').trim();
+  if (flat.length <= maximum) return flat;
+  const cut = flat.slice(0, maximum - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > maximum * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+/** Pie del texto plano: el mismo contacto que el HTML, para quien lee el correo sin formato. */
+function textFooter(audience: EmailAudience): string {
+  return audience === 'staff'
+    ? '\n\n—\nAviso automático del espacio interno de OCPOOL.'
+    : `\n\n—\n${brandIdentity.name} · ${brandIdentity.tagline}\n${brandContact.email} · ${brandContact.phone} · ${brandWebsiteLabel}`;
+}
+
+type EmailContent = Readonly<{
+  audience: EmailAudience;
+  subject: string;
+  preheader: string;
+  eyebrow: string;
+  title: string;
+  blocks: readonly EmailBlock[];
+  actionLabel: string;
+  text: string;
+  securityNote?: string;
+}>;
+
 export function renderNotificationTemplate(input: RenderNotificationTemplateInput): RenderedNotificationTemplate {
   if (input.templateVersion !== 'v1') throw new Error('Unsupported notification template version.');
   const data = input.data;
-  const recipientName = escapeHtml(data.recipientName);
   const actionUrl = validateActionUrl(data.appUrl, data.actionUrl);
   const folio = data.folio ? safeHeader(data.folio) : '';
   const version = data.versionNumber ? ` versión ${data.versionNumber}` : '';
-  const approvalType = data.approvalType === 'DISCOUNT' ? 'descuento' : data.approvalType === 'SPECIAL_CONCEPT' ? 'concepto especial' : 'ajuste de precio';
-  const total = data.totalLabel ? escapeHtml(data.totalLabel) : '';
-  const sender = escapeHtml(data.senderName ?? 'Tu equipo OCPOOL');
+  const approvalType = APPROVAL_TYPE_LABELS[data.approvalType ?? ''] ?? 'ajuste de precio';
   const preview = data.preview ?? '';
   const portalAccessPending = new URL(actionUrl).pathname === '/portal/access';
   // Un mismo evento (p. ej. un mensaje) puede ir al cliente o al equipo; el destino lo distingue.
   const staffAudience = new URL(actionUrl).pathname.startsWith('/staff');
+  const folioRows: EmailDetail[] = folio ? [{ label: 'Folio', value: folio }] : [];
+  const versionRows: EmailDetail[] = data.versionNumber ? [{ label: 'Versión', value: String(data.versionNumber) }] : [];
+  const totalRows: EmailDetail[] = data.totalLabel ? [{ label: 'Total', value: data.totalLabel, emphasis: /\d/u.test(data.totalLabel) }] : [];
+
+  const compose = (content: EmailContent): RenderedNotificationTemplate => ({
+    subject: content.subject,
+    text: `${content.text}${textFooter(content.audience)}`,
+    html: renderEmailLayout({
+      audience: content.audience,
+      appUrl: data.appUrl,
+      preheader: previewLine(content.preheader),
+      eyebrow: content.eyebrow,
+      title: content.title,
+      greeting: `Hola ${data.recipientName},`,
+      blocks: content.blocks,
+      action: { label: content.actionLabel, url: actionUrl },
+      ...(content.securityNote ? { securityNote: content.securityNote } : {}),
+    }),
+  });
 
   switch (input.templateKey) {
     case 'auth.customer.magic_link': {
       const expires = data.expiresMinutes ?? 15;
-      const subject = 'Tu acceso seguro a OCPOOL';
-      const title = 'Accede a tu portal';
-      const body = `<p>Hola ${recipientName},</p><p>Usa este enlace para entrar de forma segura a tu portal. Expira en ${expires} minutos y sólo puede utilizarse una vez.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nAccede a tu portal de OCPOOL: ${actionUrl}\n\nEl enlace expira en ${expires} minutos y sólo puede utilizarse una vez.`, html: layout(title, body, 'Entrar al portal', actionUrl) };
+      return compose({
+        audience: 'customer',
+        subject: 'Tu acceso seguro a OCPOOL',
+        preheader: `Tu enlace personal para entrar al portal. Vence en ${expires} minutos.`,
+        eyebrow: 'Acceso seguro',
+        title: 'Accede a tu portal',
+        blocks: [paragraph(`Usa este enlace para entrar de forma segura a tu portal. Expira en ${expires} minutos y sólo puede utilizarse una vez.`)],
+        actionLabel: 'Entrar al portal',
+        securityNote: 'Por tu seguridad, no reenvíes este correo: el enlace da acceso a tu expediente.',
+        text: `Hola ${data.recipientName},\n\nAccede a tu portal de OCPOOL: ${actionUrl}\n\nEl enlace expira en ${expires} minutos y sólo puede utilizarse una vez.`,
+      });
     }
     case 'auth.employee.password_reset': {
       const expires = expiresLabel(data.expiresMinutes ?? 15);
-      const subject = 'Restablece tu acceso interno a OCPOOL';
-      const title = 'Restablece tu contraseña';
       // Neutral: la recuperación la puede pedir la propia persona o gerencia desde Equipo.
-      const body = `<p>Hola ${recipientName},</p><p>Recibimos una solicitud para restablecer tu acceso interno. El enlace expira en ${expires} y sólo puede utilizarse una vez. Si no la esperabas, ignora este correo: tu contraseña actual sigue igual.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nRecibimos una solicitud para restablecer tu acceso interno a OCPOOL: ${actionUrl}\n\nEl enlace expira en ${expires} y sólo puede utilizarse una vez. Si no la esperabas, ignora este correo.`, html: layout(title, body, 'Restablecer acceso', actionUrl, 'staff') };
+      return compose({
+        audience: 'staff',
+        subject: 'Restablece tu acceso interno a OCPOOL',
+        preheader: `Enlace para restablecer tu contraseña. Vence en ${expires}.`,
+        eyebrow: 'Acceso interno',
+        title: 'Restablece tu contraseña',
+        blocks: [paragraph(`Recibimos una solicitud para restablecer tu acceso interno. El enlace expira en ${expires} y sólo puede utilizarse una vez. Si no la esperabas, ignora este correo: tu contraseña actual sigue igual.`)],
+        actionLabel: 'Restablecer acceso',
+        securityNote: 'Por tu seguridad, no reenvíes este correo: el enlace da acceso a tu cuenta interna.',
+        text: `Hola ${data.recipientName},\n\nRecibimos una solicitud para restablecer tu acceso interno a OCPOOL: ${actionUrl}\n\nEl enlace expira en ${expires} y sólo puede utilizarse una vez. Si no la esperabas, ignora este correo.`,
+      });
     }
     case 'auth.employee.invitation': {
       const expires = expiresLabel(data.expiresMinutes ?? 72 * 60);
-      const inviter = data.senderName ? escapeHtml(data.senderName) : 'El equipo de OCPOOL';
-      const role = data.roleLabel ? ` como <strong>${escapeHtml(data.roleLabel)}</strong>` : '';
-      const roleText = data.roleLabel ? ` como ${data.roleLabel}` : '';
-      const subject = 'Te damos la bienvenida al equipo de OCPOOL';
-      const title = 'Crea tu contraseña';
-      const body = `<p>Hola ${recipientName},</p><p>${inviter} te invitó al espacio interno de OCPOOL${role}. Crea tu contraseña para entrar; el enlace expira en ${expires} y sólo puede utilizarse una vez.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\n${data.senderName ?? 'El equipo de OCPOOL'} te invitó al espacio interno de OCPOOL${roleText}. Crea tu contraseña para entrar: ${actionUrl}\n\nEl enlace expira en ${expires} y sólo puede utilizarse una vez.`, html: layout(title, body, 'Crear contraseña', actionUrl, 'staff') };
+      const inviter = data.senderName ?? 'El equipo de OCPOOL';
+      const role = data.roleLabel ? html` como ${strong(data.roleLabel)}` : html``;
+      return compose({
+        audience: 'staff',
+        subject: 'Te damos la bienvenida al equipo de OCPOOL',
+        preheader: `${inviter} te invitó al espacio interno de OCPOOL.`,
+        eyebrow: 'Invitación al equipo',
+        title: 'Crea tu contraseña',
+        blocks: [paragraph(html`${inviter} te invitó al espacio interno de OCPOOL${role}. Crea tu contraseña para entrar; el enlace expira en ${expires} y sólo puede utilizarse una vez.`)],
+        actionLabel: 'Crear contraseña',
+        securityNote: 'Por tu seguridad, no reenvíes este correo: el enlace es personal.',
+        text: `Hola ${data.recipientName},\n\n${inviter} te invitó al espacio interno de OCPOOL${data.roleLabel ? ` como ${data.roleLabel}` : ''}. Crea tu contraseña para entrar: ${actionUrl}\n\nEl enlace expira en ${expires} y sólo puede utilizarse una vez.`,
+      });
     }
     case 'request.received': {
-      const subject = safeHeader(`Recibimos tu solicitud ${folio}`);
-      const body = portalAccessPending
-        ? `<p>Hola ${recipientName},</p><p>Tu solicitud ${escapeHtml(folio)} fue recibida y ya forma parte de tu expediente.</p><p>Para consultar avances en línea, solicita acceso al portal. Nuestro equipo habilitará tu cuenta y después recibirás un enlace seguro de un solo uso en este correo.</p>`
-        : `<p>Hola ${recipientName},</p><p>Tu solicitud ${escapeHtml(folio)} fue recibida y ya forma parte de tu expediente.</p><p>Consulta los avances directamente en tu portal.</p>`;
-      const text = portalAccessPending
-        ? `Hola ${data.recipientName},\n\nRecibimos tu solicitud ${folio}.\n\nPara consultar avances en línea, solicita acceso al portal: ${actionUrl}\n\nNuestro equipo habilitará tu cuenta y después recibirás un enlace seguro de un solo uso en este correo.`
-        : `Hola ${data.recipientName},\n\nRecibimos tu solicitud ${folio}. Consulta el avance en tu portal: ${actionUrl}`;
-      return { subject, text, html: layout('Solicitud recibida', body, data.actionLabel ?? 'Ver expediente', actionUrl) };
+      const received = paragraph(html`Tu solicitud ${folio} fue recibida y ya forma parte de tu expediente.`);
+      const status = details([...folioRows, { label: 'Estado', value: 'Recibida' }]);
+      return compose({
+        audience: 'customer',
+        subject: safeHeader(`Recibimos tu solicitud ${folio}`),
+        preheader: `Tu solicitud ${folio} ya forma parte de tu expediente.`,
+        eyebrow: 'Solicitud de cotización',
+        title: 'Solicitud recibida',
+        blocks: portalAccessPending
+          ? [received, status, paragraph('Para consultar avances en línea, solicita acceso al portal. Nuestro equipo habilitará tu cuenta y después recibirás un enlace seguro de un solo uso en este correo.')]
+          : [received, status, paragraph('Consulta los avances directamente en tu portal.')],
+        actionLabel: data.actionLabel ?? 'Ver expediente',
+        text: portalAccessPending
+          ? `Hola ${data.recipientName},\n\nRecibimos tu solicitud ${folio}.\n\nPara consultar avances en línea, solicita acceso al portal: ${actionUrl}\n\nNuestro equipo habilitará tu cuenta y después recibirás un enlace seguro de un solo uso en este correo.`
+          : `Hola ${data.recipientName},\n\nRecibimos tu solicitud ${folio}. Consulta el avance en tu portal: ${actionUrl}`,
+      });
     }
-    case 'request.assigned': {
-      const subject = safeHeader(`Te asignaron la solicitud ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>La solicitud ${escapeHtml(folio)} ahora está a tu cargo. Revisa el alcance y define el siguiente paso con el cliente.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nLa solicitud ${folio} ahora está a tu cargo. Abre el expediente: ${actionUrl}`, html: layout('Nueva solicitud a tu cargo', body, 'Abrir expediente', actionUrl, 'staff') };
-    }
-    case 'quote.version_sent': {
-      const subject = safeHeader(`Tu cotización ${folio} está disponible`);
-      const body = portalAccessPending
-        ? `<p>Hola ${recipientName},</p><p>La cotización ${escapeHtml(folio)} ya está disponible para tu expediente.</p><p>Solicita acceso al portal para consultarla. Nuestro equipo habilitará tu cuenta y recibirás un enlace seguro de un solo uso en este correo.</p>`
-        : `<p>Hola ${recipientName},</p><p>Ya puedes revisar la cotización ${escapeHtml(folio)} en tu portal: el detalle, los importes y el PDF.</p><p>Desde ahí mismo puedes aceptarla o pedirnos cambios.</p>`;
-      const text = portalAccessPending
-        ? `Hola ${data.recipientName},\n\nLa cotización ${folio} ya está disponible para tu expediente. Solicita acceso al portal: ${actionUrl}\n\nNuestro equipo habilitará tu cuenta y recibirás un enlace seguro de un solo uso en este correo.`
-        : `Hola ${data.recipientName},\n\nTu cotización ${folio} está disponible en el portal: ${actionUrl}\n\nDesde ahí puedes revisar el PDF, aceptarla o pedirnos cambios.`;
-      return { subject, text, html: layout('Cotización disponible', body, data.actionLabel ?? 'Revisar cotización', actionUrl) };
-    }
-    case 'quote.approval_requested': {
-      const subject = safeHeader(`Aprobación de ${approvalType} pendiente: ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>La versión${version} de la cotización ${escapeHtml(folio)} requiere tu aprobación para continuar.</p><p>Tipo: <strong>${escapeHtml(approvalType)}</strong></p>`;
-      return { subject, text: `La cotización ${folio}${version} requiere aprobación de ${approvalType}. Revisa el expediente: ${actionUrl}`, html: layout('Aprobación requerida', body, data.actionLabel ?? 'Revisar aprobación', actionUrl, 'staff') };
-    }
+    case 'request.assigned':
+      return compose({
+        audience: 'staff',
+        subject: safeHeader(`Te asignaron la solicitud ${folio}`),
+        preheader: `La solicitud ${folio} ahora está a tu cargo.`,
+        eyebrow: 'Asignación',
+        title: 'Nueva solicitud a tu cargo',
+        blocks: [paragraph(html`La solicitud ${folio} ahora está a tu cargo. Revisa el alcance y define el siguiente paso con el cliente.`), details(folioRows)],
+        actionLabel: 'Abrir expediente',
+        text: `Hola ${data.recipientName},\n\nLa solicitud ${folio} ahora está a tu cargo. Abre el expediente: ${actionUrl}`,
+      });
+    case 'quote.version_sent':
+      return compose({
+        audience: 'customer',
+        subject: safeHeader(`Tu cotización ${folio} está disponible`),
+        preheader: `La cotización ${folio} está lista para tu revisión.`,
+        eyebrow: 'Cotización',
+        title: 'Cotización disponible',
+        blocks: portalAccessPending
+          ? [paragraph(html`La cotización ${folio} ya está disponible para tu expediente.`), details(folioRows), paragraph('Solicita acceso al portal para consultarla. Nuestro equipo habilitará tu cuenta y recibirás un enlace seguro de un solo uso en este correo.')]
+          : [paragraph(html`Ya puedes revisar la cotización ${folio} en tu portal: el detalle, los importes y el PDF.`), details(folioRows), paragraph('Desde ahí mismo puedes aceptarla o pedirnos cambios.')],
+        actionLabel: data.actionLabel ?? 'Revisar cotización',
+        text: portalAccessPending
+          ? `Hola ${data.recipientName},\n\nLa cotización ${folio} ya está disponible para tu expediente. Solicita acceso al portal: ${actionUrl}\n\nNuestro equipo habilitará tu cuenta y recibirás un enlace seguro de un solo uso en este correo.`
+          : `Hola ${data.recipientName},\n\nTu cotización ${folio} está disponible en el portal: ${actionUrl}\n\nDesde ahí puedes revisar el PDF, aceptarla o pedirnos cambios.`,
+      });
+    case 'quote.approval_requested':
+      return compose({
+        audience: 'staff',
+        subject: safeHeader(`Aprobación de ${approvalType} pendiente: ${folio}`),
+        preheader: `La cotización ${folio}${version} requiere tu aprobación.`,
+        eyebrow: 'Aprobación',
+        title: 'Aprobación requerida',
+        blocks: [
+          paragraph(data.versionNumber
+            ? html`La versión ${data.versionNumber} de la cotización ${folio} requiere tu aprobación de ${approvalType} para continuar.`
+            : html`La cotización ${folio} requiere tu aprobación de ${approvalType} para continuar.`),
+          details([...folioRows, ...versionRows, { label: 'Tipo', value: capitalize(approvalType) }]),
+        ],
+        actionLabel: data.actionLabel ?? 'Revisar aprobación',
+        text: `La cotización ${folio}${version} requiere aprobación de ${approvalType}. Revisa el expediente: ${actionUrl}`,
+      });
     case 'quote.approval_resolved': {
       const approved = data.approvalStatus === 'APPROVED';
-      const subject = safeHeader(`${approved ? 'Aprobación autorizada' : 'Aprobación rechazada'} ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>La aprobación de ${escapeHtml(approvalType)} para la cotización ${escapeHtml(folio)}${version} fue <strong>${approved ? 'autorizada' : 'rechazada'}</strong>.</p>`;
-      return { subject, text: `La aprobación de ${approvalType} para ${folio}${version} fue ${approved ? 'autorizada' : 'rechazada'}. Revisa el expediente: ${actionUrl}`, html: layout(approved ? 'Aprobación autorizada' : 'Aprobación rechazada', body, data.actionLabel ?? 'Abrir expediente', actionUrl, 'staff') };
+      const outcome = approved ? 'autorizada' : 'rechazada';
+      return compose({
+        audience: 'staff',
+        subject: safeHeader(`${approved ? 'Aprobación autorizada' : 'Aprobación rechazada'} ${folio}`),
+        preheader: `La aprobación de ${approvalType} para ${folio} fue ${outcome}.`,
+        eyebrow: 'Aprobación',
+        title: approved ? 'Aprobación autorizada' : 'Aprobación rechazada',
+        blocks: [
+          paragraph(html`La aprobación de ${approvalType} para la cotización ${folio}${version} fue ${strong(outcome)}.`),
+          details([...folioRows, ...versionRows, { label: 'Tipo', value: capitalize(approvalType) }, { label: 'Resultado', value: capitalize(outcome) }]),
+        ],
+        actionLabel: data.actionLabel ?? 'Abrir expediente',
+        text: `La aprobación de ${approvalType} para ${folio}${version} fue ${outcome}. Revisa el expediente: ${actionUrl}`,
+      });
     }
-    case 'quote.accepted': {
-      const subject = safeHeader(`Cotización ${folio} aceptada`);
-      const body = `<p>Hola ${recipientName},</p><p>El cliente aceptó la cotización ${escapeHtml(folio)}${version}.</p>${total ? `<p>Total aceptado: <strong>${total}</strong></p>` : ''}<p>Siguiente paso: el arranque. El proyecto se crea automáticamente con la aceptación; ábrelo desde el expediente para confirmar responsable y tareas.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nEl cliente aceptó la cotización ${folio}${version}.${data.totalLabel ? ` Total aceptado: ${data.totalLabel}.` : ''}\n\nSiguiente paso: el arranque (el proyecto se crea automáticamente). Abre el expediente: ${actionUrl}`, html: layout('Cotización aceptada', body, 'Abrir expediente', actionUrl, 'staff') };
-    }
-    case 'quote.acceptance_confirmed': {
+    case 'quote.accepted':
+      return compose({
+        audience: 'staff',
+        subject: safeHeader(`Cotización ${folio} aceptada`),
+        preheader: `El cliente aceptó la cotización ${folio}.`,
+        eyebrow: 'Expediente',
+        title: 'Cotización aceptada',
+        blocks: [
+          paragraph(html`El cliente aceptó la cotización ${folio}${version}.`),
+          details([...folioRows, ...versionRows, ...totalRows.map((row) => ({ ...row, label: 'Total aceptado' }))]),
+          paragraph('Siguiente paso: el arranque. El proyecto se crea automáticamente con la aceptación; ábrelo desde el expediente para confirmar responsable y tareas.'),
+        ],
+        actionLabel: 'Abrir expediente',
+        text: `Hola ${data.recipientName},\n\nEl cliente aceptó la cotización ${folio}${version}.${data.totalLabel ? ` Total aceptado: ${data.totalLabel}.` : ''}\n\nSiguiente paso: el arranque (el proyecto se crea automáticamente). Abre el expediente: ${actionUrl}`,
+      });
+    case 'quote.acceptance_confirmed':
       // UX audit fix: confirma la aceptación al cliente y explica qué sigue -- ninguna acción
       // pendiente de su parte, el equipo se pondrá en contacto para coordinar el arranque.
-      const subject = safeHeader(`Confirmamos la aceptación de tu cotización ${folio}`);
-      const body = `<p>Hola ${recipientName},</p><p>Confirmamos que tu aceptación de la cotización ${escapeHtml(folio)}${version} quedó registrada correctamente.</p>${total ? `<p>Total: <strong>${total}</strong></p>` : ''}<p>No necesitas hacer nada más por ahora. Nuestro equipo revisará los detalles y te contactará en tu expediente para coordinar los siguientes pasos.</p>`;
-      const text = `Hola ${data.recipientName},\n\nConfirmamos que tu aceptación de la cotización ${folio}${version} quedó registrada correctamente. ${data.totalLabel ?? ''}\n\nNo necesitas hacer nada más por ahora. Nuestro equipo te contactará en tu expediente para coordinar los siguientes pasos.\n\nConsulta tu expediente: ${actionUrl}`.trim();
-      return { subject, text, html: layout('Aceptación confirmada', body, data.actionLabel ?? 'Ver mi expediente', actionUrl) };
-    }
+      return compose({
+        audience: 'customer',
+        subject: safeHeader(`Confirmamos la aceptación de tu cotización ${folio}`),
+        preheader: `Registramos tu aceptación de la cotización ${folio}.`,
+        eyebrow: 'Cotización aceptada',
+        title: 'Aceptación confirmada',
+        blocks: [
+          paragraph(html`Confirmamos que tu aceptación de la cotización ${folio}${version} quedó registrada correctamente.`),
+          details([...folioRows, ...versionRows, ...totalRows]),
+          paragraph('No necesitas hacer nada más por ahora. Nuestro equipo revisará los detalles y te contactará en tu expediente para coordinar los siguientes pasos.'),
+        ],
+        actionLabel: data.actionLabel ?? 'Ver mi expediente',
+        text: `Hola ${data.recipientName},\n\nConfirmamos que tu aceptación de la cotización ${folio}${version} quedó registrada correctamente.${data.totalLabel ? ` Total: ${data.totalLabel}.` : ''}\n\nNo necesitas hacer nada más por ahora. Nuestro equipo te contactará en tu expediente para coordinar los siguientes pasos.\n\nConsulta tu expediente: ${actionUrl}`,
+      });
     case 'message.created': {
       if (staffAudience) {
         // Respuesta del cliente al responsable: antes recibía el texto pensado para el cliente
         // ("dejó un mensaje en tu expediente").
         // El nombre va al encabezado Subject: sin caracteres de control y acotado (safeHeader rechaza > 240).
         const senderForHeader = (data.senderName ?? 'El cliente').replace(/[\u0000-\u001F\u007F]+/gu, ' ').trim() || 'El cliente';
-        const subject = safeHeader(`${senderForHeader} respondió en ${folio}`.slice(0, 240));
-        const body = `<p>Hola ${recipientName},</p><p>${sender} respondió en el expediente ${escapeHtml(folio)}:</p><blockquote style="margin:16px 0;padding:12px;border-left:3px solid #7c5827">${escapeHtml(preview)}</blockquote>`;
-        return { subject, text: `Hola ${data.recipientName},\n\n${data.senderName ?? 'El cliente'} respondió en ${folio}:\n\n${preview}\n\nResponder: ${actionUrl}`, html: layout('El cliente respondió', body, data.actionLabel ?? 'Responder', actionUrl, 'staff') };
+        return compose({
+          audience: 'staff',
+          subject: safeHeader(`${senderForHeader} respondió en ${folio}`.slice(0, 240)),
+          preheader: `${senderForHeader}: ${preview}`,
+          eyebrow: 'Mensaje del cliente',
+          title: 'El cliente respondió',
+          blocks: [paragraph(html`${data.senderName ?? 'El cliente'} respondió en el expediente ${folio}:`), quote(preview)],
+          actionLabel: data.actionLabel ?? 'Responder',
+          text: `Hola ${data.recipientName},\n\n${data.senderName ?? 'El cliente'} respondió en ${folio}:\n\n${preview}\n\nResponder: ${actionUrl}`,
+        });
       }
-      const subject = safeHeader(`Nuevo mensaje sobre tu expediente ${folio}`);
-      const body = portalAccessPending
-        ? `<p>Hola ${recipientName},</p><p>${sender} dejó un mensaje en tu expediente ${escapeHtml(folio)}:</p><blockquote style="margin:16px 0;padding:12px;border-left:3px solid #8b5e3c">${escapeHtml(preview)}</blockquote><p>Si eres cliente nuevo, primero habilitaremos tu cuenta. Después podrás continuar la conversación en el portal.</p>`
-        : `<p>Hola ${recipientName},</p><p>${sender} dejó un mensaje en tu expediente ${escapeHtml(folio)}:</p><blockquote style="margin:16px 0;padding:12px;border-left:3px solid #8b5e3c">${escapeHtml(preview)}</blockquote>`;
-      const text = portalAccessPending
-        ? `Hola ${data.recipientName},\n\n${data.senderName ?? 'Tu equipo OCPOOL'} dejó un mensaje sobre ${folio}:\n\n${preview}\n\nSi eres cliente nuevo, primero habilitaremos tu cuenta. Solicita acceso al portal: ${actionUrl}`
-        : `Hola ${data.recipientName},\n\n${data.senderName ?? 'Tu equipo OCPOOL'} dejó un mensaje sobre ${folio}:\n\n${preview}\n\nAbrir mensaje: ${actionUrl}`;
-      return { subject, text, html: layout('Nuevo mensaje', body, data.actionLabel ?? 'Leer mensaje', actionUrl) };
+      const sender = data.senderName ?? 'Tu equipo OCPOOL';
+      const intro = paragraph(html`${sender} dejó un mensaje en tu expediente ${folio}:`);
+      return compose({
+        audience: 'customer',
+        subject: safeHeader(`Nuevo mensaje sobre tu expediente ${folio}`),
+        preheader: `${sender}: ${preview}`,
+        eyebrow: 'Mensaje',
+        title: 'Nuevo mensaje',
+        blocks: portalAccessPending
+          ? [intro, quote(preview), paragraph('Si eres cliente nuevo, primero habilitaremos tu cuenta. Después podrás continuar la conversación en el portal.')]
+          : [intro, quote(preview)],
+        actionLabel: data.actionLabel ?? 'Leer mensaje',
+        text: portalAccessPending
+          ? `Hola ${data.recipientName},\n\n${sender} dejó un mensaje sobre ${folio}:\n\n${preview}\n\nSi eres cliente nuevo, primero habilitaremos tu cuenta. Solicita acceso al portal: ${actionUrl}`
+          : `Hola ${data.recipientName},\n\n${sender} dejó un mensaje sobre ${folio}:\n\n${preview}\n\nAbrir mensaje: ${actionUrl}`,
+      });
     }
     case 'file.available': {
-      const fileName = escapeHtml(data.fileName ?? 'Un archivo nuevo');
-      const subject = safeHeader(`Archivo disponible en ${folio}`);
-      const body = portalAccessPending
-        ? `<p>Hola ${recipientName},</p><p>El archivo <strong>${fileName}</strong> ya está disponible en tu expediente ${escapeHtml(folio)}.</p><p>Si eres cliente nuevo, primero habilitaremos tu cuenta. Después podrás consultar el archivo en el portal.</p>`
-        : `<p>Hola ${recipientName},</p><p>El archivo <strong>${fileName}</strong> ya está disponible en tu expediente ${escapeHtml(folio)}.</p>`;
-      const text = portalAccessPending
-        ? `Hola ${data.recipientName},\n\nEl archivo ${data.fileName ?? 'Un archivo nuevo'} ya está disponible en ${folio}.\n\nSi eres cliente nuevo, primero habilitaremos tu cuenta. Solicita acceso al portal: ${actionUrl}`
-        : `Hola ${data.recipientName},\n\nEl archivo ${data.fileName ?? 'Un archivo nuevo'} ya está disponible en ${folio}.\n\nVer archivo: ${actionUrl}`;
-      return { subject, text, html: layout('Archivo disponible', body, data.actionLabel ?? 'Ver archivo', actionUrl) };
+      const fileName = data.fileName ?? 'Un archivo nuevo';
+      const available = paragraph(html`El archivo ${strong(fileName)} ya está disponible en tu expediente ${folio}.`);
+      return compose({
+        audience: 'customer',
+        subject: safeHeader(`Archivo disponible en ${folio}`),
+        preheader: `Hay un archivo nuevo en tu expediente ${folio}.`,
+        eyebrow: 'Archivo',
+        title: 'Archivo disponible',
+        blocks: portalAccessPending
+          ? [available, paragraph('Si eres cliente nuevo, primero habilitaremos tu cuenta. Después podrás consultar el archivo en el portal.')]
+          : [available],
+        actionLabel: data.actionLabel ?? 'Ver archivo',
+        text: portalAccessPending
+          ? `Hola ${data.recipientName},\n\nEl archivo ${fileName} ya está disponible en ${folio}.\n\nSi eres cliente nuevo, primero habilitaremos tu cuenta. Solicita acceso al portal: ${actionUrl}`
+          : `Hola ${data.recipientName},\n\nEl archivo ${fileName} ya está disponible en ${folio}.\n\nVer archivo: ${actionUrl}`,
+      });
     }
   }
 }

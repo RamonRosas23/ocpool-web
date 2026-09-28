@@ -6,6 +6,7 @@ import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { canGenerateQuotePdf } from '@/server/modules/quote-documents/domain';
 import { renderQuotePdf, type QuotePdfSnapshot, type RenderedQuotePdf } from '@/server/modules/quote-documents/pdf-renderer';
+import { orderQuoteLines, orderQuoteSections } from '@/server/modules/quote-documents/snapshot-order';
 import { getPrivateStorage, type PrivateStorage } from '@/server/modules/private-files/storage';
 import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 
@@ -114,37 +115,60 @@ async function lockQuoteVersion(transaction: Prisma.TransactionClient, quoteVers
   return rows[0] ?? null;
 }
 
-async function loadSnapshot(transaction: Prisma.TransactionClient, quoteVersionId: string): Promise<{ snapshot: QuotePdfSnapshot; quoteRequestId: string }> {
+async function loadSnapshot(transaction: Prisma.TransactionClient, quoteVersionId: string, issuedAt: Date): Promise<{ snapshot: QuotePdfSnapshot; quoteRequestId: string }> {
   const version = await transaction.quoteVersion.findUnique({
     where: { id: quoteVersionId },
     include: {
-      quote: { include: { client: true, quoteRequest: { include: { detail: true } } } },
-      lines: { orderBy: { id: 'asc' } },
+      quote: { include: { client: true, quoteRequest: { include: { detail: true, contact: true, currentAssignee: true } } } },
+      lines: true,
+      sections: true,
+      taxProfile: true,
+      termsVersion: true,
+      createdBy: true,
     },
   });
   if (!version || !version.quote.quoteRequest.detail) throw new AppError('CONFLICT', 'La cotización no tiene un expediente comercial completo.', 409);
   const detail = version.quote.quoteRequest.detail;
+  const sections = orderQuoteSections(version.sections);
+  const lines = orderQuoteLines(version.lines, sections);
   return {
     quoteRequestId: version.quote.quoteRequestId,
     snapshot: {
       folio: version.quote.quoteRequest.folio,
       versionNumber: version.versionNumber,
+      issuedAt,
       clientName: version.quote.client.displayName,
+      contactName: version.quote.quoteRequest.contact.displayName,
+      advisorName: version.quote.quoteRequest.currentAssignee?.displayName ?? version.createdBy.displayName,
       projectType: detail.projectType,
       location: detail.location,
       description: detail.description,
       currencyCode: version.currencyCode,
       validUntil: version.validUntil,
-      lines: version.lines.map((line) => ({
+      taxLabel: version.taxProfile?.name ?? null,
+      sections: sections.map((section) => ({ key: section.id, title: section.title, description: section.description })),
+      lines: lines.map((line) => ({
         name: line.name,
         description: line.description,
         unit: line.unit,
         quantityMilliunits: line.quantityMilliunits,
         unitPriceMinor: line.unitPriceMinor,
+        discountBasisPoints: line.discountBasisPoints,
         discountMinor: line.discountMinor,
+        // Versiones anteriores a D1 no guardaban la base gravable por partida.
+        taxableMinor: line.taxableMinor !== 0n || line.totalMinor === 0n ? line.taxableMinor : line.totalMinor - line.taxMinor,
         taxMinor: line.taxMinor,
         totalMinor: line.totalMinor,
+        sectionKey: line.sectionId,
       })),
+      scopeText: version.scopeText,
+      exclusionsText: version.exclusionsText,
+      paymentTermsText: version.paymentTermsText,
+      warrantyText: version.warrantyText,
+      publicNotesText: version.publicNotesText,
+      terms: version.termsVersion
+        ? { title: version.termsVersion.title, versionTag: version.termsVersion.versionTag, bodyMarkdown: version.termsVersion.bodyMarkdown, privacyMarkdown: version.termsVersion.privacyMarkdown }
+        : null,
       subtotalMinor: version.subtotalMinor,
       discountTotalMinor: version.discountTotalMinor,
       taxableTotalMinor: version.taxableTotalMinor,
@@ -230,7 +254,7 @@ export async function generateQuotePdf(actor: Actor | null, quoteVersionIdInput:
       const document = existing
         ? await transaction.generatedDocument.update({ where: { id: existing.id }, data: { status: 'PENDING', failureCode: null, deletedAt: null }, include: { storageObject: true } })
         : await transaction.generatedDocument.create({ data: { quoteId: lockedVersion.quoteId, quoteVersionId, templateVersion: 'quote-pdf-v1', contentType: PDF_CONTENT_TYPE, generatedAt: now }, include: { storageObject: true } });
-      ({ snapshot, quoteRequestId: snapshotQuoteRequestId } = await loadSnapshot(transaction, quoteVersionId));
+      ({ snapshot, quoteRequestId: snapshotQuoteRequestId } = await loadSnapshot(transaction, quoteVersionId, now));
       return { pending: document as StoredDocument };
     });
     if ('existing' in prepared && prepared.existing) return serializeReadyDocument(prepared.existing);
