@@ -7,6 +7,7 @@ export type NotificationTemplateVersion = (typeof NOTIFICATION_TEMPLATE_VERSIONS
 export const NOTIFICATION_TEMPLATE_KEYS = [
   'auth.customer.magic_link',
   'auth.employee.password_reset',
+  'auth.employee.invitation',
   'request.received',
   'request.assigned',
   'quote.version_sent',
@@ -22,6 +23,7 @@ export type NotificationTemplateKey = (typeof NOTIFICATION_TEMPLATE_KEYS)[number
 export const SUPPORTED_NOTIFICATION_EVENT_TYPES = [
   'AUTH.CUSTOMER_MAGIC_LINK',
   'AUTH.EMPLOYEE_PASSWORD_RESET',
+  'AUTH.EMPLOYEE_INVITATION',
   'REQUEST.RECEIVED',
   'REQUEST.ASSIGNED',
   'QUOTE.VERSION_STATUS_CHANGED',
@@ -91,7 +93,8 @@ export type NotificationMappingResult = NotificationIntent | {
 const uuid = z.string().uuid();
 const folio = z.string().regex(/^OCQ-[0-9]{4}-[0-9]{6}$/u);
 const authCustomerPayload = z.object({ tokenId: uuid, tokenCiphertext: z.string().min(1).max(600), tokenType: z.literal('MAGIC_LINK') }).passthrough();
-const authEmployeePayload = z.object({ tokenId: uuid, tokenCiphertext: z.string().min(1).max(600), tokenType: z.literal('PASSWORD_RESET') }).passthrough();
+const authEmployeePayload = z.object({ tokenId: uuid, tokenCiphertext: z.string().min(1).max(600), tokenType: z.literal('PASSWORD_RESET'), expiresInMinutes: z.number().int().positive().max(10_080).optional() }).passthrough();
+const authEmployeeInvitationPayload = authEmployeePayload.extend({ invitedByName: z.string().min(1).max(180).optional(), roleLabel: z.string().min(1).max(60).optional() });
 const requestReceivedPayload = z.object({ quoteRequestId: uuid, folio, origin: z.enum(['PUBLIC_FORM', 'STAFF_CREATED']) }).passthrough();
 const requestAssignedPayload = z.object({ quoteRequestId: uuid, folio, assignedToId: uuid }).passthrough();
 const quoteStatusPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, fromStatus: z.string().min(1).max(40), toStatus: z.literal('ENVIADA') }).passthrough();
@@ -111,6 +114,7 @@ const INVALID_TEXT_CONTROLS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u;
 const EVENT_AGGREGATE_TYPES: Record<string, string> = {
   'AUTH.CUSTOMER_MAGIC_LINK': 'USER',
   'AUTH.EMPLOYEE_PASSWORD_RESET': 'USER',
+  'AUTH.EMPLOYEE_INVITATION': 'USER',
   'REQUEST.RECEIVED': 'QUOTE_REQUEST',
   'REQUEST.ASSIGNED': 'QUOTE_REQUEST',
   'QUOTE.VERSION_STATUS_CHANGED': 'QUOTE',
@@ -183,7 +187,19 @@ export function mapNotificationEvent(event: NotificationEventInput, context: Not
         if (scope) return scope;
         return makeIntent(context, 'auth.employee.password_reset', {
           recipientName: context.recipient.displayName,
-          expiresMinutes: context.expiresMinutes ?? 15,
+          expiresMinutes: context.expiresMinutes ?? parsed.data.expiresInMinutes ?? 15,
+        }, parsed.data);
+      }
+      case 'AUTH.EMPLOYEE_INVITATION': {
+        const parsed = authEmployeeInvitationPayload.safeParse(event.payload);
+        const scope = rejectScope(context, 'STAFF');
+        if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        if (scope) return scope;
+        return makeIntent(context, 'auth.employee.invitation', {
+          recipientName: context.recipient.displayName,
+          expiresMinutes: parsed.data.expiresInMinutes ?? 72 * 60,
+          ...(parsed.data.invitedByName ? { senderName: boundedText(parsed.data.invitedByName, 180, 'inviter name') } : {}),
+          ...(parsed.data.roleLabel ? { roleLabel: boundedText(parsed.data.roleLabel, 60, 'role label') } : {}),
         }, parsed.data);
       }
       case 'REQUEST.RECEIVED': {
@@ -276,6 +292,8 @@ export type NotificationTemplateData = {
   senderName?: string;
   preview?: string;
   fileName?: string;
+  /** Rol con el que se invita a alguien al equipo (Ventas, Gerencia). */
+  roleLabel?: string;
 };
 
 export type RenderNotificationTemplateInput = {
@@ -337,6 +355,12 @@ function layout(title: string, body: string, actionLabel: string, actionUrl: str
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title></head><body style="margin:0;background:#f4f1ea;color:#14232a;font-family:Arial,Helvetica,sans-serif;line-height:1.55"><main style="max-width:620px;margin:32px auto;padding:32px;background:#fffdf9;border:1px solid #e3dccf;border-radius:12px"><p style="margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase;color:#7c5827;font-size:12px;font-weight:700">OCPOOL</p><h1 style="margin:0 0 16px;color:#092433;font-size:26px;font-weight:600;line-height:1.25">${escapeHtml(title)}</h1>${body}<p style="margin:24px 0 8px"><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#092433;color:#fffdf9;font-weight:700;text-decoration:none">${escapeHtml(actionLabel)}</a></p><p style="margin:0 0 20px;font-size:12px;color:#56615f">Si el botón no funciona, copia este enlace en tu navegador:<br><span style="word-break:break-all">${escapeHtml(actionUrl)}</span></p><p style="margin:0;border-top:1px solid #e3dccf;padding-top:16px;font-size:12px;color:#56615f">${footer}</p></main></body></html>`;
 }
 
+/** "15 minutos", "72 horas": la invitación dura días y leerla en minutos confundía. */
+function expiresLabel(minutes: number): string {
+  if (minutes >= 120 && minutes % 60 === 0) return `${minutes / 60} horas`;
+  return `${minutes} minutos`;
+}
+
 export function renderNotificationTemplate(input: RenderNotificationTemplateInput): RenderedNotificationTemplate {
   if (input.templateVersion !== 'v1') throw new Error('Unsupported notification template version.');
   const data = input.data;
@@ -361,11 +385,22 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
       return { subject, text: `Hola ${data.recipientName},\n\nAccede a tu portal de OCPOOL: ${actionUrl}\n\nEl enlace expira en ${expires} minutos y sólo puede utilizarse una vez.`, html: layout(title, body, 'Entrar al portal', actionUrl) };
     }
     case 'auth.employee.password_reset': {
-      const expires = data.expiresMinutes ?? 15;
+      const expires = expiresLabel(data.expiresMinutes ?? 15);
       const subject = 'Restablece tu acceso interno a OCPOOL';
       const title = 'Restablece tu contraseña';
-      const body = `<p>Hola ${recipientName},</p><p>Solicitaste restablecer tu acceso interno. El enlace expira en ${expires} minutos y sólo puede utilizarse una vez.</p>`;
-      return { subject, text: `Hola ${data.recipientName},\n\nRestablece tu contraseña: ${actionUrl}\n\nEl enlace expira en ${expires} minutos y sólo puede utilizarse una vez.`, html: layout(title, body, 'Restablecer acceso', actionUrl, 'staff') };
+      // Neutral: la recuperación la puede pedir la propia persona o gerencia desde Equipo.
+      const body = `<p>Hola ${recipientName},</p><p>Recibimos una solicitud para restablecer tu acceso interno. El enlace expira en ${expires} y sólo puede utilizarse una vez. Si no la esperabas, ignora este correo: tu contraseña actual sigue igual.</p>`;
+      return { subject, text: `Hola ${data.recipientName},\n\nRecibimos una solicitud para restablecer tu acceso interno a OCPOOL: ${actionUrl}\n\nEl enlace expira en ${expires} y sólo puede utilizarse una vez. Si no la esperabas, ignora este correo.`, html: layout(title, body, 'Restablecer acceso', actionUrl, 'staff') };
+    }
+    case 'auth.employee.invitation': {
+      const expires = expiresLabel(data.expiresMinutes ?? 72 * 60);
+      const inviter = data.senderName ? escapeHtml(data.senderName) : 'El equipo de OCPOOL';
+      const role = data.roleLabel ? ` como <strong>${escapeHtml(data.roleLabel)}</strong>` : '';
+      const roleText = data.roleLabel ? ` como ${data.roleLabel}` : '';
+      const subject = 'Te damos la bienvenida al equipo de OCPOOL';
+      const title = 'Crea tu contraseña';
+      const body = `<p>Hola ${recipientName},</p><p>${inviter} te invitó al espacio interno de OCPOOL${role}. Crea tu contraseña para entrar; el enlace expira en ${expires} y sólo puede utilizarse una vez.</p>`;
+      return { subject, text: `Hola ${data.recipientName},\n\n${data.senderName ?? 'El equipo de OCPOOL'} te invitó al espacio interno de OCPOOL${roleText}. Crea tu contraseña para entrar: ${actionUrl}\n\nEl enlace expira en ${expires} y sólo puede utilizarse una vez.`, html: layout(title, body, 'Crear contraseña', actionUrl, 'staff') };
     }
     case 'request.received': {
       const subject = safeHeader(`Recibimos tu solicitud ${folio}`);

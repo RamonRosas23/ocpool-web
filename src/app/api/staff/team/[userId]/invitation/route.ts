@@ -1,0 +1,38 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { assertSameOrigin } from '@/server/auth/csrf';
+import { parseBody, requestContext, requestId } from '@/server/auth/http';
+import { requireStaffActor } from '@/server/auth/staff';
+import { readServerEnv } from '@/server/env';
+import { toErrorResponse } from '@/server/http/errors';
+import { cancelTeamInvitation, resendTeamInvitation } from '@/server/modules/team/service';
+
+const bodySchema = z.object({}).strict();
+type RouteContext = { params: Promise<{ userId: string }> };
+
+/** Reenvía la invitación: el enlace anterior deja de funcionar. */
+export async function POST(request: NextRequest, context: RouteContext) {
+  const id = requestId();
+  try {
+    assertSameOrigin(request, readServerEnv().APP_URL);
+    const actor = await requireStaffActor(request);
+    await parseBody(request, bodySchema);
+    const { userId } = await context.params;
+    return NextResponse.json(await resendTeamInvitation(actor, userId, requestContext(request)), { status: 200, headers: { 'cache-control': 'no-store' } });
+  } catch (error) {
+    return toErrorResponse(error, id);
+  }
+}
+
+/** Cancela la invitación pendiente. */
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  const id = requestId();
+  try {
+    assertSameOrigin(request, readServerEnv().APP_URL);
+    const actor = await requireStaffActor(request);
+    const { userId } = await context.params;
+    return NextResponse.json(await cancelTeamInvitation(actor, userId), { status: 200, headers: { 'cache-control': 'no-store' } });
+  } catch (error) {
+    return toErrorResponse(error, id);
+  }
+}

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
-import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, HardHat, Inbox, LayoutDashboard, LogOut, Menu, ScrollText, X, type LucideIcon } from 'lucide-react';
+import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, HardHat, Inbox, LayoutDashboard, LogOut, Menu, ScrollText, Users, X, type LucideIcon } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import { usePrivateShellContext } from '@/components/private/PrivateShellContext';
 import StaffQuickFind from '@/components/staff/StaffQuickFind';
@@ -22,6 +22,7 @@ const SECTIONS: readonly Section[] = [
   { href: '/staff/approvals', label: 'Aprobaciones', icon: BadgeCheck, capability: 'approvalsRead' },
   { href: '/staff/notifications', label: 'Notificaciones', icon: Bell, capability: 'notificationsRead' },
   { href: '/staff/audit', label: 'Auditoría', icon: ScrollText, capability: 'auditRead' },
+  { href: '/staff/team', label: 'Equipo', icon: Users, capability: 'teamManage' },
 ];
 
 type Props = Readonly<{

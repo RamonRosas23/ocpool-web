@@ -82,13 +82,17 @@ async function createSessionInTransaction(client: Prisma.TransactionClient, inpu
 async function createDeliveryToken(client: Prisma.TransactionClient, input: {
   userId: string;
   type: 'MAGIC_LINK' | 'PASSWORD_RESET';
-  eventType: 'AUTH.CUSTOMER_MAGIC_LINK' | 'AUTH.EMPLOYEE_PASSWORD_RESET';
+  eventType: 'AUTH.CUSTOMER_MAGIC_LINK' | 'AUTH.EMPLOYEE_PASSWORD_RESET' | 'AUTH.EMPLOYEE_INVITATION';
   context: AuthRequestContext;
   now: Date;
   rawToken: string;
   redirectRequestId?: string;
+  /** Vigencia explícita (la invitación dura días; la recuperación, minutos). */
+  ttlMinutes?: number;
+  /** Datos no sensibles para el correo (p. ej. quién invita y con qué rol). */
+  extraPayload?: Record<string, string | number>;
 }): Promise<{ tokenId: string; expiresAt: Date }> {
-  const ttlMinutes = input.type === 'MAGIC_LINK' ? readServerEnv().CUSTOMER_MAGIC_LINK_TTL_MINUTES : readServerEnv().AUTH_TOKEN_TTL_MINUTES;
+  const ttlMinutes = input.ttlMinutes ?? (input.type === 'MAGIC_LINK' ? readServerEnv().CUSTOMER_MAGIC_LINK_TTL_MINUTES : readServerEnv().AUTH_TOKEN_TTL_MINUTES);
   const expiresAt = new Date(input.now.getTime() + ttlMinutes * 60_000);
   const token = await client.authToken.create({
     data: {
@@ -110,7 +114,9 @@ async function createDeliveryToken(client: Prisma.TransactionClient, input: {
         tokenId: token.id,
         tokenCiphertext: encryptSecret(input.rawToken, readServerEnv().AUTH_DELIVERY_ENCRYPTION_KEY),
         tokenType: input.type,
+        expiresInMinutes: ttlMinutes,
         ...(input.redirectRequestId ? { redirectRequestId: input.redirectRequestId } : {}),
+        ...(input.extraPayload ?? {}),
       },
     },
   });
@@ -330,6 +336,48 @@ export async function consumeCustomerMagicLink(rawToken: string, context: AuthRe
   return result ? { ok: true, ...result } : { ok: false };
 }
 
+/** Una invitación al equipo da tiempo de leer el correo con calma; la recuperación sigue siendo corta. */
+export const EMPLOYEE_INVITATION_TTL_HOURS = 72;
+
+// Una cuenta invitada todavía no tiene contraseña: crearla con el enlace es lo que la activa.
+const EMPLOYEE_ACCESS_STATUSES = ['ACTIVE', 'INVITED'] as const;
+
+function canUseEmployeeAccessLink(user: { type: string; status: string } | null | undefined): boolean {
+  return Boolean(user && user.type === 'EMPLOYEE' && (EMPLOYEE_ACCESS_STATUSES as readonly string[]).includes(user.status));
+}
+
+export type EmployeeAccessPurpose = 'invitation' | 'reset';
+
+/**
+ * Enlace de un solo uso para un empleado, emitido por el equipo: la invitación de bienvenida (crear
+ * contraseña, 72 h) o una nueva contraseña pedida por gerencia. Invalida los enlaces pendientes
+ * anteriores (sólo funciona el último enviado) y viaja cifrado por el outbox como la recuperación.
+ */
+export async function issueEmployeeAccessTokenInTransaction(client: Prisma.TransactionClient, input: {
+  userId: string;
+  purpose: EmployeeAccessPurpose;
+  context: AuthRequestContext;
+  now: Date;
+  extraPayload?: Record<string, string | number>;
+  tokenGenerator?: () => string;
+}): Promise<{ tokenId: string; expiresAt: Date }> {
+  await client.authToken.updateMany({ where: { userId: input.userId, type: 'PASSWORD_RESET', consumedAt: null }, data: { consumedAt: input.now } });
+  const rawToken = (input.tokenGenerator ?? generateOpaqueToken)();
+  const invitation = input.purpose === 'invitation';
+  const delivery = await createDeliveryToken(client, {
+    userId: input.userId,
+    type: 'PASSWORD_RESET',
+    eventType: invitation ? 'AUTH.EMPLOYEE_INVITATION' : 'AUTH.EMPLOYEE_PASSWORD_RESET',
+    context: input.context,
+    now: input.now,
+    rawToken,
+    ...(invitation ? { ttlMinutes: EMPLOYEE_INVITATION_TTL_HOURS * 60 } : {}),
+    ...(input.extraPayload ? { extraPayload: input.extraPayload } : {}),
+  });
+  await recordAuthEvent(client, { eventType: 'PASSWORD_RESET_REQUEST', outcome: 'SUCCESS', userId: input.userId, context: input.context, metadata: { tokenId: delivery.tokenId, origin: invitation ? 'team_invitation' : 'team_reset' } });
+  return delivery;
+}
+
 export async function requestPasswordRecovery(input: { email: string; context: AuthRequestContext }, dependencies: AuthServiceDependencies = {}): Promise<void> {
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
@@ -340,7 +388,9 @@ export async function requestPasswordRecovery(input: { email: string; context: A
   if (!allowedByEmail || !allowedByIp) return;
 
   const user = await prisma.user.findUnique({ where: { emailNormalized: email } });
-  if (!user || user.type !== 'EMPLOYEE' || user.status !== 'ACTIVE') {
+  // Una persona invitada que perdió su correo de bienvenida también puede pedir el enlace: crear su
+  // contraseña con él activa la cuenta, igual que la invitación.
+  if (!user || !canUseEmployeeAccessLink(user)) {
     await recordAuthEvent(prisma, { eventType: 'PASSWORD_RESET_REQUEST', outcome: 'DENIED', identifier: email, context: input.context });
     return;
   }
@@ -359,20 +409,21 @@ export async function consumePasswordRecovery(input: { rawToken: string; newPass
   if (!(await isAllowedByGlobalCircuitBreaker(input.context.ipAddress, now))) return false;
   if (!(await isAllowedByIp('password-recovery-consume-ip', input.context.ipAddress, now))) return false;
   const candidate = await prisma.authToken.findUnique({ where: { tokenHash: fingerprintToken(input.rawToken) }, include: { user: true } });
-  if (!candidate || candidate.type !== 'PASSWORD_RESET' || candidate.consumedAt || candidate.expiresAt <= now || candidate.user.type !== 'EMPLOYEE' || candidate.user.status !== 'ACTIVE') return false;
+  if (!candidate || candidate.type !== 'PASSWORD_RESET' || candidate.consumedAt || candidate.expiresAt <= now || !canUseEmployeeAccessLink(candidate.user)) return false;
   const passwordHash = await hashPassword(input.newPassword);
 
   return prisma.$transaction(async (transaction) => {
     const token = await transaction.authToken.findUnique({ where: { tokenHash: fingerprintToken(input.rawToken) } });
     if (!token || token.type !== 'PASSWORD_RESET' || token.consumedAt || token.expiresAt <= now) return false;
     const user = await transaction.user.findUnique({ where: { id: token.userId } });
-    if (!user || user.type !== 'EMPLOYEE' || user.status !== 'ACTIVE') return false;
+    if (!user || !canUseEmployeeAccessLink(user)) return false;
     const consumed = await transaction.authToken.updateMany({ where: { id: token.id, consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } });
     if (consumed.count !== 1) return false;
-    await transaction.user.update({ where: { id: user.id }, data: { passwordHash } });
+    const activated = user.status === 'INVITED';
+    await transaction.user.update({ where: { id: user.id }, data: { passwordHash, ...(activated ? { status: 'ACTIVE' } : {}) } });
     await transaction.authToken.updateMany({ where: { userId: user.id, type: 'PASSWORD_RESET', consumedAt: null, id: { not: token.id } }, data: { consumedAt: now } });
     await transaction.session.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: now } });
-    await recordAuthEvent(transaction, { eventType: 'PASSWORD_RESET_CONSUMED', outcome: 'SUCCESS', userId: user.id, context: input.context, metadata: { tokenId: token.id } });
+    await recordAuthEvent(transaction, { eventType: 'PASSWORD_RESET_CONSUMED', outcome: 'SUCCESS', userId: user.id, context: input.context, metadata: { tokenId: token.id, activated } });
     return true;
   });
 }

@@ -25,6 +25,7 @@ export const EVENT_LABELS: Record<string, string> = {
   'QUOTE.APPROVAL_RESOLVED': 'Aprobación resuelta',
   'AUTH.CUSTOMER_MAGIC_LINK': 'Enlace de acceso de cliente',
   'AUTH.EMPLOYEE_PASSWORD_RESET': 'Recuperación de contraseña',
+  'AUTH.EMPLOYEE_INVITATION': 'Invitación al equipo',
 };
 
 export function templateLabel(key: string): string {

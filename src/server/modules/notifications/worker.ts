@@ -58,7 +58,7 @@ export async function defaultRenderNotification(delivery: ClaimedNotificationDel
   const recipient = decryptSecret(delivery.recipientAddressCiphertext, env.NOTIFICATION_RECIPIENT_ENCRYPTION_KEY);
   const payload = delivery.payload ?? {};
   let actionPath = stringValue(payload, 'actionPath') ?? defaultNotificationPath(delivery);
-  if (delivery.templateKey === 'auth.customer.magic_link' || delivery.templateKey === 'auth.employee.password_reset') {
+  if (delivery.templateKey === 'auth.customer.magic_link' || delivery.templateKey === 'auth.employee.password_reset' || delivery.templateKey === 'auth.employee.invitation') {
     const tokenCiphertext = stringValue(delivery.outboxEvent.payload, 'tokenCiphertext');
     if (!tokenCiphertext) throw Object.assign(new Error('Authentication delivery material is unavailable.'), { code: 'TEMPLATE_ERROR' });
     const rawToken = decryptSecret(tokenCiphertext, env.AUTH_DELIVERY_ENCRYPTION_KEY);
@@ -66,7 +66,8 @@ export async function defaultRenderNotification(delivery: ClaimedNotificationDel
       const redirectRequestId = stringValue(delivery.outboxEvent.payload, 'redirectRequestId');
       actionPath = `/auth/customer/consume-link?token=${encodeURIComponent(rawToken)}${redirectRequestId ? `&request=${encodeURIComponent(redirectRequestId)}` : ''}`;
     } else {
-      actionPath = `/auth/recovery?token=${encodeURIComponent(rawToken)}`;
+      // La invitación usa la misma pantalla segura, con el texto de bienvenida ("Crea tu contraseña").
+      actionPath = `/auth/recovery?token=${encodeURIComponent(rawToken)}${delivery.templateKey === 'auth.employee.invitation' ? '&invite=1' : ''}`;
     }
   }
   const actionUrl = buildNotificationUrl(env.APP_URL, actionPath);
@@ -81,6 +82,7 @@ export async function defaultRenderNotification(delivery: ClaimedNotificationDel
     ...(stringValue(payload, 'senderName') ? { senderName: stringValue(payload, 'senderName') } : {}),
     ...(stringValue(payload, 'preview') ? { preview: stringValue(payload, 'preview') } : {}),
     ...(stringValue(payload, 'fileName') ? { fileName: stringValue(payload, 'fileName') } : {}),
+    ...(stringValue(payload, 'roleLabel') ? { roleLabel: stringValue(payload, 'roleLabel') } : {}),
     ...(numberValue(payload, 'expiresMinutes') !== undefined ? { expiresMinutes: numberValue(payload, 'expiresMinutes') } : {}),
     // UX audit fix: `NotificationTemplateData` ya declaraba estos dos campos y
     // `renderNotificationTemplate` ya los lee (quote.approval_requested/_resolved), pero nunca se

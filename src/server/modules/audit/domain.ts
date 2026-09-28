@@ -13,7 +13,7 @@ export const AUDIT_MAX_LIMIT = 50;
 
 // 'signins' es un corte de 'security' (misma fuente y permiso): sólo accesos y sus fallos, para
 // responder "¿quién entró?" sin el ruido de solicitudes de enlace, sesiones y cierres.
-export const AUDIT_CATEGORIES = ['commercial', 'communication', 'documents', 'notifications', 'security', 'signins'] as const;
+export const AUDIT_CATEGORIES = ['commercial', 'communication', 'documents', 'notifications', 'team', 'security', 'signins'] as const;
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
 
 export const AUDIT_OUTCOMES = ['SUCCESS', 'DENIED', 'FAILURE'] as const;
@@ -73,6 +73,16 @@ export const AUDIT_ACTION_DEFINITIONS: Record<string, AuditActionDefinition> = {
   'project.completed': { category: 'commercial', label: 'Proyecto completado', details: [detail('status', 'Estado')] },
   'project.reopened': { category: 'commercial', label: 'Proyecto reabierto', details: [detail('status', 'Estado')] },
   'project.owner_changed': { category: 'commercial', label: 'Responsable de proyecto actualizado', details: [] },
+  'quote_request.unassigned': { category: 'commercial', label: 'Solicitud liberada sin responsable', details: [detail('folio', 'Folio'), detail('source', 'Origen')] },
+  // Equipo y accesos: quién invitó, cambió el rol, suspendió o reactivó a una persona del equipo.
+  'team.member_invited': { category: 'team', label: 'Persona invitada al equipo', details: [detail('member', 'Persona'), detail('email', 'Correo'), detail('role', 'Rol')] },
+  'team.invitation_resent': { category: 'team', label: 'Invitación reenviada', details: [detail('member', 'Persona'), detail('email', 'Correo')] },
+  'team.invitation_canceled': { category: 'team', label: 'Invitación cancelada', details: [detail('member', 'Persona'), detail('email', 'Correo')] },
+  'team.role_changed': { category: 'team', label: 'Rol actualizado', details: [detail('member', 'Persona'), detail('fromRole', 'Rol anterior'), detail('toRole', 'Rol nuevo')] },
+  'team.member_suspended': { category: 'team', label: 'Acceso suspendido', details: [detail('member', 'Persona'), detail('reason', 'Motivo'), detail('reassignedTo', 'Trabajo reasignado a'), detail('requestsReassigned', 'Expedientes'), detail('projectsReassigned', 'Proyectos')] },
+  'team.member_reactivated': { category: 'team', label: 'Acceso reactivado', details: [detail('member', 'Persona'), detail('toStatus', 'Estado')] },
+  'team.access_reset_sent': { category: 'team', label: 'Enlace para nueva contraseña enviado', details: [detail('member', 'Persona')] },
+  'team.sessions_revoked': { category: 'team', label: 'Sesiones cerradas por gerencia', details: [detail('member', 'Persona'), detail('sessions', 'Sesiones')] },
   'quote.pdf.download_url_created': { category: 'documents', label: 'Descarga de cotización preparada', details: [detail('versionNumber', 'Versión'), detail('expiresInSeconds', 'Vigencia en segundos')] },
   'quote.pdf.generated': { category: 'documents', label: 'PDF de cotización generado', details: [detail('templateVersion', 'Plantilla'), detail('byteSize', 'Tamaño en bytes')] },
   'quote.pdf.generation_failed': { category: 'documents', label: 'Generación de PDF fallida', details: [detail('failureCode', 'Código de fallo')] },

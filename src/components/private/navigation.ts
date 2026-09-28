@@ -11,6 +11,8 @@ export type PrivateStaffCapabilities = Readonly<{
   approvalsRead?: boolean;
   projectsRead?: boolean;
   projectsManage?: boolean;
+  /** identity.users.manage: invitar, cambiar roles y suspender accesos (Equipo). */
+  teamManage?: boolean;
 }>;
 
 export type PrivateNavigationItem = {
@@ -34,6 +36,7 @@ export const STAFF_NAVIGATION: readonly PrivateNavigationItem[] = Object.freeze(
   { key: 'catalog', href: '/staff/catalog', label: 'Catálogo', capability: 'catalogRead' },
   { key: 'notifications', href: '/staff/notifications', label: 'Notificaciones', capability: 'notificationsRead' },
   { key: 'audit', href: '/staff/audit', label: 'Auditoría', capability: 'auditRead' },
+  { key: 'team', href: '/staff/team', label: 'Equipo', capability: 'teamManage' },
 ] as const);
 
 export function visibleStaffNavigation(capabilities: PrivateStaffCapabilities): PrivateNavigationItem[] {

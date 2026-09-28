@@ -10,7 +10,7 @@ import { PrivateBlockingState, PrivateDatePicker, PrivateLinkButton, PrivateSele
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { formatAuditDetail } from '@/lib/audit-detail-format';
 
-const CATEGORY_OPTIONS = ['', 'commercial', 'communication', 'documents', 'notifications', 'security', 'signins'] as const;
+const CATEGORY_OPTIONS = ['', 'commercial', 'communication', 'documents', 'notifications', 'team', 'security', 'signins'] as const;
 // Ambas se leen de los eventos de identidad y exigen el permiso de seguridad.
 const SECURITY_CATEGORIES: ReadonlyArray<Category> = ['security', 'signins'];
 const OUTCOME_OPTIONS = ['', 'SUCCESS', 'DENIED', 'FAILURE'] as const;
@@ -44,6 +44,7 @@ const CATEGORY_LABELS: Record<Exclude<Category, ''>, string> = {
   communication: 'Comunicación',
   documents: 'Documentos',
   notifications: 'Notificaciones',
+  team: 'Equipo y accesos',
   security: 'Seguridad',
   signins: 'Inicios de sesión',
 };

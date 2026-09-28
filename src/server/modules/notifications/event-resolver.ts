@@ -82,7 +82,9 @@ async function resolveAuthRecipient(prisma: DbClient, event: NotificationEventIn
     ? user?.type === 'CUSTOMER' && ['ACTIVE', 'INVITED'].includes(user.status) && user.client?.status === 'ACTIVE'
       ? { userId: user.id, email: user.email, displayName: user.displayName, audience: 'CUSTOMER' as const }
       : null
-    : user?.type === 'EMPLOYEE' && user.status === 'ACTIVE'
+    // Invitación: sólo mientras la cuenta sigue invitada. Recuperación: activa o invitada (quien perdió
+    // su bienvenida puede pedir el enlace). Suspendidas o deshabilitadas nunca reciben enlaces.
+    : user?.type === 'EMPLOYEE' && (event.eventType === 'AUTH.EMPLOYEE_INVITATION' ? user.status === 'INVITED' : ['ACTIVE', 'INVITED'].includes(user.status))
       ? { userId: user.id, email: user.email, displayName: user.displayName, audience: 'STAFF' as const }
       : null;
   if (!recipient) return cancellation('NO_RECIPIENT');
@@ -93,7 +95,7 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
   const payload = recordValue(event.payload);
   if (!payload) return cancellation('INVALID_PAYLOAD');
 
-  if (event.eventType === 'AUTH.CUSTOMER_MAGIC_LINK' || event.eventType === 'AUTH.EMPLOYEE_PASSWORD_RESET') return resolveAuthRecipient(prisma, event);
+  if (event.eventType === 'AUTH.CUSTOMER_MAGIC_LINK' || event.eventType === 'AUTH.EMPLOYEE_PASSWORD_RESET' || event.eventType === 'AUTH.EMPLOYEE_INVITATION') return resolveAuthRecipient(prisma, event);
 
   switch (event.eventType) {
     case 'REQUEST.RECEIVED': {
