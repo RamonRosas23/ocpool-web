@@ -157,12 +157,13 @@ function renderSmallPrint(url: string, securityNote: string | undefined): string
 }
 
 function renderFooter(audience: EmailAudience): string {
-  const link = `color:${C.navy};text-decoration:none;`;
+  // Cada dato de contacto va entero (el teléfono no se parte); el renglón sólo se corta entre datos.
+  const link = `color:${C.navy};text-decoration:none;white-space:nowrap;`;
   if (audience === 'staff') {
     return `<tr><td align="center" style="padding:26px 32px 0;font-family:${FONT_SANS};font-size:12px;line-height:1.6;color:${C.muted};">${escapeHtml(STAFF_EMAIL_FOOTER)}</td></tr>`
       + `<tr><td align="center" style="padding:12px 32px 0;font-family:${FONT_SERIF};font-size:13px;line-height:1.4;letter-spacing:4px;color:${C.navy};">${brandIdentity.name}</td></tr>`;
   }
-  const separator = '&nbsp;&nbsp;&middot;&nbsp;&nbsp;';
+  const separator = '&nbsp;&nbsp;&middot;&nbsp; ';
   return `<tr><td align="center" style="padding:28px 40px 0;font-family:${FONT_SANS};font-size:12px;line-height:1.65;color:${C.muted};">${escapeHtml(CUSTOMER_EMAIL_FOOTER)}</td></tr>`
     + `<tr><td align="center" style="padding:16px 24px 0;font-family:${FONT_SANS};font-size:12px;line-height:1.8;color:${C.muted};">`
     + `<a href="mailto:${brandContact.email}" style="${link}">${brandContact.email}</a>${separator}`

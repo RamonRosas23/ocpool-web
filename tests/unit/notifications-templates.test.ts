@@ -259,7 +259,8 @@ describe('notification mappers and templates', () => {
     expect(rendered.subject).toBe('Nuevo mensaje sobre tu expediente OCQ-2026-000001');
     expect(rendered.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(rendered.html).not.toContain('<script>');
-    expect(rendered.html).not.toContain('<img');
+    // El logo es un <img> legítimo; lo que no debe aparecer es la etiqueta inyectada.
+    expect(rendered.html).not.toContain('<img src=x');
     expect(rendered.text).toContain('<img src=x onerror=alert(1)>');
     expect(rendered.html).toContain('href="http://localhost:3000/portal/requests/00000000-0000-4000-8000-000000000001/messages"');
   });
@@ -339,5 +340,31 @@ describe('notification mappers and templates', () => {
     expect(rendered.subject).toBe('Tu cotización OCQ-2026-000001 está disponible');
     expect(rendered.html).toContain('aceptarla o pedirnos cambios');
     expect(rendered.html).toContain('la información vigente de tu expediente siempre está en tu portal');
+  });
+
+  it('brands every email with the hosted logo, a preview text and the audience footer', () => {
+    const customer = renderNotificationTemplate({ templateKey: 'quote.version_sent', templateVersion: 'v1', data: { appUrl: 'https://ocpool.com.mx', recipientName: 'Ana', folio: 'OCQ-2026-000001', actionUrl: 'https://ocpool.com.mx/portal' } });
+    expect(customer.html).toContain('src="https://ocpool.com.mx/brand/email/ocpool-logo-blanco.png"');
+    expect(customer.html).toContain('La cotización OCQ-2026-000001 está lista para tu revisión.');
+    expect(customer.html).toContain('Equipo OCPOOL');
+    expect(customer.html).toContain('mailto:contacto@ocpool.com.mx');
+    expect(customer.text).toContain('contacto@ocpool.com.mx · 667 453 2567 · ocpool.com.mx');
+
+    const staff = renderNotificationTemplate({ templateKey: 'request.assigned', templateVersion: 'v1', data: { appUrl: 'https://ocpool.com.mx', recipientName: 'Laura', folio: 'OCQ-2026-000001', actionUrl: 'https://ocpool.com.mx/staff/requests' } });
+    expect(staff.html).toContain('Espacio interno');
+    expect(staff.html).not.toContain('Equipo OCPOOL');
+    expect(staff.text).toContain('Aviso automático del espacio interno de OCPOOL.');
+  });
+
+  it('writes the approval version once instead of "versión versión"', () => {
+    const rendered = renderNotificationTemplate({ templateKey: 'quote.approval_requested', templateVersion: 'v1', data: { appUrl: 'http://localhost:3000', recipientName: 'Gerencia', folio: 'OCQ-2026-000003', versionNumber: 2, approvalType: 'DISCOUNT', actionUrl: 'http://localhost:3000/staff/quotes' } });
+    expect(rendered.html).toContain('La versión 2 de la cotización OCQ-2026-000003 requiere tu aprobación de descuento');
+    expect(rendered.html).not.toContain('versión versión');
+  });
+
+  it('signs a client reply with the client name, not with the team name', () => {
+    const rendered = renderNotificationTemplate({ templateKey: 'message.created', templateVersion: 'v1', data: { appUrl: 'http://localhost:3000', recipientName: 'Laura', folio: 'OCQ-2026-000001', preview: 'Hola', actionUrl: 'http://localhost:3000/staff/requests' } });
+    expect(rendered.html).toContain('El cliente respondió en el expediente OCQ-2026-000001:');
+    expect(rendered.html).not.toContain('Tu equipo OCPOOL respondió');
   });
 });
