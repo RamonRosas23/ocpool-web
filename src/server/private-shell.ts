@@ -46,6 +46,7 @@ function staffCapabilities(subject: { permissionKeys: ReadonlySet<string> }): Pr
   return {
     metricsRead: hasPermission(subject, 'metrics.read'),
     requestsRead: hasPermission(subject, 'requests.read'),
+    requestsClaim: hasPermission(subject, 'requests.claim'),
     quotesRead: hasPermission(subject, 'quotes.read'),
     catalogRead: hasPermission(subject, 'catalog.read'),
     notificationsRead: hasPermission(subject, 'notifications.read'),

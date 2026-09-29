@@ -1,0 +1,86 @@
+/* ───────────────────────── Bandeja de avisos (campana, panel, página y portal) ───────────────────────── */
+
+.inbox-bell { position: relative; flex: 0 0 auto; }
+.inbox-bell__trigger { position: relative; display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; gap: 8px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 999px; padding: 0 14px; background: color-mix(in srgb, currentColor 6%, transparent); color: inherit; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 600; transition: background var(--private-motion-standard), border-color var(--private-motion-standard); }
+.inbox-bell--staff .inbox-bell__trigger { width: 44px; padding: 0; }
+.inbox-bell__trigger:hover, .inbox-bell__trigger[aria-expanded="true"] { border-color: color-mix(in srgb, currentColor 32%, transparent); background: color-mix(in srgb, currentColor 12%, transparent); }
+.inbox-bell__trigger:focus-visible { outline: 2px solid #d7ad68; outline-offset: 2px; }
+.inbox-bell__badge { position: absolute; top: -4px; right: -4px; display: inline-grid; min-width: 20px; height: 20px; place-items: center; border-radius: 999px; padding: 0 5px; background: var(--private-color-danger); color: #fff; font-size: 11px; font-weight: 800; line-height: 1; box-shadow: 0 0 0 2px #0a2a3a; }
+/* Encabezado claro del shell V2: la campana va junto al botón "Menú" (no al centro) y el aro del contador toma el fondo. */
+.private-shell__topline .inbox-bell { margin-left: auto; }
+.private-shell__topline .inbox-bell__trigger { color: var(--private-color-brand); }
+.private-shell__topline .inbox-bell__badge { box-shadow: 0 0 0 2px var(--private-color-canvas); }
+
+.inbox-panel { position: absolute; z-index: var(--private-z-popover); top: calc(100% + 10px); right: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: min(400px, calc(100vw - 24px)); max-height: min(72vh, 620px); border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); color: var(--private-color-ink); box-shadow: var(--private-shadow-popover); text-align: left; animation: private-ui-pop 140ms cubic-bezier(.2, .7, .2, 1); }
+.inbox-panel:focus { outline: 0; }
+.inbox-panel__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--private-color-border); padding: 12px 12px 10px 16px; }
+.inbox-panel__head strong { color: var(--private-color-brand); font-size: 15px; }
+.inbox-panel__head-actions { display: flex; align-items: center; gap: 4px; }
+.inbox-panel__text-button { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; border: 0; border-radius: var(--private-radius-sm); padding: 0 8px; background: transparent; color: var(--private-color-accent); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 650; white-space: nowrap; }
+.inbox-panel__text-button:hover, .inbox-panel__text-button:focus-visible { background: var(--private-tint-accent); outline: 0; }
+.inbox-panel__close { display: inline-grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: var(--private-radius-sm); background: transparent; color: var(--private-color-ink-muted); cursor: pointer; }
+.inbox-panel__close:hover, .inbox-panel__close:focus-visible { background: var(--private-color-surface-muted); outline: 0; }
+.inbox-filters { display: flex; gap: 6px; overflow-x: auto; padding: 10px 16px 6px; }
+.inbox-filter { flex: 0 0 auto; min-height: 32px; border: 1px solid var(--private-color-border-control); border-radius: 999px; padding: 0 12px; background: transparent; color: var(--private-color-ink-muted); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 650; }
+.inbox-filter[aria-pressed="true"] { border-color: var(--private-color-accent); background: var(--private-tint-accent); color: var(--private-color-accent); }
+.inbox-filter:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.inbox-panel__body { overflow-y: auto; overscroll-behavior: contain; padding: 4px 0 8px; }
+.inbox-panel__foot { display: flex; justify-content: center; border-top: 1px solid var(--private-color-border); padding: 10px; }
+.inbox-panel__foot a { color: var(--private-color-accent); font-size: 13px; font-weight: 700; text-decoration: none; }
+.inbox-panel__foot a:hover { text-decoration: underline; }
+
+.inbox-group h3 { margin: 10px 16px 4px; color: var(--private-color-ink-muted); font-size: 11.5px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.inbox-group ul { margin: 0; padding: 0; list-style: none; }
+.inbox-item { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) 10px; align-items: start; gap: 10px; padding: 10px 16px; transition: background var(--private-motion-standard); }
+.inbox-item:hover { background: var(--private-color-surface-muted); }
+.inbox-item.is-unread { background: color-mix(in srgb, var(--private-color-accent) 5%, transparent); }
+.inbox-item.is-resolved { opacity: .8; }
+.inbox-item__icon { display: inline-grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; }
+.inbox-item__icon--accent { background: var(--private-tint-accent); color: var(--private-color-accent); }
+.inbox-item__icon--success { background: var(--private-tint-success); color: var(--private-color-success); }
+.inbox-item__icon--copper { background: var(--private-tint-copper); color: var(--private-color-copper); }
+.inbox-item__icon--danger { background: var(--private-tint-danger); color: var(--private-color-danger); }
+.inbox-item__icon--muted { background: var(--private-color-surface-muted); color: var(--private-color-ink-muted); }
+.inbox-item__main { display: grid; min-width: 0; gap: 3px; }
+.inbox-item__link { display: grid; gap: 2px; color: inherit; text-decoration: none; }
+/* Toda la fila abre el aviso; las acciones quedan por encima para seguir siendo clicables. */
+.inbox-item__link::after { position: absolute; inset: 0; content: ''; }
+.inbox-item__link strong { color: var(--private-color-ink); font-size: 13.5px; font-weight: 650; line-height: 1.35; }
+.inbox-item.is-unread .inbox-item__link strong { font-weight: 750; }
+.inbox-item__link:focus-visible { border-radius: 4px; outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.inbox-item__body { display: -webkit-box; overflow: hidden; color: var(--private-color-ink-muted); font-size: 12.5px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.inbox-item__meta { display: flex; flex-wrap: wrap; gap: 4px 8px; color: var(--private-color-ink-muted); font-size: 11.5px; }
+.inbox-item__resolved { justify-self: start; border-radius: 999px; padding: 2px 8px; background: var(--private-color-surface-sunken); color: var(--private-color-ink-muted); font-size: 11.5px; font-weight: 650; }
+.inbox-item__actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.inbox-item__dot { width: 8px; height: 8px; margin-top: 8px; border-radius: 50%; background: var(--private-color-accent); }
+.inbox-action { display: inline-flex; min-height: 32px; align-items: center; border: 1px solid var(--private-color-border-control); border-radius: var(--private-radius-control); padding: 0 12px; background: var(--private-color-surface); color: var(--private-color-brand); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 700; text-decoration: none; }
+.inbox-action:hover { border-color: var(--private-color-accent); color: var(--private-color-accent); }
+.inbox-action:disabled { cursor: wait; opacity: .6; }
+.inbox-action:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.inbox-empty { display: grid; gap: 4px; margin: 0; padding: 28px 20px; color: var(--private-color-ink-muted); font-size: 13px; text-align: center; }
+.inbox-empty strong { color: var(--private-color-ink); font-size: 14px; }
+
+/* Página de notificaciones. `.staff-notices` y no `.staff-inbox`: ése ya es la columna de la lista de solicitudes. */
+.staff-notices { display: grid; gap: 16px; }
+.staff-notices__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.staff-notices__list { overflow: hidden; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-card); }
+.staff-notices__more { display: flex; justify-content: center; padding: 12px; }
+
+/* Portal: novedades por expediente y banner "Desde tu última visita" */
+.client-request-row.is-unread strong { color: var(--private-color-brand); }
+.client-request-row__news { justify-self: start; border-radius: 999px; padding: 2px 8px; background: var(--private-tint-accent); color: var(--private-color-accent); font-size: 11.5px; font-style: normal; font-weight: 750; }
+.client-since { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; border: 1px solid color-mix(in srgb, var(--private-color-accent) 30%, transparent); border-radius: var(--private-radius-panel); padding: 14px 16px; background: var(--private-tint-accent); }
+.client-since ul { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 18px; color: var(--private-color-ink); font-size: 14px; }
+.client-since__dismiss { display: inline-grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border: 0; border-radius: var(--private-radius-sm); background: transparent; color: var(--private-color-ink-muted); cursor: pointer; }
+.client-since__dismiss:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+
+@media (max-width: 768px) {
+  .inbox-panel { position: fixed; top: var(--inbox-panel-top, 72px); right: 12px; bottom: 12px; left: 12px; width: auto; max-height: none; }
+  .inbox-bell__label { display: none; }
+  .inbox-bell--portal .inbox-bell__trigger { width: 44px; padding: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inbox-panel { animation: none; }
+  .inbox-item, .inbox-bell__trigger { transition: none; }
+}

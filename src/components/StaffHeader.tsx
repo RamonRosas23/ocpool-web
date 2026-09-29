@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
 import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, HardHat, Inbox, LayoutDashboard, LogOut, Menu, ScrollText, UserRound, Users, X, type LucideIcon } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import NotificationBell from '@/components/inbox/NotificationBell';
 import { usePrivateShellContext } from '@/components/private/PrivateShellContext';
 import StaffQuickFind from '@/components/staff/StaffQuickFind';
 import { useStaffSession } from '@/components/staff/StaffSessionContext';
@@ -158,6 +159,7 @@ export default function StaffHeader({ onNavigate }: Props) {
           <nav className="staff-top-nav" ref={navRef} aria-label="Navegación de operaciones">{navLinks('bar')}</nav>
           <div className="staff-header__tools">
             <StaffQuickFind sections={quickFindSections} onNavigate={onNavigate} />
+            {session && <NotificationBell />}
             {session && (
               <div className="staff-account" ref={accountRef}>
                 <button

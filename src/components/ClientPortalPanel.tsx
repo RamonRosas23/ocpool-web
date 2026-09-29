@@ -8,6 +8,7 @@ import ClientMessagingThread from '@/components/ClientMessagingThread';
 import ClientQuoteActions from '@/components/ClientQuoteActions';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import NotificationBell from '@/components/inbox/NotificationBell';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { formatDate } from '@/lib/format-date';
 import { portalNextStep, portalStages, portalStatusLabel, type PortalNextStep, type PortalStageState } from '@/lib/portal-stage';
@@ -258,7 +259,7 @@ export default function ClientPortalPanel() {
   const nextStepTarget = nextStep?.target ?? null;
 
   return <PrivateSurfaceRoot className="client-portal">
-    <header className="client-header"><WorkspaceBrand className="client-brand" subtitle="Portal de cliente" /><div className="client-header__right"><Link className="client-header__home" href="/">Volver al sitio</Link><span className="client-header__state"><i aria-hidden="true" /> Sesión privada</span><button type="button" className="client-header__logout" onClick={() => void logout()}>Cerrar sesión</button></div></header>
+    <header className="client-header"><WorkspaceBrand className="client-brand" subtitle="Portal de cliente" /><div className="client-header__right"><Link className="client-header__home" href="/">Volver al sitio</Link><span className="client-header__state"><i aria-hidden="true" /> Sesión privada</span><NotificationBell /><button type="button" className="client-header__logout" onClick={() => void logout()}>Cerrar sesión</button></div></header>
     <div className="client-content">
       <section className="client-hero"><div><p className="client-eyebrow">Espacios que toman forma</p><h1>Tu proyecto, <em>en cada etapa.</em></h1><p className="client-hero__copy">Aquí encontrarás el avance de tus solicitudes y las propuestas que hemos preparado para ti.</p></div><div className="client-hero__note"><span>Expedientes</span><strong>{total.toString().padStart(2, '0')}</strong><small>seguimiento privado</small></div></section>
       {error && <p className="client-alert" role="alert">{error}</p>}

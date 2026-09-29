@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
+import NotificationBell from '@/components/inbox/NotificationBell';
 import { pathMatches, privateShellTrail, type PrivateNavigationItem } from '@/components/private/navigation';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import type { PrivateShellSurface } from '@/server/private-shell';
@@ -52,6 +53,7 @@ export default function PrivateShellChrome({ surface, user, roleLabel, navigatio
     <header className="private-shell__header">
       <div className="private-shell__topline">
         <WorkspaceBrand className={brandClass} subtitle={surface === 'staff' ? 'Operaciones comerciales' : 'Portal de cliente'} href={brandHref} ariaLabel={brandAriaLabel} />
+        <NotificationBell />
         <button className="private-shell__menu-toggle" type="button" aria-expanded={menuOpen} aria-controls="private-shell-navigation" onClick={() => setMenuOpen((current) => !current)}>
           <span aria-hidden="true">{menuOpen ? <X size={16} /> : <Menu size={16} />}</span>{menuOpen ? 'Cerrar' : 'Menú'}
         </button>

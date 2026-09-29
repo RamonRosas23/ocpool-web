@@ -3,6 +3,8 @@ import type { PrivateShellSurface } from '@/server/private-shell';
 export type PrivateStaffCapabilities = Readonly<{
   metricsRead?: boolean;
   requestsRead?: boolean;
+  /** requests.claim: puede tomar solicitudes sin responsable (acción "Tomar" de la campana). */
+  requestsClaim?: boolean;
   quotesRead?: boolean;
   catalogRead?: boolean;
   notificationsRead?: boolean;
