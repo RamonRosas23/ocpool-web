@@ -665,6 +665,12 @@ export type PendingPriceRequest = Readonly<{
   since: string;
 }>;
 
+export type PendingPriceWorklist = Readonly<{
+  items: readonly PendingPriceGroup[];
+  /** Había más líneas pendientes de las que se leen de una vez (el resto aparece al asignar estas). */
+  truncated: boolean;
+}>;
+
 export type PendingPriceGroup = Readonly<{
   key: string;
   priceList: Readonly<{ id: string; code: string; name: string; currencyCode: string; validFrom: string; validUntil: string | null }>;
@@ -681,12 +687,12 @@ const PENDING_PRICE_LINE_LIMIT = 300;
  * alguien asigna el precio en la lista, el concepto sale de aquí y la propuesta lo resuelve sola al abrirse.
  * Agrupa por lista + concepto para asignar el precio una sola vez aunque varias propuestas lo esperen.
  */
-export async function listPendingPriceRequests(actor: Actor, dependencies: CatalogServiceDependencies = {}): Promise<PendingPriceGroup[]> {
+export async function listPendingPriceRequests(actor: Actor, dependencies: CatalogServiceDependencies = {}): Promise<PendingPriceWorklist> {
   requireStaffPermission(actor, 'prices.manage');
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
 
-  const lines = await prisma.quoteLineSnapshot.findMany({
+  const fetchedLines = await prisma.quoteLineSnapshot.findMany({
     where: {
       pricePending: true,
       catalogItemId: { not: null },
@@ -698,7 +704,7 @@ export async function listPendingPriceRequests(actor: Actor, dependencies: Catal
       },
     },
     orderBy: [{ quoteVersion: { updatedAt: 'asc' } }, { position: 'asc' }],
-    take: PENDING_PRICE_LINE_LIMIT,
+    take: PENDING_PRICE_LINE_LIMIT + 1,
     select: {
       quantityMilliunits: true,
       catalogItem: { select: { id: true, code: true, name: true, unit: true } },
@@ -712,7 +718,9 @@ export async function listPendingPriceRequests(actor: Actor, dependencies: Catal
       },
     },
   });
-  if (lines.length === 0) return [];
+  const truncated = fetchedLines.length > PENDING_PRICE_LINE_LIMIT;
+  const lines = truncated ? fetchedLines.slice(0, PENDING_PRICE_LINE_LIMIT) : fetchedLines;
+  if (lines.length === 0) return { items: [], truncated: false };
 
   // Lo que ya tiene precio vigente en esa lista deja de esperar (la propuesta lo aplica al abrirse).
   const listIds = [...new Set(lines.map((line) => line.quoteVersion.sourcePriceList!.id))];
@@ -752,5 +760,5 @@ export async function listPendingPriceRequests(actor: Actor, dependencies: Catal
     });
   }
   // La consulta ya viene de la solicitud más antigua a la más reciente: los grupos conservan ese orden.
-  return [...groups.values()].map(({ group, requests }) => ({ ...group, requests }));
+  return { items: [...groups.values()].map(({ group, requests }) => ({ ...group, requests })), truncated };
 }

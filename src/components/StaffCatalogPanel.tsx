@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import StaffHeader from '@/components/StaffHeader';
 import StaffCatalogConceptsTab from '@/components/StaffCatalogConceptsTab';
 import StaffCatalogPendingPricesTab from '@/components/StaffCatalogPendingPricesTab';
@@ -34,6 +34,8 @@ export default function StaffCatalogPanel() {
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [pendingPricesCount, setPendingPricesCount] = useState(0);
+  // La pestaña con la que se abrió la página: si es «Precios por asignar», ella trae sus datos y reporta el conteo.
+  const landingTabRef = useRef(searchParams.get('tab'));
 
   useEffect(() => {
     let cancelled = false;
@@ -54,7 +56,8 @@ export default function StaffCatalogPanel() {
           const groups = await readApiResponseOrThrow<SpecialConceptGroup[]>(specialResponse, 'No fue posible cargar los conceptos por revisar.');
           if (!cancelled) setPendingReviewCount(groups.filter((group) => group.status !== 'PROMOTED').length);
         }
-        if (result.data.pricesManage) {
+        // Si se abre directo en esa pestaña, ella misma trae los datos y reporta el conteo.
+        if (result.data.pricesManage && landingTabRef.current !== 'pending-prices') {
           // Sólo alimenta la insignia de la pestaña: si falla, la pestaña muestra su propio error al abrirse
           // y el resto del catálogo sigue disponible.
           try {

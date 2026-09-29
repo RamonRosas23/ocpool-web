@@ -7,6 +7,7 @@ import { PrivateMoneyField, usePrivateToast } from '@/components/private/ui';
 import { readApiResponseOrThrow } from '@/lib/api-response-error';
 import { formatDate } from '@/lib/format-date';
 import { parseMoneyInput } from '@/lib/money-input';
+import { assignListPrice } from '@/lib/price-list-assign';
 import type { PendingPriceGroup } from '@/lib/staff-catalog-types';
 
 export type StaffCatalogPendingPricesTabProps = {
@@ -24,6 +25,7 @@ function quantityLabel(milliunits: string, unit: string): string {
 export default function StaffCatalogPendingPricesTab({ canOpenQuotes, onCountChange }: StaffCatalogPendingPricesTabProps) {
   const { showToast } = usePrivateToast();
   const [groups, setGroups] = useState<PendingPriceGroup[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -36,9 +38,10 @@ export default function StaffCatalogPendingPricesTab({ canOpenQuotes, onCountCha
       setLoading(true); setError(null);
       try {
         const response = await fetch('/api/staff/catalog/pending-prices', { credentials: 'include', cache: 'no-store' });
-        const data = await readApiResponseOrThrow<{ items: PendingPriceGroup[] }>(response, 'No fue posible cargar los precios por asignar.');
+        const data = await readApiResponseOrThrow<{ items: PendingPriceGroup[]; truncated?: boolean }>(response, 'No fue posible cargar los precios por asignar.');
         if (cancelled) return;
         setGroups(data.items);
+        setTruncated(Boolean(data.truncated));
         onCountChange(data.items.length);
       } catch (caught) {
         if (!cancelled) setError(caught instanceof Error ? caught.message : 'No fue posible cargar los precios por asignar.');
@@ -58,15 +61,7 @@ export default function StaffCatalogPendingPricesTab({ canOpenQuotes, onCountCha
     setSavingKey(group.key);
     setErrors((current) => ({ ...current, [group.key]: '' }));
     try {
-      // Vale desde un minuto atrás (sin salirse de la lista): las propuestas lo resuelven al abrirse.
-      const validFrom = new Date(Math.max(Date.parse(group.priceList.validFrom), Date.now() - 60_000)).toISOString();
-      const response = await fetch(`/api/staff/catalog/price-lists/${group.priceList.id}/items`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ catalogItemId: group.item.id, unitPriceMinor: minor, validFrom, validUntil: group.priceList.validUntil }),
-      });
-      await readApiResponseOrThrow(response, 'No fue posible asignar el precio.');
+      await assignListPrice(group.priceList, group.item.id, minor);
       const remaining = (groups ?? []).filter((candidate) => candidate.key !== group.key);
       setGroups(remaining);
       onCountChange(remaining.length);
@@ -82,6 +77,7 @@ export default function StaffCatalogPendingPricesTab({ canOpenQuotes, onCountCha
     <div className="catalog-pending-prices">
       <p className="catalog-tab-intro">Conceptos que Ventas dejó «por cotizar» en una propuesta porque no tienen precio en su lista. Asígnalo una vez y esas propuestas lo aplican solas al abrirse.</p>
       {error && <p className="staff-error" role="alert">{error}</p>}
+      {truncated && <p className="staff-notice" role="status">Hay más propuestas esperando precio de las que se muestran. Asigna estos y vuelve a abrir la pestaña para ver el resto.</p>}
       {loading && <div className="catalog-detail-loading"><span /><span /></div>}
       {!loading && !error && groups && groups.length === 0 && (
         <div className="staff-empty staff-empty--compact catalog-review__empty">
@@ -103,7 +99,7 @@ export default function StaffCatalogPendingPricesTab({ canOpenQuotes, onCountCha
                 {group.requests.map((request) => (
                   <li key={`${request.quoteRequestId}-${request.since}`}>
                     {canOpenQuotes ? <Link href={`/staff/quotes?request=${request.quoteRequestId}`}>{request.folio}</Link> : <span>{request.folio}</span>}
-                    <small>{request.clientName} · {quantityLabel(request.quantityMilliunits, group.item.unit)} · {request.requestedBy} · actualizada {formatDate(request.since)}</small>
+                    <small>{request.clientName} · {quantityLabel(request.quantityMilliunits, group.item.unit)} · propuesta de {request.requestedBy} · actualizada {formatDate(request.since)}</small>
                   </li>
                 ))}
               </ul>

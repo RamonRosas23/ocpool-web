@@ -42,8 +42,9 @@ test.describe('approval queue shows the concepts of the version under review', (
   test.afterAll(async () => {
     const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: ids.request } }, select: { id: true } })).map(({ id }) => id);
     const approvalIds = (await prisma.quoteApproval.findMany({ where: { quoteVersionId: { in: versionIds } }, select: { id: true } })).map(({ id }) => id);
+    const quoteIds = (await prisma.quote.findMany({ where: { quoteRequestId: ids.request }, select: { id: true } })).map(({ id }) => id);
     await prisma.quote.deleteMany({ where: { quoteRequestId: ids.request } });
-    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [ids.request, ...versionIds] } } });
+    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [ids.request, ...quoteIds, ...versionIds] } } });
     await prisma.auditLog.deleteMany({ where: { entityId: { in: [ids.request, ...versionIds, ...approvalIds] } } });
     await prisma.quoteRequest.delete({ where: { id: ids.request } });
     await prisma.clientContact.delete({ where: { id: ids.contact } });

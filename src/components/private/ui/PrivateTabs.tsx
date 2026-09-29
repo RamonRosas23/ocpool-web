@@ -31,9 +31,16 @@ function handleTabKeyDown(event: KeyboardEvent<HTMLAnchorElement>) {
 export function PrivateTabs({ tabs, activeKey, ariaLabel, tabpanelId, className }: PrivateTabsProps) {
   const navRef = useRef<HTMLElement>(null);
   // En pantallas angostas las pestañas se desplazan: la activa (p. ej. al llegar por un enlace directo del
-  // tablero) debe quedar a la vista, sin mover la página en vertical.
+  // tablero) debe quedar a la vista. Se mueve sólo la tira, nunca la página (a diferencia de scrollIntoView).
   useEffect(() => {
-    navRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    const nav = navRef.current;
+    const active = nav?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    if (!nav || !active) return;
+    const margin = 12;
+    const navRect = nav.getBoundingClientRect();
+    const rect = active.getBoundingClientRect();
+    if (rect.left - margin < navRect.left) nav.scrollLeft -= navRect.left - (rect.left - margin);
+    else if (rect.right + margin > navRect.right) nav.scrollLeft += rect.right + margin - navRect.right;
   }, [activeKey]);
 
   return (

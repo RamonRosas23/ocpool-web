@@ -11,7 +11,7 @@ import { isRecoverableNotificationErrorCode } from '@/server/modules/notificatio
 import { getLatestAggregateNotificationDelivery } from '@/server/modules/notifications/operations';
 import { findLatestChangeRequest } from '@/server/modules/messaging/change-requests';
 import { resolveQuoteWorkspaceProjection, type WorkspaceApprovalStatus, type WorkspaceVersionInput } from '@/server/modules/quotes/workspace-projection';
-import type { QuoteVersionStatus } from '@/server/modules/quotes/domain';
+import { isManualPriceLine, type QuoteVersionStatus } from '@/server/modules/quotes/domain';
 import { resolveDiscountApprovalThresholdBps } from '@/server/modules/quotes/service';
 
 export type QuoteStaffServiceDependencies = Readonly<{ prisma?: PrismaClient; now?: Date }>;
@@ -69,7 +69,6 @@ function serializeLine(line: {
   unit: string;
   specialReason: string | null;
   overrideReason: string | null;
-  baseUnitPriceMinor: bigint | null;
   pricePending: boolean;
   quantityMilliunits: bigint;
   currencyCode: string;
@@ -82,11 +81,11 @@ function serializeLine(line: {
   subtotalMinor: bigint;
   totalMinor: bigint;
 }) {
-  const { overrideReason, baseUnitPriceMinor, ...visible } = line;
+  const { overrideReason, ...visible } = line;
   return {
     ...visible,
-    // Precio manual: concepto de catálogo cotizado fuera de la lista (sin precio base) y su motivo.
-    manualPriceReason: line.catalogItemId !== null && baseUnitPriceMinor === null ? overrideReason : null,
+    // Precio manual: concepto de catálogo con un precio explícito y su motivo.
+    manualPriceReason: isManualPriceLine(line) ? overrideReason : null,
     quantityMilliunits: serializeBigInt(line.quantityMilliunits),
     unitPriceMinor: serializeBigInt(line.unitPriceMinor),
     discountMinor: serializeBigInt(line.discountMinor),
@@ -460,7 +459,6 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
           unit: true,
           specialReason: true,
           overrideReason: true,
-          baseUnitPriceMinor: true,
           pricePending: true,
           quantityMilliunits: true,
           currencyCode: true,
@@ -514,7 +512,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
   const detailVersionById = new Map(detailVersionsWithApprovalFlag.map((version) => [version.id, version]));
   const currentVersion = displayedVersionId ? detailVersionById.get(displayedVersionId) ?? null : null;
   // Las líneas con precio manual o "por cotizar" no dependen de la lista, así que no restringen cuáles se ofrecen.
-  const currentVersionItemIds = [...new Set(currentVersion?.lines.filter((line) => !line.pricePending && !(line.baseUnitPriceMinor === null && line.overrideReason)).map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
+  const currentVersionItemIds = [...new Set(currentVersion?.lines.filter((line) => !line.pricePending && !isManualPriceLine(line)).map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
   const workingVersionRaw = quote?.workingVersionId ? detailVersionById.get(quote.workingVersionId) ?? null : null;
   const publishedVersionRaw = quote?.publishedVersionId ? detailVersionById.get(quote.publishedVersionId) ?? null : null;
 

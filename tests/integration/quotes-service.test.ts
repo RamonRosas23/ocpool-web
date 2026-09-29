@@ -158,12 +158,20 @@ describe('quote pricing and versioning service', () => {
       await expect(replaceQuoteDraft(buildOnly, created.versionId, { ...base, lines: repriced }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
       await replaceQuoteDraft(seller, created.versionId, { ...base, lines: repriced }, { prisma, now });
       expect(await manualAudits()).toBe(2);
+
+      // Si el concepto recibe después precio en la lista, la línea sigue marcada como manual (con su motivo y el
+      // precio de lista del que se apartó) hasta que se reprecie a propósito; reenviarla igual no exige permiso.
+      await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: unpriced.id, unitPriceMinor: 20_000n, validFrom: now } });
+      await replaceQuoteDraft(buildOnly, created.versionId, { ...base, lines: repriced }, { prisma, now });
+      expect(await prisma.quoteLineSnapshot.findFirstOrThrow({ where: { quoteVersionId: created.versionId, catalogItemId: unpriced.id } })).toMatchObject({ unitPriceMinor: 26_000n, baseUnitPriceMinor: 20_000n, overrideReason: 'Cotizado por proveedor' });
+      expect((await getQuoteWorkspace(reader, request.quoteRequestId, { prisma })).quote?.currentVersion?.lines.find((line) => line.catalogItemId === unpriced.id)).toMatchObject({ manualPriceReason: 'Cotizado por proveedor' });
+      expect(await manualAudits()).toBe(2);
       // Una versión nueva a partir de la publicada conserva el precio manual y su motivo.
       await submitQuoteForReview(seller, created.versionId, { prisma, now });
       await transitionQuoteVersion(seller, created.versionId, 'ENVIADA', { prisma, now });
       const cloned = await clonePublishedVersion(buildOnly, request.quoteRequestId, { priceListId: priceList.id }, { prisma, now });
       const clonedManual = await prisma.quoteLineSnapshot.findFirst({ where: { quoteVersionId: cloned.versionId, catalogItemId: unpriced.id } });
-      expect(clonedManual).toMatchObject({ unitPriceMinor: 26_000n, baseUnitPriceMinor: null, overrideReason: 'Cotizado por proveedor' });
+      expect(clonedManual).toMatchObject({ unitPriceMinor: 26_000n, baseUnitPriceMinor: 20_000n, overrideReason: 'Cotizado por proveedor' });
     } finally {
       const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
@@ -244,7 +252,8 @@ describe('quote pricing and versioning service', () => {
       // Quien administra los precios lo ve en "Precios por asignar" (sólo él): la línea pendiente es la solicitud.
       const priceManager = salesActor(employee.id, ['prices.manage']);
       const worklist = await listPendingPriceRequests(priceManager, { prisma });
-      expect(worklist.find((group) => group.item.id === unpriced.id)).toMatchObject({
+      expect(worklist.truncated).toBe(false);
+      expect(worklist.items.find((group) => group.item.id === unpriced.id)).toMatchObject({
         priceList: { id: priceList.id, currencyCode: 'MXN' },
         item: { code: unpriced.code, unit: 'servicio' },
         requests: [{ quoteRequestId: request.quoteRequestId, folio: request.folio, quantityMilliunits: '3000', requestedBy: 'Quote pending employee' }],
@@ -253,11 +262,16 @@ describe('quote pricing and versioning service', () => {
 
       // Alguien asigna el precio en la lista: al guardar, el servidor resuelve la línea con ese precio.
       await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: unpriced.id, unitPriceMinor: 25_000n, validFrom: now } });
+      // Un concepto "por cotizar" guarda cero, que no es un precio ya pactado: forzar ese cero sobre un concepto que ya
+      // tiene precio sigue exigiendo quotes.edit_prices (no basta con reenviar "el mismo precio").
+      await expect(replaceQuoteDraft(seller, created.versionId, { ...base, lines: [{ catalogItemId: listed.id, quantity: '1' }, { catalogItemId: unpriced.id, quantity: '3', unitPriceMinorOverride: '0' }] }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+      expect(await prisma.quoteLineSnapshot.findFirstOrThrow({ where: { quoteVersionId: created.versionId, catalogItemId: unpriced.id } })).toMatchObject({ pricePending: true, unitPriceMinor: 0n });
+
       const healed = await replaceQuoteDraft(seller, created.versionId, { ...base, lines: [{ catalogItemId: listed.id, quantity: '1' }, pendingLine] }, { prisma, now });
       expect(healed.totalMinor).toBe(85_000n);
       expect(await prisma.quoteLineSnapshot.findFirstOrThrow({ where: { quoteVersionId: created.versionId, catalogItemId: unpriced.id } })).toMatchObject({ pricePending: false, unitPriceMinor: 25_000n, totalMinor: 75_000n, overrideReason: null });
       expect((await getQuoteWorkspace(seller, request.quoteRequestId, { prisma })).projection).toMatchObject({ primaryAction: 'QUOTE_SUBMIT_FOR_REVIEW', blockers: [] });
-      expect((await listPendingPriceRequests(priceManager, { prisma })).find((group) => group.item.id === unpriced.id)).toBeUndefined();
+      expect((await listPendingPriceRequests(priceManager, { prisma })).items.find((group) => group.item.id === unpriced.id)).toBeUndefined();
 
       // Sin conceptos por cotizar el borrador ya puede pasar a revisión.
       await submitQuoteForReview(seller, created.versionId, { prisma, now });

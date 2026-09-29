@@ -30,7 +30,9 @@ cambiarla en silencio. Por eso el precio se define en el mismo lugar, pero con u
 - **Servidor:** `CatalogPricingLineInput.manualPriceReason`. Un concepto sin precio vigente en la lista
   se acepta sólo con `unitPriceMinorOverride` + `manualPriceReason` (si no, 409 como antes) y
   `quotes.edit_prices` (salvo que sea el mismo precio ya congelado, regla del autoguardado). Se guarda
-  en columnas existentes (**sin migración**): `overrideReason` = motivo y `baseUnitPriceMinor` = null.
+  en columnas existentes (**sin migración**): `overrideReason` = motivo y `baseUnitPriceMinor` = el precio de
+  lista del que se apartó (nulo si el concepto no tenía). Si el concepto recibe precio en la lista después, la
+  línea sigue marcada como manual hasta que se reprecie a propósito (no pierde ni su marca ni su rastro).
   Al crear una versión nueva desde la publicada, el precio manual y su motivo se conservan. Las listas
   ofrecidas para cambiar ya no se restringen por las líneas de precio manual.
 - El motivo es interno: no se muestra en el PDF ni en el portal.

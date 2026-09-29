@@ -6,6 +6,7 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import {
+  isManualPriceLine,
   buildQuoteVersionSnapshot,
   canTransitionQuoteVersion,
   createMoney,
@@ -445,8 +446,14 @@ async function resolvePricingSnapshot(
         taxBasisPoints,
       };
     }
-    const manualItem = price ? undefined : unpricedItemsById.get(line.catalogItemId);
-    if (!price && !manualItem) conflict('Uno o más conceptos no tienen precio vigente.');
+    const unpricedItem = price ? undefined : unpricedItemsById.get(line.catalogItemId);
+    if (!price && !unpricedItem) conflict('Uno o más conceptos no tienen precio vigente.');
+    const catalogItem = price ? price.catalogItem : unpricedItem!;
+    // Precio manual: un precio explícito con su motivo. Sin precio en la lista es la única forma de cotizar el
+    // concepto; con precio en la lista (p. ej. se asignó después) sigue marcado como manual, con el precio de
+    // lista al que se apartó, hasta que se repreció a propósito: así no pierde su marca ni su rastro.
+    const manualReason = line.manualPriceReason?.trim() || null;
+    const isManual = manualReason !== null && line.unitPriceMinorOverride !== undefined;
     if (line.unitPriceMinorOverride !== undefined) {
       const overrideMinor = BigInt(line.unitPriceMinorOverride);
       const previousMinor = previousPricesByItem?.get(line.catalogItemId);
@@ -454,13 +461,12 @@ async function resolvePricingSnapshot(
       // no es un override real y no debe exigir el permiso; sólo un valor que de verdad cambia lo exige.
       if (previousMinor === undefined || previousMinor !== overrideMinor) {
         requireEmployeePermission(actor, 'quotes.edit_prices');
-        if (manualItem) manualPrices.push({ catalogItemCode: manualItem.code, name: manualItem.name, unitPriceMinor: overrideMinor.toString(), reason: line.manualPriceReason!.trim() });
+        if (isManual) manualPrices.push({ catalogItemCode: catalogItem.code, name: catalogItem.name, unitPriceMinor: overrideMinor.toString(), reason: manualReason });
       }
     }
-    const catalogItem = price ? price.catalogItem : manualItem!;
     let unitPrice;
     try {
-      unitPrice = createMoney((manualItem ? line.unitPriceMinorOverride : line.unitPriceMinorOverride ?? price!.unitPriceMinor)!, currencyCode);
+      unitPrice = createMoney((unpricedItem ? line.unitPriceMinorOverride : line.unitPriceMinorOverride ?? price!.unitPriceMinor)!, currencyCode);
     } catch {
       validation('El precio de la línea no es válido.');
     }
@@ -470,7 +476,7 @@ async function resolvePricingSnapshot(
       name: catalogItem.name,
       description: catalogItem.description,
       unit: catalogItem.unit,
-      ...(manualItem ? { manualPriceReason: line.manualPriceReason!.trim() } : {}),
+      ...(isManual ? { manualPriceReason: manualReason, baseUnitPriceMinor: price ? price.unitPriceMinor : null } : {}),
       quantity: parseQuantity(line.quantity),
       unitPrice,
       discountBasisPoints,
@@ -545,8 +551,8 @@ function buildLineRows(quoteVersionId: string, snapshot: ReturnType<typeof build
     description: line.description,
     unit: line.unit,
     specialReason: line.specialReason,
-    // Precio manual (fuera de lista): no hay precio base con el que compararlo.
-    baseUnitPriceMinor: null,
+    // Precio manual: el motivo, y el precio de lista del que se apartó (ninguno si el concepto no tenía).
+    baseUnitPriceMinor: line.baseUnitPriceMinor ?? null,
     overrideReason: line.manualPriceReason ?? null,
     pricePending: line.pricePending === true,
     quantityMilliunits: line.quantity.milliunits,
@@ -604,7 +610,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
     const baseQuote = await transaction.quote.findUnique({ where: { quoteRequestId }, select: { workingVersionId: true, publishedVersionId: true, currentVersionId: true } });
     const basePricesVersionId = baseQuote ? baseQuote.workingVersionId ?? baseQuote.publishedVersionId ?? baseQuote.currentVersionId : null;
     const previousPricesByItem = basePricesVersionId
-      ? new Map((await transaction.quoteLineSnapshot.findMany({ where: { quoteVersionId: basePricesVersionId, catalogItemId: { not: null } }, select: { catalogItemId: true, unitPriceMinor: true } })).map((line) => [line.catalogItemId as string, line.unitPriceMinor]))
+      ? new Map((await transaction.quoteLineSnapshot.findMany({ where: { quoteVersionId: basePricesVersionId, catalogItemId: { not: null }, pricePending: false }, select: { catalogItemId: true, unitPriceMinor: true } })).map((line) => [line.catalogItemId as string, line.unitPriceMinor]))
       : undefined;
     const { snapshot, taxProfileId, manualPrices, priceListId: sourcePriceListId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
     assertSameCurrency(request.currencyCode, snapshot.currency);
@@ -698,7 +704,8 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
     };
     assertBuildableRequest(request);
     const existingLines = await transaction.quoteLineSnapshot.findMany({
-      where: { quoteVersionId: version.id, catalogItemId: { not: null } },
+      // Un concepto "por cotizar" guarda cero, que no es un precio ya pactado: no cuenta como "mismo precio congelado".
+      where: { quoteVersionId: version.id, catalogItemId: { not: null }, pricePending: false },
       select: { catalogItemId: true, unitPriceMinor: true },
     });
     const previousPricesByItem = new Map(existingLines.map((line) => [line.catalogItemId as string, line.unitPriceMinor]));
@@ -1081,7 +1088,7 @@ export async function clonePublishedVersion(actor: Actor, quoteRequestId: string
   const publishedLines = await prisma.quoteLineSnapshot.findMany({
     where: { quoteVersionId: quote.publishedVersionId },
     orderBy: { position: 'asc' },
-    select: { catalogItemId: true, name: true, description: true, unit: true, specialReason: true, overrideReason: true, baseUnitPriceMinor: true, quantityMilliunits: true, unitPriceMinor: true, discountBasisPoints: true, taxBasisPoints: true, sectionId: true },
+    select: { catalogItemId: true, name: true, description: true, unit: true, specialReason: true, overrideReason: true, quantityMilliunits: true, unitPriceMinor: true, discountBasisPoints: true, taxBasisPoints: true, sectionId: true },
   });
 
   const lines: QuotePricingLineInput[] = publishedLines.map((line) => {
@@ -1103,7 +1110,7 @@ export async function clonePublishedVersion(actor: Actor, quoteRequestId: string
         catalogItemId: line.catalogItemId,
         quantity: quantityMilliunitsToDecimalString(line.quantityMilliunits),
         // Un precio manual (fuera de lista) se conserva tal cual en la versión nueva.
-        ...(line.overrideReason && line.baseUnitPriceMinor === null ? { unitPriceMinorOverride: line.unitPriceMinor, manualPriceReason: line.overrideReason } : {}),
+        ...(isManualPriceLine(line) ? { unitPriceMinorOverride: line.unitPriceMinor, manualPriceReason: line.overrideReason } : {}),
         discountBasisPoints: line.discountBasisPoints,
         taxBasisPoints: line.taxBasisPoints,
         sectionIndex,

@@ -52,8 +52,9 @@ test.describe('quote builder: pricing a concept that is not in the list', () => 
   test.afterAll(async () => {
     if (requestId) {
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: requestId } }, select: { id: true } })).map(({ id }) => id);
+      const quoteIds = (await prisma.quote.findMany({ where: { quoteRequestId: requestId }, select: { id: true } })).map(({ id }) => id);
       await prisma.quote.deleteMany({ where: { quoteRequestId: requestId } });
-      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, priceListId] } } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, priceListId, ...quoteIds] } } });
       await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: [requestId, ...versionIds] } }, { action: { startsWith: 'prices.item' }, actorUserId: { in: userIds } }] } });
       await prisma.quoteRequest.delete({ where: { id: requestId } });
       await prisma.clientContact.delete({ where: { id: contactId } });

@@ -184,6 +184,13 @@ function assertQuantity(quantity: Quantity): Quantity {
   return quantity;
 }
 
+/// A catalog line quoted at a manual price carries the seller's reason in `overrideReason` (a plain
+/// price override never stores one). One predicate for every reader: builder payload, coverage of the
+/// price lists offered, cloning a published version.
+export function isManualPriceLine(line: Readonly<{ catalogItemId: string | null; overrideReason: string | null }>): boolean {
+  return line.catalogItemId !== null && line.overrideReason !== null && line.overrideReason !== '';
+}
+
 export type QuoteLineSnapshotInput = Readonly<{
   catalogItemId: string | null;
   catalogItemCode: string | null;
@@ -194,6 +201,8 @@ export type QuoteLineSnapshotInput = Readonly<{
   /// Catalog concept quoted at a price that is not in the price list: the seller's reason.
   /// Persisted in `overrideReason` with a null `baseUnitPriceMinor`.
   manualPriceReason?: string | null;
+  /// List price the manual price departed from (null/absent when the concept has no list price).
+  baseUnitPriceMinor?: bigint | null;
   /// Catalog concept added "por cotizar": no price yet. Must be priced at zero, never carries a discount
   /// and cannot be combined with a manual price; the version cannot leave BORRADOR while any line is pending.
   pricePending?: boolean;
@@ -211,6 +220,7 @@ export type QuoteLineSnapshot = Readonly<{
   unit: string;
   specialReason: string | null;
   manualPriceReason?: string;
+  baseUnitPriceMinor?: bigint;
   pricePending?: true;
   quantity: Quantity;
   unitPrice: Money;
@@ -246,6 +256,7 @@ export function buildQuoteVersionSnapshot(lines: readonly QuoteLineSnapshotInput
     const specialReason = isSpecial ? normalizeRequiredText(line.specialReason ?? '', 300, 'special concept reason') : null;
     if (isSpecial && line.manualPriceReason != null) throw new Error('Only a catalog line can carry a manual price reason.');
     const manualPriceReason = line.manualPriceReason == null ? null : normalizeRequiredText(line.manualPriceReason, 300, 'manual price reason');
+    if (line.baseUnitPriceMinor != null && (typeof line.baseUnitPriceMinor !== 'bigint' || line.baseUnitPriceMinor < 0n)) throw new Error('The base price must be a non-negative amount.');
     const pricePending = line.pricePending === true;
     if (pricePending && (isSpecial || manualPriceReason)) throw new Error('Only a catalog line without a manual price can be pending a price.');
     const name = normalizeRequiredText(line.name, 180, 'catalog item name');
@@ -264,7 +275,7 @@ export function buildQuoteVersionSnapshot(lines: readonly QuoteLineSnapshotInput
       description,
       unit,
       specialReason,
-      ...(manualPriceReason ? { manualPriceReason } : {}),
+      ...(manualPriceReason ? { manualPriceReason, ...(line.baseUnitPriceMinor != null ? { baseUnitPriceMinor: line.baseUnitPriceMinor } : {}) } : {}),
       ...(pricePending ? { pricePending: true as const } : {}),
       quantity: assertQuantity(line.quantity),
       unitPrice,

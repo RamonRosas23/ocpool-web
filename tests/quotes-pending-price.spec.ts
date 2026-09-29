@@ -54,8 +54,9 @@ test.describe('quote builder: concepts por cotizar', () => {
 
   test.afterAll(async () => {
     const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: { in: requestIds } } }, select: { id: true } })).map(({ id }) => id);
+    const quoteIds = (await prisma.quote.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true } })).map(({ id }) => id);
     await prisma.quote.deleteMany({ where: { quoteRequestId: { in: requestIds } } });
-    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [...requestIds, priceListId] } } });
+    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [...requestIds, priceListId, ...quoteIds] } } });
     await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: [...requestIds, ...versionIds] } }, { action: { startsWith: 'prices.item' }, actorUserId: { in: userIds } }] } });
     await prisma.quoteRequest.deleteMany({ where: { id: { in: requestIds } } });
     await prisma.clientContact.deleteMany({ where: { id: { in: contactIds } } });
