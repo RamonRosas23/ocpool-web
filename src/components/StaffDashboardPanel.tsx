@@ -231,6 +231,8 @@ export default function StaffDashboardPanel() {
   const [queuesLoading, setQueuesLoading] = useState(true);
   const [queuesError, setQueuesError] = useState<string | null>(null);
   const session = useStaffSession();
+  // Ventas ya no tiene el monitor de correos: su tarjeta de fallos y sus enlaces sólo aparecen para quien sí.
+  const canSeeDeliveries = session?.capabilities.notificationsRead !== false;
   const hydrated = useHydrated();
   const canReadProjects = session?.capabilities.projectsRead === true;
   const canAssignPrices = session?.capabilities.pricesManage === true;
@@ -301,7 +303,9 @@ export default function StaffDashboardPanel() {
           fetch('/api/staff/quotes/approvals/pending', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quote-requests/customer-replied', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
           fetch('/api/staff/quotes/ready-to-publish', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
-          fetch('/api/staff/notifications?status=FAILED&pageSize=5', { credentials: 'include', cache: 'no-store', signal: controller.signal }),
+          canSeeDeliveries
+            ? fetch('/api/staff/notifications?status=FAILED&pageSize=5', { credentials: 'include', cache: 'no-store', signal: controller.signal })
+            : Promise.resolve(new Response(JSON.stringify({ items: [], total: 0 }), { status: 200, headers: { 'content-type': 'application/json' } })),
         ]);
         const [mineResult, unassignedResult, approvalsResult, customerRepliedResult, readyToPublishResult, failedNotificationsResult] = await Promise.all([
           readApiResponse<QueueResponse>(mineResponse, 'No fue posible cargar tu trabajo.'),
@@ -323,7 +327,7 @@ export default function StaffDashboardPanel() {
         // arriba); lo único que falta es el clic real de enviar.
         if (readyToPublishResult.ok) setReadyToPublish(readyToPublishResult.data.items);
         // W1-03: "fallos de aviso" reutiliza por completo el endpoint ya construido para
-        // /staff/notifications -- ningún servicio ni consulta nuevos, sólo esta lectura compacta.
+        // /staff/notifications/deliveries -- ningún servicio ni consulta nuevos, sólo esta lectura compacta.
         if (failedNotificationsResult.ok) setFailedNotifications({ items: failedNotificationsResult.data.items, total: failedNotificationsResult.data.total });
         // Antes, un resultado no-`ok` de cualquiera de las seis peticiones simplemente se ignoraba
         // (`if (result.ok) setX(...)`) -- esa cola se quedaba en `null` para siempre, indistinguible
@@ -341,7 +345,7 @@ export default function StaffDashboardPanel() {
     };
     void loadQueues();
     return () => controller.abort();
-  }, []);
+  }, [canSeeDeliveries]);
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -427,7 +431,7 @@ export default function StaffDashboardPanel() {
   const notificationStatus = dashboard?.notifications.byStatus.filter((item) => item.count > 0).map((item) => ({ label: NOTIFICATION_LABELS[item.status] ?? item.status, count: item.count })) ?? [];
   const alerts = dashboard ? [
     ...(dashboard.requests.unassigned > 0 ? [{ label: `${formatInteger(dashboard.requests.unassigned)} solicitud${dashboard.requests.unassigned === 1 ? '' : 'es'} sin asignar`, detail: 'Requieren responsable para avanzar.', href: '/staff/requests?view=unassigned' }] : []),
-    ...(dashboard.notifications.failedInPeriod > 0 ? [{ label: `${formatInteger(dashboard.notifications.failedInPeriod)} entrega${dashboard.notifications.failedInPeriod === 1 ? '' : 's'} fallida${dashboard.notifications.failedInPeriod === 1 ? '' : 's'}`, detail: 'Revisa la operación de correo del periodo.', href: '/staff/notifications?status=FAILED' }] : []),
+    ...(canSeeDeliveries && dashboard.notifications.failedInPeriod > 0 ? [{ label: `${formatInteger(dashboard.notifications.failedInPeriod)} entrega${dashboard.notifications.failedInPeriod === 1 ? '' : 's'} fallida${dashboard.notifications.failedInPeriod === 1 ? '' : 's'}`, detail: 'Revisa la operación de correo del periodo.', href: '/staff/notifications/deliveries?status=FAILED' }] : []),
   ] : [];
 
   return <PrivateSurfaceRoot className="staff-shell analytics-shell">
@@ -498,8 +502,8 @@ export default function StaffDashboardPanel() {
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Un cliente no recibió aviso</p><h3 id="workqueue-notification-failures-title">Fallos de aviso</h3></div><QueueCount value={failedNotifications ? failedNotifications.total : null} /></div>
             {/* Con expediente, la fila lleva a él (ahí están el contacto y la conversación para avisar al
                 cliente); sin expediente, a la operación de notificaciones. */}
-            <ul className="staff-workqueue__list">{failedNotifications.items.map((item) => <li key={item.id}><Link href={item.subject?.requestId ? `/staff/requests?request=${item.subject.requestId}` : '/staff/notifications?status=FAILED'}><span className="staff-workqueue__folio">{item.subject?.folio ?? eventLabel(item.eventType)}</span><span className="staff-workqueue__client">{item.subject?.clientDisplayName ?? templateLabel(item.templateKey)}</span><span className="staff-workqueue__stage">{item.subject ? `${templateLabel(item.templateKey)} · ` : ''}{item.errorCategory ? errorCategoryLabel(item.errorCategory) : 'Error de entrega'}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>
-            <Link className="staff-workqueue__more" href="/staff/notifications?status=FAILED">{failedNotifications.total > failedNotifications.items.length ? `Ver los ${formatInteger(failedNotifications.total)} fallos →` : 'Revisar en Notificaciones →'}</Link>
+            <ul className="staff-workqueue__list">{failedNotifications.items.map((item) => <li key={item.id}><Link href={item.subject?.requestId ? `/staff/requests?request=${item.subject.requestId}` : '/staff/notifications/deliveries?status=FAILED'}><span className="staff-workqueue__folio">{item.subject?.folio ?? eventLabel(item.eventType)}</span><span className="staff-workqueue__client">{item.subject?.clientDisplayName ?? templateLabel(item.templateKey)}</span><span className="staff-workqueue__stage">{item.subject ? `${templateLabel(item.templateKey)} · ` : ''}{item.errorCategory ? errorCategoryLabel(item.errorCategory) : 'Error de entrega'}</span><span className="staff-workqueue__age">{ageLabel(item.updatedAt)}</span></Link></li>)}</ul>
+            <Link className="staff-workqueue__more" href="/staff/notifications/deliveries?status=FAILED">{failedNotifications.total > failedNotifications.items.length ? `Ver los ${formatInteger(failedNotifications.total)} fallos →` : 'Revisar en Entregas de correo →'}</Link>
           </article>}
         </div>
       </section>
@@ -513,7 +517,7 @@ export default function StaffDashboardPanel() {
 
         <section className="analytics-section-grid"><article className="analytics-panel" aria-labelledby="analytics-aging-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Tiempo abierto</p><h3 id="analytics-aging-title">Antigüedad</h3></div><span className="analytics-panel__index">03</span></div><BarList items={aging} label="Solicitudes por antigüedad" empty="Sin antigüedad que mostrar." /></article><article className="analytics-panel" aria-labelledby="analytics-timing-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Ritmo de respuesta</p><h3 id="analytics-timing-title">Tiempos protegidos</h3></div><span className="analytics-panel__index">04</span></div><ul className="analytics-metrics"><MetricLine label="Asignación" metric={dashboard.timing.assignment} /><MetricLine label="Envío de cotización" metric={dashboard.timing.quoteSent} /><MetricLine label="Aceptación" metric={dashboard.timing.acceptance} /></ul></article></section>
 
-        <section className="analytics-section-grid analytics-section-grid--lower"><article className="analytics-panel" aria-labelledby="analytics-origin-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Procedencia</p><h3 id="analytics-origin-title">Origen de solicitudes</h3></div><span className="analytics-panel__index">05</span></div><BarList items={origins} label="Solicitudes por origen" empty="Sin origen que mostrar." /></article><article className="analytics-panel" aria-labelledby="analytics-notifications-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Entrega transaccional</p><h3 id="analytics-notifications-title">Salud de notificaciones</h3></div><Link className="analytics-panel__link" href="/staff/notifications">Abrir operación</Link></div><BarList items={notificationStatus} label="Entregas por estado" empty="No hay entregas registradas." /><p className="analytics-panel__note">Pendiente más antigua: {formatDate(dashboard.notifications.oldestPendingAt, dashboard.meta.timezone, true)} · Fallidas en periodo: {formatInteger(dashboard.notifications.failedInPeriod)}</p></article></section>
+        <section className="analytics-section-grid analytics-section-grid--lower"><article className="analytics-panel" aria-labelledby="analytics-origin-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Procedencia</p><h3 id="analytics-origin-title">Origen de solicitudes</h3></div><span className="analytics-panel__index">05</span></div><BarList items={origins} label="Solicitudes por origen" empty="Sin origen que mostrar." /></article><article className="analytics-panel" aria-labelledby="analytics-notifications-title"><div className="analytics-panel__heading"><div><p className="staff-section-label">Entrega transaccional</p><h3 id="analytics-notifications-title">Salud de notificaciones</h3></div>{canSeeDeliveries && <Link className="analytics-panel__link" href="/staff/notifications/deliveries">Abrir operación</Link>}</div><BarList items={notificationStatus} label="Entregas por estado" empty="No hay entregas registradas." /><p className="analytics-panel__note">Pendiente más antigua: {formatDate(dashboard.notifications.oldestPendingAt, dashboard.meta.timezone, true)} · Fallidas en periodo: {formatInteger(dashboard.notifications.failedInPeriod)}</p></article></section>
 
         {/* En el alcance propio la tabla sólo tenía una fila (la propia) y con "Muestra protegida" en
             todas sus celdas; "Mi trabajo" ya responde eso. Es una lectura para gerencia. */}

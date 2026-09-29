@@ -72,7 +72,8 @@ describe('staff notifications API', () => {
   it('enforces staff authentication, permission boundaries and safe read payloads', async () => {
     expect((await notificationsGet(endpoint('/api/staff/notifications'))).status).toBe(401);
     expect((await notificationsGet(endpoint('/api/staff/notifications', customerToken))).status).toBe(403);
-    expect((await notificationsGet(endpoint('/api/staff/notifications', salesToken))).status).toBe(200);
+    // Ventas ya no ve el monitor técnico: sus avisos de correo no entregado llegan a su bandeja.
+    expect((await notificationsGet(endpoint('/api/staff/notifications', salesToken))).status).toBe(403);
 
     const response = await notificationsGet(endpoint('/api/staff/notifications?status=FAILED', managerToken));
     expect(response.status).toBe(200);

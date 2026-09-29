@@ -1,3 +1,5 @@
+import type { InboxCategory } from '@/lib/inbox-categories';
+
 /**
  * Catálogo cerrado de avisos de la bandeja (spec 2026-09-29 §2.2 y §2.3). Cada tipo declara a quién
  * va (equipo o cliente) y los ÚNICOS campos de `data` que puede guardar: nada fuera de esta lista
@@ -66,6 +68,37 @@ export const INBOX_KINDS = {
 } as const satisfies Record<string, InboxKindDefinition>;
 
 export type InboxKind = keyof typeof INBOX_KINDS;
+
+/** Filtro "tipo" de la página de notificaciones (spec §5.2). Un tipo nuevo no compila sin su categoría. */
+export const INBOX_KIND_CATEGORY: Readonly<Record<InboxKind, InboxCategory>> = {
+  'request.new_unassigned': 'requests',
+  'customer.activity': 'activity',
+  'quote.changes_requested': 'quotes',
+  'quote.accepted': 'quotes',
+  'request.assigned_to_you': 'requests',
+  'request.unassigned_from_you': 'requests',
+  'approval.requested': 'quotes',
+  'approval.resolved': 'quotes',
+  'quote.returned': 'quotes',
+  'price.pending': 'prices',
+  'price.assigned': 'prices',
+  'note.internal': 'activity',
+  'project.assigned': 'projects',
+  'project.created': 'projects',
+  'team.work_reassigned': 'requests',
+  'email.delivery_failed': 'email',
+  'request.closed': 'requests',
+  'request.reopened': 'requests',
+  'team.activity': 'activity',
+  'request.information_needed': 'requests',
+  'quote.ready': 'quotes',
+  'project.started': 'projects',
+  'request.received': 'requests',
+};
+
+export function inboxKindsInCategory(category: InboxCategory): InboxKind[] {
+  return (Object.keys(INBOX_KIND_CATEGORY) as InboxKind[]).filter((kind) => INBOX_KIND_CATEGORY[kind] === category);
+}
 
 /** Lo único que un aviso para el cliente puede guardar. La prueba del catálogo lo hace cumplir. */
 export const INBOX_CUSTOMER_SAFE_KEYS: readonly InboxDataKey[] = ['folio', 'projectType', 'messages', 'files', 'preview', 'versionNumber', 'totalLabel', 'projectFolio', 'ownerName'];

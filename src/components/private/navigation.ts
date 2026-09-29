@@ -38,7 +38,6 @@ export const STAFF_NAVIGATION: readonly PrivateNavigationItem[] = Object.freeze(
   { key: 'quotes', href: '/staff/quotes', label: 'Cotizaciones', capability: 'quotesRead' },
   { key: 'projects', href: '/staff/projects', label: 'Proyectos', capability: 'projectsRead' },
   { key: 'catalog', href: '/staff/catalog', label: 'Catálogo', capability: 'catalogRead' },
-  { key: 'notifications', href: '/staff/notifications', label: 'Notificaciones', capability: 'notificationsRead' },
   { key: 'audit', href: '/staff/audit', label: 'Auditoría', capability: 'auditRead' },
   { key: 'team', href: '/staff/team', label: 'Equipo', capability: 'teamManage' },
 ] as const);

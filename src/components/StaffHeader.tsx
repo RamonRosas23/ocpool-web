@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
-import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, HardHat, Inbox, LayoutDashboard, LogOut, Menu, ScrollText, UserRound, Users, X, type LucideIcon } from 'lucide-react';
+import { BadgeCheck, Bell, BookOpen, ChevronDown, ExternalLink, FileText, HardHat, Inbox, LayoutDashboard, LogOut, MailWarning, Menu, ScrollText, UserRound, Users, X, type LucideIcon } from 'lucide-react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import NotificationBell from '@/components/inbox/NotificationBell';
 import { usePrivateShellContext } from '@/components/private/PrivateShellContext';
@@ -21,7 +21,6 @@ const SECTIONS: readonly Section[] = [
   { href: '/staff/projects', label: 'Proyectos', icon: HardHat, capability: 'projectsRead' },
   { href: '/staff/catalog', label: 'Catálogo', icon: BookOpen, capability: 'catalogRead' },
   { href: '/staff/approvals', label: 'Aprobaciones', icon: BadgeCheck, capability: 'approvalsRead' },
-  { href: '/staff/notifications', label: 'Notificaciones', icon: Bell, capability: 'notificationsRead' },
   { href: '/staff/audit', label: 'Auditoría', icon: ScrollText, capability: 'auditRead' },
   { href: '/staff/team', label: 'Equipo', icon: Users, capability: 'teamManage' },
 ];
@@ -63,8 +62,14 @@ export default function StaffHeader({ onNavigate }: Props) {
 
   const sections = session ? SECTIONS.filter((section) => session.capabilities[section.capability] !== false) : SECTIONS;
   const homeHref = sections[0]?.href ?? '/staff';
-  // "Mi cuenta" no es una sección de la barra (vive en el menú de tu nombre), pero sí se encuentra con Ctrl + K.
-  const quickFindSections = session ? [...sections, { href: '/staff/account', label: 'Mi cuenta', icon: UserRound }] : sections;
+  // "Notificaciones" (la campana) y "Mi cuenta" (el menú de tu nombre) no van en la barra, pero sí se
+  // encuentran con Ctrl + K; "Entregas de correo", sólo para quien administra el correo.
+  const quickFindSections = session ? [
+    ...sections,
+    { href: '/staff/notifications', label: 'Notificaciones', icon: Bell },
+    ...(session.capabilities.notificationsManage ? [{ href: '/staff/notifications/deliveries', label: 'Entregas de correo', icon: MailWarning }] : []),
+    { href: '/staff/account', label: 'Mi cuenta', icon: UserRound },
+  ] : sections;
 
   useEffect(() => { setMobileOpen(false); setAccountOpen(false); }, [pathname]);
 

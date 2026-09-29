@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import StaffNotificationsPanel from '@/components/StaffNotificationsPanel';
+import StaffInboxPanel from '@/components/StaffInboxPanel';
 
 export const metadata: Metadata = {
   title: 'Notificaciones | OCPOOL Operaciones',
@@ -7,6 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function StaffNotificationsPage() {
-  return <StaffNotificationsPanel />;
+  return <StaffInboxPanel />;
 }
-

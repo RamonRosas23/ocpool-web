@@ -44,13 +44,19 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
   const [available, setAvailable] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const inFlight = useRef<AbortController | null>(null);
+  // Cada escritura (marcar leído) cambia la generación: un resumen pedido antes o durante la escritura
+  // llega con el contador viejo y no debe pisar el que acaba de devolver el servidor.
+  const writeGeneration = useRef(0);
+  const latestWrite = useRef(0);
 
   const refresh = useCallback(async () => {
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
+    const generation = writeGeneration.current;
     try {
       const next = await fetchInboxSummary(controller.signal);
+      if (controller.signal.aborted || generation !== writeGeneration.current) return;
       setSummary(next);
       setAvailable(true);
       setLoaded(true);
@@ -99,11 +105,17 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
   }, [unread]);
 
   const markRead = useCallback(async (input: MarkReadInput) => {
+    writeGeneration.current += 1;
+    latestWrite.current += 1;
+    const write = latestWrite.current;
     setSummary((current) => applyReadLocally(current, input, new Date().toISOString()));
     try {
       const counts = await postInboxRead(input);
-      setSummary((current) => ({ ...current, unread: counts.unread, actionRequired: counts.actionRequired }));
+      writeGeneration.current += 1;
+      // Con dos escrituras seguidas, sólo cuentan los contadores de la última.
+      if (write === latestWrite.current) setSummary((current) => ({ ...current, unread: counts.unread, actionRequired: counts.actionRequired }));
     } catch {
+      writeGeneration.current += 1;
       void refresh();
     }
   }, [refresh]);

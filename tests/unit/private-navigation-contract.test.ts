@@ -8,7 +8,6 @@ describe('private navigation capability contract', () => {
       'requests',
       'quotes',
       'catalog',
-      'notifications',
     ]);
     expect(visibleStaffNavigation({ requestsRead: true }).map((item) => item.href)).toEqual(['/staff/requests']);
     expect(visibleStaffNavigation({ metricsRead: true, auditRead: true }).map((item) => item.key)).toEqual(['dashboard', 'audit']);

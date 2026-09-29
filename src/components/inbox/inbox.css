@@ -60,11 +60,18 @@
 .inbox-empty { display: grid; gap: 4px; margin: 0; padding: 28px 20px; color: var(--private-color-ink-muted); font-size: 13px; text-align: center; }
 .inbox-empty strong { color: var(--private-color-ink); font-size: 14px; }
 
-/* Página de notificaciones. `.staff-notices` y no `.staff-inbox`: ése ya es la columna de la lista de solicitudes. */
-.staff-notices { display: grid; gap: 16px; }
-.staff-notices__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.staff-notices__list { overflow: hidden; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-card); }
-.staff-notices__more { display: flex; justify-content: center; padding: 12px; }
+/* Página de notificaciones. No usa `.staff-inbox` (la columna de la lista de solicitudes) ni `.staff-notice` (el aviso de éxito). */
+.notices-page { display: grid; gap: 16px; }
+.notices-page__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.notices-page__filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 280px); align-items: end; gap: 12px; }
+.notices-page__filters label { display: grid; gap: 6px; }
+.notices-page__filters label > span:first-child { color: var(--private-color-ink); font-size: 13px; font-weight: 600; }
+.inbox-action--quiet { border-color: transparent; padding: 0 8px; background: transparent; color: var(--private-color-ink-muted); font-weight: 650; }
+/* Sin acción principal antes, el texto se alinea con el del aviso. */
+.inbox-item__actions > .inbox-action--quiet:first-child { margin-left: -8px; }
+.inbox-action--quiet:hover { border-color: var(--private-color-border-control); color: var(--private-color-brand); }
+.notices-page__list { overflow: hidden; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: var(--private-color-surface); box-shadow: var(--private-shadow-card); }
+.notices-page__more { display: flex; justify-content: center; padding: 12px; }
 
 /* Portal: novedades por expediente y banner "Desde tu última visita" */
 .client-request-row.is-unread strong { color: var(--private-color-brand); }
@@ -75,6 +82,7 @@
 .client-since__dismiss:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
 
 @media (max-width: 768px) {
+  .notices-page__filters { grid-template-columns: minmax(0, 1fr); }
   .inbox-panel { position: fixed; top: var(--inbox-panel-top, 72px); right: 12px; bottom: 12px; left: 12px; width: auto; max-height: none; }
   .inbox-bell__label { display: none; }
   .inbox-bell--portal .inbox-bell__trigger { width: 44px; padding: 0; }

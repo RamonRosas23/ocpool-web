@@ -1,3 +1,5 @@
+import type { InboxCategory } from '@/lib/inbox-categories';
+
 export type InboxPriorityClient = 'URGENT' | 'HIGH' | 'NORMAL' | 'INFO';
 
 /** Mismo contrato que `InboxNotificationDto` del servidor (src/server/modules/inbox/service.ts). */
@@ -80,10 +82,21 @@ export function titleWithBadge(title: string, unread: number): string {
   return unread > 0 ? `(${badgeCount(unread)}) ${base}` : base;
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+/**
+ * Una respuesta correcta se lee completa o falla: una consulta cancelada a media lectura del cuerpo
+ * lanza AbortError, y antes se tragaba como `{}` (un resumen sin `latest` que tumbaba la campana).
+ */
 async function readJson<T>(response: Response, fallback: string): Promise<T> {
-  const data = await response.json().catch(() => ({})) as T & { error?: { message?: string } };
-  if (!response.ok) throw new InboxRequestError(data.error?.message ?? fallback, response.status);
-  return data;
+  if (response.ok) return await response.json() as T;
+  const data = await response.json().catch((error: unknown) => {
+    if (isAbortError(error)) throw error;
+    return {};
+  }) as { error?: { message?: string } };
+  throw new InboxRequestError(data.error?.message ?? fallback, response.status);
 }
 
 export async function fetchInboxSummary(signal?: AbortSignal): Promise<InboxSummary> {
@@ -91,8 +104,13 @@ export async function fetchInboxSummary(signal?: AbortSignal): Promise<InboxSumm
   return readJson<InboxSummary>(response, 'No fue posible consultar tus avisos.');
 }
 
-export async function fetchInboxPage(filter: InboxFilter, cursor?: string | null, signal?: AbortSignal): Promise<InboxPage> {
+export type InboxPageQuery = { category?: InboxCategory | ''; q?: string };
+
+export async function fetchInboxPage(filter: InboxFilter, cursor?: string | null, signal?: AbortSignal, query: InboxPageQuery = {}): Promise<InboxPage> {
   const params = new URLSearchParams({ filter });
+  if (query.category) params.set('category', query.category);
+  const search = query.q?.trim();
+  if (search) params.set('q', search.slice(0, 60));
   if (cursor) params.set('cursor', cursor);
   const response = await fetch(`/api/notifications?${params.toString()}`, { credentials: 'include', cache: 'no-store', signal });
   return readJson<InboxPage>(response, 'No fue posible consultar tus avisos.');

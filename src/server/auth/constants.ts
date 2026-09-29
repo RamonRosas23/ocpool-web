@@ -94,7 +94,6 @@ export const ROLE_DEFINITIONS = {
       'quotes.apply_discount',
       'quotes.pdf.read',
       'quotes.pdf.generate',
-      'notifications.read',
       'metrics.read',
       'projects.read',
       'projects.create',

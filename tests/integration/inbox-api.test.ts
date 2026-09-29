@@ -104,6 +104,19 @@ describe('inbox API', () => {
     expect((await listGet(endpoint('/api/notifications?filter=nope', salesToken))).status).toBe(400);
   });
 
+  it('filters by type and searches by folio, client or text', async () => {
+    const titles = async (query: string) => ((await (await listGet(endpoint(`/api/notifications?${query}`, salesToken))).json()) as { items: Array<{ title: string }> }).items.map((item) => item.title);
+    expect(await titles('category=quotes')).toEqual(['Aprobación']);
+    expect(await titles('category=requests')).toEqual(['Informativo', 'Te quitaron un expediente']);
+    expect(await titles('category=activity')).toEqual(['Aviso']);
+    // Sin distinguir mayúsculas en el texto; el folio se busca como se guarda (en mayúsculas).
+    expect(await titles('q=aprob')).toEqual(['Aprobación']);
+    expect(await titles('q=ocq-2026-000001')).toEqual(['Informativo', 'Aprobación', 'Te quitaron un expediente', 'Aviso']);
+    expect(await titles('q=Cliente')).toHaveLength(4);
+    expect(await titles('q=nada-que-coincida')).toEqual([]);
+    expect((await listGet(endpoint('/api/notifications?category=nope', salesToken))).status).toBe(400);
+  });
+
   it('marks as read only from the same origin, per file or everything', async () => {
     expect((await readPost(endpoint('/api/notifications/read', salesToken, 'POST', { all: true }, 'https://attacker.example'))).status).toBe(403);
     const byRequest = await (await readPost(endpoint('/api/notifications/read', salesToken, 'POST', { quoteRequestId: ownRequestId, scope: 'activity' }))).json() as { updated: number; unread: number; actionRequired: number };

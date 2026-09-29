@@ -51,7 +51,6 @@ describe('authorization policy', () => {
       'quotes.apply_discount',
       'quotes.pdf.read',
       'quotes.pdf.generate',
-      'notifications.read',
       'metrics.read',
       'messaging.read',
       'messaging.send',

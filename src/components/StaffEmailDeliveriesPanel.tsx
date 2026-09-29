@@ -69,7 +69,7 @@ const STATUS_LABELS: Record<Exclude<NotificationStatus, ''>, string> = {
 };
 
 function statusLabel(status: NotificationStatus): string {
-  return status ? STATUS_LABELS[status] : 'Todos los estados';
+  return status ? STATUS_LABELS[status] : 'Todas menos canceladas';
 }
 
 function StatusPill({ status }: { status: Exclude<NotificationStatus, ''> }) {
@@ -129,12 +129,12 @@ function formatAge(seconds: number): string {
   return `Hace ${Math.floor(hours / 24)} d`;
 }
 
-export default function StaffNotificationsPanel() {
+export default function StaffEmailDeliveriesPanel() {
   // Reintentar exige `notifications.manage`: ventas lo ve todo pero no puede reintentar (antes veía
   // el botón y recibía un error de permisos al usarlo).
   const session = useStaffSession();
   const canRetry = session?.capabilities.notificationsManage !== false;
-  const [statusFilter, setStatusFilter, statusFilterHydrated] = usePersistentState<NotificationStatus>('ocpool.staff.notifications.statusFilter', '');
+  const [statusFilter, setStatusFilter, statusFilterHydrated] = usePersistentState<NotificationStatus>('ocpool.staff.deliveries.statusFilter', 'FAILED');
   const [data, setData] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -254,7 +254,7 @@ export default function StaffNotificationsPanel() {
   };
 
   if (accessDenied) {
-    return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/login">Iniciar sesión</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Necesitas una cuenta de empleado con permiso de notificaciones para consultar esta operación.</PrivateBlockingState></PrivateSurfaceRoot>;
+    return <PrivateSurfaceRoot className="staff-shell staff-shell--restricted"><WorkspaceBrand className="staff-brand" subtitle="Operaciones comerciales" /><PrivateBlockingState title="Acceso restringido." action={<div className="private-blocking__actions"><PrivateLinkButton href="/staff/notifications">Ver mis notificaciones</PrivateLinkButton><PrivateLinkButton href="/" variant="quiet">Volver al sitio</PrivateLinkButton></div>}>Esta vista es para Gerencia y Administración. Tus avisos están en Notificaciones.</PrivateBlockingState></PrivateSurfaceRoot>;
   }
 
   const health = data?.health;
@@ -268,7 +268,8 @@ export default function StaffNotificationsPanel() {
 
       <div className="staff-content staff-notifications">
         <div className="staff-intro">
-          <div><p className="staff-kicker">Entrega transaccional</p><h1>Notificaciones</h1><p className="staff-intro__copy">Diagnóstico seguro de la cola de correo, sin exponer destinatarios ni contenido privado.</p></div>
+          <div><p className="staff-kicker">Operación de correo</p><h1>Entregas de correo</h1><p className="staff-intro__copy">Diagnóstico seguro de la cola de correo, sin exponer destinatarios ni contenido privado.</p></div>
+          <PrivateLinkButton href="/staff/notifications" variant="quiet">Ver mis notificaciones</PrivateLinkButton>
         </div>
 
         {notice && <p className="staff-notice" role="status">{notice}</p>}
@@ -289,7 +290,7 @@ export default function StaffNotificationsPanel() {
 
         <section className="staff-notification-workspace" aria-label="Cola de notificaciones">
           <div className="staff-notification-toolbar">
-            <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="notification-status" optionalHint={false} label="Filtrar por estado" value={statusFilter} onValueChange={(value) => applyStatus(value as NotificationStatus)} options={STATUS_OPTIONS.slice(1).map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
+            <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="notification-status" optionalHint={false} label="Filtrar por estado" value={statusFilter} onValueChange={(value) => applyStatus(value as NotificationStatus)} options={STATUS_OPTIONS.slice(1).map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todas menos canceladas" />
             <div className="staff-notification-toolbar__summary"><span>{loading ? 'Actualizando…' : `${data?.total ?? 0} entrega${data?.total === 1 ? '' : 's'}`}</span><small>{lastLoadedAt ? `Actualizado ${relativeTimeLabel(lastLoadedAt).toLowerCase()}` : 'Consultando la cola…'}</small></div>
             <div className="staff-notification-toolbar__actions">
               {retryableItems.length > 1 && <button className="staff-button staff-button--copper" type="button" disabled={bulkRetrying || retryingId !== null} onClick={() => void retryAllVisible(retryableItems)}>{bulkRetrying ? 'Reintentando…' : `Reintentar las ${retryableItems.length} reintentables`}</button>}

@@ -210,7 +210,8 @@ export async function listStaffNotificationDeliveries(
   const now = dependencies.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new AppError('VALIDATION_ERROR', 'La fecha de operación no es válida.', 400);
   const normalized = normalizeFilters(filters);
-  const where = { status: normalized.status };
+  // "Todas" es todo lo que merece atención: las canceladas por el sistema sólo con su propio filtro.
+  const where = normalized.status ? { status: normalized.status } : { status: { not: 'CANCELLED' as const } };
   const [total, rows, health] = await Promise.all([
     prisma.notificationDelivery.count({ where }),
     prisma.notificationDelivery.findMany({

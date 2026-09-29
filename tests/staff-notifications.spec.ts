@@ -70,8 +70,8 @@ test.describe('staff notification operations', () => {
     await page.context().addCookies([{ name: 'ocpool_session', value: sessionToken, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.goto('/staff/notifications');
-    await expect(page.getByRole('heading', { name: 'Notificaciones' })).toBeVisible();
+    await page.goto('/staff/notifications/deliveries');
+    await expect(page.getByRole('heading', { name: 'Entregas de correo' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Volver al dashboard' })).toHaveAttribute('href', '/staff');
     await page.getByRole('combobox', { name: 'Filtrar por estado' }).click();
     await page.getByRole('option', { name: 'Fallido', exact: true }).click();

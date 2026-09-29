@@ -48,7 +48,8 @@ describe('notification delivery contracts', () => {
     const sales: Actor = { userId: '00000000-0000-4000-8000-000000000001', type: 'EMPLOYEE', clientId: null, permissionKeys: permissionKeysForRoles(['sales']), mfaVerified: true };
     const customer: Actor = { userId: '00000000-0000-4000-8000-000000000002', type: 'CUSTOMER', clientId: '00000000-0000-4000-8000-000000000003', permissionKeys: permissionKeysForRoles(['customer']), mfaVerified: false };
 
-    expect(sales.permissionKeys.has('notifications.read')).toBe(true);
+    // El monitor técnico de correos es de Gerencia y Administración; Ventas recibe sus fallos en la bandeja.
+    expect(sales.permissionKeys.has('notifications.read')).toBe(false);
     expect(sales.permissionKeys.has('notifications.manage')).toBe(false);
     expect(customer.permissionKeys.has('notifications.read')).toBe(false);
   });

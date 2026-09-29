@@ -3,10 +3,13 @@ import { z } from 'zod';
 import { requestId } from '@/server/auth/http';
 import { requireSessionActor } from '@/server/auth/session-actor';
 import { AppError, toErrorResponse } from '@/server/http/errors';
+import { INBOX_CATEGORIES } from '@/lib/inbox-categories';
 import { INBOX_FILTERS, listInbox } from '@/server/modules/inbox/service';
 
 const querySchema = z.object({
   filter: z.enum(INBOX_FILTERS).optional(),
+  category: z.enum(INBOX_CATEGORIES).optional(),
+  q: z.string().trim().min(1).max(60).optional(),
   cursor: z.string().min(1).max(200).optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
 }).strict();

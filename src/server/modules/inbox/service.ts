@@ -5,7 +5,8 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { publishRealtime } from '@/server/realtime/publish';
-import { isInboxKind, type InboxKind, type InboxPriority } from './kinds';
+import type { InboxCategory } from '@/lib/inbox-categories';
+import { inboxKindsInCategory, isInboxKind, type InboxKind, type InboxPriority } from './kinds';
 
 export const INBOX_FILTERS = ['all', 'unread', 'action'] as const;
 export type InboxFilter = (typeof INBOX_FILTERS)[number];
@@ -43,6 +44,7 @@ const SUMMARY_LATEST = 20;
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 50;
 const MAX_IDS = 100;
+const MAX_SEARCH_LENGTH = 60;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 /** Lo que cuenta la campana: sin leer, sin resolver y no informativo. */
@@ -131,14 +133,37 @@ export async function getInboxSummary(actor: Actor, dependencies: Dependencies =
   return { ...counts, latest: latest.flatMap((row) => toDto(row) ?? []), unreadByRequest };
 }
 
-export async function listInbox(actor: Actor, input: Readonly<{ filter?: InboxFilter; cursor?: string; limit?: number }> = {}, dependencies: Dependencies = {}): Promise<InboxPage> {
+/** Búsqueda de la página: folio (en mayúsculas, como se guarda), cliente, título o cuerpo. */
+function searchWhere(query: string | undefined): Prisma.InboxNotificationWhereInput | null {
+  const search = query?.replace(/[\u0000-\u001F\u007F]/gu, '').replace(/\s+/gu, ' ').trim().slice(0, MAX_SEARCH_LENGTH);
+  if (!search) return null;
+  return {
+    OR: [
+      { data: { path: ['folio'], string_contains: search.toUpperCase() } },
+      { data: { path: ['clientName'], string_contains: search } },
+      { title: { contains: search, mode: 'insensitive' } },
+      { body: { contains: search, mode: 'insensitive' } },
+    ],
+  };
+}
+
+export async function listInbox(actor: Actor, input: Readonly<{ filter?: InboxFilter; cursor?: string; limit?: number; category?: InboxCategory; q?: string }> = {}, dependencies: Dependencies = {}): Promise<InboxPage> {
   requireInboxActor(actor);
   const prisma = dependencies.prisma ?? getPrisma();
   const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
   const cursor = decodeCursor(input.cursor);
   const filterWhere = input.filter === 'unread' ? UNREAD_LIST_WHERE : input.filter === 'action' ? ACTION_WHERE : {};
+  const search = searchWhere(input.q);
   const rows = await prisma.inboxNotification.findMany({
-    where: { AND: [inboxScopeWhere(actor), filterWhere, ...(cursor ? [{ OR: [{ lastActivityAt: { lt: cursor.at } }, { lastActivityAt: cursor.at, id: { lt: cursor.id } }] }] : [])] },
+    where: {
+      AND: [
+        inboxScopeWhere(actor),
+        filterWhere,
+        ...(input.category ? [{ kind: { in: inboxKindsInCategory(input.category) } }] : []),
+        ...(search ? [search] : []),
+        ...(cursor ? [{ OR: [{ lastActivityAt: { lt: cursor.at } }, { lastActivityAt: cursor.at, id: { lt: cursor.id } }] }] : []),
+      ],
+    },
     orderBy: [{ lastActivityAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
     select: DTO_SELECT,
