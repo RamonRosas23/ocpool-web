@@ -8,7 +8,7 @@ export type QuoteStageStep = { key: 'draft' | 'review' | 'sent' | 'accepted'; la
 export type QuoteNextStepTone = 'action' | 'waiting' | 'blocked' | 'done';
 /** Dónde está el control que resuelve el paso, para que la guía lleve directo a él ('request': la vista de Solicitudes). */
 export type QuoteNextStepTarget = 'price-list' | 'lines' | 'actions' | 'document' | 'request';
-export type QuoteNextStep = { title: string; detail: string; tone: QuoteNextStepTone; target?: QuoteNextStepTarget };
+export type QuoteNextStep = { title: string; detail: string; tone: QuoteNextStepTone; target?: QuoteNextStepTarget; /** Texto del botón cuando el genérico del destino no describe bien la tarea. */ cta?: string };
 
 export type QuoteStageInput = {
   versionStatus: string | null;
@@ -29,6 +29,8 @@ export type QuoteStageInput = {
   publishedExpired?: boolean;
   /** Estado del expediente: cerrado o de vuelta en revisión, la versión nueva no se puede crear aquí todavía. */
   requestStatus?: string | null;
+  /** Conceptos "por cotizar": agregados sin precio; mientras existan el borrador no puede pasar a revisión. */
+  pendingPriceCount?: number;
 };
 
 const REQUEST_CLOSED_STATUSES = new Set(['RECHAZADA', 'VENCIDA']);
@@ -82,6 +84,18 @@ export function quoteNextStep(input: QuoteStageInput): QuoteNextStep {
     if (!input.canEdit) return { title: 'Sólo lectura', detail: 'Tu perfil puede consultar esta propuesta, pero no editarla.', tone: 'waiting' };
     if (!input.priceListSelected) return { title: 'Elige una lista de precios', detail: 'Define la lista con la que se calcularán los precios base antes de agregar conceptos.', tone: 'action', target: 'price-list' };
     if (input.lineCount === 0) return { title: 'Agrega los conceptos', detail: 'Busca en el catálogo por nombre o clave, o agrega un concepto especial. El borrador se guarda solo.', tone: 'action', target: 'lines' };
+    const pending = input.pendingPriceCount ?? 0;
+    if (pending > 0) {
+      return {
+        title: 'Faltan precios por definir',
+        detail: pending === 1
+          ? 'Un concepto está por cotizar y no suma al total. Defínele precio, o espera a que quien administra los precios lo asigne, para poder pasar a revisión.'
+          : `${pending} conceptos están por cotizar y no suman al total. Defíneles precio, o espera a que quien administra los precios los asigne, para poder pasar a revisión.`,
+        tone: 'blocked',
+        target: 'lines',
+        cta: 'Ver los conceptos',
+      };
+    }
     return { title: 'Pasa la versión a revisión', detail: 'Cuando la propuesta esté completa, usa «Pasar a revisión». Si algo falta, podrás regresarla a borrador.', tone: 'action', target: 'actions' };
   }
   if (status === 'EN_REVISION') {

@@ -44,6 +44,15 @@ describe('quoteNextStep', () => {
     expect(quoteNextStep({ ...base, canEdit: false }).title).toBe('Sólo lectura');
   });
 
+  it('holds the draft back while concepts are still waiting for a price', () => {
+    expect(quoteNextStep({ ...base, pendingPriceCount: 1 })).toMatchObject({ title: 'Faltan precios por definir', tone: 'blocked', target: 'lines', cta: 'Ver los conceptos' });
+    expect(quoteNextStep({ ...base, pendingPriceCount: 3 }).detail).toContain('3 conceptos están por cotizar');
+    // Sin conceptos pendientes (o sin el dato) el flujo normal sigue igual.
+    expect(quoteNextStep({ ...base, pendingPriceCount: 0 }).title).toBe('Pasa la versión a revisión');
+    // Un perfil de sólo lectura sigue viendo "Sólo lectura", no una tarea que no puede hacer.
+    expect(quoteNextStep({ ...base, canEdit: false, pendingPriceCount: 2 }).title).toBe('Sólo lectura');
+  });
+
   it('blocks sending until a required approval is granted, from the right point of view', () => {
     const review = { ...base, versionStatus: 'EN_REVISION', approvalNeeded: true };
     expect(quoteNextStep(review)).toMatchObject({ title: 'Solicita la aprobación', tone: 'blocked' });

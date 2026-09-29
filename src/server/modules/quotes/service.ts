@@ -28,6 +28,9 @@ export type CatalogPricingLineInput = Readonly<{
   /// Required (with `unitPriceMinorOverride`) when the concept has no current price in the
   /// selected list: the seller quotes it at a manual price, for this quote only.
   manualPriceReason?: string | null;
+  /// Concept added "por cotizar": no price yet. Stored at zero, out of the totals, and it blocks the
+  /// version from leaving BORRADOR. Ignored (the list price wins) once the concept has a price in the list.
+  pricePending?: boolean;
   discountBasisPoints?: string | number | bigint;
   taxBasisPoints?: string | number | bigint;
   /// Q1-03: index into this same request's `sections` array. Omitted/null
@@ -320,6 +323,7 @@ type PricingSnapshotResult = Readonly<{
   snapshot: ReturnType<typeof buildQuoteVersionSnapshot>;
   taxProfileId: string | null;
   manualPrices: readonly ManualPriceRecord[];
+  priceListId: string;
 }>;
 
 /// K1-04/D1-03: when a tax profile is provided, its rate overrides every line's
@@ -378,23 +382,29 @@ async function resolvePricingSnapshot(
     validation('La moneda de la lista de precios no es válida.');
   }
   const pricesByItem = new Map(priceList.items.map((price) => [price.catalogItemId, price]));
-  // Un concepto sin precio en la lista sólo se cotiza con precio manual (y motivo), sólo en esta
-  // cotización: la lista de precios no se toca.
+  // Un concepto sin precio en la lista sólo entra con precio manual (y motivo), sólo en esta cotización
+  // (la lista de precios no se toca), o "por cotizar": sin precio, hasta que alguien se lo asigne.
   const unpricedIds = itemIds.filter((itemId) => !pricesByItem.has(itemId));
-  const manualItemsById = new Map<string, { id: string; code: string; name: string; description: string | null; unit: string }>();
+  const unpricedItemsById = new Map<string, { id: string; code: string; name: string; description: string | null; unit: string }>();
+  const pendingPriceIds = new Set<string>();
   if (unpricedIds.length > 0) {
-    const manualCandidates = catalogLines.filter((line) => unpricedIds.includes(line.catalogItemId));
-    if (manualCandidates.some((line) => line.unitPriceMinorOverride === undefined || !line.manualPriceReason?.trim())) {
-      conflict('Uno o más conceptos no tienen precio vigente.');
+    for (const line of catalogLines.filter((candidate) => unpricedIds.includes(candidate.catalogItemId))) {
+      if (line.pricePending === true) {
+        if (line.unitPriceMinorOverride !== undefined || line.manualPriceReason) validation('Un concepto por cotizar no puede llevar precio.');
+        pendingPriceIds.add(line.catalogItemId);
+      } else if (line.unitPriceMinorOverride === undefined || !line.manualPriceReason?.trim()) {
+        conflict('Uno o más conceptos no tienen precio vigente.');
+      }
     }
-    const manualItems = await transaction.catalogItem.findMany({ where: { id: { in: unpricedIds }, status: 'ACTIVE' }, select: { id: true, code: true, name: true, description: true, unit: true } });
-    if (manualItems.length !== unpricedIds.length) conflict('Uno o más conceptos no tienen precio vigente.');
-    for (const item of manualItems) manualItemsById.set(item.id, item);
+    const unpricedItems = await transaction.catalogItem.findMany({ where: { id: { in: unpricedIds }, status: 'ACTIVE' }, select: { id: true, code: true, name: true, description: true, unit: true } });
+    if (unpricedItems.length !== unpricedIds.length) conflict('Uno o más conceptos no tienen precio vigente.');
+    for (const item of unpricedItems) unpricedItemsById.set(item.id, item);
   }
 
   const manualPrices: ManualPriceRecord[] = [];
   const snapshotLines: QuoteLineSnapshotInput[] = normalizedLines.map((line) => {
-    const discountBasisPoints = normalizeBasisPoints(line.discountBasisPoints ?? 0);
+    const pendingPrice = !('special' in line) && pendingPriceIds.has(line.catalogItemId);
+    const discountBasisPoints = pendingPrice ? 0 : normalizeBasisPoints(line.discountBasisPoints ?? 0);
     if (discountBasisPoints > 0) requireEmployeePermission(actor, 'quotes.apply_discount');
     const taxBasisPoints = resolvedTaxProfile ? resolvedTaxProfile.ratePercentBasisPoints : normalizeBasisPoints(line.taxBasisPoints ?? 0);
 
@@ -420,7 +430,22 @@ async function resolvePricingSnapshot(
     }
 
     const price = pricesByItem.get(line.catalogItemId);
-    const manualItem = price ? undefined : manualItemsById.get(line.catalogItemId);
+    if (pendingPrice) {
+      const pendingItem = unpricedItemsById.get(line.catalogItemId)!;
+      return {
+        catalogItemId: pendingItem.id,
+        catalogItemCode: pendingItem.code,
+        name: pendingItem.name,
+        description: pendingItem.description,
+        unit: pendingItem.unit,
+        pricePending: true,
+        quantity: parseQuantity(line.quantity),
+        unitPrice: createMoney(0n, currencyCode),
+        discountBasisPoints: 0,
+        taxBasisPoints,
+      };
+    }
+    const manualItem = price ? undefined : unpricedItemsById.get(line.catalogItemId);
     if (!price && !manualItem) conflict('Uno o más conceptos no tienen precio vigente.');
     if (line.unitPriceMinorOverride !== undefined) {
       const overrideMinor = BigInt(line.unitPriceMinorOverride);
@@ -454,7 +479,7 @@ async function resolvePricingSnapshot(
   });
 
   try {
-    return { snapshot: buildQuoteVersionSnapshot(snapshotLines), taxProfileId: resolvedTaxProfile?.id ?? null, manualPrices };
+    return { snapshot: buildQuoteVersionSnapshot(snapshotLines), taxProfileId: resolvedTaxProfile?.id ?? null, manualPrices, priceListId: normalizedPriceListId };
   } catch (error) {
     if (error instanceof AppError) throw error;
     validation('No fue posible calcular la cotización con los datos recibidos.');
@@ -523,6 +548,7 @@ function buildLineRows(quoteVersionId: string, snapshot: ReturnType<typeof build
     // Precio manual (fuera de lista): no hay precio base con el que compararlo.
     baseUnitPriceMinor: null,
     overrideReason: line.manualPriceReason ?? null,
+    pricePending: line.pricePending === true,
     quantityMilliunits: line.quantity.milliunits,
     currencyCode: line.unitPrice.currency,
     unitPriceMinor: line.unitPrice.amountMinor,
@@ -580,7 +606,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
     const previousPricesByItem = basePricesVersionId
       ? new Map((await transaction.quoteLineSnapshot.findMany({ where: { quoteVersionId: basePricesVersionId, catalogItemId: { not: null } }, select: { catalogItemId: true, unitPriceMinor: true } })).map((line) => [line.catalogItemId as string, line.unitPriceMinor]))
       : undefined;
-    const { snapshot, taxProfileId, manualPrices } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
+    const { snapshot, taxProfileId, manualPrices, priceListId: sourcePriceListId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
     assertSameCurrency(request.currencyCode, snapshot.currency);
     const sections = normalizeSections(input.sections);
     const sectionIdsByLine = resolveLineSectionIds(input.lines, sections);
@@ -615,6 +641,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
         status: 'BORRADOR',
         validUntil,
         createdById: actor.userId,
+        sourcePriceListId,
         ...versionCreateData(snapshot, taxProfileId),
         ...normalizeContentFields(input),
         statusHistory: { create: { toStatus: 'BORRADOR', changedById: actor.userId, createdAt: now } },
@@ -675,7 +702,7 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       select: { catalogItemId: true, unitPriceMinor: true },
     });
     const previousPricesByItem = new Map(existingLines.map((line) => [line.catalogItemId as string, line.unitPriceMinor]));
-    const { snapshot, taxProfileId, manualPrices } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
+    const { snapshot, taxProfileId, manualPrices, priceListId: sourcePriceListId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
     assertSameCurrency(version.currencyCode, snapshot.currency);
     const sections = normalizeSections(input.sections);
     const sectionIdsByLine = resolveLineSectionIds(input.lines, sections);
@@ -684,6 +711,7 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       data: {
         validUntil,
         taxProfileId,
+        sourcePriceListId,
         ...versionTotalsData(snapshot),
         ...normalizeContentFields(input),
       },
@@ -864,6 +892,10 @@ async function performQuoteVersionTransition(actor: Actor, quoteVersionId: strin
       }
     }
     if (!canTransitionQuoteVersion(version.status, toStatus)) conflict('La transición de cotización no está permitida.');
+    // Un concepto "por cotizar" (sin precio) no puede salir del borrador: ni a revisión ni al cliente.
+    if ((toStatus === 'EN_REVISION' || toStatus === 'ENVIADA') && await transaction.quoteLineSnapshot.count({ where: { quoteVersionId: version.id, pricePending: true } }) > 0) {
+      conflict('Hay conceptos por cotizar: define su precio antes de pasar la propuesta a revisión o enviarla.');
+    }
     if (toStatus === 'ENVIADA' && version.discountTotalMinor > 0n) {
       const discountRatioBps = version.subtotalMinor > 0n ? (version.discountTotalMinor * 10_000n) / version.subtotalMinor : 10_000n;
       const thresholdBps = await resolveDiscountApprovalThresholdBps(transaction, version.commercialPolicyId);

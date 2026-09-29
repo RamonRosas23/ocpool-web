@@ -596,6 +596,16 @@
 .catalog-review-row small { color: var(--private-color-ink-muted); font-size: 12.5px; overflow-wrap: anywhere; }
 .catalog-review-row__actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
 .catalog-review-row__actions .private-select__trigger { width: 220px; }
+.catalog-pending-price-list { display: grid; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
+.catalog-pending-price { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(210px, .9fr); align-items: start; gap: 16px; min-width: 0; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); padding: 14px 16px; background: #fff; }
+.catalog-pending-price__concept { display: grid; min-width: 0; gap: 3px; }
+.catalog-pending-price__concept strong { color: var(--private-color-brand); font-size: 14.5px; font-weight: 650; overflow-wrap: anywhere; }
+.catalog-pending-price small { color: var(--private-color-ink-muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.catalog-pending-price__requests { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.catalog-pending-price__requests li { display: grid; gap: 1px; min-width: 0; }
+.catalog-pending-price__requests a { color: var(--private-color-accent); font-size: 13px; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
+.catalog-pending-price__requests span { color: var(--private-color-brand); font-size: 13px; font-weight: 650; }
+.catalog-pending-price__form { display: grid; gap: 8px; }
 .catalog-special-status { min-width: 0; color: var(--private-color-ink-muted); font-size: 13px; font-weight: 550; overflow-wrap: anywhere; }
 .catalog-special-status--done { color: var(--private-color-success); }
 
@@ -625,6 +635,7 @@
   .catalog-price-table__head span:nth-child(3), .catalog-price-table__row > small { display: none; }
   .catalog-form, .catalog-form__pair { grid-template-columns: 1fr; }
   .catalog-form > button[type="submit"], .catalog-form > .staff-button:last-child { justify-self: stretch; }
+  .catalog-pending-price { grid-template-columns: minmax(0, 1fr); }
   .catalog-category-row, .catalog-review-row { flex-direction: column; align-items: flex-start; gap: 10px; }
   .catalog-category-row__actions, .catalog-review-row__actions { width: 100%; flex-wrap: wrap; }
   .catalog-category-row__actions .private-select__trigger, .catalog-review-row__actions .private-select__trigger { width: 100%; }
@@ -755,6 +766,15 @@
 .quotes-pricing__scope label small { color: var(--private-color-ink-muted); font-size: 12.5px; }
 .quotes-pricing__error { margin: 0; color: var(--private-color-danger); font-size: 13px; }
 
+.quotes-manual-note--pending { border-left-color: var(--private-color-copper); background: rgba(184, 138, 74, .1); }
+.quotes-manual-note--pending strong { color: var(--private-color-copper); }
+.quotes-line__item .quotes-line__pending { color: var(--private-color-ink-muted); }
+.quotes-line__item .quotes-line__pending strong { display: inline; color: var(--private-color-copper); font-weight: 650; }
+.quotes-line__price-pending { display: grid; min-width: 0; justify-items: start; gap: 4px; }
+.quotes-line__pending-badge { display: inline-flex; min-height: 26px; align-items: center; border-radius: 999px; padding: 0 10px; background: rgba(184, 138, 74, .16); color: var(--private-color-copper); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.quotes-line__pending-action { border: 0; padding: 2px 0; background: none; color: var(--private-color-accent); font: inherit; font-size: 12.5px; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.quotes-pricing__note { margin: 0; border-left: 3px solid var(--private-color-copper); border-radius: 4px; padding: 8px 12px; background: rgba(184, 138, 74, .08); color: var(--private-color-ink-muted); font-size: 13px; }
+.quotes-pricing__note strong { color: var(--private-color-copper); }
 .quotes-add-line { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .quotes-add-line > .quotes-catalog-search { flex: 1 1 100%; }
 .quotes-catalog-search { position: relative; min-width: 0; }

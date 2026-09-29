@@ -19,8 +19,8 @@ async function readResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-function formatPrice(item: CatalogSearchResultItem, currencyCode: string, canDefinePrice: boolean): string {
-  if (!item.price || !/^\d+$/u.test(item.price.unitPriceMinor)) return canDefinePrice ? 'Definir precio' : 'Sin precio';
+function formatPrice(item: CatalogSearchResultItem, currencyCode: string, unpricedLabel: string | null): string {
+  if (!item.price || !/^\d+$/u.test(item.price.unitPriceMinor)) return unpricedLabel ?? 'Sin precio';
   const amount = BigInt(item.price.unitPriceMinor);
   return `${currencyCode} ${(amount / 100n).toLocaleString('es-MX')}.${(amount % 100n).toString().padStart(2, '0')}`;
 }
@@ -33,6 +33,8 @@ export default function CatalogItemSearchCombobox({
   ariaLabel = 'Agregar concepto a la cotización',
   onSelect,
   onDefinePrice,
+  definePriceLabel = 'Definir precio',
+  definePriceHint = 'elige uno para definir su precio aquí mismo',
   definingPrice = false,
 }: {
   priceListId: string;
@@ -44,6 +46,10 @@ export default function CatalogItemSearchCombobox({
   /// Si se da, un concepto sin precio en la lista deja de estar bloqueado: se puede elegir y esta
   /// función abre el flujo para definir su precio sin salir de la cotización.
   onDefinePrice?: (item: CatalogSearchResultItem) => void;
+  /// Lo que dice a la derecha un concepto sin precio elegible ("Definir precio", "Por cotizar") y la
+  /// explicación del encabezado del grupo.
+  definePriceLabel?: string;
+  definePriceHint?: string;
   /// Mientras el flujo de definir precio está abierto (y un instante después), el desplegable no se
   /// reabre: al cerrarse el diálogo el foco regresa al campo y, sin esto, volvería a abrir la lista.
   definingPrice?: boolean;
@@ -176,7 +182,7 @@ export default function CatalogItemSearchCombobox({
         {!loading && error && <li className="quotes-catalog-search__status quotes-catalog-search__status--error" role="alert">{error}</li>}
         {!loading && !error && visibleItems.length === 0 && <li className="quotes-catalog-search__status">{term.trim() ? 'Sin coincidencias.' : 'Escribe para buscar en todo el catálogo.'}</li>}
         {!loading && !error && visibleItems.map((item, index) => [
-          index === firstBlockedIndex && <li key="blocked-heading" role="presentation" className="quotes-catalog-search__group">Sin precio en esta lista{canDefinePrice ? ' — elige uno para definir su precio aquí mismo' : selectableCount === 0 ? ' — asígnale precio en Catálogo para poder agregarlos' : ''}</li>,
+          index === firstBlockedIndex && <li key="blocked-heading" role="presentation" className="quotes-catalog-search__group">Sin precio en esta lista{canDefinePrice ? ` — ${definePriceHint}` : selectableCount === 0 ? ' — asígnale precio en Catálogo para poder agregarlos' : ''}</li>,
           <li
             key={item.id}
             id={`${optionId}-${index}`}
@@ -191,7 +197,7 @@ export default function CatalogItemSearchCombobox({
           >
             <span className="quotes-catalog-search__option-name">{item.name} · {item.unit}</span>
             <span className="quotes-catalog-search__option-code">{item.code}</span>
-            <span id={`${optionId}-${index}-price`} className="quotes-catalog-search__option-price">{formatPrice(item, currencyCode, canDefinePrice)}</span>
+            <span id={`${optionId}-${index}-price`} className="quotes-catalog-search__option-price">{formatPrice(item, currencyCode, canDefinePrice ? definePriceLabel : null)}</span>
           </li>,
         ])}
         {!loading && !error && hasMore && <li className="quotes-catalog-search__status">Hay más conceptos: escribe parte del nombre o la clave para acotar.</li>}

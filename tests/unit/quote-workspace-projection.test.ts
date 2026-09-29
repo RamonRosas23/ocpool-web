@@ -106,6 +106,13 @@ describe('quote workspace projection resolver (D2-01 bridge)', () => {
       expect(projection).toMatchObject({ stage: 'BORRADOR_GUARDADO', actorExpected: 'STAFF', primaryAction: 'QUOTE_SUBMIT_FOR_REVIEW' });
     });
 
+    it('holds a draft back with a PRICE_PENDING blocker while concepts still wait for a price', () => {
+      const projection = resolveQuoteWorkspaceProjection(baseInput({ workingVersion: version({ status: 'BORRADOR', pendingPriceLines: 2 }) }));
+      expect(projection).toMatchObject({ stage: 'BORRADOR_GUARDADO', actorExpected: 'STAFF', primaryAction: null, blockers: ['PRICE_PENDING'] });
+      // Sin conceptos por cotizar el borrador sigue listo para pasar a revisión.
+      expect(resolveQuoteWorkspaceProjection(baseInput({ workingVersion: version({ status: 'BORRADOR', pendingPriceLines: 0 }) }))).toMatchObject({ primaryAction: 'QUOTE_SUBMIT_FOR_REVIEW', blockers: [] });
+    });
+
     it('projects a pending approval as waiting on a manager other than the requester', () => {
       const projection = resolveQuoteWorkspaceProjection(baseInput({
         workingVersion: version({ status: 'EN_REVISION', approvals: [{ status: 'REQUESTED', requestedById: 'requester-1', requestedAt: PAST }] }),

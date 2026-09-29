@@ -46,7 +46,7 @@ export type PriceListDetail = PriceList & {
 
 export type CatalogListResponse = { items: CatalogItem[]; page: number; pageSize: number; total: number; totalPages: number };
 
-export type CatalogCapabilities = { catalogRead: boolean; catalogManage: boolean; pricesRead: boolean; pricesManage: boolean };
+export type CatalogCapabilities = { catalogRead: boolean; catalogManage: boolean; pricesRead: boolean; pricesManage: boolean; quotesRead?: boolean };
 
 export type SpecialConceptGroup = {
   normalizedName: string;
@@ -56,6 +56,14 @@ export type SpecialConceptGroup = {
   recentFolios: string[];
   status: 'PENDING' | 'MATCHES_EXISTING' | 'PROMOTED';
   matchingCatalogItem: { id: string; code: string; name: string } | null;
+};
+
+/** Concepto que Ventas dejó "por cotizar" porque no tiene precio en la lista de su propuesta. */
+export type PendingPriceGroup = {
+  key: string;
+  priceList: { id: string; code: string; name: string; currencyCode: string; validFrom: string; validUntil: string | null };
+  item: { id: string; code: string; name: string; unit: string };
+  requests: Array<{ quoteRequestId: string; folio: string; clientName: string; quantityMilliunits: string; requestedBy: string; since: string }>;
 };
 
 export function categoryDescendantIds(categoryId: string, categories: Category[]): Set<string> {

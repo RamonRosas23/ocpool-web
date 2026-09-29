@@ -844,12 +844,16 @@ model QuoteLineSnapshot {
   taxMinor            BigInt                @default(0)
   subtotalMinor       BigInt                @default(0)
   totalMinor          BigInt                @default(0)
+  /// Concepto agregado "por cotizar": todavía sin precio (unitPriceMinor 0, fuera de los totales). Sólo
+  /// existe en borradores: la versión no puede pasar a revisión mientras tenga alguna línea así.
+  pricePending        Boolean               @default(false)
   quoteVersion        QuoteVersion          @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
   section             QuoteSectionSnapshot? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   catalogItem         CatalogItem?          @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
 
   @@unique([quoteVersionId, position])
   @@index([quoteVersionId])
+  @@index([pricePending])
   @@index([catalogItemId, quoteVersionId])
   @@index([sectionId])
   @@map("quote_line_snapshots")

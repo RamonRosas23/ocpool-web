@@ -141,13 +141,19 @@ test.describe('quote builder: pricing a concept that is not in the list', () => 
     await expect(page.locator('.quotes-line', { hasText: 'MP concepto manual' })).toContainText('Cotizado por el proveedor');
   });
 
-  test('a seller without price permissions still sees unpriced concepts as blocked', async ({ page, request }) => {
+  test('a seller without price permissions can only leave an unpriced concept por cotizar', async ({ page, request }) => {
     await signIn(page, request, salesEmail);
     await page.getByRole('combobox', { name: 'Agregar concepto a la cotización' }).fill('concepto bloqueado');
     const option = page.getByRole('option', { name: 'MP concepto bloqueado · pieza', exact: true });
-    await expect(option).toContainText('Sin precio');
-    await expect(option).toHaveAttribute('aria-disabled', 'true');
-    await option.click({ force: true });
-    await expect(page.getByRole('dialog', { name: 'Definir precio' })).toHaveCount(0);
+    await expect(option).toContainText('Por cotizar');
+    await option.click();
+    // Sin permiso para fijar precios no hay precio ni motivo que capturar: sólo dejarlo por cotizar.
+    const dialog = page.getByRole('dialog', { name: 'Concepto sin precio' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('textbox')).toHaveCount(0);
+    await expect(dialog.getByRole('radio')).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Agregar como por cotizar' }).click();
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+    await expect(page.locator('.quotes-line', { hasText: 'MP concepto bloqueado' })).toContainText('Por cotizar');
   });
 });

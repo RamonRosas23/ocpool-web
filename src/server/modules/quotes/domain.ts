@@ -194,6 +194,9 @@ export type QuoteLineSnapshotInput = Readonly<{
   /// Catalog concept quoted at a price that is not in the price list: the seller's reason.
   /// Persisted in `overrideReason` with a null `baseUnitPriceMinor`.
   manualPriceReason?: string | null;
+  /// Catalog concept added "por cotizar": no price yet. Must be priced at zero, never carries a discount
+  /// and cannot be combined with a manual price; the version cannot leave BORRADOR while any line is pending.
+  pricePending?: boolean;
   quantity: Quantity;
   unitPrice: Money;
   discountBasisPoints?: string | number | bigint;
@@ -208,6 +211,7 @@ export type QuoteLineSnapshot = Readonly<{
   unit: string;
   specialReason: string | null;
   manualPriceReason?: string;
+  pricePending?: true;
   quantity: Quantity;
   unitPrice: Money;
   discountBasisPoints: BasisPoints;
@@ -242,12 +246,15 @@ export function buildQuoteVersionSnapshot(lines: readonly QuoteLineSnapshotInput
     const specialReason = isSpecial ? normalizeRequiredText(line.specialReason ?? '', 300, 'special concept reason') : null;
     if (isSpecial && line.manualPriceReason != null) throw new Error('Only a catalog line can carry a manual price reason.');
     const manualPriceReason = line.manualPriceReason == null ? null : normalizeRequiredText(line.manualPriceReason, 300, 'manual price reason');
+    const pricePending = line.pricePending === true;
+    if (pricePending && (isSpecial || manualPriceReason)) throw new Error('Only a catalog line without a manual price can be pending a price.');
     const name = normalizeRequiredText(line.name, 180, 'catalog item name');
     const description = line.description == null ? null : normalizeOptionalText(line.description, 2_000);
     const unit = normalizeRequiredText(line.unit, 40, 'catalog item unit');
     const unitPrice = assertMoney(line.unitPrice);
     const discountBasisPoints = normalizeBasisPoints(line.discountBasisPoints ?? 0);
     const taxBasisPoints = normalizeBasisPoints(line.taxBasisPoints ?? 0);
+    if (pricePending && (unitPrice.amountMinor !== 0n || discountBasisPoints !== 0)) throw new Error('A line pending a price must be priced at zero without a discount.');
     const totals = calculateLineTotals({ quantity: line.quantity, unitPrice, discountBasisPoints, taxBasisPoints });
 
     return Object.freeze({
@@ -258,6 +265,7 @@ export function buildQuoteVersionSnapshot(lines: readonly QuoteLineSnapshotInput
       unit,
       specialReason,
       ...(manualPriceReason ? { manualPriceReason } : {}),
+      ...(pricePending ? { pricePending: true as const } : {}),
       quantity: assertQuantity(line.quantity),
       unitPrice,
       discountBasisPoints,

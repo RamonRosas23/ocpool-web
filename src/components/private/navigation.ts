@@ -11,6 +11,8 @@ export type PrivateStaffCapabilities = Readonly<{
   approvalsRead?: boolean;
   projectsRead?: boolean;
   projectsManage?: boolean;
+  /** prices.manage: asignar precios en las listas (y ver "Precios por asignar"). */
+  pricesManage?: boolean;
   /** identity.users.manage: invitar, cambiar roles y suspender accesos (Equipo). */
   teamManage?: boolean;
 }>;

@@ -6,6 +6,7 @@ import { decideQuoteApproval, listPendingQuoteApprovalsForActor, listPendingQuot
 import { generateQuotePdf } from '@/server/modules/quote-documents/service';
 import { getQuoteDocumentStatusForVersion } from '@/server/modules/quote-documents/access-service';
 import { getQuoteWorkspace } from '@/server/modules/quotes/staff-service';
+import { listPendingPriceRequests } from '@/server/modules/catalog/service';
 import type { QuotePdfSnapshot, RenderedQuotePdf } from '@/server/modules/quote-documents/pdf-renderer';
 import { getPrisma } from '@/server/db/client';
 import type { Actor } from '@/server/auth/types';
@@ -175,6 +176,104 @@ describe('quote pricing and versioning service', () => {
       await prisma.user.delete({ where: { id: employee.id } });
       await prisma.priceListItem.deleteMany({ where: { priceListId: { in: [priceList.id, otherList.id] } } });
       await prisma.priceList.deleteMany({ where: { id: { in: [priceList.id, otherList.id] } } });
+      await prisma.catalogItem.deleteMany({ where: { id: { in: [listed.id, unpriced.id] } } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
+
+  it('adds a concept "por cotizar" without a price, keeps the draft from leaving BORRADOR and heals once the list has a price', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-09-17T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-service-${suffix}-pending`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quote pending ${suffix}`, email: `quote-pending-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Mazatlán', description: 'Pending price fixture', consentAt: now },
+    }, { prisma, now });
+    const employee = await prisma.user.create({
+      data: { email: `quote-pending-employee-${suffix}@example.test`, emailNormalized: `quote-pending-employee-${suffix}@example.test`, displayName: 'Quote pending employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    const category = await prisma.catalogCategory.create({ data: { code: `PENDING-${suffix}`, name: 'Pending price' } });
+    const listed = await prisma.catalogItem.create({ data: { code: `PENDING-LISTED-${suffix}`, name: 'Con precio', unit: 'pieza', categoryId: category.id } });
+    const unpriced = await prisma.catalogItem.create({ data: { code: `PENDING-UNPRICED-${suffix}`, name: 'Por cotizar', unit: 'servicio', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `PENDING-PRICE-${suffix}`, name: 'Pending price list', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: listed.id, unitPriceMinor: 10_000n, validFrom: now } });
+    let quoteId: string | null = null;
+    // Un vendedor común: arma cotizaciones pero no fija precios ni aplica descuentos.
+    const seller = salesActor(employee.id, ['quotes.create', 'prices.read', 'quotes.read']);
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const base = { quoteRequestId: request.quoteRequestId, priceListId: priceList.id };
+      const pendingLine = { catalogItemId: unpriced.id, quantity: '3', pricePending: true };
+
+      // "Por cotizar" no admite precio ni motivo de precio manual.
+      await expect(createQuoteVersion(seller, { ...base, lines: [{ ...pendingLine, unitPriceMinorOverride: '5000' }] }, { prisma, now })).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+
+      // Cualquiera que pueda cotizar puede dejar un concepto por cotizar: sin precio, sin descuento, fuera del total.
+      const created = await createQuoteVersion(seller, { ...base, lines: [{ catalogItemId: listed.id, quantity: '1' }, { ...pendingLine, discountBasisPoints: 1500 }] }, { prisma, now });
+      quoteId = created.quoteId;
+      expect(created.totalMinor).toBe(10_000n);
+      const pendingRow = await prisma.quoteLineSnapshot.findFirstOrThrow({ where: { quoteVersionId: created.versionId, catalogItemId: unpriced.id } });
+      expect(pendingRow).toMatchObject({ pricePending: true, unitPriceMinor: 0n, discountBasisPoints: 0, totalMinor: 0n, overrideReason: null, catalogItemCode: unpriced.code });
+      expect(await prisma.quoteLineSnapshot.findFirstOrThrow({ where: { quoteVersionId: created.versionId, catalogItemId: listed.id } })).toMatchObject({ pricePending: false });
+      // La versión recuerda con qué lista se armó (lo que permite saber qué precio falta y dónde).
+      expect(await prisma.quoteVersion.findUniqueOrThrow({ where: { id: created.versionId }, select: { sourcePriceListId: true } })).toEqual({ sourcePriceListId: priceList.id });
+
+      // El espacio de trabajo lo expone y el paso a revisión queda bloqueado (también en el servidor).
+      const workspace = await getQuoteWorkspace(seller, request.quoteRequestId, { prisma });
+      expect(workspace.quote?.currentVersion?.lines.find((line) => line.catalogItemId === unpriced.id)).toMatchObject({ pricePending: true, manualPriceReason: null });
+      expect(workspace.quote?.currentVersion?.lines.find((line) => line.catalogItemId === listed.id)).toMatchObject({ pricePending: false });
+      expect(workspace.projection).toMatchObject({ stage: 'BORRADOR_GUARDADO', primaryAction: null, blockers: ['PRICE_PENDING'] });
+      // Al reabrir la propuesta se restaura la lista con la que se armó, aunque no tenga precio del concepto pendiente.
+      expect(workspace.quote?.currentVersion?.sourcePriceListId).toBe(priceList.id);
+      expect(workspace.priceLists.map(({ id }) => id)).toContain(priceList.id);
+      await expect(submitQuoteForReview(seller, created.versionId, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409, message: expect.stringContaining('por cotizar') });
+      expect((await prisma.quoteVersion.findUniqueOrThrow({ where: { id: created.versionId }, select: { status: true } })).status).toBe('BORRADOR');
+
+      // Reenviar el borrador mientras el concepto sigue sin precio lo conserva por cotizar (autoguardado).
+      const resaved = await replaceQuoteDraft(seller, created.versionId, { ...base, lines: [{ catalogItemId: listed.id, quantity: '1' }, pendingLine] }, { prisma, now });
+      expect(resaved.totalMinor).toBe(10_000n);
+      expect(await prisma.quoteLineSnapshot.count({ where: { quoteVersionId: created.versionId, pricePending: true } })).toBe(1);
+
+      // Quien administra los precios lo ve en "Precios por asignar" (sólo él): la línea pendiente es la solicitud.
+      const priceManager = salesActor(employee.id, ['prices.manage']);
+      const worklist = await listPendingPriceRequests(priceManager, { prisma });
+      expect(worklist.find((group) => group.item.id === unpriced.id)).toMatchObject({
+        priceList: { id: priceList.id, currencyCode: 'MXN' },
+        item: { code: unpriced.code, unit: 'servicio' },
+        requests: [{ quoteRequestId: request.quoteRequestId, folio: request.folio, quantityMilliunits: '3000', requestedBy: 'Quote pending employee' }],
+      });
+      await expect(listPendingPriceRequests(seller, { prisma })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+
+      // Alguien asigna el precio en la lista: al guardar, el servidor resuelve la línea con ese precio.
+      await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: unpriced.id, unitPriceMinor: 25_000n, validFrom: now } });
+      const healed = await replaceQuoteDraft(seller, created.versionId, { ...base, lines: [{ catalogItemId: listed.id, quantity: '1' }, pendingLine] }, { prisma, now });
+      expect(healed.totalMinor).toBe(85_000n);
+      expect(await prisma.quoteLineSnapshot.findFirstOrThrow({ where: { quoteVersionId: created.versionId, catalogItemId: unpriced.id } })).toMatchObject({ pricePending: false, unitPriceMinor: 25_000n, totalMinor: 75_000n, overrideReason: null });
+      expect((await getQuoteWorkspace(seller, request.quoteRequestId, { prisma })).projection).toMatchObject({ primaryAction: 'QUOTE_SUBMIT_FOR_REVIEW', blockers: [] });
+      expect((await listPendingPriceRequests(priceManager, { prisma })).find((group) => group.item.id === unpriced.id)).toBeUndefined();
+
+      // Sin conceptos por cotizar el borrador ya puede pasar a revisión.
+      await submitQuoteForReview(seller, created.versionId, { prisma, now });
+      expect((await prisma.quoteVersion.findUniqueOrThrow({ where: { id: created.versionId }, select: { status: true } })).status).toBe('EN_REVISION');
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
       await prisma.catalogItem.deleteMany({ where: { id: { in: [listed.id, unpriced.id] } } });
       await prisma.catalogCategory.delete({ where: { id: category.id } });
     }

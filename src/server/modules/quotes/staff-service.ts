@@ -70,6 +70,7 @@ function serializeLine(line: {
   specialReason: string | null;
   overrideReason: string | null;
   baseUnitPriceMinor: bigint | null;
+  pricePending: boolean;
   quantityMilliunits: bigint;
   currencyCode: string;
   unitPriceMinor: bigint;
@@ -108,6 +109,7 @@ function serializeVersion(version: {
   taxTotalMinor: bigint;
   totalMinor: bigint;
   taxProfileId: string | null;
+  sourcePriceListId: string | null;
   requiresDiscountApproval: boolean;
   scopeText: string | null;
   exclusionsText: string | null;
@@ -145,6 +147,8 @@ function serializeVersion(version: {
     taxTotalMinor: serializeBigInt(version.taxTotalMinor),
     totalMinor: serializeBigInt(version.totalMinor),
     taxProfileId: version.taxProfileId,
+    // La lista de precios con la que se armó la versión: el constructor la restaura al reabrir la propuesta.
+    sourcePriceListId: version.sourcePriceListId,
     requiresDiscountApproval: version.requiresDiscountApproval,
     scopeText: version.scopeText,
     exclusionsText: version.exclusionsText,
@@ -430,6 +434,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       taxTotalMinor: true,
       totalMinor: true,
       taxProfileId: true,
+      sourcePriceListId: true,
       commercialPolicyId: true,
       scopeText: true,
       exclusionsText: true,
@@ -456,6 +461,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
           specialReason: true,
           overrideReason: true,
           baseUnitPriceMinor: true,
+          pricePending: true,
           quantityMilliunits: true,
           currencyCode: true,
           unitPriceMinor: true,
@@ -507,8 +513,8 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
   }));
   const detailVersionById = new Map(detailVersionsWithApprovalFlag.map((version) => [version.id, version]));
   const currentVersion = displayedVersionId ? detailVersionById.get(displayedVersionId) ?? null : null;
-  // Las líneas con precio manual no dependen de la lista, así que no restringen qué listas se ofrecen.
-  const currentVersionItemIds = [...new Set(currentVersion?.lines.filter((line) => !(line.baseUnitPriceMinor === null && line.overrideReason)).map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
+  // Las líneas con precio manual o "por cotizar" no dependen de la lista, así que no restringen cuáles se ofrecen.
+  const currentVersionItemIds = [...new Set(currentVersion?.lines.filter((line) => !line.pricePending && !(line.baseUnitPriceMinor === null && line.overrideReason)).map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
   const workingVersionRaw = quote?.workingVersionId ? detailVersionById.get(quote.workingVersionId) ?? null : null;
   const publishedVersionRaw = quote?.publishedVersionId ? detailVersionById.get(quote.publishedVersionId) ?? null : null;
 
@@ -646,6 +652,7 @@ function toProjectionVersion(version: {
   validUntil: Date | null;
   updatedAt: Date;
   approvals: ReadonlyArray<{ status: string; requestedById: string; requestedAt: Date }>;
+  lines: ReadonlyArray<{ pricePending: boolean }>;
 }): WorkspaceVersionInput {
   return {
     id: version.id,
@@ -653,6 +660,7 @@ function toProjectionVersion(version: {
     status: version.status as QuoteVersionStatus,
     validUntil: version.validUntil,
     updatedAt: version.updatedAt,
+    pendingPriceLines: version.lines.filter((line) => line.pricePending).length,
     approvals: version.approvals.map((approval) => ({
       status: approval.status as WorkspaceApprovalStatus,
       requestedById: approval.requestedById,

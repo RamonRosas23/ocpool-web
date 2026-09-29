@@ -106,6 +106,7 @@ export const WORKSPACE_BLOCKERS = [
   'SEPARATION_OF_DUTIES',
   'APPROVAL_REQUIRED',
   'PROJECT_CONTRACT_MISSING',
+  'PRICE_PENDING',
 ] as const;
 export type WorkspaceBlocker = (typeof WORKSPACE_BLOCKERS)[number];
 
@@ -140,6 +141,8 @@ export type WorkspaceVersionInput = Readonly<{
   validUntil: Date | null;
   updatedAt: Date;
   approvals: readonly WorkspaceApprovalInput[];
+  /** Conceptos agregados "por cotizar" (sin precio): mientras existan, el borrador no puede pasar a revisión. */
+  pendingPriceLines?: number;
 }>;
 
 export type WorkspaceActorCapabilities = Readonly<{
@@ -252,6 +255,9 @@ function resolveWorkingVersionSubStage(
   actor: WorkspaceActorCapabilities,
 ): ProjectionPartial {
   if (version.status === 'BORRADOR') {
+    if ((version.pendingPriceLines ?? 0) > 0) {
+      return { stage: 'BORRADOR_GUARDADO', actorExpected: 'STAFF', waitingSince: version.updatedAt, primaryAction: null, blockers: ['PRICE_PENDING'] };
+    }
     return { stage: 'BORRADOR_GUARDADO', actorExpected: 'STAFF', waitingSince: version.updatedAt, primaryAction: 'QUOTE_SUBMIT_FOR_REVIEW' };
   }
 

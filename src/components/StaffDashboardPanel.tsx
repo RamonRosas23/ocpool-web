@@ -11,6 +11,7 @@ import { relativeTimeLabel } from '@/lib/relative-time';
 import { useHydrated } from '@/lib/use-hydrated';
 import { QUOTE_REQUEST_STATUS_LABELS } from '@/lib/request-workspace-query';
 import { readApiResponse } from '@/lib/api-response-error';
+import type { PendingPriceGroup } from '@/lib/staff-catalog-types';
 import { errorCategoryLabel, eventLabel, templateLabel } from '@/lib/notification-labels';
 import { usePersistentState } from '@/lib/use-persistent-state';
 
@@ -232,6 +233,7 @@ export default function StaffDashboardPanel() {
   const session = useStaffSession();
   const hydrated = useHydrated();
   const canReadProjects = session?.capabilities.projectsRead === true;
+  const canAssignPrices = session?.capabilities.pricesManage === true;
   const [projectsQueue, setProjectsQueue] = useState<{ items: ProjectQueueItem[]; total: number } | null>(null);
 
   // Proyectos en arranque: sólo para perfiles con lectura de proyectos (así nunca se dispara una
@@ -245,6 +247,19 @@ export default function StaffDashboardPanel() {
       .catch(() => undefined);
     return () => controller.abort();
   }, [canReadProjects]);
+
+  // Precios por asignar: conceptos que Ventas dejó "por cotizar" y esperan precio en su lista. Sólo para
+  // quien puede asignarlos; un fallo aquí no tumba el resto del tablero.
+  const [pendingPrices, setPendingPrices] = useState<PendingPriceGroup[] | null>(null);
+  useEffect(() => {
+    if (!canAssignPrices) return;
+    const controller = new AbortController();
+    void fetch('/api/staff/catalog/pending-prices', { credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then((response) => readApiResponse<{ items: PendingPriceGroup[] }>(response, 'No fue posible cargar los precios por asignar.'))
+      .then((result) => { if (result.ok) setPendingPrices(result.data.items); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [canAssignPrices]);
 
   // Sin respuesta del cliente: datos pedidos o propuesta enviada, 4+ días sin movimiento y con el equipo
   // como último en hablar. Responde "¿qué pasa si se queda en un proceso?" con a quién dar seguimiento.
@@ -395,6 +410,7 @@ export default function StaffDashboardPanel() {
     ...(customerReplied && customerReplied.length > 0 ? [`${plural(customerReplied.length, 'cliente espera', 'clientes esperan')} tu respuesta`] : []),
     ...(pendingApprovals && pendingApprovals.length > 0 ? [`${plural(pendingApprovals.length, 'aprobación espera', 'aprobaciones esperan')} tu decisión`] : []),
     ...(readyToPublish && readyToPublish.length > 0 ? [`${plural(readyToPublish.length, 'cotización está lista', 'cotizaciones están listas')} para enviar`] : []),
+    ...(pendingPrices && pendingPrices.length > 0 ? [`${plural(pendingPrices.length, 'concepto espera', 'conceptos esperan')} que le asignes precio`] : []),
     ...(acceptedQueue && acceptedQueue.total > 0 ? [`${plural(acceptedQueue.total, 'venta aceptada espera', 'ventas aceptadas esperan')} su proyecto`] : []),
     ...(waitingQueue && waitingQueue.total > 0 ? [`${plural(waitingQueue.total, 'expediente necesita', 'expedientes necesitan')} seguimiento`] : []),
     ...(unassignedQueue && unassignedQueue.total > 0 ? [`${plural(unassignedQueue.total, 'solicitud sigue', 'solicitudes siguen')} sin responsable`] : []),
@@ -452,6 +468,11 @@ export default function StaffDashboardPanel() {
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Esperan tu decisión</p><h3 id="workqueue-approvals-title">Aprobaciones</h3></div><QueueCount value={pendingApprovals ? pendingApprovals.length : null} /></div>
             <ul className="staff-workqueue__list">{pendingApprovals.slice(0, 5).map((approval) => <li key={approval.id}><Link href={`/staff/quotes?request=${approval.requestId}`}><span className="staff-workqueue__folio">{approval.folio}</span><span className="staff-workqueue__client">{approval.clientDisplayName}</span><span className="staff-workqueue__stage">{APPROVAL_TYPE_LABELS[approval.type]} · {approvalMoneyLabel(approval.totalMinor, approval.currencyCode)}</span><span className="staff-workqueue__age">{ageLabel(approval.requestedAt)}</span></Link></li>)}</ul>
             <Link className="staff-workqueue__more" href="/staff/approvals">{pendingApprovals.length > 5 ? `Decidir las ${formatInteger(pendingApprovals.length)} en la cola →` : 'Decidir en la cola →'}</Link>
+          </article>}
+          {pendingPrices && pendingPrices.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-prices-title">
+            <div className="staff-workqueue__head"><div><p className="staff-section-label">Ventas espera tu precio</p><h3 id="workqueue-prices-title">Precios por asignar</h3></div><QueueCount value={pendingPrices.length} /></div>
+            <ul className="staff-workqueue__list">{pendingPrices.slice(0, 5).map((group) => <li key={group.key}><Link href="/staff/catalog?tab=pending-prices"><span className="staff-workqueue__folio">{group.item.code}</span><span className="staff-workqueue__client">{group.item.name}</span><span className="staff-workqueue__stage">{group.priceList.name} · {plural(group.requests.length, 'propuesta', 'propuestas')}</span></Link></li>)}</ul>
+            <Link className="staff-workqueue__more" href="/staff/catalog?tab=pending-prices">{pendingPrices.length > 5 ? `Asignar los ${formatInteger(pendingPrices.length)} precios →` : 'Asignar en el Catálogo →'}</Link>
           </article>}
           {readyToPublish && readyToPublish.length > 0 && <article className="staff-workqueue__card" aria-labelledby="workqueue-ready-title">
             <div className="staff-workqueue__head"><div><p className="staff-section-label">Sólo falta el envío</p><h3 id="workqueue-ready-title">Listas para publicar</h3></div><QueueCount value={readyToPublish ? readyToPublish.length : null} /></div>

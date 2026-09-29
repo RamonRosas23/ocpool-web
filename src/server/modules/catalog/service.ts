@@ -655,3 +655,102 @@ export async function upsertPriceListItem(actor: Actor, priceListId: string, inp
     throw error;
   }
 }
+
+export type PendingPriceRequest = Readonly<{
+  quoteRequestId: string;
+  folio: string;
+  clientName: string;
+  quantityMilliunits: string;
+  requestedBy: string;
+  since: string;
+}>;
+
+export type PendingPriceGroup = Readonly<{
+  key: string;
+  priceList: Readonly<{ id: string; code: string; name: string; currencyCode: string; validFrom: string; validUntil: string | null }>;
+  item: Readonly<{ id: string; code: string; name: string; unit: string }>;
+  requests: readonly PendingPriceRequest[];
+}>;
+
+const PENDING_PRICE_QUOTE_REQUEST_STATUSES = ['EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION'] as const;
+const PENDING_PRICE_LINE_LIMIT = 300;
+
+/**
+ * "Precios por asignar": los conceptos que Ventas dejó "por cotizar" en un borrador porque no tienen
+ * precio en la lista de esa propuesta. Cada línea pendiente ES la solicitud (no hay otra tabla): en cuanto
+ * alguien asigna el precio en la lista, el concepto sale de aquí y la propuesta lo resuelve sola al abrirse.
+ * Agrupa por lista + concepto para asignar el precio una sola vez aunque varias propuestas lo esperen.
+ */
+export async function listPendingPriceRequests(actor: Actor, dependencies: CatalogServiceDependencies = {}): Promise<PendingPriceGroup[]> {
+  requireStaffPermission(actor, 'prices.manage');
+  const prisma = dependencies.prisma ?? getPrisma();
+  const now = dependencies.now ?? new Date();
+
+  const lines = await prisma.quoteLineSnapshot.findMany({
+    where: {
+      pricePending: true,
+      catalogItemId: { not: null },
+      catalogItem: { status: 'ACTIVE' },
+      quoteVersion: {
+        status: 'BORRADOR',
+        sourcePriceList: { status: 'ACTIVE', validFrom: { lte: now }, OR: [{ validUntil: null }, { validUntil: { gt: now } }] },
+        quote: { quoteRequest: { status: { in: [...PENDING_PRICE_QUOTE_REQUEST_STATUSES] } } },
+      },
+    },
+    orderBy: [{ quoteVersion: { updatedAt: 'asc' } }, { position: 'asc' }],
+    take: PENDING_PRICE_LINE_LIMIT,
+    select: {
+      quantityMilliunits: true,
+      catalogItem: { select: { id: true, code: true, name: true, unit: true } },
+      quoteVersion: {
+        select: {
+          updatedAt: true,
+          sourcePriceList: { select: { id: true, code: true, name: true, currencyCode: true, validFrom: true, validUntil: true } },
+          createdBy: { select: { displayName: true } },
+          quote: { select: { quoteRequest: { select: { id: true, folio: true, client: { select: { displayName: true } } } } } },
+        },
+      },
+    },
+  });
+  if (lines.length === 0) return [];
+
+  // Lo que ya tiene precio vigente en esa lista deja de esperar (la propuesta lo aplica al abrirse).
+  const listIds = [...new Set(lines.map((line) => line.quoteVersion.sourcePriceList!.id))];
+  const itemIds = [...new Set(lines.map((line) => line.catalogItem!.id))];
+  const priced = await prisma.priceListItem.findMany({
+    where: { priceListId: { in: listIds }, catalogItemId: { in: itemIds }, validFrom: { lte: now }, OR: [{ validUntil: null }, { validUntil: { gt: now } }] },
+    select: { priceListId: true, catalogItemId: true },
+  });
+  const pricedKeys = new Set(priced.map((entry) => `${entry.priceListId}:${entry.catalogItemId}`));
+
+  const groups = new Map<string, { group: Omit<PendingPriceGroup, 'requests'>; requests: PendingPriceRequest[] }>();
+  for (const line of lines) {
+    const priceList = line.quoteVersion.sourcePriceList!;
+    const item = line.catalogItem!;
+    const key = `${priceList.id}:${item.id}`;
+    if (pricedKeys.has(key)) continue;
+    const request = line.quoteVersion.quote.quoteRequest;
+    let entry = groups.get(key);
+    if (!entry) {
+      entry = {
+        group: {
+          key,
+          priceList: { id: priceList.id, code: priceList.code, name: priceList.name, currencyCode: priceList.currencyCode, validFrom: priceList.validFrom.toISOString(), validUntil: priceList.validUntil?.toISOString() ?? null },
+          item: { id: item.id, code: item.code, name: item.name, unit: item.unit },
+        },
+        requests: [],
+      };
+      groups.set(key, entry);
+    }
+    entry.requests.push({
+      quoteRequestId: request.id,
+      folio: request.folio,
+      clientName: request.client.displayName,
+      quantityMilliunits: line.quantityMilliunits.toString(),
+      requestedBy: line.quoteVersion.createdBy.displayName,
+      since: line.quoteVersion.updatedAt.toISOString(),
+    });
+  }
+  // La consulta ya viene de la solicitud más antigua a la más reciente: los grupos conservan ese orden.
+  return [...groups.values()].map(({ group, requests }) => ({ ...group, requests }));
+}
