@@ -4,6 +4,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { notifyInbox } from '@/server/modules/inbox/domain-events';
 import { createMoney, normalizeCurrencyCode } from '@/server/modules/quotes/domain';
 
 export type CatalogServiceDependencies = Readonly<{ prisma?: PrismaClient; now?: Date }>;
@@ -406,6 +407,7 @@ export type SchedulePriceResult = Readonly<{
 export async function schedulePrice(actor: Actor, priceListId: string, input: SchedulePriceInput, dependencies: CatalogServiceDependencies = {}): Promise<SchedulePriceResult> {
   requireStaffPermission(actor, 'prices.manage');
   const prisma = dependencies.prisma ?? getPrisma();
+  const now = dependencies.now ?? new Date();
   const listId = requireUuid(priceListId, 'La lista de precios no es válida.');
   const catalogItemId = requireUuid(input.catalogItemId, 'El concepto no es válido.');
   const effectiveFrom = normalizeDate(input.effectiveFrom, 'La fecha de vigencia no es válida.');
@@ -477,6 +479,9 @@ export async function schedulePrice(actor: Actor, priceListId: string, input: Sc
         reason,
       });
       await outbox(transaction, 'PRICES.ITEM_SCHEDULED', 'PRICE_LIST', listId, { priceListId: listId, priceListItemId: scheduled.id, catalogItemId, closedPreviousPriceId });
+      if (effectiveFrom <= now) {
+        await notifyInbox(transaction, { actor: { userId: actor.userId, type: 'EMPLOYEE' }, eventType: 'PRICES.PENDING_RESOLVED', aggregateType: 'PRICE_LIST', aggregateId: listId, payload: { priceListId: listId, catalogItemId } }, { now });
+      }
 
       return {
         priceListItemId: scheduled.id,
@@ -613,6 +618,7 @@ export async function searchQuoteCatalogItems(actor: Actor, priceListId: string,
 export async function upsertPriceListItem(actor: Actor, priceListId: string, input: { catalogItemId: string; unitPriceMinor: string | bigint; validFrom: Date; validUntil?: Date | null }, dependencies: CatalogServiceDependencies = {}) {
   requireStaffPermission(actor, 'prices.manage');
   const prisma = dependencies.prisma ?? getPrisma();
+  const now = dependencies.now ?? new Date();
   const listId = requireUuid(priceListId, 'La lista de precios no es válida.');
   const catalogItemId = requireUuid(input.catalogItemId, 'El concepto no es válido.');
   const validFrom = normalizeDate(input.validFrom, 'La vigencia inicial no es válida.');
@@ -647,6 +653,9 @@ export async function upsertPriceListItem(actor: Actor, priceListId: string, inp
         : await transaction.priceListItem.create({ data: { priceListId: listId, catalogItemId, unitPriceMinor, validFrom, validUntil } });
       await audit(transaction, actor, existing ? 'prices.item.updated' : 'prices.item.created', 'price_list_item', price.id, { priceListId: listId, catalogItemId, unitPriceMinor: unitPriceMinor.toString() });
       await outbox(transaction, existing ? 'PRICES.ITEM_UPDATED' : 'PRICES.ITEM_CREATED', 'PRICE_LIST', listId, { priceListId: listId, priceListItemId: price.id, catalogItemId });
+      if (validFrom <= now && (!validUntil || validUntil > now)) {
+        await notifyInbox(transaction, { actor: { userId: actor.userId, type: 'EMPLOYEE' }, eventType: 'PRICES.PENDING_RESOLVED', aggregateType: 'PRICE_LIST', aggregateId: listId, payload: { priceListId: listId, catalogItemId } }, { now });
+      }
       return { ...price, unitPriceMinor: price.unitPriceMinor.toString() };
     });
   } catch (error) {

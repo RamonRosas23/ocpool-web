@@ -4,6 +4,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { notifyInbox, recordDomainEvent } from '@/server/modules/inbox/domain-events';
 import { BUSINESS_TIMEZONE, timeZoneParts } from '@/lib/calendar-timezone';
 import { requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 import { formatProjectFolio, normalizeChecklistLabel, type ProjectHandoffStatus } from '@/server/modules/projects/domain';
@@ -142,19 +143,20 @@ async function createProjectFromAcceptance(prisma: PrismaClient, input: CreatePr
           metadata: { folio: project.folio, quoteAcceptanceId: acceptance.id, quoteRequestId: acceptance.quote.quoteRequestId, source: input.source },
         },
       });
-      await transaction.outboxEvent.create({
-        data: {
-          eventType: 'PROJECT.CREATED',
-          aggregateType: 'PROJECT',
-          aggregateId: project.id,
-          payload: { projectId: project.id, folio: project.folio, quoteRequestId: acceptance.quote.quoteRequestId },
-        },
-      });
+      // El proyecto que nace de la aceptación lo crea el sistema: sin actor, el cliente sí recibe "Tu proyecto arrancó".
+      const eventActor = input.source === 'customer_acceptance' ? null : { userId: input.createdById, type: 'EMPLOYEE' as const };
+      await recordDomainEvent(transaction, {
+        actor: eventActor,
+        eventType: 'PROJECT.CREATED',
+        aggregateType: 'PROJECT',
+        aggregateId: project.id,
+        payload: { projectId: project.id, folio: project.folio, quoteRequestId: acceptance.quote.quoteRequestId, source: input.source, ownerId },
+      }, { now: input.now });
       if (request.status === 'ACEPTADA') {
         await transaction.quoteRequest.update({ where: { id: acceptance.quote.quoteRequestId }, data: { status: 'CONVERTIDA_EN_PROYECTO', updatedAt: input.now } });
         await transaction.requestStatusHistory.create({ data: { quoteRequestId: acceptance.quote.quoteRequestId, fromStatus: 'ACEPTADA', toStatus: 'CONVERTIDA_EN_PROYECTO', changedById: input.createdById, reason: `Proyecto ${project.folio} creado.`, createdAt: input.now } });
         await transaction.auditLog.create({ data: { actorUserId: input.createdById, action: 'quote_request.status_changed', entityType: 'quote_request', entityId: acceptance.quote.quoteRequestId, outcome: 'SUCCESS', metadata: { folio: request.folio, fromStatus: 'ACEPTADA', toStatus: 'CONVERTIDA_EN_PROYECTO', source: 'project.created' } } });
-        await transaction.outboxEvent.create({ data: { eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: acceptance.quote.quoteRequestId, payload: { quoteRequestId: acceptance.quote.quoteRequestId, folio: request.folio, fromStatus: 'ACEPTADA', toStatus: 'CONVERTIDA_EN_PROYECTO' } } });
+        await recordDomainEvent(transaction, { actor: eventActor, eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: acceptance.quote.quoteRequestId, payload: { quoteRequestId: acceptance.quote.quoteRequestId, folio: request.folio, fromStatus: 'ACEPTADA', toStatus: 'CONVERTIDA_EN_PROYECTO' } }, { now: input.now });
       }
       return project;
     });
@@ -549,5 +551,6 @@ export async function setProjectOwner(actor: Actor, projectIdInput: string, owne
         metadata: { ownerId },
       },
     });
+    if (ownerId) await notifyInbox(transaction, { actor: { userId: actor.userId, type: 'EMPLOYEE' }, eventType: 'PROJECT.OWNER_CHANGED', aggregateType: 'PROJECT', aggregateId: projectId, payload: { projectId, ownerId } });
   });
 }

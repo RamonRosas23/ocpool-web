@@ -5,6 +5,7 @@ import { issueEmployeeAccessTokenInTransaction, recordAuthEvent, type AuthReques
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { notifyInbox } from '@/server/modules/inbox/domain-events';
 import {
   isTeamRole,
   primaryTeamRole,
@@ -321,6 +322,9 @@ export async function suspendTeamMember(actor: Actor, userId: string, input: { r
       await transaction.auditLog.create({ data: { actorUserId: actor.userId, action: 'project.owner_changed', entityType: 'project', entityId: project.id, outcome: 'SUCCESS', metadata: { folio: project.folio, ownerId: heir?.id ?? null, source: 'team.suspension' } } });
     }
 
+    if (heir && requests.length + projects.length > 0) {
+      await notifyInbox(transaction, { actor: { userId: actor.userId, type: 'EMPLOYEE' }, eventType: 'TEAM.WORK_REASSIGNED', aggregateType: 'USER', aggregateId: member.id, payload: { heirId: heir.id, fromName: member.displayName, requestsCount: requests.length, projectsCount: projects.length } }, { now });
+    }
     await audit(transaction, actor, 'team.member_suspended', member.id, {
       member: member.displayName,
       ...(reason ? { reason } : {}),

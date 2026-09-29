@@ -1,6 +1,8 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { NO_INBOX_EFFECTS, type InboxEffects } from '../record';
 import { fileAvailableEffects, messageCreatedEffects } from './messages';
+import { pendingPriceResolvedEffects } from './prices';
+import { projectCreatedEffects, projectOwnerChangedEffects, workReassignedEffects } from './projects';
 import { approvalRequestedEffects, approvalResolvedEffects, quoteAcceptedEffects, quoteDraftSavedEffects, quotePublishedEffects, quoteReturnedEffects } from './quotes';
 import { customerResponseReviewedEffects, requestAssignedEffects, requestReceivedEffects, requestStatusChangedEffects } from './requests';
 import type { DomainEventInput } from './types';
@@ -22,6 +24,10 @@ export async function resolveInboxEffects(tx: Prisma.TransactionClient, event: D
     case 'QUOTE.APPROVAL_REQUESTED': return approvalRequestedEffects(tx, event);
     case 'QUOTE.APPROVAL_RESOLVED': return approvalResolvedEffects(tx, event);
     case 'QUOTE.ACCEPTED': return quoteAcceptedEffects(tx, event);
+    case 'PROJECT.CREATED': return projectCreatedEffects(tx, event);
+    case 'PROJECT.OWNER_CHANGED': return projectOwnerChangedEffects(tx, event);
+    case 'TEAM.WORK_REASSIGNED': return workReassignedEffects(tx, event);
+    case 'PRICES.PENDING_RESOLVED': return pendingPriceResolvedEffects(tx, event);
     default: return NO_INBOX_EFFECTS;
   }
 }
