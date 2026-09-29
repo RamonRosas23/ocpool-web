@@ -222,7 +222,7 @@ Una prueba de contrato impide que vuelvan los `outboxEvent.create` directos fuer
 | `team.activity` | Mensaje, o archivo visible para el cliente, del equipo | HIGH | — | Resumen si sigue sin leer a los 15 min |
 | `request.information_needed` | Solicitud de información (el mensaje en la misma transacción) | HIGH, destacado | cuando el cliente responde o el equipo marca revisado | `request.information_needed` inmediato |
 | `quote.ready` | `QUOTE.PUBLISHED` | HIGH | — | Existente (`quote.version_sent`) |
-| `quote.acceptance_confirmed` | `QUOTE.ACCEPTED` | NORMAL | — | Existente |
+| (sólo correo) confirmación de aceptación | `QUOTE.ACCEPTED` | — | — | Existente. En la bandeja no hay aviso porque quien acepta es el propio cliente, y a quien hizo la acción nunca se le avisa. |
 | `project.started` | Proyecto creado | NORMAL | — | `project.started` |
 | `request.received` | `REQUEST.RECEIVED`, si el contacto ya tiene cuenta | NORMAL | — | Acuse existente |
 | `reminder.quote_expiring` | §9 | NORMAL | — | `quote.expiring` |
