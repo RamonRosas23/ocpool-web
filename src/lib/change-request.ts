@@ -15,3 +15,12 @@ export function parseChangeRequestBody(body: string, versionNumber: number): str
   const prefix = changeRequestPrefix(versionNumber);
   return body.startsWith(prefix) ? body.slice(prefix.length).trim() : null;
 }
+
+const ANY_CHANGE_REQUEST = /^Solicitud de cambios en la propuesta V(\d+):/u;
+
+/** Petición de cambios de cualquier versión (avisos y correo no saben de antemano cuál): versión y texto. */
+export function parseAnyChangeRequest(body: string): { versionNumber: number; message: string } | null {
+  const match = ANY_CHANGE_REQUEST.exec(body);
+  if (!match) return null;
+  return { versionNumber: Number(match[1]), message: body.slice(match[0].length).trim() };
+}

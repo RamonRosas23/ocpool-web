@@ -7,6 +7,7 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
+import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
 import { normalizeIdempotencyKey } from '@/server/modules/messaging/domain';
 import {
   assertUploadMetadata,
@@ -167,15 +168,14 @@ async function audit(transaction: Prisma.TransactionClient, actorUserId: string 
   await transaction.auditLog.create({ data: { actorUserId, action, entityType: 'file_attachment', entityId, outcome: 'SUCCESS', metadata } });
 }
 
-async function outbox(transaction: Prisma.TransactionClient, eventType: string, attachment: { id: string; quoteRequestId: string; visibility: FileVisibility; category: FileCategory }): Promise<void> {
-  await transaction.outboxEvent.create({
-    data: {
-      eventType,
-      aggregateType: 'FILE_ATTACHMENT',
-      aggregateId: attachment.id,
-      payload: { fileId: attachment.id, quoteRequestId: attachment.quoteRequestId, visibility: attachment.visibility, category: attachment.category },
-    },
-  });
+async function outbox(transaction: Prisma.TransactionClient, eventType: string, attachment: { id: string; quoteRequestId: string; visibility: FileVisibility; category: FileCategory }, actor: Actor | null, now: Date): Promise<void> {
+  await recordDomainEvent(transaction, {
+    actor: actor ? { userId: actor.userId, type: actor.type } : null,
+    eventType,
+    aggregateType: 'FILE_ATTACHMENT',
+    aggregateId: attachment.id,
+    payload: { fileId: attachment.id, quoteRequestId: attachment.quoteRequestId, visibility: attachment.visibility, category: attachment.category },
+  }, { now });
 }
 
 export async function reservePrivateFile(actor: Actor, input: ReservePrivateFileInput, dependencies: PrivateFilesServiceDependencies = {}) {
@@ -230,7 +230,7 @@ export async function reservePrivateFile(actor: Actor, input: ReservePrivateFile
       include: { storageObject: true },
     });
     await audit(transaction, actor.userId, 'file.reserved', created.id, { quoteRequestId: request.id, folio: request.folio, category: created.category, byteSize: normalized.byteSize });
-    await outbox(transaction, 'FILE.UPLOAD_RESERVED', created);
+    await outbox(transaction, 'FILE.UPLOAD_RESERVED', created, actor, now);
     return created;
   });
 
@@ -314,7 +314,7 @@ export async function completePrivateFile(actor: Actor, quoteRequestId: string, 
     const updatedObject = await transaction.storageObject.update({ where: { id: current.storageObjectId }, data: { sha256: scanResult.sha256, scanStatus: scanResult.status, scannerName: scanResult.scannerName, scanReason: scanResult.reason, scannedAt: now, verifiedAt: scanResult.status === 'PASSED' ? now : null } });
     const updated = await transaction.fileAttachment.update({ where: { id: current.id }, data: { status: scanResult.status === 'PASSED' ? 'AVAILABLE' : 'REJECTED', reservationExpiresAt: null }, include: { storageObject: true } });
     await audit(transaction, actor.userId, scanResult.status === 'PASSED' ? 'file.available' : 'file.rejected', updated.id, { quoteRequestId: request.id, folio: request.folio, category: updated.category, reason: scanResult.reason });
-    if (scanResult.status === 'PASSED') await outbox(transaction, 'FILE.AVAILABLE', updated);
+    if (scanResult.status === 'PASSED') await outbox(transaction, 'FILE.AVAILABLE', updated, actor, now);
     return { ...updated, storageObject: updatedObject };
   });
   if (!isFileDeliverable(result.status)) {
@@ -448,7 +448,7 @@ export async function deletePrivateFile(actor: Actor, quoteRequestId: string, fi
     const updated = await transaction.fileAttachment.update({ where: { id: current.id }, data: { status: 'DELETED', deletedAt: now }, include: { storageObject: true } });
     await transaction.storageObject.update({ where: { id: current.storageObjectId }, data: { deletedAt: now } });
     await audit(transaction, actor.userId, 'file.deleted', updated.id, { quoteRequestId: request.id, folio: request.folio, category: updated.category });
-    await outbox(transaction, 'FILE.DELETED', updated);
+    await outbox(transaction, 'FILE.DELETED', updated, actor, now);
     return updated;
   });
   try { await storage.delete(deleted.storageObject.storageKey); } catch { /* metadata remains inaccessible; cleanup can retry */ }
@@ -468,7 +468,7 @@ export async function cleanupExpiredPrivateFiles(dependencies: PrivateFilesServi
       const updated = await transaction.fileAttachment.update({ where: { id: current.id }, data: { status: 'DELETED', deletedAt: now }, include: { storageObject: true } });
       await transaction.storageObject.update({ where: { id: current.storageObjectId }, data: { deletedAt: now } });
       await audit(transaction, null, 'file.reservation_expired', updated.id, { quoteRequestId: updated.quoteRequestId, category: updated.category });
-      await outbox(transaction, 'FILE.RESERVATION_EXPIRED', updated);
+      await outbox(transaction, 'FILE.RESERVATION_EXPIRED', updated, null, now);
       return updated;
     });
     if (!deleted) continue;
