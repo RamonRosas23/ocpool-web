@@ -33,6 +33,14 @@ enum NotificationDeliveryStatus {
   CANCELLED
 }
 
+/// Prioridad de un aviso de la bandeja (spec 2026-09-29 §5.3): decide flash, sonido y contador.
+enum InboxPriority {
+  URGENT
+  HIGH
+  NORMAL
+  INFO
+}
+
 enum UserType {
   CUSTOMER
   EMPLOYEE
@@ -304,6 +312,42 @@ model NotificationDelivery {
   @@map("notification_deliveries")
 }
 
+/// Bandeja de avisos por persona (spec 2026-09-29 §1). El texto se guarda ya redactado y `data` sólo
+/// lleva los campos permitidos para su `kind` (src/server/modules/inbox/kinds.ts). La agrupación usa el
+/// índice único parcial `inbox_notifications_open_group` (migración 20260929010000): un solo aviso
+/// abierto (sin leer ni resolver) por persona y `groupKey`. `lastActivityAt` ordena la bandeja; leer o
+/// resolver no reordena. `updatedAt` es el cursor de reanudación del canal en vivo (bloque 2).
+model InboxNotification {
+  id             String        @id @default(uuid()) @db.Uuid
+  recipientId    String        @db.Uuid
+  kind           String        @db.VarChar(80)
+  priority       InboxPriority
+  groupKey       String?       @db.VarChar(200)
+  quoteRequestId String?       @db.Uuid
+  actorId        String?       @db.Uuid
+  title          String        @db.VarChar(200)
+  body           String?       @db.VarChar(400)
+  actionPath     String        @db.VarChar(300)
+  data           Json?
+  occurrences    Int           @default(1)
+  actionRequired Boolean       @default(false)
+  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+  lastActivityAt DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(3)
+  readAt         DateTime?     @db.Timestamptz(3)
+  resolvedAt     DateTime?     @db.Timestamptz(3)
+  resolvedNote   String?       @db.VarChar(160)
+  recipient      User          @relation("InboxRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor          User?         @relation("InboxActor", fields: [actorId], references: [id], onDelete: SetNull)
+  quoteRequest   QuoteRequest? @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, lastActivityAt(sort: Desc)])
+  @@index([recipientId, updatedAt])
+  @@index([quoteRequestId])
+  @@index([groupKey])
+  @@map("inbox_notifications")
+}
+
 model Client {
   id              String           @id @default(uuid()) @db.Uuid
   displayName     String           @db.VarChar(180)
@@ -352,6 +396,8 @@ model User {
   conversationMessages            ConversationMessage[]     @relation("ConversationMessageSender")
   uploadedFileAttachments         FileAttachment[]          @relation("FileAttachmentUploader")
   notificationDeliveries          NotificationDelivery[]    @relation("NotificationRecipient")
+  inboxNotifications              InboxNotification[]       @relation("InboxRecipient")
+  inboxNotificationsCaused        InboxNotification[]       @relation("InboxActor")
   quoteApprovalsRequested         QuoteApproval[]           @relation("QuoteApprovalRequester")
   quoteApprovalsDecided           QuoteApproval[]           @relation("QuoteApprovalDecider")
   specialConceptPromotions        SpecialConceptPromotion[]
@@ -414,6 +460,7 @@ model QuoteRequest {
   conversation       Conversation?
   fileAttachments    FileAttachment[]
   project            Project?
+  inboxNotifications InboxNotification[]
 
   @@unique([id, clientId])
   @@index([status, createdAt])
