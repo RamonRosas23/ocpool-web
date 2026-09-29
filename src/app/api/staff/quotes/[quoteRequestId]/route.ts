@@ -14,6 +14,7 @@ const catalogLineSchema = z.object({
   catalogItemId: z.string().uuid(),
   quantity: z.string().regex(/^\d+(?:\.\d{1,3})?$/u),
   unitPriceMinorOverride: z.string().regex(/^\d+$/u).optional(),
+  manualPriceReason: z.string().trim().min(3).max(300).nullable().optional(),
   discountBasisPoints: rateSchema.optional(),
   taxBasisPoints: rateSchema.optional(),
   sectionIndex: sectionIndexSchema,

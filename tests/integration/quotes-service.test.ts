@@ -85,6 +85,81 @@ describe('quote pricing and versioning service', () => {
     }
   }, 30_000);
 
+  it('quotes a catalog concept that has no price in the list at a manual price, for that quote only', async () => {
+    if (process.env.RUN_DB_TESTS !== '1') {
+      throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
+    }
+
+    const prisma = getPrisma();
+    const suffix = Date.now().toString();
+    const now = new Date('2026-09-17T12:00:00.000Z');
+    const request = await createQuoteRequest({
+      idempotencyKey: `quote-service-${suffix}-manual`,
+      origin: 'STAFF_CREATED',
+      contact: { displayName: `Quote manual ${suffix}`, email: `quote-manual-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Mazatlán', description: 'Manual price fixture', consentAt: now },
+    }, { prisma, now });
+    const employee = await prisma.user.create({
+      data: { email: `quote-manual-employee-${suffix}@example.test`, emailNormalized: `quote-manual-employee-${suffix}@example.test`, displayName: 'Quote manual employee', type: 'EMPLOYEE', status: 'ACTIVE' },
+    });
+    const category = await prisma.catalogCategory.create({ data: { code: `MANUAL-${suffix}`, name: 'Manual price' } });
+    const listed = await prisma.catalogItem.create({ data: { code: `MANUAL-LISTED-${suffix}`, name: 'Con precio', unit: 'pieza', categoryId: category.id } });
+    const unpriced = await prisma.catalogItem.create({ data: { code: `MANUAL-UNPRICED-${suffix}`, name: 'Sin precio', unit: 'servicio', categoryId: category.id } });
+    const priceList = await prisma.priceList.create({ data: { code: `MANUAL-PRICE-${suffix}`, name: 'Manual price list', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: listed.id, unitPriceMinor: 10_000n, validFrom: now } });
+    let quoteId: string | null = null;
+    const seller = salesActor(employee.id, ['quotes.create', 'quotes.send', 'prices.read', 'quotes.edit_prices']);
+    const buildOnly = salesActor(employee.id, ['quotes.create', 'prices.read']);
+
+    try {
+      await prisma.quoteRequest.update({ where: { id: request.quoteRequestId }, data: { status: 'EN_ELABORACION' } });
+      const base = { quoteRequestId: request.quoteRequestId, priceListId: priceList.id };
+
+      // Sin precio ni motivo, el concepto sigue sin poder cotizarse.
+      await expect(createQuoteVersion(seller, { ...base, lines: [{ catalogItemId: unpriced.id, quantity: '1' }] }, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      await expect(createQuoteVersion(seller, { ...base, lines: [{ catalogItemId: unpriced.id, quantity: '1', unitPriceMinorOverride: '25000' }] }, { prisma, now })).rejects.toMatchObject({ code: 'CONFLICT', status: 409 });
+      // Fijar un precio fuera de lista exige quotes.edit_prices.
+      await expect(createQuoteVersion(buildOnly, { ...base, lines: [{ catalogItemId: unpriced.id, quantity: '1', unitPriceMinorOverride: '25000', manualPriceReason: 'Cotizado por proveedor' }] }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+
+      const lines = [
+        { catalogItemId: listed.id, quantity: '1' },
+        { catalogItemId: unpriced.id, quantity: '2', unitPriceMinorOverride: '25000', manualPriceReason: 'Cotizado por proveedor' },
+      ];
+      const created = await createQuoteVersion(seller, { ...base, lines }, { prisma, now });
+      quoteId = created.quoteId;
+      expect(created.totalMinor).toBe(60_000n);
+      const manualLine = await prisma.quoteLineSnapshot.findFirst({ where: { quoteVersionId: created.versionId, catalogItemId: unpriced.id } });
+      expect(manualLine).toMatchObject({ unitPriceMinor: 25_000n, baseUnitPriceMinor: null, overrideReason: 'Cotizado por proveedor', catalogItemCode: unpriced.code });
+      const listedLine = await prisma.quoteLineSnapshot.findFirst({ where: { quoteVersionId: created.versionId, catalogItemId: listed.id } });
+      expect(listedLine).toMatchObject({ unitPriceMinor: 10_000n, overrideReason: null });
+      // La lista de precios no se modificó.
+      expect(await prisma.priceListItem.count({ where: { priceListId: priceList.id, catalogItemId: unpriced.id } })).toBe(0);
+
+      // Reenviar el mismo borrador (autoguardado) no exige quotes.edit_prices.
+      await replaceQuoteDraft(buildOnly, created.versionId, { ...base, lines }, { prisma, now });
+      // Una versión nueva a partir de la publicada conserva el precio manual y su motivo.
+      await submitQuoteForReview(seller, created.versionId, { prisma, now });
+      await transitionQuoteVersion(seller, created.versionId, 'ENVIADA', { prisma, now });
+      const cloned = await clonePublishedVersion(buildOnly, request.quoteRequestId, { priceListId: priceList.id }, { prisma, now });
+      const clonedManual = await prisma.quoteLineSnapshot.findFirst({ where: { quoteVersionId: cloned.versionId, catalogItemId: unpriced.id } });
+      expect(clonedManual).toMatchObject({ unitPriceMinor: 25_000n, baseUnitPriceMinor: null, overrideReason: 'Cotizado por proveedor' });
+    } finally {
+      const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
+      const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
+      await prisma.quote.deleteMany({ where: { quoteRequestId: request.quoteRequestId } });
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityId: { in: [...aggregateIds, ...versionIds] } } });
+      await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.delete({ where: { id: request.contactId } });
+      await prisma.client.delete({ where: { id: request.clientId } });
+      await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.catalogItem.deleteMany({ where: { id: { in: [listed.id, unpriced.id] } } });
+      await prisma.catalogCategory.delete({ where: { id: category.id } });
+    }
+  }, 30_000);
+
   it('requires permissions, blocks edits after sending and serializes concurrent version creation', async () => {
     if (process.env.RUN_DB_TESTS !== '1') {
       throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');

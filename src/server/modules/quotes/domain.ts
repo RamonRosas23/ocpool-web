@@ -191,6 +191,9 @@ export type QuoteLineSnapshotInput = Readonly<{
   description?: string | null;
   unit: string;
   specialReason?: string | null;
+  /// Catalog concept quoted at a price that is not in the price list: the seller's reason.
+  /// Persisted in `overrideReason` with a null `baseUnitPriceMinor`.
+  manualPriceReason?: string | null;
   quantity: Quantity;
   unitPrice: Money;
   discountBasisPoints?: string | number | bigint;
@@ -204,6 +207,7 @@ export type QuoteLineSnapshot = Readonly<{
   description: string | null;
   unit: string;
   specialReason: string | null;
+  manualPriceReason?: string;
   quantity: Quantity;
   unitPrice: Money;
   discountBasisPoints: BasisPoints;
@@ -236,6 +240,8 @@ export function buildQuoteVersionSnapshot(lines: readonly QuoteLineSnapshotInput
     const catalogItemId = isSpecial ? null : normalizeRequiredText(line.catalogItemId!, 100, 'catalog item id');
     const catalogItemCode = isSpecial ? null : normalizeCatalogCode(line.catalogItemCode!);
     const specialReason = isSpecial ? normalizeRequiredText(line.specialReason ?? '', 300, 'special concept reason') : null;
+    if (isSpecial && line.manualPriceReason != null) throw new Error('Only a catalog line can carry a manual price reason.');
+    const manualPriceReason = line.manualPriceReason == null ? null : normalizeRequiredText(line.manualPriceReason, 300, 'manual price reason');
     const name = normalizeRequiredText(line.name, 180, 'catalog item name');
     const description = line.description == null ? null : normalizeOptionalText(line.description, 2_000);
     const unit = normalizeRequiredText(line.unit, 40, 'catalog item unit');
@@ -251,6 +257,7 @@ export function buildQuoteVersionSnapshot(lines: readonly QuoteLineSnapshotInput
       description,
       unit,
       specialReason,
+      ...(manualPriceReason ? { manualPriceReason } : {}),
       quantity: assertQuantity(line.quantity),
       unitPrice,
       discountBasisPoints,

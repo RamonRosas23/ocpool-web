@@ -68,6 +68,8 @@ function serializeLine(line: {
   description: string | null;
   unit: string;
   specialReason: string | null;
+  overrideReason: string | null;
+  baseUnitPriceMinor: bigint | null;
   quantityMilliunits: bigint;
   currencyCode: string;
   unitPriceMinor: bigint;
@@ -79,8 +81,11 @@ function serializeLine(line: {
   subtotalMinor: bigint;
   totalMinor: bigint;
 }) {
+  const { overrideReason, baseUnitPriceMinor, ...visible } = line;
   return {
-    ...line,
+    ...visible,
+    // Precio manual: concepto de catálogo cotizado fuera de la lista (sin precio base) y su motivo.
+    manualPriceReason: line.catalogItemId !== null && baseUnitPriceMinor === null ? overrideReason : null,
     quantityMilliunits: serializeBigInt(line.quantityMilliunits),
     unitPriceMinor: serializeBigInt(line.unitPriceMinor),
     discountMinor: serializeBigInt(line.discountMinor),
@@ -449,6 +454,8 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
           description: true,
           unit: true,
           specialReason: true,
+          overrideReason: true,
+          baseUnitPriceMinor: true,
           quantityMilliunits: true,
           currencyCode: true,
           unitPriceMinor: true,
@@ -500,7 +507,8 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
   }));
   const detailVersionById = new Map(detailVersionsWithApprovalFlag.map((version) => [version.id, version]));
   const currentVersion = displayedVersionId ? detailVersionById.get(displayedVersionId) ?? null : null;
-  const currentVersionItemIds = [...new Set(currentVersion?.lines.map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
+  // Las líneas con precio manual no dependen de la lista, así que no restringen qué listas se ofrecen.
+  const currentVersionItemIds = [...new Set(currentVersion?.lines.filter((line) => !(line.baseUnitPriceMinor === null && line.overrideReason)).map((line) => line.catalogItemId).filter((id): id is string => id !== null) ?? [])];
   const workingVersionRaw = quote?.workingVersionId ? detailVersionById.get(quote.workingVersionId) ?? null : null;
   const publishedVersionRaw = quote?.publishedVersionId ? detailVersionById.get(quote.publishedVersionId) ?? null : null;
 

@@ -25,6 +25,9 @@ export type CatalogPricingLineInput = Readonly<{
   catalogItemId: string;
   quantity: string;
   unitPriceMinorOverride?: string | bigint;
+  /// Required (with `unitPriceMinorOverride`) when the concept has no current price in the
+  /// selected list: the seller quotes it at a manual price, for this quote only.
+  manualPriceReason?: string | null;
   discountBasisPoints?: string | number | bigint;
   taxBasisPoints?: string | number | bigint;
   /// Q1-03: index into this same request's `sections` array. Omitted/null
@@ -370,7 +373,19 @@ async function resolvePricingSnapshot(
     validation('La moneda de la lista de precios no es válida.');
   }
   const pricesByItem = new Map(priceList.items.map((price) => [price.catalogItemId, price]));
-  if (pricesByItem.size !== itemIds.length) conflict('Uno o más conceptos no tienen precio vigente.');
+  // Un concepto sin precio en la lista sólo se cotiza con precio manual (y motivo), sólo en esta
+  // cotización: la lista de precios no se toca.
+  const unpricedIds = itemIds.filter((itemId) => !pricesByItem.has(itemId));
+  const manualItemsById = new Map<string, { id: string; code: string; name: string; description: string | null; unit: string }>();
+  if (unpricedIds.length > 0) {
+    const manualCandidates = catalogLines.filter((line) => unpricedIds.includes(line.catalogItemId));
+    if (manualCandidates.some((line) => line.unitPriceMinorOverride === undefined || !line.manualPriceReason?.trim())) {
+      conflict('Uno o más conceptos no tienen precio vigente.');
+    }
+    const manualItems = await transaction.catalogItem.findMany({ where: { id: { in: unpricedIds }, status: 'ACTIVE' }, select: { id: true, code: true, name: true, description: true, unit: true } });
+    if (manualItems.length !== unpricedIds.length) conflict('Uno o más conceptos no tienen precio vigente.');
+    for (const item of manualItems) manualItemsById.set(item.id, item);
+  }
 
   const snapshotLines: QuoteLineSnapshotInput[] = normalizedLines.map((line) => {
     const discountBasisPoints = normalizeBasisPoints(line.discountBasisPoints ?? 0);
@@ -399,7 +414,8 @@ async function resolvePricingSnapshot(
     }
 
     const price = pricesByItem.get(line.catalogItemId);
-    if (!price) conflict('Uno o más conceptos no tienen precio vigente.');
+    const manualItem = price ? undefined : manualItemsById.get(line.catalogItemId);
+    if (!price && !manualItem) conflict('Uno o más conceptos no tienen precio vigente.');
     if (line.unitPriceMinorOverride !== undefined) {
       const overrideMinor = BigInt(line.unitPriceMinorOverride);
       const previousMinor = previousPricesByItem?.get(line.catalogItemId);
@@ -407,18 +423,20 @@ async function resolvePricingSnapshot(
       // no es un override real y no debe exigir el permiso; sólo un valor que de verdad cambia lo exige.
       if (previousMinor === undefined || previousMinor !== overrideMinor) requireEmployeePermission(actor, 'quotes.edit_prices');
     }
+    const catalogItem = price ? price.catalogItem : manualItem!;
     let unitPrice;
     try {
-      unitPrice = createMoney(line.unitPriceMinorOverride ?? price.unitPriceMinor, currencyCode);
+      unitPrice = createMoney((manualItem ? line.unitPriceMinorOverride : line.unitPriceMinorOverride ?? price!.unitPriceMinor)!, currencyCode);
     } catch {
       validation('El precio de la línea no es válido.');
     }
     return {
-      catalogItemId: price.catalogItem.id,
-      catalogItemCode: price.catalogItem.code,
-      name: price.catalogItem.name,
-      description: price.catalogItem.description,
-      unit: price.catalogItem.unit,
+      catalogItemId: catalogItem.id,
+      catalogItemCode: catalogItem.code,
+      name: catalogItem.name,
+      description: catalogItem.description,
+      unit: catalogItem.unit,
+      ...(manualItem ? { manualPriceReason: line.manualPriceReason!.trim() } : {}),
       quantity: parseQuantity(line.quantity),
       unitPrice,
       discountBasisPoints,
@@ -472,6 +490,9 @@ function buildLineRows(quoteVersionId: string, snapshot: ReturnType<typeof build
     description: line.description,
     unit: line.unit,
     specialReason: line.specialReason,
+    // Precio manual (fuera de lista): no hay precio base con el que compararlo.
+    baseUnitPriceMinor: null,
+    overrideReason: line.manualPriceReason ?? null,
     quantityMilliunits: line.quantity.milliunits,
     currencyCode: line.unitPrice.currency,
     unitPriceMinor: line.unitPrice.amountMinor,
@@ -996,7 +1017,7 @@ export async function clonePublishedVersion(actor: Actor, quoteRequestId: string
   const publishedLines = await prisma.quoteLineSnapshot.findMany({
     where: { quoteVersionId: quote.publishedVersionId },
     orderBy: { position: 'asc' },
-    select: { catalogItemId: true, name: true, description: true, unit: true, specialReason: true, quantityMilliunits: true, unitPriceMinor: true, discountBasisPoints: true, taxBasisPoints: true, sectionId: true },
+    select: { catalogItemId: true, name: true, description: true, unit: true, specialReason: true, overrideReason: true, baseUnitPriceMinor: true, quantityMilliunits: true, unitPriceMinor: true, discountBasisPoints: true, taxBasisPoints: true, sectionId: true },
   });
 
   const lines: QuotePricingLineInput[] = publishedLines.map((line) => {
@@ -1017,6 +1038,8 @@ export async function clonePublishedVersion(actor: Actor, quoteRequestId: string
       : {
         catalogItemId: line.catalogItemId,
         quantity: quantityMilliunitsToDecimalString(line.quantityMilliunits),
+        // Un precio manual (fuera de lista) se conserva tal cual en la versión nueva.
+        ...(line.overrideReason && line.baseUnitPriceMinor === null ? { unitPriceMinorOverride: line.unitPriceMinor, manualPriceReason: line.overrideReason } : {}),
         discountBasisPoints: line.discountBasisPoints,
         taxBasisPoints: line.taxBasisPoints,
         sectionIndex,
