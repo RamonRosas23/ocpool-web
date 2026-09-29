@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { KeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useInbox } from '@/components/inbox/InboxProvider';
 import { nextRovingTabIndex, PrivateBlockingState, PrivateEmptyState, PrivateSkeleton, PrivateSurfaceRoot } from '@/components/private/ui';
 import RequestWorkspaceActionsV2 from '@/components/RequestWorkspaceActionsV2';
 import type { RequestWorkspaceActionsHandle } from '@/components/RequestWorkspaceActionsV2';
@@ -245,6 +246,15 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
   const activeTabLabel = TAB_LABELS[query.tab];
   const backParams = serializeRequestWorkspaceQuery({ ...query, tab: 'summary' }).toString();
   const [detail, setDetail] = useState<RequestDetail | null>(null);
+  // Abrir el expediente da por vista su actividad; lo que pide una acción (aprobar, tomar) sigue pendiente.
+  const inbox = useInbox();
+  const openRequestId = detail?.id ?? null;
+  const openUnread = openRequestId ? inbox?.unreadByRequest[openRequestId] ?? 0 : 0;
+  const markInboxRead = inbox?.markRead;
+  useEffect(() => {
+    if (!openRequestId || openUnread === 0 || !markInboxRead) return;
+    void markInboxRead({ quoteRequestId: openRequestId, scope: 'activity' });
+  }, [openRequestId, openUnread, markInboxRead]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<{ kind: ApiResponseErrorKind; message: string } | null>(null);
   const [capabilities, setCapabilities] = useState<WorkspaceCapabilities | null>(null);

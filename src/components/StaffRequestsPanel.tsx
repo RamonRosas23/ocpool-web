@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useInbox } from '@/components/inbox/InboxProvider';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Archive, ArrowRight, CircleCheck, Compass, Hourglass, Inbox, MessageSquareReply, Plus, X } from 'lucide-react';
@@ -179,6 +180,15 @@ export default function StaffRequestsPanel() {
   const [items, setItems] = useState<RequestSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<RequestDetail | null>(null);
+  // Abrir el expediente da por vista su actividad; lo que pide una acción (aprobar, tomar) sigue pendiente.
+  const inbox = useInbox();
+  const openRequestId = selected?.id ?? null;
+  const openUnread = openRequestId ? inbox?.unreadByRequest[openRequestId] ?? 0 : 0;
+  const markInboxRead = inbox?.markRead;
+  useEffect(() => {
+    if (!openRequestId || openUnread === 0 || !markInboxRead) return;
+    void markInboxRead({ quoteRequestId: openRequestId, scope: 'activity' });
+  }, [openRequestId, openUnread, markInboxRead]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [statusFilter, setStatusFilter, statusFilterHydrated] = usePersistentState('ocpool.staff.requests.statusFilter', '');
   // El estado se aplicaba de inmediato al elegirlo mientras la búsqueda de texto, en el mismo
