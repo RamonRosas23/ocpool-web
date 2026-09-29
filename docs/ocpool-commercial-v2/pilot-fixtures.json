@@ -1,74 +1,74 @@
 {
-  "createdAt": "2026-09-24T23:27:49.980Z",
+  "createdAt": "2026-09-27T01:10:03.933Z",
   "userIds": [
-    "36ab22f4-86ff-4a43-96a9-276b17a178b5",
-    "4db84773-0e9b-4614-b6bf-0f8efaa89572",
-    "26a3a570-44a9-49de-b83c-bb9c4d05a175",
-    "76e7fd3e-f1d8-4aab-ae3c-eb1bfdd16799",
-    "eaf713c0-a435-406e-92a7-46d77d156b8d",
-    "26af3efb-6f41-4676-8b25-35c2332c6d8c",
-    "664c3422-0949-4e5f-bce6-7a8f2f2a987c"
+    "89243617-7ca2-4563-9026-90a5630615d8",
+    "f5e1b90c-16d2-43c9-a2de-97eeaa8fdfdb",
+    "24975c6b-a309-4916-805d-1a1125830e2d",
+    "0701c4f2-d895-422d-b1cf-d27746fd8d16",
+    "85e1d942-a7dd-49cb-8b22-a9d7ae6cc414",
+    "2e43a212-42c7-4cf4-9c1f-c2ca4e851018",
+    "232bc254-1fd9-4525-99e5-778caaaf3665"
   ],
   "clientIds": [
-    "2ee9fb61-c6d8-4c20-b4a4-7d36874e383d",
-    "ceeebd63-90ba-4667-835b-5084fbfb7ed4",
-    "f8fee73f-796c-473a-a2f5-b689ab99bbc2",
-    "4f77be4d-94bc-40dd-8834-f03abf2f9c1f",
-    "c8e25f54-e420-450b-8251-c28878651c11",
-    "9728b353-0721-4cec-a032-345c089f0198",
-    "170b819b-e12b-4610-8ffc-7ae917bc4f10",
-    "6c260f98-1177-464d-aae3-abd142d74a31",
-    "3f033864-fec9-430f-ae3b-845ac02553e5",
-    "dc0dff14-200d-492e-8145-1e619731f63e"
+    "a194970a-fb17-4131-af09-e5d257957de4",
+    "8cd162f3-4f2d-4d71-9efe-de13c4bcf163",
+    "45f7b40d-52ba-40c2-bdbd-ccf641a4491c",
+    "40ab158d-161f-4f2d-ba4b-5ac04012a5cd",
+    "de21b874-5f66-4513-af1f-da178af8a1ee",
+    "5e749358-1bb1-4bf9-ad2c-997e05590c85",
+    "baf717ab-dd0a-4028-81b6-56cea4865e10",
+    "18a6a8f4-d347-4f16-82ee-8ba19e8dda2c",
+    "3161faeb-0851-4dbb-9ec8-b7d507632ae3",
+    "11dd4905-8527-4206-9791-6b9a97b8bd7e"
   ],
   "contactIds": [
-    "4206fec0-6daf-446e-bf5c-9812eb4adcf6",
-    "1c221e51-1e82-4ca7-b74c-886fa7bef57e",
-    "da46a6fe-7bcf-4fd0-86c6-3f1b4c498090",
-    "1bd7e6f2-5bee-4193-997c-e36e609d295c",
-    "c516423d-dd82-44fd-82ab-8be77c686b17",
-    "62a56e87-1cbb-48f8-8e47-49b1b86e051c",
-    "55f624db-a34d-4309-9f2e-9bf213498ffb",
-    "9f0ad5ef-543b-47f9-bc46-c11950ad1df2",
-    "b38d4401-5d2c-4f5f-98b8-d4f1b59e475c",
-    "9f5a6ce2-4abf-41c9-9fb0-cba58d7b0be3"
+    "e0ed9fa2-514b-4ceb-9af7-f080f21720db",
+    "9c8cfe84-3881-4e02-b969-2d25b061647f",
+    "acbd7954-b025-417f-93d6-26faa3b3c06b",
+    "5b594d6b-6b9d-4b55-847f-2f31d5710450",
+    "49983048-3c0f-47ec-a33e-4f616656ab4e",
+    "ef51ffce-c2cc-42e4-96c4-62b8bc83dd20",
+    "8d5e8e58-d363-4d64-ac81-8f03b30db8b6",
+    "ad803730-d5ee-4cf9-a2b6-beb404303544",
+    "6421b57f-fa3f-426b-ab8c-567e43689e44",
+    "7480bee4-bedf-49bd-9b3b-e97532f65870"
   ],
   "requestIds": [
-    "913466b2-8a67-49fb-a970-3a3a11479de3",
-    "37e8b6ad-85cb-4df5-84c4-1396d2292369",
-    "086ea678-6ea1-4e23-907d-64d34a96747f",
-    "940ed557-818f-41ce-a47d-12f09aa9c361",
-    "0ae4554b-a70e-47ea-8829-a5105bb88806",
-    "36f22af6-6cbf-46ea-8425-8bfe19eb0ebd",
-    "3969019d-cc10-4898-8e8a-f84eab25c4ee",
-    "2acf9084-ef78-4b76-8c2b-bc3798ba18c5",
-    "658e22ec-ec2d-47e1-8ab5-e28bea4db02c",
-    "c990996c-879a-4033-bede-52f314717b68"
+    "ccbe6b08-5480-43c5-bf14-7780226d5dc5",
+    "65aa036a-e4b6-426e-8b58-1d75f04b85d3",
+    "d657805d-53cc-4906-8f55-67a78987adc4",
+    "55dc9331-fc26-4667-adef-200cf9ff9d92",
+    "73bd12e9-3f8d-41a4-bc47-68b05610ea94",
+    "8a4c6f92-3cad-40cb-b08b-283f87a228c7",
+    "2e13cf80-3d8a-4feb-8f68-8a4aaae00606",
+    "d8a4fe05-e9fd-4ed4-90a4-f4a3460c5101",
+    "1f42d20a-4ce9-4d1d-adb9-5c2dd8b3787e",
+    "4c3ea6f6-ff04-414b-af48-fe15aaed65f9"
   ],
   "categoryIds": [
-    "3421a089-625b-403c-a3ca-125a581ed492"
+    "8fbc01b7-ed03-4741-8059-7051250a63ac"
   ],
   "itemIds": [
-    "d23143af-0a24-4bce-b910-ab2df3a246f6",
-    "90e3caae-5606-4ac0-8370-30e16bc42733",
-    "4bfe31ef-64b5-4b07-b7ac-661bceb1573a",
-    "89959003-a2c8-42d4-8666-c300cb42146d",
-    "65c9ade4-617d-4e65-99c4-89e63703526a",
-    "1450f755-98ba-498e-aa3b-ca009016ced5",
-    "729e6d93-72e3-47d0-9226-b36f762cf68e",
-    "fae17612-54c8-480a-bcbf-a98cf1a7192e",
-    "e90cc63a-dfa9-4282-b588-2bc8bececdab",
-    "7373a42f-cd8b-4da3-a693-10294ea8b843",
-    "c5e06832-892a-4f17-a7a5-1cf1837f53b8",
-    "0375948a-9a90-4344-8305-ad8e464a3cb7"
+    "67fb0903-5a6d-4468-b32f-43f77af094f4",
+    "06aada02-ad31-4c6a-bbcf-f2b0b09eab87",
+    "34fc33f0-c3c6-45d3-80c6-be374b724dcd",
+    "97403c87-3e78-4389-a76e-2d72aa2cebd3",
+    "434fbff9-4740-408d-9b5c-ab565a214f08",
+    "71e19e55-2235-4afe-ab3c-abf90780fb67",
+    "79f59229-7ce7-44ba-9264-b04809a7c89b",
+    "6ff67ef8-a0ad-4b4f-846c-833f15f6ae18",
+    "e2a93a90-425a-4dc9-af1a-c0a8551833f9",
+    "b4229cf4-d431-49a9-a900-961b8de161b4",
+    "20ef5ba5-e639-45dc-af4c-1ebb8f5a702c",
+    "21bc16b5-1a96-40ae-b9be-e9653a35f17d"
   ],
   "priceListIds": [
-    "130567a7-9728-45ab-9ea8-c3f166e723db"
+    "898c7518-21c0-4982-9b00-e049f8ea0d86"
   ],
   "tokenIds": [
-    "b6f6f7c4-9198-4e25-a223-3d71e8041b7f",
-    "67a58d86-e8a7-47bb-8df4-b8ab3f488334",
-    "1b410f56-ae44-4b2e-a743-8e0337cd84d5"
+    "449d4c3a-f93d-47e3-b6b4-24e4383e12d4",
+    "39540fcb-5754-4b43-a3c2-d65314db9e6d",
+    "9f96eae3-ef5f-4e11-897d-eadbf83f579c"
   ],
   "staff": [
     {
@@ -90,36 +90,36 @@
       "role": "Admin",
       "email": "pilot-admin@ocpool.test",
       "password": "Piloto2026Ocpool!",
-      "note": "MFA obligatorio -- agrega esta clave TOTP a una app autenticadora antes de la sesión: 7SGSWBGPD6VRPNSRWI6NVHUJ6EI7OCLX (URI: otpauth://totp/OCPOOL:pilot-admin%40ocpool.test?issuer=OCPOOL&secret=7SGSWBGPD6VRPNSRWI6NVHUJ6EI7OCLX&algorithm=SHA1&digits=6&period=30)"
+      "note": "MFA obligatorio -- agrega esta clave TOTP a una app autenticadora antes de la sesión: 6TII4RU7L2MBBDCSXIADFS5OQFQCUKVD (URI: otpauth://totp/OCPOOL:pilot-admin%40ocpool.test?issuer=OCPOOL&secret=6TII4RU7L2MBBDCSXIADFS5OQFQCUKVD&algorithm=SHA1&digits=6&period=30)"
     }
   ],
   "customers": [
     {
       "label": "Cliente C1",
-      "magicLinkUrl": "https://ocpool.com.mx/auth/customer/consume-link?token=a9yvtR4qHjFBKiSrHIFwUNpcjZTGvi0v5ntS4Eyw0oQ",
-      "folio": "OCQ-2026-001145"
+      "magicLinkUrl": "http://localhost:3000/auth/customer/consume-link?token=hNu3C1K-S3Pxxt_mZ20-GiU_5yHqxmvT-giBWwOHkSg",
+      "folio": "OCQ-2026-021521"
     },
     {
       "label": "Cliente C2",
-      "magicLinkUrl": "https://ocpool.com.mx/auth/customer/consume-link?token=GI6xmFRZ9jyotGYlOnIjihlaJKoTVflINl7VoroNfj0",
-      "folio": "OCQ-2026-001146"
+      "magicLinkUrl": "http://localhost:3000/auth/customer/consume-link?token=jFfJi7DOimjWZ4zx75ToFW87mqosAELg1IRyFlJmKfk",
+      "folio": "OCQ-2026-021522"
     },
     {
       "label": "Cliente C3",
-      "magicLinkUrl": "https://ocpool.com.mx/auth/customer/consume-link?token=rMwaVmKrCC8aJ2AqIkquwrPSUiZaAumWUvqSO_Foftw",
-      "folio": "OCQ-2026-001147"
+      "magicLinkUrl": "http://localhost:3000/auth/customer/consume-link?token=pndESGJgHXKpdJTC7C7kdbdfy6oIDX4Ja4qqndsAjrA",
+      "folio": "OCQ-2026-021523"
     }
   ],
   "folios": {
-    "r1-propio": "OCQ-2026-001138",
-    "r2-sin-asignar": "OCQ-2026-001139",
-    "r3-constructor": "OCQ-2026-001140",
-    "r4-aprobacion": "OCQ-2026-001141",
-    "r4b-por-resolver": "OCQ-2026-001142",
-    "r5-publicar": "OCQ-2026-001143",
-    "r6-notificacion": "OCQ-2026-001144",
-    "c1-cliente": "OCQ-2026-001145",
-    "c2-cliente": "OCQ-2026-001146",
-    "c3-cliente": "OCQ-2026-001147"
+    "r1-propio": "OCQ-2026-021514",
+    "r2-sin-asignar": "OCQ-2026-021515",
+    "r3-constructor": "OCQ-2026-021516",
+    "r4-aprobacion": "OCQ-2026-021517",
+    "r4b-por-resolver": "OCQ-2026-021518",
+    "r5-publicar": "OCQ-2026-021519",
+    "r6-notificacion": "OCQ-2026-021520",
+    "c1-cliente": "OCQ-2026-021521",
+    "c2-cliente": "OCQ-2026-021522",
+    "c3-cliente": "OCQ-2026-021523"
   }
 }
