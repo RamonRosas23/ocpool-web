@@ -60,6 +60,8 @@ test.describe('quote builder: pricing a concept that is not in the list', () => 
       await prisma.clientContact.delete({ where: { id: contactId } });
       await prisma.client.delete({ where: { id: clientId } });
       await prisma.priceListItem.deleteMany({ where: { priceListId } });
+      // El aviso "necesita precio" agrupa expedientes (sin quoteRequestId): no cae en cascada con la solicitud.
+      await prisma.inboxNotification.deleteMany({ where: { groupKey: { startsWith: `price:${priceListId}:` } } });
       await prisma.priceList.delete({ where: { id: priceListId } });
       await prisma.catalogItem.deleteMany({ where: { id: { in: Object.values(itemIds) } } });
       await prisma.catalogCategory.delete({ where: { id: categoryId } });

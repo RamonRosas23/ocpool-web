@@ -69,6 +69,7 @@ describe('inbox rules for quotes and approvals', () => {
   });
 
   afterAll(async () => {
+    await prisma.inboxNotification.deleteMany({ where: { groupKey: { startsWith: `price:${priceListId}:` } } });
     await prisma.quote.deleteMany({ where: { id: quoteId } });
     await prisma.catalogItem.deleteMany({ where: { id: catalogItemId } });
     await prisma.priceList.deleteMany({ where: { id: priceListId } });

@@ -287,6 +287,8 @@ describe('quote pricing and versioning service', () => {
       await prisma.client.delete({ where: { id: request.clientId } });
       await prisma.user.delete({ where: { id: employee.id } });
       await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
+      // El aviso "necesita precio" agrupa expedientes (sin quoteRequestId): no cae en cascada con la solicitud.
+      await prisma.inboxNotification.deleteMany({ where: { groupKey: { startsWith: `price:${priceList.id}:` } } });
       await prisma.priceList.delete({ where: { id: priceList.id } });
       await prisma.catalogItem.deleteMany({ where: { id: { in: [listed.id, unpriced.id] } } });
       await prisma.catalogCategory.delete({ where: { id: category.id } });
