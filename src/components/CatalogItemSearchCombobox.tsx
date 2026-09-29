@@ -19,8 +19,8 @@ async function readResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-function formatPrice(item: CatalogSearchResultItem, currencyCode: string): string {
-  if (!item.price || !/^\d+$/u.test(item.price.unitPriceMinor)) return 'Sin precio';
+function formatPrice(item: CatalogSearchResultItem, currencyCode: string, canDefinePrice: boolean): string {
+  if (!item.price || !/^\d+$/u.test(item.price.unitPriceMinor)) return canDefinePrice ? 'Definir precio' : 'Sin precio';
   const amount = BigInt(item.price.unitPriceMinor);
   return `${currencyCode} ${(amount / 100n).toLocaleString('es-MX')}.${(amount % 100n).toString().padStart(2, '0')}`;
 }
@@ -32,6 +32,7 @@ export default function CatalogItemSearchCombobox({
   disabled = false,
   ariaLabel = 'Agregar concepto a la cotización',
   onSelect,
+  onDefinePrice,
 }: {
   priceListId: string;
   currencyCode: string;
@@ -39,7 +40,11 @@ export default function CatalogItemSearchCombobox({
   disabled?: boolean;
   ariaLabel?: string;
   onSelect: (item: CatalogSearchResultItem) => void;
+  /// Si se da, un concepto sin precio en la lista deja de estar bloqueado: se puede elegir y esta
+  /// función abre el flujo para definir su precio sin salir de la cotización.
+  onDefinePrice?: (item: CatalogSearchResultItem) => void;
 }) {
+  const canDefinePrice = Boolean(onDefinePrice);
   const listboxId = useId();
   const optionId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -60,7 +65,7 @@ export default function CatalogItemSearchCombobox({
     .sort((a, b) => Number(Boolean(a.item.blocker)) - Number(Boolean(b.item.blocker)) || a.order - b.order)
     .map(({ item }) => item);
   const firstBlockedIndex = visibleItems.findIndex((item) => item.blocker);
-  const selectableCount = firstBlockedIndex === -1 ? visibleItems.length : firstBlockedIndex;
+  const selectableCount = canDefinePrice || firstBlockedIndex === -1 ? visibleItems.length : firstBlockedIndex;
 
   // Si el campo está cerca del borde inferior, se sube para que el desplegable quede a la vista.
   const openAndReveal = () => {
@@ -104,7 +109,8 @@ export default function CatalogItemSearchCombobox({
   }, [open]);
 
   const choose = (item: CatalogSearchResultItem) => {
-    onSelect(item);
+    if (item.blocker) onDefinePrice?.(item);
+    else onSelect(item);
     setTerm('');
     setItems([]);
     setOpen(false);
@@ -127,7 +133,7 @@ export default function CatalogItemSearchCombobox({
         // Mismo guardado que ya aplica el clic de mouse (línea de abajo, onMouseDown) -- sin esto,
         // un usuario de teclado podía agregar un concepto sin precio en la lista vigente, algo que
         // el mouse ya impedía.
-        if (!activeItem.blocker) choose(activeItem);
+        if (!activeItem.blocker || canDefinePrice) choose(activeItem);
       }
     } else if (event.key === 'Escape') {
       if (open) { event.preventDefault(); setOpen(false); }
@@ -160,21 +166,21 @@ export default function CatalogItemSearchCombobox({
         {!loading && error && <li className="quotes-catalog-search__status quotes-catalog-search__status--error" role="alert">{error}</li>}
         {!loading && !error && visibleItems.length === 0 && <li className="quotes-catalog-search__status">{term.trim() ? 'Sin coincidencias.' : 'Escribe para buscar en todo el catálogo.'}</li>}
         {!loading && !error && visibleItems.map((item, index) => [
-          index === firstBlockedIndex && <li key="blocked-heading" role="presentation" className="quotes-catalog-search__group">Sin precio en esta lista{selectableCount === 0 ? ' — asígnale precio en Catálogo para poder agregarlos' : ''}</li>,
+          index === firstBlockedIndex && <li key="blocked-heading" role="presentation" className="quotes-catalog-search__group">Sin precio en esta lista{canDefinePrice ? ' — elige uno para definir su precio aquí mismo' : selectableCount === 0 ? ' — asígnale precio en Catálogo para poder agregarlos' : ''}</li>,
           <li
             key={item.id}
             id={`${optionId}-${index}`}
             role="option"
             aria-label={`${item.name} · ${item.unit}`}
             aria-selected={index === activeIndex}
-            aria-disabled={Boolean(item.blocker)}
-            className={`quotes-catalog-search__option${index === activeIndex ? ' is-active' : ''}${item.blocker ? ' is-blocked' : ''}`}
+            aria-disabled={Boolean(item.blocker) && !canDefinePrice}
+            className={`quotes-catalog-search__option${index === activeIndex ? ' is-active' : ''}${item.blocker ? canDefinePrice ? ' is-unpriced' : ' is-blocked' : ''}`}
             onMouseEnter={() => setActiveIndex(index)}
-            onMouseDown={(event) => { event.preventDefault(); if (!item.blocker) choose(item); }}
+            onMouseDown={(event) => { event.preventDefault(); if (!item.blocker || canDefinePrice) choose(item); }}
           >
             <span className="quotes-catalog-search__option-name">{item.name} · {item.unit}</span>
             <span className="quotes-catalog-search__option-code">{item.code}</span>
-            <span className="quotes-catalog-search__option-price">{formatPrice(item, currencyCode)}</span>
+            <span className="quotes-catalog-search__option-price">{formatPrice(item, currencyCode, canDefinePrice)}</span>
           </li>,
         ])}
         {!loading && !error && hasMore && <li className="quotes-catalog-search__status">Hay más conceptos: escribe parte del nombre o la clave para acotar.</li>}

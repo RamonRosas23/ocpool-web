@@ -36,6 +36,7 @@ type Capabilities = {
   quotesRead: boolean;
   quotesCreate: boolean;
   quotesEditPrices: boolean;
+  pricesManage: boolean;
   quotesApplyDiscount: boolean;
   quotesApproveDiscount: boolean;
   quotesSend: boolean;
@@ -64,6 +65,7 @@ type QuoteLine = {
   description: string | null;
   unit: string;
   specialReason: string | null;
+  manualPriceReason: string | null;
   quantityMilliunits: string;
   currencyCode: string;
   unitPriceMinor: string;
@@ -141,7 +143,7 @@ type Workspace = {
 };
 
 type PriceList = { id: string; code: string; name: string; currencyCode: string; status: string };
-type PriceListDetail = PriceList & { items: Array<{ id: string; catalogItemId: string; unitPriceMinor: string; validFrom: string; validUntil: string | null; catalogItem: { code: string; name: string; unit: string; status: string } }> };
+type PriceListDetail = PriceList & { validFrom: string; validUntil: string | null; items: Array<{ id: string; catalogItemId: string; unitPriceMinor: string; validFrom: string; validUntil: string | null; catalogItem: { code: string; name: string; unit: string; status: string } }> };
 type DraftSection = { id: string; title: string; description: string };
 
 type DraftLine = {
@@ -153,6 +155,8 @@ type DraftLine = {
   catalogItemCode: string;
   description: string;
   reason: string;
+  /// Motivo del precio manual: concepto de catálogo cotizado fuera de la lista (sólo en esta cotización).
+  manualReason: string;
   unit: string;
   quantity: string;
   unitPriceMinorOverride: string;
@@ -226,7 +230,7 @@ function draftSnapshotKey(priceListId: string, validUntilValue: string, lines: D
     validUntilValue,
     content,
     sections: sections.map((section) => ({ title: section.title, description: section.description })),
-    lines: lines.map((line) => ({ special: line.special, sectionId: line.sectionId, catalogItemId: line.catalogItemId, catalogItemName: line.catalogItemName, unit: line.unit, description: line.description, reason: line.reason, quantity: line.quantity, unitPriceInput: line.unitPriceInput, unitPriceDirty: line.unitPriceDirty, discountBasisPoints: line.discountBasisPoints, taxBasisPoints: line.taxBasisPoints })),
+    lines: lines.map((line) => ({ special: line.special, sectionId: line.sectionId, catalogItemId: line.catalogItemId, catalogItemName: line.catalogItemName, unit: line.unit, description: line.description, reason: line.reason, manualReason: line.manualReason, quantity: line.quantity, unitPriceInput: line.unitPriceInput, unitPriceDirty: line.unitPriceDirty, discountBasisPoints: line.discountBasisPoints, taxBasisPoints: line.taxBasisPoints })),
   });
 }
 
@@ -288,6 +292,12 @@ export default function StaffQuotesPanel() {
   const [contentFields, setContentFields] = useState({ scopeText: '', exclusionsText: '', paymentTermsText: '', warrantyText: '', publicNotesText: '' });
   const [showSpecialForm, setShowSpecialForm] = useState(false);
   const [specialForm, setSpecialForm] = useState({ name: '', unit: '', description: '', amountInput: '', reason: '' });
+  // Concepto sin precio en la lista elegido en el buscador: se le define precio aquí mismo, ya sea
+  // sólo para esta cotización (precio manual) o también en la lista (requiere prices.manage).
+  const [pricingItem, setPricingItem] = useState<CatalogSearchResultItem | null>(null);
+  const [pricingForm, setPricingForm] = useState<{ amountInput: string; scope: 'QUOTE' | 'LIST'; reason: string }>({ amountInput: '', scope: 'QUOTE', reason: '' });
+  const [pricingBusy, setPricingBusy] = useState(false);
+  const [pricingError, setPricingError] = useState<string | null>(null);
   const [validUntil, setValidUntil] = useState('');
   const [search, setSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
@@ -424,6 +434,7 @@ export default function StaffQuotesPanel() {
         catalogItemCode: line.catalogItemCode ?? '',
         description: line.description ?? '',
         reason: line.specialReason ?? '',
+        manualReason: line.manualPriceReason ?? '',
         unit: line.unit,
         quantity: quantityLabel(line.quantityMilliunits),
         unitPriceMinorOverride: line.unitPriceMinor,
@@ -546,6 +557,7 @@ export default function StaffQuotesPanel() {
     !contentFields.warrantyText.trim() && 'garantías',
   ].filter((label): label is string => Boolean(label));
   const contentFilledCount = Object.values(contentFields).filter((value) => value.trim().length > 0).length;
+  const manualPriceCount = draftLines.filter((line) => line.manualReason).length;
   const selectedCurrency = priceListDetail?.currencyCode ?? workspace?.request.detail?.currencyCode ?? 'MXN';
   const selectedTaxProfile = workspace?.taxProfiles.find((profile) => profile.id === selectedTaxProfileId) ?? null;
 
@@ -660,7 +672,7 @@ export default function StaffQuotesPanel() {
     setDraftLines((lines) => lines.map((line) => {
       const newPriceMinor = newPriceById.get(line.id);
       if (newPriceMinor === undefined) return line;
-      return { ...line, snapshotUnitPriceMinor: null, unitPriceMinorOverride: '', unitPriceInput: moneyInputLabel(newPriceMinor), unitPriceDirty: false };
+      return { ...line, manualReason: '', snapshotUnitPriceMinor: null, unitPriceMinorOverride: '', unitPriceInput: moneyInputLabel(newPriceMinor), unitPriceDirty: false };
     }));
     setRepriceDialogOpen(false);
     showToast(`Se repreció ${repriceCandidates.length} concepto${repriceCandidates.length === 1 ? '' : 's'} a la lista de precios vigente.`);
@@ -725,7 +737,7 @@ export default function StaffQuotesPanel() {
     return () => window.clearTimeout(timer);
   }, [appliedSearch, search]);
 
-  const addLineFromSearch = (item: CatalogSearchResultItem) => {
+  const addLineFromSearch = (item: CatalogSearchResultItem, manual?: { minor: string; reason: string }) => {
     if (draftLines.some((line) => line.catalogItemId === item.id)) return;
     setDraftLines((lines) => [...lines, {
       id: `${item.id}-${Date.now()}`,
@@ -736,15 +748,63 @@ export default function StaffQuotesPanel() {
       catalogItemCode: item.code,
       description: '',
       reason: '',
+      manualReason: manual?.reason ?? '',
       unit: item.unit,
       quantity: '1',
-      unitPriceMinorOverride: '',
-      unitPriceInput: '',
+      unitPriceMinorOverride: manual?.minor ?? '',
+      unitPriceInput: manual ? moneyInputLabel(manual.minor) : '',
       snapshotUnitPriceMinor: null,
-      unitPriceDirty: false,
+      unitPriceDirty: Boolean(manual),
       discountBasisPoints: '0',
       taxBasisPoints: selectedTaxProfile ? String(selectedTaxProfile.ratePercentBasisPoints) : '0',
     }]);
+  };
+
+  const openPricing = (item: CatalogSearchResultItem) => {
+    setPricingItem(item);
+    setPricingForm({ amountInput: '', scope: 'QUOTE', reason: '' });
+    setPricingError(null);
+  };
+
+  const closePricing = () => { if (!pricingBusy) setPricingItem(null); };
+
+  const submitPricing = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!pricingItem || pricingBusy) return;
+    const minor = parseMoneyInput(pricingForm.amountInput);
+    if (!minor || BigInt(minor) <= 0n) { setPricingError('Escribe un precio mayor a cero.'); return; }
+    const reason = pricingForm.reason.trim();
+    if (pricingForm.scope === 'QUOTE') {
+      if (reason.length < 3) { setPricingError('Escribe el motivo del precio manual (mínimo 3 caracteres).'); return; }
+      addLineFromSearch(pricingItem, { minor, reason });
+      setPricingItem(null);
+      showToast('Concepto agregado con precio manual. La lista de precios no cambió.');
+      return;
+    }
+    setPricingBusy(true);
+    setPricingError(null);
+    try {
+      // El precio vale desde un minuto atrás (sin salirse de la lista) para que el reloj del
+      // navegador no lo deje "en el futuro" frente al servidor al guardar la cotización.
+      const listStart = priceListDetail?.validFrom ? new Date(priceListDetail.validFrom).getTime() : 0;
+      const validFrom = new Date(Math.max(listStart, Date.now() - 60_000)).toISOString();
+      const saved = await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}/items`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ catalogItemId: pricingItem.id, unitPriceMinor: minor, validFrom, validUntil: priceListDetail?.validUntil ?? null }),
+      });
+      await readApiResponseOrThrow(saved, 'No fue posible guardar el precio en la lista.');
+      const refreshed = await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { credentials: 'include', cache: 'no-store' });
+      setPriceListDetail(await readApiResponseOrThrow<PriceListDetail>(refreshed, 'El precio se guardó, pero no fue posible actualizar la lista.'));
+      addLineFromSearch({ ...pricingItem, price: { unitPriceMinor: minor }, blocker: null });
+      setPricingItem(null);
+      showToast('Precio guardado en la lista y concepto agregado.');
+    } catch (caught) {
+      setPricingError(caught instanceof Error ? caught.message : 'No fue posible guardar el precio en la lista.');
+    } finally {
+      setPricingBusy(false);
+    }
   };
 
   const addSpecialLine = (event: FormEvent<HTMLFormElement>) => {
@@ -759,6 +819,7 @@ export default function StaffQuotesPanel() {
       catalogItemCode: '',
       description: specialForm.description.trim(),
       reason: specialForm.reason.trim(),
+      manualReason: '',
       unit: specialForm.unit.trim(),
       quantity: '1',
       unitPriceMinorOverride: '',
@@ -833,6 +894,7 @@ export default function StaffQuotesPanel() {
       catalogItemId: line.catalogItemId!,
       quantity: line.quantity,
       ...(unitPriceMinorOverride ? { unitPriceMinorOverride } : {}),
+      ...(line.manualReason ? { manualPriceReason: line.manualReason } : {}),
       discountBasisPoints: Number(line.discountBasisPoints || '0'),
       taxBasisPoints: Number(line.taxBasisPoints || '0'),
       ...sectionIndexField,
@@ -1294,10 +1356,27 @@ export default function StaffQuotesPanel() {
               <div className="quotes-builder__content">
               <div className="quotes-lines-head"><span>Concepto</span><span>Cantidad</span><span>Precio</span><span>Descuento</span><span>Total</span><span className="sr-only">Acción</span></div>
               <div className="quotes-lines">
-                {draftLines.map((line, lineIndex) => { const price = line.catalogItemId ? pricesByItem.get(line.catalogItemId)?.unitPriceMinor : undefined; const linePreview = calculatePreview(line, price); const displayedPrice = line.unitPriceDirty ? line.unitPriceInput : line.snapshotUnitPriceMinor ? moneyInputLabel(line.snapshotUnitPriceMinor) : price ? moneyInputLabel(price) : ''; const previousLine = draftLines[lineIndex - 1]; const currentSection = draftSections.find((section) => section.id === line.sectionId); const showSectionHeader = Boolean(line.sectionId) && line.sectionId !== (previousLine?.sectionId ?? null); const canMoveUp = lineIndex > 0 && draftLines[lineIndex - 1].sectionId === line.sectionId; const canMoveDown = lineIndex < draftLines.length - 1 && draftLines[lineIndex + 1].sectionId === line.sectionId; return <div key={line.id}>{showSectionHeader && currentSection && <div className="quotes-section-header"><strong>{currentSection.title}</strong>{(canEdit || canStartVersion) && <button type="button" className="quotes-section-header__remove" onClick={() => removeSection(currentSection.id)}>Quitar sección</button>}</div>}<div className={`quotes-line${line.special ? ' quotes-line--special' : ''}`}><div className="quotes-line__item">{line.special ? <div className="quotes-line__special"><input aria-label="Nombre del concepto especial" value={line.catalogItemName} onChange={(event) => updateLine(line.id, 'catalogItemName', event.target.value)} disabled={!canEdit && !canStartVersion} placeholder="Nombre" maxLength={180} /><input aria-label="Unidad del concepto especial" value={line.unit} onChange={(event) => updateLine(line.id, 'unit', event.target.value)} disabled={!canEdit && !canStartVersion} placeholder="Unidad" maxLength={40} /><small><strong>Especial</strong>{line.reason ? ` · ${line.reason}` : ''}</small></div> : <><strong>{line.catalogItemName}</strong><small>{line.catalogItemCode} · {line.unit}</small></>}{(canEdit || canStartVersion) && draftSections.length > 0 && <select aria-label={`Sección de ${line.catalogItemName}`} className="quotes-line__section-select" value={line.sectionId ?? ''} onChange={(event) => updateLineSection(line.id, event.target.value)}><option value="">Sin sección</option>{draftSections.map((section) => <option key={section.id} value={section.id}>{section.title}</option>)}</select>}</div><label><span className="quotes-mobile-label">Cantidad</span><input aria-label={`Cantidad de ${line.catalogItemName}`} value={line.quantity} onChange={(event) => updateLine(line.id, 'quantity', event.target.value)} disabled={!canEdit && !canStartVersion} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Precio</span><input aria-label={`Precio de ${line.catalogItemName}`} value={displayedPrice} onChange={(event) => setDraftLines((lines) => lines.map((candidate) => candidate.id === line.id ? { ...candidate, unitPriceInput: event.target.value, unitPriceMinorOverride: parseMoneyInput(event.target.value) ?? '', unitPriceDirty: true } : candidate))} disabled={(!canEdit && !canStartVersion) || !capabilities?.quotesEditPrices} placeholder={price ? moneyInputLabel(price) : 'Sin precio'} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Desc. %</span><input aria-label={`Descuento de ${line.catalogItemName}`} value={line.discountBasisPoints === '0' ? '' : (Number(line.discountBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'discountBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={(!canEdit && !canStartVersion) || !capabilities?.quotesApplyDiscount} inputMode="decimal" placeholder="0" /></label><strong className="quotes-line__total">{linePreview ? moneyLabel(linePreview.total, selectedCurrency) : '—'}</strong><div className="quotes-line__actions"><button className="quotes-line__move" type="button" aria-label={`Mover ${line.catalogItemName} hacia arriba`} onClick={() => moveLine(lineIndex, -1)} disabled={(!canEdit && !canStartVersion) || !canMoveUp}><ChevronUp size={14} aria-hidden="true" /></button><button className="quotes-line__move" type="button" aria-label={`Mover ${line.catalogItemName} hacia abajo`} onClick={() => moveLine(lineIndex, 1)} disabled={(!canEdit && !canStartVersion) || !canMoveDown}><ChevronDown size={14} aria-hidden="true" /></button><button className="quotes-line__remove" type="button" aria-label={`Quitar ${line.catalogItemName}`} onClick={() => setDraftLines((lines) => lines.filter((candidate) => candidate.id !== line.id))} disabled={!canEdit && !canStartVersion}><X size={16} aria-hidden="true" /></button></div></div></div>; })}
+                {draftLines.map((line, lineIndex) => { const price = line.catalogItemId ? pricesByItem.get(line.catalogItemId)?.unitPriceMinor : undefined; const linePreview = calculatePreview(line, price); const displayedPrice = line.unitPriceDirty ? line.unitPriceInput : line.snapshotUnitPriceMinor ? moneyInputLabel(line.snapshotUnitPriceMinor) : price ? moneyInputLabel(price) : ''; const previousLine = draftLines[lineIndex - 1]; const currentSection = draftSections.find((section) => section.id === line.sectionId); const showSectionHeader = Boolean(line.sectionId) && line.sectionId !== (previousLine?.sectionId ?? null); const canMoveUp = lineIndex > 0 && draftLines[lineIndex - 1].sectionId === line.sectionId; const canMoveDown = lineIndex < draftLines.length - 1 && draftLines[lineIndex + 1].sectionId === line.sectionId; return <div key={line.id}>{showSectionHeader && currentSection && <div className="quotes-section-header"><strong>{currentSection.title}</strong>{(canEdit || canStartVersion) && <button type="button" className="quotes-section-header__remove" onClick={() => removeSection(currentSection.id)}>Quitar sección</button>}</div>}<div className={`quotes-line${line.special ? ' quotes-line--special' : ''}`}><div className="quotes-line__item">{line.special ? <div className="quotes-line__special"><input aria-label="Nombre del concepto especial" value={line.catalogItemName} onChange={(event) => updateLine(line.id, 'catalogItemName', event.target.value)} disabled={!canEdit && !canStartVersion} placeholder="Nombre" maxLength={180} /><input aria-label="Unidad del concepto especial" value={line.unit} onChange={(event) => updateLine(line.id, 'unit', event.target.value)} disabled={!canEdit && !canStartVersion} placeholder="Unidad" maxLength={40} /><small><strong>Especial</strong>{line.reason ? ` · ${line.reason}` : ''}</small></div> : <><strong>{line.catalogItemName}</strong><small>{line.catalogItemCode} · {line.unit}</small>{line.manualReason && <small className="quotes-line__manual"><strong>Precio manual</strong> · {line.manualReason}</small>}</>}{(canEdit || canStartVersion) && draftSections.length > 0 && <select aria-label={`Sección de ${line.catalogItemName}`} className="quotes-line__section-select" value={line.sectionId ?? ''} onChange={(event) => updateLineSection(line.id, event.target.value)}><option value="">Sin sección</option>{draftSections.map((section) => <option key={section.id} value={section.id}>{section.title}</option>)}</select>}</div><label><span className="quotes-mobile-label">Cantidad</span><input aria-label={`Cantidad de ${line.catalogItemName}`} value={line.quantity} onChange={(event) => updateLine(line.id, 'quantity', event.target.value)} disabled={!canEdit && !canStartVersion} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Precio</span><input aria-label={`Precio de ${line.catalogItemName}`} value={displayedPrice} onChange={(event) => setDraftLines((lines) => lines.map((candidate) => candidate.id === line.id ? { ...candidate, unitPriceInput: event.target.value, unitPriceMinorOverride: parseMoneyInput(event.target.value) ?? '', unitPriceDirty: true } : candidate))} disabled={(!canEdit && !canStartVersion) || !capabilities?.quotesEditPrices} placeholder={price ? moneyInputLabel(price) : 'Sin precio'} inputMode="decimal" /></label><label><span className="quotes-mobile-label">Desc. %</span><input aria-label={`Descuento de ${line.catalogItemName}`} value={line.discountBasisPoints === '0' ? '' : (Number(line.discountBasisPoints) / 100).toString()} onChange={(event) => updateLine(line.id, 'discountBasisPoints', event.target.value === '' ? '0' : String(Math.round(Number(event.target.value) * 100)))} disabled={(!canEdit && !canStartVersion) || !capabilities?.quotesApplyDiscount} inputMode="decimal" placeholder="0" /></label><strong className="quotes-line__total">{linePreview ? moneyLabel(linePreview.total, selectedCurrency) : '—'}</strong><div className="quotes-line__actions"><button className="quotes-line__move" type="button" aria-label={`Mover ${line.catalogItemName} hacia arriba`} onClick={() => moveLine(lineIndex, -1)} disabled={(!canEdit && !canStartVersion) || !canMoveUp}><ChevronUp size={14} aria-hidden="true" /></button><button className="quotes-line__move" type="button" aria-label={`Mover ${line.catalogItemName} hacia abajo`} onClick={() => moveLine(lineIndex, 1)} disabled={(!canEdit && !canStartVersion) || !canMoveDown}><ChevronDown size={14} aria-hidden="true" /></button><button className="quotes-line__remove" type="button" aria-label={`Quitar ${line.catalogItemName}`} onClick={() => setDraftLines((lines) => lines.filter((candidate) => candidate.id !== line.id))} disabled={!canEdit && !canStartVersion}><X size={16} aria-hidden="true" /></button></div></div></div>; })}
                 {draftLines.length === 0 && <div className="quotes-lines__empty"><strong>Aún no hay conceptos.</strong><span>Agrega los servicios que componen esta propuesta.</span></div>}
               </div>
-              {(canEdit || canStartVersion) && <div className="quotes-add-line"><CatalogItemSearchCombobox priceListId={selectedPriceListId} currencyCode={selectedCurrency} excludeIds={draftLines.map((line) => line.catalogItemId).filter((id): id is string => id !== null)} disabled={!selectedPriceListId} onSelect={addLineFromSearch} /><button className="staff-button staff-button--outline" type="button" onClick={() => setShowSpecialForm(true)}>Agregar concepto especial</button><button className="staff-button staff-button--outline" type="button" onClick={() => setShowSectionForm(true)}>Agregar sección</button></div>}
+              {manualPriceCount > 0 && <p className="quotes-manual-note" role="status"><strong>{manualPriceCount} {manualPriceCount === 1 ? 'concepto con precio manual' : 'conceptos con precio manual'}</strong> — fuera de {priceListDetail?.name ?? 'la lista'}; el precio aplica sólo a esta cotización.</p>}
+              {(canEdit || canStartVersion) && <div className="quotes-add-line"><CatalogItemSearchCombobox priceListId={selectedPriceListId} currencyCode={selectedCurrency} excludeIds={draftLines.map((line) => line.catalogItemId).filter((id): id is string => id !== null)} disabled={!selectedPriceListId} onSelect={(item) => addLineFromSearch(item)} onDefinePrice={capabilities?.quotesEditPrices ? openPricing : undefined} /><button className="staff-button staff-button--outline" type="button" onClick={() => setShowSpecialForm(true)}>Agregar concepto especial</button><button className="staff-button staff-button--outline" type="button" onClick={() => setShowSectionForm(true)}>Agregar sección</button></div>}
+              {(canEdit || canStartVersion) && pricingItem && <PrivateDialog open onClose={closePricing} labelledBy="quotes-pricing-dialog-title" className="quotes-preflight-dialog" overlayClassName="quotes-preflight-overlay">
+                <div className="quotes-preflight-dialog__head"><h3 id="quotes-pricing-dialog-title">Definir precio</h3><button className="staff-dialog-close" type="button" onClick={closePricing} disabled={pricingBusy} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
+                <form className="catalog-form quotes-pricing" onSubmit={(event) => void submitPricing(event)}>
+                  <p className="quotes-pricing__concept"><strong>{pricingItem.name}</strong><small>{pricingItem.code} · {pricingItem.unit}</small></p>
+                  <p className="quotes-pricing__context">Este concepto no tiene precio en <strong>{priceListDetail?.name ?? 'la lista seleccionada'}</strong>. Defínelo para agregarlo a la propuesta sin salir de aquí.</p>
+                  <PrivateMoneyField id="quotes-pricing-amount" label={`Precio por ${pricingItem.unit} (${selectedCurrency})`} required value={pricingForm.amountInput} onValueChange={(value) => setPricingForm((current) => ({ ...current, amountInput: value }))} placeholder="1,250.00" />
+                  <fieldset className="quotes-pricing__scope">
+                    <legend>¿Dónde se guarda este precio?</legend>
+                    <label className={pricingForm.scope === 'QUOTE' ? 'is-selected' : ''}><input type="radio" name="quotes-pricing-scope" checked={pricingForm.scope === 'QUOTE'} onChange={() => setPricingForm((current) => ({ ...current, scope: 'QUOTE' }))} /><span><strong>Solo en esta cotización</strong><small>La lista de precios no cambia. La línea queda marcada como precio manual.</small></span></label>
+                    {capabilities?.pricesManage && <label className={pricingForm.scope === 'LIST' ? 'is-selected' : ''}><input type="radio" name="quotes-pricing-scope" checked={pricingForm.scope === 'LIST'} onChange={() => setPricingForm((current) => ({ ...current, scope: 'LIST' }))} /><span><strong>Guardar también en la lista</strong><small>Se usará en futuras cotizaciones con {priceListDetail?.name ?? 'esta lista'}. Las cotizaciones ya enviadas no cambian.</small></span></label>}
+                  </fieldset>
+                  {pricingForm.scope === 'QUOTE' && <label><span>Motivo del precio manual</span><input required minLength={3} maxLength={300} value={pricingForm.reason} onChange={(event) => setPricingForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Por ejemplo: cotizado por el proveedor" /></label>}
+                  {pricingError && <p className="quotes-pricing__error" role="alert">{pricingError}</p>}
+                  <button className="staff-button staff-button--copper" type="submit" disabled={pricingBusy}>{pricingBusy ? 'Guardando…' : pricingForm.scope === 'LIST' ? 'Guardar en la lista y agregar' : 'Agregar a la cotización'}</button>
+                </form>
+              </PrivateDialog>}
               {(canEdit || canStartVersion) && showSpecialForm && <PrivateDialog open onClose={() => setShowSpecialForm(false)} labelledBy="quotes-special-dialog-title" className="quotes-preflight-dialog" overlayClassName="quotes-preflight-overlay">
                 <div className="quotes-preflight-dialog__head"><h3 id="quotes-special-dialog-title">Agregar concepto especial</h3><button className="staff-dialog-close" type="button" onClick={() => setShowSpecialForm(false)} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
                 <form className="catalog-form" onSubmit={addSpecialLine}><label><span>Nombre</span><input required value={specialForm.name} onChange={(event) => setSpecialForm({ ...specialForm, name: event.target.value })} placeholder="Concepto fuera de catálogo" maxLength={180} /></label><label><span>Unidad</span><input required value={specialForm.unit} onChange={(event) => setSpecialForm({ ...specialForm, unit: event.target.value })} placeholder="pieza" maxLength={40} /></label><PrivateMoneyField id="quotes-special-amount" label="Importe del concepto especial" value={specialForm.amountInput} onValueChange={(value) => setSpecialForm({ ...specialForm, amountInput: value })} placeholder="1,250.00" /><label><span>Motivo</span><input required value={specialForm.reason} onChange={(event) => setSpecialForm({ ...specialForm, reason: event.target.value })} placeholder="Por qué no está en catálogo" maxLength={300} /></label><label><span>Descripción</span><textarea rows={2} value={specialForm.description} onChange={(event) => setSpecialForm({ ...specialForm, description: event.target.value })} maxLength={2000} /></label><button className="staff-button staff-button--copper" type="submit">Agregar a la propuesta</button></form>

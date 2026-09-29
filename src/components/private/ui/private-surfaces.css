@@ -738,6 +738,23 @@
 .quotes-lines__empty strong { color: var(--private-color-brand); font-size: 15px; font-weight: 650; }
 .quotes-lines__empty span { color: var(--private-color-ink-muted); font-size: 13.5px; }
 
+.quotes-manual-note { margin: 12px 0 0; border: 1px solid var(--private-color-border); border-left: 3px solid var(--private-color-accent); border-radius: var(--private-radius-control, 8px); padding: 9px 12px; background: var(--private-tint-accent); color: var(--private-color-ink-muted); font-size: 13px; }
+.quotes-manual-note strong { color: var(--private-color-brand); font-weight: 650; }
+.quotes-line__item .quotes-line__manual { color: var(--private-color-ink-muted); }
+.quotes-line__item .quotes-line__manual strong { display: inline; color: var(--private-color-accent); font-weight: 650; }
+.catalog-form.quotes-pricing { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.quotes-pricing__concept { display: grid; gap: 2px; margin: 0; }
+.quotes-pricing__concept strong { color: var(--private-color-brand); font-size: 15px; font-weight: 650; }
+.quotes-pricing__concept small, .quotes-pricing__context { color: var(--private-color-ink-muted); font-size: 13px; }
+.quotes-pricing__context { margin: 0; }
+.quotes-pricing__scope { display: grid; gap: 8px; margin: 0; border: 0; padding: 0; }
+.quotes-pricing__scope legend { padding: 0; margin-bottom: 6px; color: var(--private-color-brand); font-size: 13px; font-weight: 650; }
+.quotes-pricing__scope label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 10px; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-control, 8px); padding: 10px 12px; cursor: pointer; }
+.quotes-pricing__scope label.is-selected { border-color: var(--private-color-accent); background: var(--private-tint-accent); }
+.quotes-pricing__scope label span { display: grid; gap: 2px; }
+.quotes-pricing__scope label small { color: var(--private-color-ink-muted); font-size: 12.5px; }
+.quotes-pricing__error { margin: 0; color: var(--private-color-danger); font-size: 13px; }
+
 .quotes-add-line { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .quotes-add-line > .quotes-catalog-search { flex: 1 1 100%; }
 .quotes-catalog-search { position: relative; min-width: 0; }
@@ -748,6 +765,7 @@
 .quotes-catalog-search__option { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, .8fr) minmax(0, .8fr); align-items: center; gap: 10px; border-radius: 8px; padding: 9px 10px; cursor: pointer; }
 .quotes-catalog-search__option:hover, .quotes-catalog-search__option.is-active { background: var(--private-tint-accent); }
 .quotes-catalog-search__option.is-blocked { cursor: not-allowed; opacity: .5; }
+.quotes-catalog-search__option.is-unpriced .quotes-catalog-search__option-price { color: var(--private-color-accent, var(--private-color-brand)); text-decoration: underline; text-underline-offset: 3px; }
 .quotes-catalog-search__option-name { overflow: hidden; color: var(--private-color-brand); font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .quotes-catalog-search__option-code { overflow: hidden; color: var(--private-color-ink-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .quotes-catalog-search__option-price { overflow: hidden; color: var(--private-color-brand); font-size: 13px; font-weight: 650; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
