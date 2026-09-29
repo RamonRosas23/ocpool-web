@@ -5,6 +5,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
 import { canAcceptQuoteVersion, normalizeAcceptanceName, normalizeAcceptanceTermsVersion } from '@/server/modules/quote-documents/domain';
 import { getPrivateStorage, type PrivateStorage } from '@/server/modules/private-files/storage';
 import { normalizeIdempotencyKey } from '@/server/modules/messaging/domain';
@@ -213,15 +214,13 @@ async function writeAcceptanceEvents(
       metadata: { quoteId: quote.id, quoteVersionId, generatedDocumentId: acceptance.generatedDocumentId, versionNumber, termsVersion: acceptance.termsVersion },
     },
   });
-  await transaction.outboxEvent.create({
-    data: {
-      eventType: 'QUOTE.ACCEPTED',
-      aggregateType: 'QUOTE',
-      aggregateId: quote.id,
-      payload: { quoteId: quote.id, quoteVersionId, quoteRequestId: quote.quoteRequestId, folio: quote.folio, versionNumber, acceptanceId: acceptance.id, generatedDocumentId: acceptance.generatedDocumentId, termsVersion: acceptance.termsVersion },
-    },
-  });
-  void now;
+  await recordDomainEvent(transaction, {
+    actor: { userId: actor.userId, type: actor.type },
+    eventType: 'QUOTE.ACCEPTED',
+    aggregateType: 'QUOTE',
+    aggregateId: quote.id,
+    payload: { quoteId: quote.id, quoteVersionId, quoteRequestId: quote.quoteRequestId, folio: quote.folio, versionNumber, acceptanceId: acceptance.id, generatedDocumentId: acceptance.generatedDocumentId, termsVersion: acceptance.termsVersion },
+  }, { now });
 }
 
 export async function acceptCustomerQuote(actor: Actor, quoteIdInput: string, input: QuoteAcceptanceInput, dependencies: QuoteAcceptanceDependencies = {}): Promise<QuoteAcceptanceResult> {

@@ -5,6 +5,7 @@ import { hasPermission, requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
 import { requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 
 export const QUOTE_APPROVAL_TYPES = ['DISCOUNT', 'PRICE_OVERRIDE', 'SPECIAL_CONCEPT'] as const;
@@ -299,14 +300,13 @@ export async function requestQuoteApproval(
         metadata: { quoteId: version.quoteId, quoteVersionId: version.id, quoteRequestId: row.quoteRequestId, type: normalized.type, policyVersion: normalized.policyVersion, digest },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'QUOTE.APPROVAL_REQUESTED',
-        aggregateType: 'QUOTE',
-        aggregateId: version.quoteId,
-        payload: { quoteId: version.quoteId, quoteVersionId: version.id, quoteRequestId: row.quoteRequestId, folio: row.folio, versionNumber: version.versionNumber, approvalId: approval.id, type: normalized.type },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'QUOTE.APPROVAL_REQUESTED',
+      aggregateType: 'QUOTE',
+      aggregateId: version.quoteId,
+      payload: { quoteId: version.quoteId, quoteVersionId: version.id, quoteRequestId: row.quoteRequestId, folio: row.folio, versionNumber: version.versionNumber, approvalId: approval.id, type: normalized.type },
+    }, { now });
     return serializeApproval(approval as QuoteApprovalResult);
   });
 }
@@ -368,14 +368,13 @@ export async function decideQuoteApproval(
         metadata: { quoteId: row.quoteId, quoteVersionId: row.quoteVersionId, quoteRequestId: quoteContext.quoteRequestId, type: row.type, digest: row.digest },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'QUOTE.APPROVAL_RESOLVED',
-        aggregateType: 'QUOTE',
-        aggregateId: row.quoteId,
-        payload: { quoteId: row.quoteId, quoteVersionId: row.quoteVersionId, quoteRequestId: quoteContext.quoteRequestId, folio: quoteContext.quoteRequest.folio, versionNumber: versionContext.versionNumber, approvalId: approval.id, status: input.decision, type: row.type },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'QUOTE.APPROVAL_RESOLVED',
+      aggregateType: 'QUOTE',
+      aggregateId: row.quoteId,
+      payload: { quoteId: row.quoteId, quoteVersionId: row.quoteVersionId, quoteRequestId: quoteContext.quoteRequestId, folio: quoteContext.quoteRequest.folio, versionNumber: versionContext.versionNumber, approvalId: approval.id, status: input.decision, type: row.type },
+    }, { now });
     return serializeApproval(approval as QuoteApprovalResult);
   });
 }

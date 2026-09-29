@@ -5,6 +5,7 @@ import { hasPermission, requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
 import {
   isManualPriceLine,
   buildQuoteVersionSnapshot,
@@ -667,14 +668,13 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
       },
     });
     await auditManualPrices(transaction, actor, version.id, { quoteId: quote.id, quoteRequestId, folio: request.folio, versionNumber, currencyCode: snapshot.currency }, manualPrices);
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'QUOTE.VERSION_CREATED',
-        aggregateType: 'QUOTE',
-        aggregateId: quote.id,
-        payload: { quoteId: quote.id, quoteVersionId: version.id, quoteRequestId, folio: request.folio, versionNumber },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'QUOTE.VERSION_CREATED',
+      aggregateType: 'QUOTE',
+      aggregateId: quote.id,
+      payload: { quoteId: quote.id, quoteVersionId: version.id, quoteRequestId, folio: request.folio, versionNumber },
+    }, { now });
     return toResult({ quoteId: quote.id, versionId: version.id, versionNumber, folio: request.folio, status: 'BORRADOR', snapshot });
   });
 }
@@ -742,14 +742,13 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       },
     });
     await auditManualPrices(transaction, actor, version.id, { quoteId: version.quoteId, quoteRequestId: version.quoteRequestId, folio: version.folio, versionNumber: version.versionNumber, currencyCode: snapshot.currency }, manualPrices);
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'QUOTE.VERSION_UPDATED',
-        aggregateType: 'QUOTE',
-        aggregateId: version.quoteId,
-        payload: { quoteId: version.quoteId, quoteVersionId: version.id, quoteRequestId: version.quoteRequestId, folio: version.folio, versionNumber: version.versionNumber },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'QUOTE.VERSION_UPDATED',
+      aggregateType: 'QUOTE',
+      aggregateId: version.quoteId,
+      payload: { quoteId: version.quoteId, quoteVersionId: version.id, quoteRequestId: version.quoteRequestId, folio: version.folio, versionNumber: version.versionNumber },
+    }, { now });
     return toResult({ quoteId: version.quoteId, versionId: updated.id, versionNumber: version.versionNumber, folio: version.folio, status: 'BORRADOR', snapshot });
   });
 }
@@ -960,20 +959,19 @@ async function performQuoteVersionTransition(actor: Actor, quoteVersionId: strin
         metadata: { quoteId: version.quoteId, quoteRequestId: version.quoteRequestId, folio: version.folio, fromStatus: version.status, toStatus, reason: options.reason ?? null },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: outboxEventType,
-        aggregateType: 'QUOTE',
-        aggregateId: version.quoteId,
-        payload: { quoteId: version.quoteId, quoteVersionId: version.id, quoteRequestId: version.quoteRequestId, folio: version.folio, fromStatus: version.status, toStatus },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: outboxEventType,
+      aggregateType: 'QUOTE',
+      aggregateId: version.quoteId,
+      payload: { quoteId: version.quoteId, quoteVersionId: version.id, quoteRequestId: version.quoteRequestId, folio: version.folio, fromStatus: version.status, toStatus, reason: options.reason ?? null },
+    }, { now });
 
     if (toStatus === 'ENVIADA' && version.requestStatus === 'EN_ELABORACION' && canTransitionQuoteRequest(version.requestStatus, 'COTIZACION_DISPONIBLE')) {
       await transaction.quoteRequest.update({ where: { id: version.quoteRequestId }, data: { status: 'COTIZACION_DISPONIBLE' } });
       await transaction.requestStatusHistory.create({ data: { quoteRequestId: version.quoteRequestId, fromStatus: version.requestStatus, toStatus: 'COTIZACION_DISPONIBLE', changedById: actor.userId, createdAt: now } });
       await transaction.auditLog.create({ data: { actorUserId: actor.userId, action: 'quote_request.status_changed', entityType: 'quote_request', entityId: version.quoteRequestId, outcome: 'SUCCESS', metadata: { folio: version.folio, fromStatus: version.requestStatus, toStatus: 'COTIZACION_DISPONIBLE', source: 'quote.version.status_changed' } } });
-      await transaction.outboxEvent.create({ data: { eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: version.quoteRequestId, payload: { quoteRequestId: version.quoteRequestId, folio: version.folio, fromStatus: version.requestStatus, toStatus: 'COTIZACION_DISPONIBLE' } } });
+      await recordDomainEvent(transaction, { actor: { userId: actor.userId, type: 'EMPLOYEE' }, eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: version.quoteRequestId, payload: { quoteRequestId: version.quoteRequestId, folio: version.folio, fromStatus: version.requestStatus, toStatus: 'COTIZACION_DISPONIBLE' } }, { now });
     }
     if (toStatus === 'ENVIADA' && options.documentId) {
       // D1-04: one row per real publication, never the version row itself -- lets D2/P1 ask "when
