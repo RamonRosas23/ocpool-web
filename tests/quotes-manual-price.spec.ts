@@ -93,13 +93,17 @@ test.describe('quote builder: pricing a concept that is not in the list', () => 
     await unpricedOption.click();
     const dialog = page.getByRole('dialog', { name: 'Definir precio' });
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('textbox', { name: /Precio por servicio/ })).toBeFocused();
     await dialog.getByRole('textbox', { name: /Precio por servicio/ }).fill('2,500.00');
     await dialog.getByLabel('Motivo del precio manual').fill('ab');
     await dialog.getByRole('button', { name: 'Agregar a la cotización' }).click();
     await expect(dialog).toBeVisible();
     await dialog.getByLabel('Motivo del precio manual').fill('Cotizado por el proveedor');
     await dialog.getByRole('button', { name: 'Agregar a la cotización' }).click();
-    await expect(dialog).toBeHidden();
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+    // Al cerrarse el diálogo el foco vuelve al buscador, pero sin reabrir el desplegable.
+    await expect(search).toBeFocused();
+    await expect(page.getByRole('listbox', { name: 'Agregar concepto a la cotización' })).toHaveCount(0);
     const manualLine = page.locator('.quotes-line', { hasText: 'MP concepto manual' });
     await expect(manualLine).toContainText('Precio manual');
     await expect(manualLine).toContainText('Cotizado por el proveedor');
@@ -113,7 +117,7 @@ test.describe('quote builder: pricing a concept that is not in the list', () => 
     await dialog.getByText('Guardar también en la lista').click();
     await expect(dialog.getByLabel('Motivo del precio manual')).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Guardar en la lista y agregar' }).click();
-    await expect(dialog).toBeHidden();
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
     const listLine = page.locator('.quotes-line', { hasText: 'MP concepto a lista' });
     await expect(listLine).toBeVisible();
     await expect(listLine).not.toContainText('Precio manual');

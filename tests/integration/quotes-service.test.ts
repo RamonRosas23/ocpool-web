@@ -5,6 +5,7 @@ import { clonePublishedVersion, createQuoteVersion, listReadyToPublishForActor, 
 import { decideQuoteApproval, listPendingQuoteApprovalsForActor, listPendingQuoteApprovalsPageForActor, listQuoteApprovals, requestQuoteApproval } from '@/server/modules/quotes/approval-service';
 import { generateQuotePdf } from '@/server/modules/quote-documents/service';
 import { getQuoteDocumentStatusForVersion } from '@/server/modules/quote-documents/access-service';
+import { getQuoteWorkspace } from '@/server/modules/quotes/staff-service';
 import type { QuotePdfSnapshot, RenderedQuotePdf } from '@/server/modules/quote-documents/pdf-renderer';
 import { getPrisma } from '@/server/db/client';
 import type { Actor } from '@/server/auth/types';
@@ -107,8 +108,11 @@ describe('quote pricing and versioning service', () => {
     const unpriced = await prisma.catalogItem.create({ data: { code: `MANUAL-UNPRICED-${suffix}`, name: 'Sin precio', unit: 'servicio', categoryId: category.id } });
     const priceList = await prisma.priceList.create({ data: { code: `MANUAL-PRICE-${suffix}`, name: 'Manual price list', currencyCode: 'MXN', validFrom: now } });
     await prisma.priceListItem.create({ data: { priceListId: priceList.id, catalogItemId: listed.id, unitPriceMinor: 10_000n, validFrom: now } });
+    const otherList = await prisma.priceList.create({ data: { code: `MANUAL-OTHER-${suffix}`, name: 'Manual other list', currencyCode: 'MXN', validFrom: now } });
+    await prisma.priceListItem.create({ data: { priceListId: otherList.id, catalogItemId: listed.id, unitPriceMinor: 11_000n, validFrom: now } });
     let quoteId: string | null = null;
     const seller = salesActor(employee.id, ['quotes.create', 'quotes.send', 'prices.read', 'quotes.edit_prices']);
+    const reader = salesActor(employee.id, ['quotes.read', 'quotes.create', 'prices.read']);
     const buildOnly = salesActor(employee.id, ['quotes.create', 'prices.read']);
 
     try {
@@ -135,14 +139,30 @@ describe('quote pricing and versioning service', () => {
       // La lista de precios no se modificó.
       expect(await prisma.priceListItem.count({ where: { priceListId: priceList.id, catalogItemId: unpriced.id } })).toBe(0);
 
-      // Reenviar el mismo borrador (autoguardado) no exige quotes.edit_prices.
+      // El espacio de trabajo expone la marca y no restringe las listas por el concepto de precio manual.
+      const workspace = await getQuoteWorkspace(reader, request.quoteRequestId, { prisma });
+      const workspaceLines = workspace.quote?.currentVersion?.lines ?? [];
+      expect(workspaceLines.find((line) => line.catalogItemId === unpriced.id)).toMatchObject({ manualPriceReason: 'Cotizado por proveedor' });
+      expect(workspaceLines.find((line) => line.catalogItemId === listed.id)).toMatchObject({ manualPriceReason: null });
+      expect(workspace.priceLists.map(({ id }) => id)).toEqual(expect.arrayContaining([priceList.id, otherList.id]));
+
+      // Sólo fijar o cambiar un precio manual deja rastro en la auditoría; reenviar el mismo borrador
+      // (autoguardado) no exige quotes.edit_prices ni duplica el registro.
+      const manualAudits = () => prisma.auditLog.count({ where: { entityId: created.versionId, action: 'quote.price.manual' } });
+      expect(await manualAudits()).toBe(1);
+      expect(await prisma.auditLog.findFirstOrThrow({ where: { entityId: created.versionId, action: 'quote.price.manual' } })).toMatchObject({ actorUserId: employee.id, metadata: expect.objectContaining({ catalogItemCode: unpriced.code, unitPriceMinor: '25000', reason: 'Cotizado por proveedor', folio: request.folio }) });
       await replaceQuoteDraft(buildOnly, created.versionId, { ...base, lines }, { prisma, now });
+      expect(await manualAudits()).toBe(1);
+      const repriced = [lines[0], { ...lines[1], unitPriceMinorOverride: '26000' }];
+      await expect(replaceQuoteDraft(buildOnly, created.versionId, { ...base, lines: repriced }, { prisma, now })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+      await replaceQuoteDraft(seller, created.versionId, { ...base, lines: repriced }, { prisma, now });
+      expect(await manualAudits()).toBe(2);
       // Una versión nueva a partir de la publicada conserva el precio manual y su motivo.
       await submitQuoteForReview(seller, created.versionId, { prisma, now });
       await transitionQuoteVersion(seller, created.versionId, 'ENVIADA', { prisma, now });
       const cloned = await clonePublishedVersion(buildOnly, request.quoteRequestId, { priceListId: priceList.id }, { prisma, now });
       const clonedManual = await prisma.quoteLineSnapshot.findFirst({ where: { quoteVersionId: cloned.versionId, catalogItemId: unpriced.id } });
-      expect(clonedManual).toMatchObject({ unitPriceMinor: 25_000n, baseUnitPriceMinor: null, overrideReason: 'Cotizado por proveedor' });
+      expect(clonedManual).toMatchObject({ unitPriceMinor: 26_000n, baseUnitPriceMinor: null, overrideReason: 'Cotizado por proveedor' });
     } finally {
       const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
@@ -153,8 +173,8 @@ describe('quote pricing and versioning service', () => {
       await prisma.clientContact.delete({ where: { id: request.contactId } });
       await prisma.client.delete({ where: { id: request.clientId } });
       await prisma.user.delete({ where: { id: employee.id } });
-      await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
-      await prisma.priceList.delete({ where: { id: priceList.id } });
+      await prisma.priceListItem.deleteMany({ where: { priceListId: { in: [priceList.id, otherList.id] } } });
+      await prisma.priceList.deleteMany({ where: { id: { in: [priceList.id, otherList.id] } } });
       await prisma.catalogItem.deleteMany({ where: { id: { in: [listed.id, unpriced.id] } } });
       await prisma.catalogCategory.delete({ where: { id: category.id } });
     }

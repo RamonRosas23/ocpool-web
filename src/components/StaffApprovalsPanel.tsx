@@ -41,13 +41,17 @@ type VersionLine = {
   name: string;
   unit: string;
   specialReason: string | null;
+  manualPriceReason?: string | null;
   quantityMilliunits: string;
   unitPriceMinor: string;
   discountBasisPoints: number;
   totalMinor: string;
 };
 
-type QuoteWorkspaceResponse = { quote: { currentVersion: { versionNumber: number; lines: VersionLine[] } | null; versions: Array<{ versionNumber: number; lines: VersionLine[] }> } | null };
+// El listado `versions` del expediente es un resumen sin líneas: los conceptos sólo vienen en las versiones completas
+// (la vigente, la de trabajo y la publicada), y la que espera decisión es siempre una de ellas.
+type WorkspaceVersionWithLines = { versionNumber: number; lines: VersionLine[] };
+type QuoteWorkspaceResponse = { quote: { currentVersion: WorkspaceVersionWithLines | null; workingVersion: WorkspaceVersionWithLines | null; publishedVersion: WorkspaceVersionWithLines | null } | null };
 
 type LinesState = { status: 'loading' } | { status: 'ready'; lines: VersionLine[] } | { status: 'error'; message: string };
 
@@ -87,6 +91,8 @@ function quantityLabel(milliunits: string): string {
 }
 
 function lineNeedsAttention(type: ApprovalType, line: VersionLine): boolean {
+  // Un precio fuera de lista siempre merece ojo de quien aprueba, sea cual sea el tipo de aprobación.
+  if (line.manualPriceReason) return true;
   if (type === 'SPECIAL_CONCEPT') return line.catalogItemId === null;
   return line.discountBasisPoints > 0;
 }
@@ -136,8 +142,10 @@ export default function StaffApprovalsPanel() {
     try {
       const response = await fetch(`/api/staff/quotes/${item.requestId}`, { credentials: 'include', cache: 'no-store' });
       const workspace = await readApiResponseOrThrow<QuoteWorkspaceResponse>(response, 'No fue posible cargar los conceptos de la versión.');
-      const version = workspace.quote?.versions.find((candidate) => candidate.versionNumber === item.versionNumber) ?? workspace.quote?.currentVersion ?? null;
-      setLinesByApproval((current) => ({ ...current, [item.id]: { status: 'ready', lines: version?.lines ?? [] } }));
+      const fullVersions = [workspace.quote?.currentVersion, workspace.quote?.workingVersion, workspace.quote?.publishedVersion].filter((candidate): candidate is WorkspaceVersionWithLines => Boolean(candidate));
+      const version = fullVersions.find((candidate) => candidate.versionNumber === item.versionNumber);
+      if (!version) throw new Error('Esta versión ya no está vigente aquí. Ábrela en el constructor para ver sus conceptos.');
+      setLinesByApproval((current) => ({ ...current, [item.id]: { status: 'ready', lines: version.lines } }));
     } catch (caught) {
       setLinesByApproval((current) => ({ ...current, [item.id]: { status: 'error', message: caught instanceof Error ? caught.message : 'No fue posible cargar los conceptos de la versión.' } }));
     }
@@ -236,7 +244,7 @@ export default function StaffApprovalsPanel() {
                   {lines?.status === 'error' && <p className="approval-lines__state approval-lines__state--error" role="alert">{lines.message} <button type="button" className="quotes-retry-link" onClick={() => void loadLines(item)}>Reintentar</button></p>}
                   {lines?.status === 'ready' && lines.lines.length === 0 && <p className="approval-lines__state">La versión no tiene conceptos.</p>}
                   {lines?.status === 'ready' && lines.lines.length > 0 && <ul>{lines.lines.map((line) => <li key={line.id} className={lineNeedsAttention(item.type, line) ? 'is-flagged' : undefined}>
-                    <span className="approval-lines__name"><strong>{line.name}</strong><small>{line.catalogItemId === null ? <><b>Especial</b>{line.specialReason ? ` · ${line.specialReason}` : ''}</> : line.catalogItemCode}</small></span>
+                    <span className="approval-lines__name"><strong>{line.name}</strong><small>{line.catalogItemId === null ? <><b>Especial</b>{line.specialReason ? ` · ${line.specialReason}` : ''}</> : <>{line.catalogItemCode}{line.manualPriceReason && <> · <b>Precio manual</b> · {line.manualPriceReason}</>}</>}</small></span>
                     <span className="approval-lines__qty">{quantityLabel(line.quantityMilliunits)} {line.unit} × {moneyLabel(line.unitPriceMinor, item.currencyCode)}</span>
                     <span className="approval-lines__discount">{line.discountBasisPoints > 0 ? `−${(line.discountBasisPoints / 100).toLocaleString('es-MX', { maximumFractionDigits: 2 })}%` : ''}</span>
                     <strong className="approval-lines__total">{moneyLabel(line.totalMinor, item.currencyCode)}</strong>

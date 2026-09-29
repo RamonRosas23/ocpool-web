@@ -33,6 +33,7 @@ export default function CatalogItemSearchCombobox({
   ariaLabel = 'Agregar concepto a la cotización',
   onSelect,
   onDefinePrice,
+  definingPrice = false,
 }: {
   priceListId: string;
   currencyCode: string;
@@ -43,8 +44,17 @@ export default function CatalogItemSearchCombobox({
   /// Si se da, un concepto sin precio en la lista deja de estar bloqueado: se puede elegir y esta
   /// función abre el flujo para definir su precio sin salir de la cotización.
   onDefinePrice?: (item: CatalogSearchResultItem) => void;
+  /// Mientras el flujo de definir precio está abierto (y un instante después), el desplegable no se
+  /// reabre: al cerrarse el diálogo el foco regresa al campo y, sin esto, volvería a abrir la lista.
+  definingPrice?: boolean;
 }) {
   const canDefinePrice = Boolean(onDefinePrice);
+  const ignoreFocusRef = useRef(false);
+  useEffect(() => {
+    if (definingPrice) { ignoreFocusRef.current = true; return; }
+    const timer = window.setTimeout(() => { ignoreFocusRef.current = false; }, 300);
+    return () => window.clearTimeout(timer);
+  }, [definingPrice]);
   const listboxId = useId();
   const optionId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -157,7 +167,7 @@ export default function CatalogItemSearchCombobox({
         value={term}
         disabled={disabled || !priceListId}
         onChange={(event) => { setTerm(event.target.value); setOpen(true); }}
-        onFocus={openAndReveal}
+        onFocus={() => { if (!ignoreFocusRef.current) openAndReveal(); }}
         onClick={() => setOpen(true)}
         onKeyDown={handleKeyDown}
       />
@@ -173,6 +183,7 @@ export default function CatalogItemSearchCombobox({
             role="option"
             aria-label={`${item.name} · ${item.unit}`}
             aria-selected={index === activeIndex}
+            aria-describedby={`${optionId}-${index}-price`}
             aria-disabled={Boolean(item.blocker) && !canDefinePrice}
             className={`quotes-catalog-search__option${index === activeIndex ? ' is-active' : ''}${item.blocker ? canDefinePrice ? ' is-unpriced' : ' is-blocked' : ''}`}
             onMouseEnter={() => setActiveIndex(index)}
@@ -180,7 +191,7 @@ export default function CatalogItemSearchCombobox({
           >
             <span className="quotes-catalog-search__option-name">{item.name} · {item.unit}</span>
             <span className="quotes-catalog-search__option-code">{item.code}</span>
-            <span className="quotes-catalog-search__option-price">{formatPrice(item, currencyCode, canDefinePrice)}</span>
+            <span id={`${optionId}-${index}-price`} className="quotes-catalog-search__option-price">{formatPrice(item, currencyCode, canDefinePrice)}</span>
           </li>,
         ])}
         {!loading && !error && hasMore && <li className="quotes-catalog-search__status">Hay más conceptos: escribe parte del nombre o la clave para acotar.</li>}

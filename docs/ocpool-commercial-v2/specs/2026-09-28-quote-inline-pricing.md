@@ -34,14 +34,28 @@ cambiarla en silencio. Por eso el precio se define en el mismo lugar, pero con u
   Al crear una versión nueva desde la publicada, el precio manual y su motivo se conservan. Las listas
   ofrecidas para cambiar ya no se restringen por las líneas de precio manual.
 - El motivo es interno: no se muestra en el PDF ni en el portal.
+- **Auditoría:** fijar o cambiar un precio manual registra `quote.price.manual` (folio, versión, concepto,
+  importe y motivo) en la bitácora; reenviar el mismo borrador (autoguardado) no duplica el registro.
+- **Quien aprueba lo ve:** en la cola de Aprobaciones la línea con precio manual se resalta con su motivo,
+  sea cual sea el tipo de aprobación.
+- **Corrección relacionada (preexistente):** "Ver conceptos de la versión" en Aprobaciones siempre decía
+  "La versión no tiene conceptos" desde que el expediente devuelve un resumen de versiones sin líneas
+  (D2-05); ahora lee la versión completa (vigente, de trabajo o publicada).
+- **Detalles de uso:** el foco pasa al importe al abrir el diálogo y regresa al buscador al cerrarlo sin
+  reabrir el desplegable; la opción "Guardar también en la lista" espera a que la lista esté cargada; las
+  opciones sin precio anuncian "Definir precio" a los lectores de pantalla; el aviso del Catálogo
+  ("Sin precio en una lista…") ya no dice que el concepto no se puede cotizar.
 
 ## Verificación
 
-- Integración: `quotes-service` (nueva: precio manual, permisos, motivo obligatorio, autoguardado y
-  clonado de versión) + `quotes-staff-service` + `quotes-api`: 26/26.
-- E2E opt-in `tests/quotes-manual-price.spec.ts` (manager: manual y "guardar en la lista", persistencia
-  y recarga; ventas: sigue bloqueado): 2/2, estable en tres corridas consecutivas.
-- Revisado en captura de pantalla (búsqueda, diálogo, línea con etiqueta).
+- `tsc`, lint (incluido `src/server`), 375 pruebas unitarias y la integración completa 151/151 (nueva en
+  `quotes-service`: precio manual, permisos, motivo obligatorio, autoguardado sin duplicar auditoría,
+  cambio de precio auditado y clonado de versión; el espacio de trabajo expone la marca y no restringe
+  las listas por líneas manuales).
+- E2E opt-in `tests/quotes-manual-price.spec.ts` (gerente: manual y "guardar en la lista", foco,
+  persistencia y recarga; ventas: sigue bloqueado) y `tests/quotes-approvals-lines.spec.ts` (la cola de
+  aprobaciones lista los conceptos y resalta el precio manual).
+- Revisado en capturas de escritorio y celular (búsqueda, diálogo, línea con etiqueta, aprobaciones).
 
 ## Fuera de alcance (fase 2)
 

@@ -363,7 +363,7 @@ export default function StaffCatalogConceptsTab({ capabilities }: StaffCatalogCo
                   {entry.unitPriceMinor ? <b>{moneyLabel(entry.unitPriceMinor, entry.list.currencyCode)}</b> : <em>Sin precio</em>}
                   {capabilities.pricesManage && <button className="staff-button staff-button--outline catalog-item-prices__action" type="button" aria-label={`${entry.unitPriceMinor ? 'Actualizar precio' : 'Asignar precio'} en ${entry.list.name}`} disabled={saving} onClick={() => openPriceForExisting(entry.list)}>{entry.unitPriceMinor ? 'Actualizar' : 'Asignar precio'}</button>}
                 </li>)}</ul>
-                {itemPrices.prices.some((entry) => !entry.unitPriceMinor) && <p className="catalog-item-prices__hint">Sin precio en una lista, este concepto no aparece como cotizable en las propuestas que usan esa lista.</p>}
+                {itemPrices.prices.some((entry) => !entry.unitPriceMinor) && <p className="catalog-item-prices__hint">Sin precio en una lista, quien arme una propuesta con esa lista deberá ponerle un precio manual (solo en esa cotización) o esperar a que se lo asignes aquí.</p>}
               </>}
             </section>
           )}

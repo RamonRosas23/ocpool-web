@@ -312,9 +312,14 @@ function assertSameCurrency(first: string, second: string): void {
   if (normalizedFirst !== normalizedSecond) conflict('La moneda de la cotización no coincide con la solicitud.');
 }
 
+/// Precio manual fijado o cambiado en esta operación (una línea con el mismo precio ya congelado no
+/// cuenta): es lo que se audita, para que un precio fuera de lista siempre tenga responsable y motivo.
+type ManualPriceRecord = Readonly<{ catalogItemCode: string; name: string; unitPriceMinor: string; reason: string }>;
+
 type PricingSnapshotResult = Readonly<{
   snapshot: ReturnType<typeof buildQuoteVersionSnapshot>;
   taxProfileId: string | null;
+  manualPrices: readonly ManualPriceRecord[];
 }>;
 
 /// K1-04/D1-03: when a tax profile is provided, its rate overrides every line's
@@ -387,6 +392,7 @@ async function resolvePricingSnapshot(
     for (const item of manualItems) manualItemsById.set(item.id, item);
   }
 
+  const manualPrices: ManualPriceRecord[] = [];
   const snapshotLines: QuoteLineSnapshotInput[] = normalizedLines.map((line) => {
     const discountBasisPoints = normalizeBasisPoints(line.discountBasisPoints ?? 0);
     if (discountBasisPoints > 0) requireEmployeePermission(actor, 'quotes.apply_discount');
@@ -421,7 +427,10 @@ async function resolvePricingSnapshot(
       const previousMinor = previousPricesByItem?.get(line.catalogItemId);
       // Reenviar el mismo precio ya congelado en esta versión (fidelidad S0-02 en cada autosave)
       // no es un override real y no debe exigir el permiso; sólo un valor que de verdad cambia lo exige.
-      if (previousMinor === undefined || previousMinor !== overrideMinor) requireEmployeePermission(actor, 'quotes.edit_prices');
+      if (previousMinor === undefined || previousMinor !== overrideMinor) {
+        requireEmployeePermission(actor, 'quotes.edit_prices');
+        if (manualItem) manualPrices.push({ catalogItemCode: manualItem.code, name: manualItem.name, unitPriceMinor: overrideMinor.toString(), reason: line.manualPriceReason!.trim() });
+      }
     }
     const catalogItem = price ? price.catalogItem : manualItem!;
     let unitPrice;
@@ -445,10 +454,31 @@ async function resolvePricingSnapshot(
   });
 
   try {
-    return { snapshot: buildQuoteVersionSnapshot(snapshotLines), taxProfileId: resolvedTaxProfile?.id ?? null };
+    return { snapshot: buildQuoteVersionSnapshot(snapshotLines), taxProfileId: resolvedTaxProfile?.id ?? null, manualPrices };
   } catch (error) {
     if (error instanceof AppError) throw error;
     validation('No fue posible calcular la cotización con los datos recibidos.');
+  }
+}
+
+async function auditManualPrices(
+  transaction: Prisma.TransactionClient,
+  actor: Actor,
+  quoteVersionId: string,
+  context: { quoteId: string; quoteRequestId: string; folio: string; versionNumber: number; currencyCode: string },
+  manualPrices: readonly ManualPriceRecord[],
+): Promise<void> {
+  for (const manual of manualPrices) {
+    await transaction.auditLog.create({
+      data: {
+        actorUserId: actor.userId,
+        action: 'quote.price.manual',
+        entityType: 'quote_version',
+        entityId: quoteVersionId,
+        outcome: 'SUCCESS',
+        metadata: { ...context, catalogItemCode: manual.catalogItemCode, concept: manual.name, unitPriceMinor: manual.unitPriceMinor, reason: manual.reason },
+      },
+    });
   }
 }
 
@@ -550,7 +580,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
     const previousPricesByItem = basePricesVersionId
       ? new Map((await transaction.quoteLineSnapshot.findMany({ where: { quoteVersionId: basePricesVersionId, catalogItemId: { not: null } }, select: { catalogItemId: true, unitPriceMinor: true } })).map((line) => [line.catalogItemId as string, line.unitPriceMinor]))
       : undefined;
-    const { snapshot, taxProfileId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
+    const { snapshot, taxProfileId, manualPrices } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
     assertSameCurrency(request.currencyCode, snapshot.currency);
     const sections = normalizeSections(input.sections);
     const sectionIdsByLine = resolveLineSectionIds(input.lines, sections);
@@ -603,6 +633,7 @@ export async function createQuoteVersion(actor: Actor, input: CreateQuoteVersion
         metadata: { quoteId: quote.id, quoteRequestId, folio: request.folio, versionNumber, currencyCode: snapshot.currency },
       },
     });
+    await auditManualPrices(transaction, actor, version.id, { quoteId: quote.id, quoteRequestId, folio: request.folio, versionNumber, currencyCode: snapshot.currency }, manualPrices);
     await transaction.outboxEvent.create({
       data: {
         eventType: 'QUOTE.VERSION_CREATED',
@@ -644,7 +675,7 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
       select: { catalogItemId: true, unitPriceMinor: true },
     });
     const previousPricesByItem = new Map(existingLines.map((line) => [line.catalogItemId as string, line.unitPriceMinor]));
-    const { snapshot, taxProfileId } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
+    const { snapshot, taxProfileId, manualPrices } = await resolvePricingSnapshot(transaction, actor, input.priceListId, input.lines, now, previousPricesByItem, input.taxProfileId);
     assertSameCurrency(version.currencyCode, snapshot.currency);
     const sections = normalizeSections(input.sections);
     const sectionIdsByLine = resolveLineSectionIds(input.lines, sections);
@@ -675,6 +706,7 @@ export async function replaceQuoteDraft(actor: Actor, quoteVersionId: string, in
         metadata: { quoteId: version.quoteId, quoteRequestId: version.quoteRequestId, folio: version.folio, versionNumber: version.versionNumber },
       },
     });
+    await auditManualPrices(transaction, actor, version.id, { quoteId: version.quoteId, quoteRequestId: version.quoteRequestId, folio: version.folio, versionNumber: version.versionNumber, currencyCode: snapshot.currency }, manualPrices);
     await transaction.outboxEvent.create({
       data: {
         eventType: 'QUOTE.VERSION_UPDATED',

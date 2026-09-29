@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent, type ReactNode } from 'react';
+import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown } from 'lucide-react';
@@ -87,16 +87,18 @@ export type PrivateMoneyFieldProps = Omit<PrivateFieldChromeProps, 'children'> &
   onValueChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  /// Para enfocarlo al abrir un diálogo (`PrivateDialog.initialFocusRef`).
+  inputRef?: RefObject<HTMLInputElement | null>;
 };
 
-export function PrivateMoneyField({ id, label, description, error, required, hideLabel, optionalHint, className, value, onValueChange, placeholder = '0.00', disabled = false }: PrivateMoneyFieldProps) {
+export function PrivateMoneyField({ id, label, description, error, required, hideLabel, optionalHint, className, value, onValueChange, placeholder = '0.00', disabled = false, inputRef }: PrivateMoneyFieldProps) {
   const isInvalid = value !== '' && parseMoneyInput(value) === null;
   const a11y = privateFieldA11y(id, Boolean(description), Boolean(error) || isInvalid, required);
   return (
     <PrivateField id={id} label={label} description={description} error={error} required={required} hideLabel={hideLabel} optionalHint={optionalHint}>
       <div className={joinClasses('private-money-field', className)}>
         <span className="private-money-field__prefix" aria-hidden="true">$</span>
-        <input id={id} className="private-control private-money-field__input" type="text" inputMode="decimal" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} required={required} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
+        <input id={id} ref={inputRef} className="private-control private-money-field__input" type="text" inputMode="decimal" autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} required={required} aria-describedby={a11y.describedBy} aria-invalid={a11y.invalid} aria-labelledby={a11y.labelId} aria-required={a11y.required} onChange={(event) => onValueChange(event.target.value)} />
       </div>
     </PrivateField>
   );
