@@ -1,5 +1,6 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { NO_INBOX_EFFECTS, type InboxEffects } from '../record';
+import { deliveryFailedEffects, deliveryRecoveredEffects } from './deliveries';
 import { fileAvailableEffects, messageCreatedEffects } from './messages';
 import { pendingPriceResolvedEffects } from './prices';
 import { projectCreatedEffects, projectOwnerChangedEffects, workReassignedEffects } from './projects';
@@ -28,6 +29,8 @@ export async function resolveInboxEffects(tx: Prisma.TransactionClient, event: D
     case 'PROJECT.OWNER_CHANGED': return projectOwnerChangedEffects(tx, event);
     case 'TEAM.WORK_REASSIGNED': return workReassignedEffects(tx, event);
     case 'PRICES.PENDING_RESOLVED': return pendingPriceResolvedEffects(tx, event);
+    case 'EMAIL.DELIVERY_FAILED': return deliveryFailedEffects(tx, event);
+    case 'EMAIL.DELIVERY_RECOVERED': return deliveryRecoveredEffects(tx, event);
     default: return NO_INBOX_EFFECTS;
   }
 }

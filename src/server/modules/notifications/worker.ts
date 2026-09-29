@@ -2,6 +2,7 @@ import type { PrismaClient } from '@/generated/prisma/client';
 import { readServerEnv } from '@/server/env';
 import { decryptSecret } from '@/server/auth/crypto';
 import { calculateNotificationRetryAt } from '@/server/modules/notifications/domain';
+import { reportDeliveryFailure, reportDeliveryRecovered } from '@/server/modules/notifications/delivery-inbox';
 import {
   claimNotificationDeliveries,
   markNotificationFailure,
@@ -47,9 +48,10 @@ function numberValue(payload: Record<string, unknown>, key: string): number | un
   return typeof payload[key] === 'number' && Number.isFinite(payload[key]) ? payload[key] : undefined;
 }
 
+const STAFF_TEMPLATE_KEYS: ReadonlySet<string> = new Set(['request.assigned', 'quote.accepted', 'request.new_for_team', 'quote.changes_requested']);
+
 function defaultNotificationPath(delivery: ClaimedNotificationDelivery): string {
-  if (delivery.templateKey === 'request.assigned' || delivery.templateKey === 'quote.accepted') return '/staff/requests';
-  return '/portal';
+  return STAFF_TEMPLATE_KEYS.has(delivery.templateKey) ? '/staff/requests' : '/portal';
 }
 
 export async function defaultRenderNotification(delivery: ClaimedNotificationDelivery): Promise<EmailMessage> {
@@ -140,13 +142,19 @@ export async function processNotificationBatch(input: ProcessNotificationBatchIn
       const message = await render(delivery);
       const providerResult = await provider.send(message);
       const marked = await markNotificationSent(input.prisma, delivery.id, delivery.processingStartedAt, now, providerResult.providerMessageId);
-      if (marked) result.sent += 1;
+      if (marked) {
+        result.sent += 1;
+        await reportDeliveryRecovered(input.prisma, delivery, now);
+      }
     } catch (error) {
       const classification = classifyNotificationError(error);
       const retryAt = calculateNotificationRetryAt(now, delivery.attempts);
       const outcome = await markNotificationFailure(input.prisma, delivery.id, delivery.processingStartedAt, now, { code: classification.code, retryable: classification.retryable, retryAt, attempts: delivery.attempts, maxAttempts: input.maxAttempts });
       if (outcome === 'PENDING') result.retried += 1;
-      if (outcome === 'FAILED') result.failed += 1;
+      if (outcome === 'FAILED') {
+        result.failed += 1;
+        await reportDeliveryFailure(input.prisma, delivery, now);
+      }
     }
   }
 

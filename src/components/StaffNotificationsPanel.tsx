@@ -89,6 +89,7 @@ const CANCEL_REASON_LABELS: Record<string, string> = {
   INTERNAL_VISIBILITY: 'Nota interna, sin envío',
   NO_RECIPIENT: 'Sin destinatario',
   CONTACT_EMAIL_CHANGED: 'Correo de contacto corregido',
+  SELF_ACTION: 'Acción propia, sin aviso',
 };
 
 function cancelReasonLabel(value: string | null): string {

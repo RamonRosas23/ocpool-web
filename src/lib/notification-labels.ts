@@ -10,6 +10,8 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   'quote.acceptance_confirmed': 'Confirmación de aceptación',
   'quote.approval_requested': 'Solicitud de aprobación',
   'quote.approval_resolved': 'Resolución de aprobación',
+  'request.new_for_team': 'Aviso de solicitud nueva al equipo',
+  'quote.changes_requested': 'Aviso de cambios pedidos',
   'system.cancelled': 'Cancelada por el sistema',
 };
 

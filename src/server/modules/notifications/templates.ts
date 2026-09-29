@@ -19,6 +19,8 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   'quote.acceptance_confirmed',
   'message.created',
   'file.available',
+  'request.new_for_team',
+  'quote.changes_requested',
 ] as const;
 export type NotificationTemplateKey = (typeof NOTIFICATION_TEMPLATE_KEYS)[number];
 
@@ -64,6 +66,7 @@ export type NotificationMappingContext = {
   senderName?: string;
   messagePreview?: string;
   fileName?: string;
+  versionNumber?: number;
 };
 
 export type NotificationIntent = {
@@ -206,8 +209,12 @@ export function mapNotificationEvent(event: NotificationEventInput, context: Not
       }
       case 'REQUEST.RECEIVED': {
         const parsed = requestReceivedPayload.safeParse(event.payload);
-        const scope = rejectScope(context, 'CUSTOMER');
         if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        // Gerencia recibe la solicitud nueva del sitio; el cliente, su acuse.
+        if (context.recipient.audience === 'STAFF') {
+          return makeIntent(context, 'request.new_for_team', { recipientName: context.recipient.displayName, folio: parsed.data.folio, senderName: boundedText(context.senderName ?? 'Un cliente', 180, 'client name'), preview: boundedText(context.messagePreview ?? 'Proyecto por definir', 300, 'project summary') });
+        }
+        const scope = rejectScope(context, 'CUSTOMER');
         if (scope) return scope;
         return makeIntent(context, 'request.received', { recipientName: context.recipient.displayName, folio: parsed.data.folio });
       }
@@ -262,6 +269,9 @@ export function mapNotificationEvent(event: NotificationEventInput, context: Not
         const parsed = messagePayload.safeParse(event.payload);
         if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
         if (parsed.data.visibility === 'INTERNAL') return { kind: 'REJECTED', reason: 'INTERNAL_VISIBILITY' };
+        if (context.recipient.audience === 'STAFF' && context.versionNumber) {
+          return makeIntent(context, 'quote.changes_requested', { recipientName: context.recipient.displayName, folio: parsed.data.folio, versionNumber: context.versionNumber, senderName: boundedText(context.senderName ?? 'El cliente', 180, 'sender name'), preview: boundedText(context.messagePreview ?? 'Revisa la conversación del expediente.', 500, 'message preview') });
+        }
         return makeIntent(context, 'message.created', { recipientName: context.recipient.displayName, folio: parsed.data.folio, senderName: boundedText(context.senderName ?? 'Tu equipo OCPOOL', 180, 'sender name'), preview: boundedText(context.messagePreview ?? 'Tienes un nuevo mensaje en tu expediente.', 500, 'message preview') });
       }
       case 'FILE.AVAILABLE': {
@@ -597,6 +607,37 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
         text: portalAccessPending
           ? `Hola ${data.recipientName},\n\n${sender} dejó un mensaje sobre ${folio}:\n\n${preview}\n\nSi eres cliente nuevo, primero habilitaremos tu cuenta. Solicita acceso al portal: ${actionUrl}`
           : `Hola ${data.recipientName},\n\n${sender} dejó un mensaje sobre ${folio}:\n\n${preview}\n\nAbrir mensaje: ${actionUrl}`,
+      });
+    }
+    case 'request.new_for_team': {
+      const client = data.senderName ?? 'Un cliente';
+      const project = data.preview ?? 'Proyecto por definir';
+      return compose({
+        audience: 'staff',
+        subject: safeHeader(`Nueva solicitud ${folio}`),
+        preheader: `${client}: ${project}. Todavía no tiene responsable.`,
+        eyebrow: 'Solicitud nueva',
+        title: 'Llegó una solicitud nueva',
+        blocks: [
+          paragraph(html`${client} envió la solicitud ${folio} desde el sitio. Todavía no tiene responsable.`),
+          details([...folioRows, { label: 'Cliente', value: client }, { label: 'Proyecto', value: project }]),
+        ],
+        actionLabel: 'Abrir solicitud',
+        text: `Hola ${data.recipientName},\n\n${client} envió la solicitud ${folio} desde el sitio: ${project}. Todavía no tiene responsable.\n\nAbrir solicitud: ${actionUrl}`,
+      });
+    }
+    case 'quote.changes_requested': {
+      const sender = data.senderName ?? 'El cliente';
+      const senderForHeader = sender.replace(/[\u0000-\u001F\u007F]+/gu, ' ').trim() || 'El cliente';
+      return compose({
+        audience: 'staff',
+        subject: safeHeader(`${senderForHeader} pidió cambios en ${folio}`.slice(0, 240)),
+        preheader: `${senderForHeader}: ${preview}`,
+        eyebrow: 'Cambios pedidos',
+        title: data.versionNumber ? `Cambios a la propuesta V${data.versionNumber}` : 'Cambios a la propuesta',
+        blocks: [paragraph(html`${sender} pidió cambios a la propuesta${version} del expediente ${folio}:`), quote(preview)],
+        actionLabel: data.actionLabel ?? 'Revisar propuesta',
+        text: `Hola ${data.recipientName},\n\n${sender} pidió cambios a la propuesta${version} de ${folio}:\n\n${preview}\n\nRevisar: ${actionUrl}`,
       });
     }
     case 'file.available': {

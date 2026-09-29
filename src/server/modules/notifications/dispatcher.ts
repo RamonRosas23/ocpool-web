@@ -97,7 +97,7 @@ export async function upsertNotificationDelivery(prisma: DbClient, input: Notifi
   });
 }
 
-export type NotificationCancellationReason = 'UNSUPPORTED_EVENT' | 'INVALID_PAYLOAD' | 'INVALID_RECIPIENT' | 'INVALID_RECIPIENT_SCOPE' | 'INTERNAL_VISIBILITY' | 'NO_RECIPIENT';
+export type NotificationCancellationReason = 'UNSUPPORTED_EVENT' | 'INVALID_PAYLOAD' | 'INVALID_RECIPIENT' | 'INVALID_RECIPIENT_SCOPE' | 'INTERNAL_VISIBILITY' | 'NO_RECIPIENT' | 'SELF_ACTION';
 
 export async function cancelNotificationDelivery(prisma: DbClient, input: { outboxEventId: string; reason: NotificationCancellationReason; now?: Date }): Promise<{ id: string; status: string }> {
   const now = input.now ?? new Date();

@@ -1,8 +1,9 @@
 import type { PrismaClient } from '@/generated/prisma/client';
+import { parseAnyChangeRequest } from '@/lib/change-request';
 import { readCommercialV2Flags, type CommercialV2Flags } from '@/server/flags/commercial-v2';
 import type { NotificationCancellationReason } from '@/server/modules/notifications/dispatcher';
 import type { NotificationEventInput, NotificationMappingContext, NotificationRecipientContext } from '@/server/modules/notifications/templates';
-import { requestWorkspaceNotificationPath } from '@/server/modules/notifications/paths';
+import { requestWorkspaceNotificationPath, type StaffRequestTab } from '@/server/modules/notifications/paths';
 
 type DbClient = PrismaClient;
 
@@ -52,6 +53,20 @@ function staffContext(recipient: NotificationRecipientContext, quoteRequestId: s
   return { recipient, actionPath: requestWorkspaceNotificationPath(quoteRequestId, tab, flags) };
 }
 
+/** Gerencia y Administración (`requests.read.global`): reciben lo que no tiene responsable y los cierres de venta. */
+async function managerContexts(prisma: DbClient, quoteRequestId: string, tab: StaffRequestTab, flags: CommercialV2Flags, exclude: ReadonlySet<string> = new Set()): Promise<NotificationMappingContext[]> {
+  const users = await prisma.user.findMany({
+    where: { type: 'EMPLOYEE', status: 'ACTIVE', roles: { some: { role: { permissions: { some: { permission: { key: 'requests.read.global' } } } } } } },
+    select: { id: true, email: true, displayName: true, type: true, status: true },
+    orderBy: { id: 'asc' },
+  });
+  return users
+    .filter((user) => !exclude.has(user.id))
+    .map(activeStaff)
+    .filter((recipient): recipient is NotificationRecipientContext => Boolean(recipient))
+    .map((recipient) => staffContext(recipient, quoteRequestId, tab, flags));
+}
+
 function staffApprovalContext(recipient: NotificationRecipientContext, quoteRequestId: string, flags: CommercialV2Flags = readCommercialV2Flags()): NotificationMappingContext {
   return { recipient, actionPath: flags.commercialWorkspaceV2 && flags.requestWorkspaceV2 ? requestWorkspaceNotificationPath(quoteRequestId, 'quote', flags) : `/staff/quotes?request=${encodeURIComponent(quoteRequestId)}` };
 }
@@ -95,16 +110,22 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
   switch (event.eventType) {
     case 'REQUEST.RECEIVED': {
       if (event.aggregateType !== 'QUOTE_REQUEST' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
-      const request = await prisma.quoteRequest.findUnique({ where: { id: event.aggregateId }, include: { client: true, contact: { include: { user: true } } } });
+      const request = await prisma.quoteRequest.findUnique({ where: { id: event.aggregateId }, include: { client: true, contact: { include: { user: true } }, detail: { select: { projectType: true, location: true } } } });
       if (!request || stringValue(payload, 'quoteRequestId') !== request.id || stringValue(payload, 'folio') !== request.folio) return cancellation('INVALID_PAYLOAD');
-      const recipient = request?.client.status === 'ACTIVE' ? contactRecipient(request.contact) : null;
-      return recipient ? { kind: 'RECIPIENTS', contexts: [customerContext(recipient, request.id)] } : cancellation('NO_RECIPIENT');
+      const customer = request.client.status === 'ACTIVE' ? contactRecipient(request.contact) : null;
+      const contexts: NotificationMappingContext[] = customer ? [customerContext(customer, request.id)] : [];
+      if (request.origin === 'PUBLIC_FORM') {
+        const project = request.detail ? `${request.detail.projectType} en ${request.detail.location}` : undefined;
+        for (const context of await managerContexts(prisma, request.id, 'summary', flags)) contexts.push({ ...context, senderName: request.client.displayName, ...(project ? { messagePreview: project } : {}) });
+      }
+      return contexts.length > 0 ? { kind: 'RECIPIENTS', contexts } : cancellation('NO_RECIPIENT');
     }
     case 'REQUEST.ASSIGNED': {
       if (event.aggregateType !== 'QUOTE_REQUEST' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
       const assignedToId = stringValue(payload, 'assignedToId');
       const request = await prisma.quoteRequest.findUnique({ where: { id: event.aggregateId }, include: { currentAssignee: true } });
       if (!request || stringValue(payload, 'quoteRequestId') !== request.id || stringValue(payload, 'folio') !== request.folio || !isUuid(assignedToId) || request.currentAssigneeId !== assignedToId) return cancellation('INVALID_PAYLOAD');
+      if (stringValue(payload, 'assignedById') === assignedToId) return cancellation('SELF_ACTION');
       const recipient = activeStaff(request.currentAssignee);
       return recipient ? { kind: 'RECIPIENTS', contexts: [staffContext(recipient, request.id, 'summary', flags)] } : cancellation('NO_RECIPIENT');
     }
@@ -165,8 +186,10 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       // recibía una confirmación de que su aceptación quedó registrada. Se agrega el mismo
       // destinatario de cliente que ya usa QUOTE.PUBLISHED, sin tocar el aviso a staff existente.
       const customerRecipient = quote.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(quote.quoteRequest.contact) : null;
+      const managerNotices = (await managerContexts(prisma, quote.quoteRequestId, 'summary', flags, new Set(staffRecipient?.userId ? [staffRecipient.userId] : []))).map((context) => ({ ...context, totalLabel: total }));
       const contexts: NotificationMappingContext[] = [
         ...(staffRecipient ? [{ recipient: staffRecipient, actionPath: requestWorkspaceNotificationPath(quote.quoteRequestId, 'summary', flags), totalLabel: total }] : []),
+        ...managerNotices,
         ...(customerRecipient ? [{ ...customerContext(customerRecipient, quote.quoteRequestId), totalLabel: total }] : []),
       ];
       if (contexts.length === 0) return cancellation('NO_RECIPIENT');
@@ -181,16 +204,24 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       if (message.visibility === 'INTERNAL' || stringValue(payload, 'visibility') === 'INTERNAL') return cancellation('INTERNAL_VISIBILITY');
       if (message.visibility !== 'CUSTOMER' || stringValue(payload, 'visibility') !== 'CUSTOMER') return cancellation('INVALID_PAYLOAD');
       if (message.sender?.type === 'CUSTOMER') {
-        const recipient = activeStaff(conversation.quoteRequest.currentAssignee);
-        return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...staffContext({ ...recipient }, conversation.quoteRequestId, 'conversation', flags), senderName: message.sender.displayName, messagePreview: message.body }] } : cancellation('NO_RECIPIENT');
+        const change = parseAnyChangeRequest(message.body);
+        const tab = change ? 'quote' : 'conversation';
+        const assignee = activeStaff(conversation.quoteRequest.currentAssignee);
+        // Sin responsable, la respuesta del cliente llega a Gerencia en vez de perderse (antes: NO_RECIPIENT).
+        const contexts = assignee ? [staffContext(assignee, conversation.quoteRequestId, tab, flags)] : await managerContexts(prisma, conversation.quoteRequestId, tab, flags);
+        if (contexts.length === 0) return cancellation('NO_RECIPIENT');
+        const sender = message.sender.displayName;
+        return { kind: 'RECIPIENTS', contexts: contexts.map((context) => ({ ...context, senderName: sender, messagePreview: change ? change.message || message.body : message.body, ...(change ? { versionNumber: change.versionNumber } : {}) })) };
       }
       const recipient = conversation.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(conversation.quoteRequest.contact) : null;
       return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, conversation.quoteRequestId), senderName: message.sender?.displayName ?? 'Tu equipo OCPOOL', messagePreview: message.body }] } : cancellation('NO_RECIPIENT');
     }
     case 'FILE.AVAILABLE': {
       if (event.aggregateType !== 'FILE_ATTACHMENT' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
-      const attachment = await prisma.fileAttachment.findUnique({ where: { id: event.aggregateId }, include: { quoteRequest: { include: { client: true, contact: { include: { user: true } } } } } });
+      const attachment = await prisma.fileAttachment.findUnique({ where: { id: event.aggregateId }, include: { uploadedBy: { select: { type: true } }, quoteRequest: { include: { client: true, contact: { include: { user: true } } } } } });
       if (!attachment || attachment.status !== 'AVAILABLE' || attachment.visibility !== 'CUSTOMER' || stringValue(payload, 'fileId') !== attachment.id || stringValue(payload, 'quoteRequestId') !== attachment.quoteRequestId || stringValue(payload, 'visibility') !== 'CUSTOMER' || stringValue(payload, 'category') !== attachment.category) return cancellation(attachment?.visibility === 'INTERNAL' ? 'INTERNAL_VISIBILITY' : 'INVALID_PAYLOAD');
+      // El archivo que el propio cliente subió no le genera correo a él; el equipo lo ve en su bandeja.
+      if (attachment.uploadedBy.type === 'CUSTOMER') return cancellation('SELF_ACTION');
       const recipient = attachment.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(attachment.quoteRequest.contact) : null;
       return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, attachment.quoteRequestId), folio: attachment.quoteRequest.folio, fileName: attachment.originalFileName }] } : cancellation('NO_RECIPIENT');
     }
