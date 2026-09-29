@@ -1,5 +1,7 @@
+import 'dotenv/config';
 import { recordBaselineMeasurement } from './fixtures/commercial-baseline-recorder';
 import { test, expect, type Page } from '@playwright/test';
+import { getPrisma } from '@/server/db/client';
 import { expectNoSeriousA11yViolations } from './a11y';
 
 /** Los selects del formulario son de shadcn/ui (Radix): se abre el combobox y se elige la opción por su texto. */
@@ -8,6 +10,25 @@ async function chooseOption(page: Page, label: string, option: string): Promise<
   await trigger.click();
   await page.getByRole('option', { name: option, exact: true }).click();
   await expect(trigger).toHaveText(option);
+}
+
+/**
+ * Una solicitud del sitio avisa a todo el equipo (bandeja "Nueva solicitud"). Las de esta prueba se borran al
+ * terminar para no dejar avisos pendientes en las cuentas reales de la base compartida.
+ */
+async function removeQuoteRequestsByContact(emails: readonly string[]): Promise<void> {
+  if (emails.length === 0 || !process.env.DATABASE_URL) return;
+  const prisma = getPrisma();
+  const requests = await prisma.quoteRequest.findMany({ where: { contact: { email: { in: [...emails] } } }, select: { id: true, clientId: true, contactId: true } });
+  if (requests.length === 0) return;
+  const requestIds = requests.map(({ id }) => id);
+  const eventIds = (await prisma.outboxEvent.findMany({ where: { aggregateId: { in: requestIds } }, select: { id: true } })).map(({ id }) => id);
+  await prisma.notificationDelivery.deleteMany({ where: { outboxEventId: { in: eventIds } } });
+  await prisma.outboxEvent.deleteMany({ where: { id: { in: eventIds } } });
+  await prisma.auditLog.deleteMany({ where: { entityId: { in: requestIds } } });
+  await prisma.quoteRequest.deleteMany({ where: { id: { in: requestIds } } });
+  await prisma.clientContact.deleteMany({ where: { id: { in: requests.map(({ contactId }) => contactId) } } });
+  await prisma.client.deleteMany({ where: { id: { in: requests.map(({ clientId }) => clientId) }, quoteRequests: { none: {} } } });
 }
 
 const validPayload = {
@@ -21,6 +42,12 @@ const validPayload = {
 
 test.describe('OCPOOL quality contract', () => {
   test.setTimeout(120_000);
+  const createdContactEmails: string[] = [];
+
+  test.afterAll(async () => {
+    await removeQuoteRequestsByContact(createdContactEmails);
+    if (process.env.DATABASE_URL) await getPrisma().$disconnect();
+  });
 
   test('keeps anchored section headings clear of the fixed header', async ({ page }) => {
     await page.goto('/');
@@ -114,6 +141,7 @@ test.describe('OCPOOL quality contract', () => {
 
   test('accepts a quote request and returns a non-authenticating folio', async ({ request }) => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    createdContactEmails.push(`qa-${suffix}@example.test`);
     const response = await request.post('/api/quote-requests', {
       headers: { 'Idempotency-Key': `quality-create-${suffix}-1234` },
       data: { ...validPayload, email: `qa-${suffix}@example.test`, consent: true },
@@ -126,6 +154,7 @@ test.describe('OCPOOL quality contract', () => {
 
   test('submits the public form and presents the persisted folio accessibly', async ({ page }) => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    createdContactEmails.push(`form-${suffix}@example.test`);
     const measurementStartedAt = new Date();
     await page.goto('/#contacto');
     await page.getByLabel('Nombre').fill('Cliente E2E OCPOOL');

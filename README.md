@@ -28,7 +28,7 @@ Las fases iniciales de la base técnica y la identidad están implementadas y ve
 - Portal privado `/portal` con cotizaciones históricas, mensajería, archivos privados, descarga de PDF comercial y aceptación explícita con evidencia.
 - Operación staff de documentos PDF con estados, descarga efímera, generación condicionada y evidencia de aceptación.
 - Notificaciones transaccionales por email con Outbox, plantillas versionadas, leases, reintentos y entrega local verificable en Mailpit.
-- Operación staff de notificaciones en `/staff/notifications`, con diagnóstico seguro y reintentos RBAC sin exponer PII ni payloads.
+- Bandeja de avisos por rol en `/staff/notifications` (y "Novedades" en el portal) generada en la misma transacción de cada cambio; el monitor técnico de correos vive en `/staff/notifications/deliveries` para Gerencia y Administración.
 - API privada de métricas operativas en `/api/staff/dashboard`, con scope por rol, rangos acotados y respuesta sin PII.
 - Auditoría operativa y de seguridad en `/staff/audit`, con `audit.read`/`audit.security.read`, cursor HMAC, rate limit, redacción por allowlist y respuesta `no-store`.
 - Superficies de acceso navegables en `/login`, `/login/recovery`, `/portal/access`, `/auth/recovery` y `/auth/customer/consume-link`, sin credenciales fijas y con limpieza de tokens en URL.
@@ -180,6 +180,7 @@ Endpoints disponibles:
 - `GET /api/staff/quotes/versions/:versionId/document` — estado operativo seguro del documento y evidencia de aceptación para staff.
 - `GET /api/staff/notifications` — operación de entregas con proyección segura, filtros y salud agregada para staff autorizado.
 - `POST /api/staff/notifications/:id/retry` — reencola una entrega fallida recuperable con RBAC, same-origin, auditoría e idempotencia.
+- `GET /api/notifications`, `GET /api/notifications/summary` y `POST /api/notifications/read` — bandeja de avisos de la persona autenticada (equipo o cliente), con el alcance vigente, cursor, tipo, búsqueda, contadores y lectura por aviso, por expediente o total.
 - `GET /api/staff/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD` — métricas operativas de sólo lectura. `sales` consulta su scope propio con `metrics.read`; `manager`/`admin` requieren `metrics.read.global` para el agregado global. El rango usa `[from,to)`, admite como máximo 93 días, toma por defecto los últimos 30 días completos, usa `APP_TIMEZONE` y responde con `cache-control: no-store`. Estas métricas son operativas; no sustituyen contabilidad ni decisiones de autorización comercial.
 - `GET /api/staff/audit?from=YYYY-MM-DD&to=YYYY-MM-DD&category=...&outcome=...` — lectura privada de auditoría. `manager`/`admin` requieren `audit.read`; `admin` requiere además `audit.security.read` para `category=security`. El rango usa `[from,to)`, admite como máximo 93 días, firma cursores con `AUDIT_CURSOR_SECRET`, aplica rate limit y responde con `cache-control: no-store` sin UUIDs, PII, red, hashes, payloads ni storage keys.
 
