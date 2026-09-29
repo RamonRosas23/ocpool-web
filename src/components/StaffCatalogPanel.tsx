@@ -55,9 +55,13 @@ export default function StaffCatalogPanel() {
           if (!cancelled) setPendingReviewCount(groups.filter((group) => group.status !== 'PROMOTED').length);
         }
         if (result.data.pricesManage) {
-          const pendingResponse = await fetch('/api/staff/catalog/pending-prices', { credentials: 'include', cache: 'no-store' });
-          const pending = await readApiResponseOrThrow<{ items: PendingPriceGroup[] }>(pendingResponse, 'No fue posible cargar los precios por asignar.');
-          if (!cancelled) setPendingPricesCount(pending.items.length);
+          // Sólo alimenta la insignia de la pestaña: si falla, la pestaña muestra su propio error al abrirse
+          // y el resto del catálogo sigue disponible.
+          try {
+            const pendingResponse = await fetch('/api/staff/catalog/pending-prices', { credentials: 'include', cache: 'no-store' });
+            const pending = await readApiResponseOrThrow<{ items: PendingPriceGroup[] }>(pendingResponse, 'No fue posible cargar los precios por asignar.');
+            if (!cancelled) setPendingPricesCount(pending.items.length);
+          } catch { /* la insignia queda en cero */ }
         }
       } catch (caught) {
         if (!cancelled) setCapabilitiesError(caught instanceof Error ? caught.message : 'No fue posible validar los permisos.');
