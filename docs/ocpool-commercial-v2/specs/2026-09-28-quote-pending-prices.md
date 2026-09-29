@@ -48,6 +48,23 @@ todas las propuestas que lo esperaban lo aplican solas al abrirse.
   vencidas y programadas) al previsualizar y al comparar en «Verificar precios vigentes»; ahora solo cuenta la
   vigente hoy, como el servidor.
 
+## Endurecimiento tras una segunda revisión
+
+- **Carrera al definir el precio de una línea existente:** el servidor regenera los ids de las filas en cada
+  guardado; si un autoguardado terminaba con el diálogo abierto, el precio se aplicaba a un id que ya no
+  existía y no pasaba nada. Ahora la línea se identifica por su concepto. Mismo defecto (preexistente) en
+  «Verificar precios vigentes»: el diálogo de confirmación puede llevar abierto varios autoguardados.
+- **«Verificar precios vigentes»** comparaba contra cualquier fila de la lista (podía ofrecer «repreciar»
+  al precio vencido); ahora usa `currentPriceRows` (`src/lib/price-list-current.ts`, con pruebas), igual que
+  la vista previa.
+- **Texto para Ventas:** decía que el precio se aplicaría «solo a esta propuesta»; el precio se asigna a la
+  lista y la propuesta lo toma automáticamente.
+- **Pestañas en celular:** la activa (p. ej. «Precios por asignar» al llegar desde el tablero) se desplaza a la
+  vista (`PrivateTabs`, componente compartido).
+- **Cobertura:** revisión de accesibilidad automatizada (axe, sin violaciones graves) del diálogo en sus
+  variantes, la propuesta con una línea por cotizar, la pestaña del Catálogo y la tarjeta del tablero; flujo
+  completo solo con teclado (flechas + Enter, foco al importe y de regreso al buscador).
+
 ## Verificación
 
 - `tsc`, lint (incluido `src/server`), pruebas unitarias (etapa del constructor y proyección con el nuevo

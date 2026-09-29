@@ -3,6 +3,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { getPrisma } from '@/server/db/client';
 import { hashPassword } from '@/server/auth/crypto';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
+import { expectNoSeriousA11yViolations } from './a11y';
 
 test.describe('quote builder: concepts por cotizar', () => {
   test.skip(process.env.QUOTES_E2E !== '1', 'Quote builder E2E requires QUOTES_E2E=1 and a disposable local database.');
@@ -21,7 +22,7 @@ test.describe('quote builder: concepts por cotizar', () => {
   const contactIds: string[] = [];
   let categoryId = '';
   let priceListId = '';
-  const itemIds = { listed: '', flow: '', convert: '' };
+  const itemIds = { listed: '', flow: '', convert: '', keyboard: '' };
 
   async function newRequest(label: string, assigneeId: string): Promise<{ id: string; folio: string }> {
     const request = await createQuoteRequest({
@@ -45,7 +46,8 @@ test.describe('quote builder: concepts por cotizar', () => {
     const listed = await prisma.catalogItem.create({ data: { code: `PP-LISTED-${suffix}`, name: 'PP concepto con precio', unit: 'pieza', categoryId } });
     const flow = await prisma.catalogItem.create({ data: { code: `PP-FLOW-${suffix}`, name: 'PP concepto flujo', unit: 'servicio', categoryId } });
     const convert = await prisma.catalogItem.create({ data: { code: `PP-CONVERT-${suffix}`, name: 'PP concepto convertir', unit: 'lote', categoryId } });
-    itemIds.listed = listed.id; itemIds.flow = flow.id; itemIds.convert = convert.id;
+    const keyboard = await prisma.catalogItem.create({ data: { code: `PP-KEYBOARD-${suffix}`, name: 'PP concepto teclado', unit: 'pieza', categoryId } });
+    itemIds.listed = listed.id; itemIds.flow = flow.id; itemIds.convert = convert.id; itemIds.keyboard = keyboard.id;
     priceListId = (await prisma.priceList.create({ data: { code: `PP-PRICE-${suffix}`, name: 'PP prices', currencyCode: 'MXN', validFrom: now } })).id;
     await prisma.priceListItem.create({ data: { priceListId, catalogItemId: listed.id, unitPriceMinor: 15_000n, validFrom: now } });
   });
@@ -95,6 +97,8 @@ test.describe('quote builder: concepts por cotizar', () => {
     await search.fill('concepto flujo');
     await page.getByRole('option', { name: 'PP concepto flujo · servicio', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Concepto sin precio' });
+    await expect(dialog).toBeVisible();
+    await expectNoSeriousA11yViolations(page, { include: '[role="dialog"]' });
     await dialog.getByRole('button', { name: 'Agregar como por cotizar' }).click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });
 
@@ -106,6 +110,7 @@ test.describe('quote builder: concepts por cotizar', () => {
     await expect(page.locator('.quotes-summary__total')).toContainText('174.00');
     await expect(page.locator('#quotes-actions').getByRole('button', { name: 'Pasar a revisión' })).toBeDisabled();
     await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 20_000 });
+    await expectNoSeriousA11yViolations(page);
     expect(await prisma.quoteLineSnapshot.findFirstOrThrow({ where: { catalogItemId: itemIds.flow, quoteVersion: { quote: { quoteRequestId: requestId } } } })).toMatchObject({ pricePending: true, unitPriceMinor: 0n });
 
     // Al reabrir la propuesta con el concepto todavía sin precio se conserva la lista y el concepto sigue por cotizar.
@@ -124,12 +129,14 @@ test.describe('quote builder: concepts por cotizar', () => {
       await managerPage.goto('/staff');
       const dashboardCard = managerPage.locator('.staff-workqueue__card', { hasText: 'Precios por asignar' });
       await expect(dashboardCard).toContainText('PP concepto flujo', { timeout: 45_000 });
+      await expectNoSeriousA11yViolations(managerPage, { include: '[aria-labelledby="workqueue-prices-title"]' });
       await dashboardCard.getByRole('link', { name: /PP concepto flujo/ }).click();
       await expect(managerPage).toHaveURL(/\/staff\/catalog\?tab=pending-prices/, { timeout: 45_000 });
       const row = managerPage.locator('.catalog-pending-price', { hasText: 'PP concepto flujo' });
       await expect(row).toBeVisible({ timeout: 45_000 });
       await expect(row).toContainText(folio);
       await expect(row).toContainText('PP prices');
+      await expectNoSeriousA11yViolations(managerPage);
       await row.getByRole('textbox').fill('1,800.00');
       await row.getByRole('button', { name: 'Asignar precio' }).click();
       await expect(managerPage.locator('.private-toast').last()).toContainText('Precio asignado', { timeout: 20_000 });
@@ -157,6 +164,55 @@ test.describe('quote builder: concepts por cotizar', () => {
     expect((await prisma.quoteVersion.findFirstOrThrow({ where: { quote: { quoteRequestId: requestId } }, select: { status: true } })).status).toBe('EN_REVISION');
   });
 
+  test('a manager can price an unpriced concept using only the keyboard', async ({ page, request }) => {
+    const manager = await prisma.user.findUniqueOrThrow({ where: { emailNormalized: managerEmail }, select: { id: true } });
+    const { id: requestId } = await newRequest('keyboard', manager.id);
+
+    await login(page, request, managerEmail);
+    await openBuilder(page, requestId);
+    await page.getByRole('combobox', { name: 'Lista de precios' }).click();
+    await page.getByRole('option', { name: 'PP prices · MXN', exact: true }).click();
+    const search = page.getByRole('combobox', { name: 'Agregar concepto a la cotización' });
+    await search.focus();
+    await page.keyboard.type('concepto teclado');
+    const option = page.getByRole('option', { name: 'PP concepto teclado · pieza', exact: true });
+    await expect(option).toContainText('Definir precio', { timeout: 20_000 });
+    // El concepto sin precio se alcanza con las flechas y se elige con Enter, igual que uno con precio.
+    await page.keyboard.press('ArrowDown');
+    await expect(option).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Definir precio' });
+    await expect(dialog.getByRole('textbox', { name: /Precio por pieza/ })).toBeFocused();
+    await page.keyboard.type('320.50');
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByRole('radio', { name: /Solo en esta cotización/ })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByLabel('Motivo del precio manual')).toBeFocused();
+    await page.keyboard.type('Cotizado por teclado');
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+    await expect(search).toBeFocused();
+    const line = page.locator('.quotes-line', { hasText: 'PP concepto teclado' });
+    await expect(line).toContainText('Precio manual');
+    await expect(page.getByRole('textbox', { name: 'Precio de PP concepto teclado' })).toHaveValue('320.50');
+    await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 20_000 });
+    expect(await prisma.quoteLineSnapshot.findFirstOrThrow({ where: { catalogItemId: itemIds.keyboard, quoteVersion: { quote: { quoteRequestId: requestId } } } })).toMatchObject({ unitPriceMinor: 32_050n, overrideReason: 'Cotizado por teclado', pricePending: false });
+  });
+
+  test('the Precios por asignar tab is brought into view when the catalog opens on a phone', async ({ page, request }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await login(page, request, managerEmail);
+    await page.goto('/staff/catalog?tab=pending-prices');
+    const tab = page.getByRole('tab', { name: /Precios por asignar/ });
+    await expect(tab).toBeVisible({ timeout: 45_000 });
+    // Con cuatro pestañas la tira se desplaza en 375 px: la activa debe quedar completa dentro de la pantalla.
+    await expect.poll(async () => {
+      const box = await tab.boundingBox();
+      return box ? Math.round(box.x + box.width) : null;
+    }, { timeout: 10_000 }).toBeLessThanOrEqual(375);
+    expect((await tab.boundingBox())!.x).toBeGreaterThanOrEqual(0);
+  });
+
   test('a manager turns a line por cotizar into a manual price for that quote', async ({ page, request }) => {
     const manager = await prisma.user.findUniqueOrThrow({ where: { emailNormalized: managerEmail }, select: { id: true } });
     const { id: requestId } = await newRequest('convert', manager.id);
@@ -168,6 +224,8 @@ test.describe('quote builder: concepts por cotizar', () => {
     await page.getByRole('combobox', { name: 'Agregar concepto a la cotización' }).fill('concepto convertir');
     await page.getByRole('option', { name: 'PP concepto convertir · lote', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Definir precio' });
+    await expect(dialog.getByRole('radio')).toHaveCount(3);
+    await expectNoSeriousA11yViolations(page, { include: '[role="dialog"]' });
     await dialog.getByText('Todavía no lo sé: dejarlo por cotizar').click();
     await dialog.getByRole('button', { name: 'Agregar como por cotizar' }).click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });
@@ -176,7 +234,12 @@ test.describe('quote builder: concepts por cotizar', () => {
     // Al abrir esa línea ya no se ofrece "dejarlo por cotizar", sólo ponerle precio.
     await line.getByRole('button', { name: 'Definir precio' }).click();
     await expect(dialog).toBeVisible();
+    // Un autoguardado termina con el diálogo abierto (el servidor cambia los ids de las filas): el precio
+    // debe aplicarse igual, porque la línea se identifica por su concepto.
+    await expect(page.locator('.quotes-autosave--saved')).toBeVisible({ timeout: 20_000 });
     await expect(dialog.getByText('Todavía no lo sé: dejarlo por cotizar')).toHaveCount(0);
+    await expect(dialog.getByRole('radio')).toHaveCount(2);
+    await expectNoSeriousA11yViolations(page, { include: '[role="dialog"]' });
     await dialog.getByRole('textbox', { name: /Precio por lote/ }).fill('700.00');
     await dialog.getByLabel('Motivo del precio manual').fill('Cotizado por el proveedor');
     await dialog.getByRole('button', { name: 'Aplicar a la cotización' }).click();

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { nextRovingTabIndex } from './a11y';
 
 export type PrivateTabItem = {
@@ -29,8 +29,15 @@ function handleTabKeyDown(event: KeyboardEvent<HTMLAnchorElement>) {
 }
 
 export function PrivateTabs({ tabs, activeKey, ariaLabel, tabpanelId, className }: PrivateTabsProps) {
+  const navRef = useRef<HTMLElement>(null);
+  // En pantallas angostas las pestañas se desplazan: la activa (p. ej. al llegar por un enlace directo del
+  // tablero) debe quedar a la vista, sin mover la página en vertical.
+  useEffect(() => {
+    navRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [activeKey]);
+
   return (
-    <nav className={['private-tabs', className].filter(Boolean).join(' ')} role="tablist" aria-label={ariaLabel}>
+    <nav ref={navRef} className={['private-tabs', className].filter(Boolean).join(' ')} role="tablist" aria-label={ariaLabel}>
       {tabs.map((tab) => (
         <Link
           key={tab.key}

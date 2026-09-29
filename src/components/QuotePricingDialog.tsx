@@ -104,7 +104,7 @@ export default function QuotePricingDialog({ item, priceListName, currencyCode, 
           </fieldset>
         ) : (
           <p className="quotes-pricing__note">
-            Puedes agregarlo como <strong>por cotizar</strong>: entra sin precio y no suma al total. Quien administra los precios lo verá en Catálogo → Precios por asignar y, cuando lo asigne, el precio se aplicará solo a esta propuesta. Mientras tanto no podrá pasar a revisión.
+            Puedes agregarlo como <strong>por cotizar</strong>: entra sin precio y no suma al total. Quien administra los precios lo verá en Catálogo → Precios por asignar y, en cuanto lo asigne en la lista, esta propuesta lo tomará automáticamente. Mientras tanto no podrá pasar a revisión.
           </p>
         )}
         {scope === 'QUOTE' && (

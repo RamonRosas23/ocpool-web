@@ -8,6 +8,7 @@ import StaffQuoteDocumentPanel from '@/components/StaffQuoteDocumentPanel';
 import ExpedienteJourney from '@/components/staff/ExpedienteJourney';
 import CatalogItemSearchCombobox, { type CatalogSearchResultItem } from '@/components/CatalogItemSearchCombobox';
 import QuotePricingDialog, { type PricingSubmission } from '@/components/QuotePricingDialog';
+import { currentPriceRows } from '@/lib/price-list-current';
 import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
 import { zonedCalendarDateEndOfDayToUtc } from '@/lib/calendar-timezone';
 import { builderValidUntil } from '@/lib/quote-validity';
@@ -308,7 +309,9 @@ export default function StaffQuotesPanel() {
   // Concepto sin precio en la lista elegido en el buscador (o una línea "por cotizar" que ya está en la
   // propuesta): se le define precio aquí mismo -- sólo para esta cotización, también en la lista o se deja
   // por cotizar. `lineId` distingue "agregar una línea nueva" de "aplicar el precio a una existente".
-  const [pricingTarget, setPricingTarget] = useState<{ item: PricingTargetItem; lineId: string | null } | null>(null);
+  // Se identifica por el concepto (no por el id de la fila: el servidor los regenera en cada guardado y un
+  // autoguardado puede terminar mientras el diálogo sigue abierto).
+  const [pricingTarget, setPricingTarget] = useState<{ item: PricingTargetItem; existing: boolean } | null>(null);
   const [pricingBusy, setPricingBusy] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [validUntil, setValidUntil] = useState('');
@@ -540,16 +543,7 @@ export default function StaffQuotesPanel() {
 
   // Sólo los precios vigentes hoy (la lista guarda también los vencidos y los programados): el servidor
   // resuelve el precio de cada concepto con esa misma regla.
-  const pricesByItem = useMemo(() => {
-    const now = Date.now();
-    const current = new Map<string, PriceListDetail['items'][number]>();
-    for (const item of priceListDetail?.items ?? []) {
-      if (item.catalogItem.status !== 'ACTIVE') continue;
-      if (Date.parse(item.validFrom) > now || (item.validUntil !== null && Date.parse(item.validUntil) <= now)) continue;
-      current.set(item.catalogItemId, item);
-    }
-    return current;
-  }, [priceListDetail]);
+  const pricesByItem = useMemo(() => currentPriceRows(priceListDetail?.items ?? []), [priceListDetail]);
   const preview = useMemo(() => draftLines.reduce((summary, line) => {
     const result = calculatePreview(line, line.catalogItemId ? pricesByItem.get(line.catalogItemId)?.unitPriceMinor : undefined);
     if (!result) return { ...summary, valid: false };
@@ -677,7 +671,7 @@ export default function StaffQuotesPanel() {
   // catálogo cambia mientras el borrador sigue abierto.
   const [checkingReprice, setCheckingReprice] = useState(false);
   const [repriceAfterTotal, setRepriceAfterTotal] = useState<{ valid: boolean; total: bigint } | null>(null);
-  const [repriceCandidates, setRepriceCandidates] = useState<Array<{ id: string; name: string; oldPriceMinor: string; newPriceMinor: string }>>([]);
+  const [repriceCandidates, setRepriceCandidates] = useState<Array<{ id: string; catalogItemId: string; name: string; oldPriceMinor: string; newPriceMinor: string }>>([]);
 
   const checkReprice = async () => {
     if (!selectedPriceListId || checkingReprice) return;
@@ -687,12 +681,12 @@ export default function StaffQuotesPanel() {
       const response = await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { credentials: 'include', cache: 'no-store' });
       const fresh = await readApiResponseOrThrow<PriceListDetail>(response, 'No fue posible consultar los precios vigentes.');
       setPriceListDetail(fresh);
-      const freshPricesByItem = new Map(fresh.items.map((item) => [item.catalogItemId, item]));
+      const freshPricesByItem = currentPriceRows(fresh.items);
       const candidates = draftLines.flatMap((line) => {
         if (line.special || line.pricePending || line.unitPriceDirty || line.snapshotUnitPriceMinor === null || !line.catalogItemId) return [];
         const livePriceMinor = freshPricesByItem.get(line.catalogItemId)?.unitPriceMinor;
         if (!livePriceMinor || livePriceMinor === line.snapshotUnitPriceMinor) return [];
-        return [{ id: line.id, name: line.catalogItemName, oldPriceMinor: line.snapshotUnitPriceMinor, newPriceMinor: livePriceMinor }];
+        return [{ id: line.id, catalogItemId: line.catalogItemId, name: line.catalogItemName, oldPriceMinor: line.snapshotUnitPriceMinor, newPriceMinor: livePriceMinor }];
       });
       if (candidates.length === 0) { showToast('Los precios de esta propuesta ya están actualizados.'); return; }
       const newPriceById = new Map(candidates.map((candidate) => [candidate.id, candidate.newPriceMinor]));
@@ -714,9 +708,10 @@ export default function StaffQuotesPanel() {
   };
 
   const confirmReprice = () => {
-    const newPriceById = new Map(repriceCandidates.map((candidate) => [candidate.id, candidate.newPriceMinor]));
+    // Por concepto, no por id de fila: el diálogo puede llevar abierto varios autoguardados.
+    const newPriceByItem = new Map(repriceCandidates.map((candidate) => [candidate.catalogItemId, candidate.newPriceMinor]));
     setDraftLines((lines) => lines.map((line) => {
-      const newPriceMinor = newPriceById.get(line.id);
+      const newPriceMinor = line.catalogItemId ? newPriceByItem.get(line.catalogItemId) : undefined;
       if (newPriceMinor === undefined) return line;
       return { ...line, manualReason: '', snapshotUnitPriceMinor: null, unitPriceMinorOverride: '', unitPriceInput: moneyInputLabel(newPriceMinor), unitPriceDirty: false };
     }));
@@ -812,21 +807,21 @@ export default function StaffQuotesPanel() {
   };
 
   // Una línea que ya estaba "por cotizar" recibe su precio: manual (sólo esta cotización) o el de la lista.
-  const priceExistingLine = (lineId: string, mode: Exclude<PricingMode, { kind: 'pending' }>) => setDraftLines((lines) => lines.map((line) => {
-    if (line.id !== lineId) return line;
+  const priceExistingLine = (catalogItemId: string, mode: Exclude<PricingMode, { kind: 'pending' }>) => setDraftLines((lines) => lines.map((line) => {
+    if (line.catalogItemId !== catalogItemId) return line;
     return mode.kind === 'manual'
       ? { ...line, pricePending: false, manualReason: mode.reason, unitPriceMinorOverride: mode.minor, unitPriceInput: moneyInputLabel(mode.minor), snapshotUnitPriceMinor: null, unitPriceDirty: true }
       : { ...line, ...listPricedFields };
   }));
 
   const openPricing = (item: CatalogSearchResultItem) => {
-    setPricingTarget({ item: { id: item.id, code: item.code, name: item.name, unit: item.unit }, lineId: null });
+    setPricingTarget({ item: { id: item.id, code: item.code, name: item.name, unit: item.unit }, existing: false });
     setPricingError(null);
   };
 
   const openPricingForLine = (line: DraftLine) => {
     if (!line.catalogItemId) return;
-    setPricingTarget({ item: { id: line.catalogItemId, code: line.catalogItemCode, name: line.catalogItemName, unit: line.unit }, lineId: line.id });
+    setPricingTarget({ item: { id: line.catalogItemId, code: line.catalogItemCode, name: line.catalogItemName, unit: line.unit }, existing: true });
     setPricingError(null);
   };
 
@@ -834,7 +829,7 @@ export default function StaffQuotesPanel() {
 
   const submitPricing = async ({ scope, minor, reason }: PricingSubmission) => {
     if (!pricingTarget || pricingBusy) return;
-    const { item, lineId } = pricingTarget;
+    const { item, existing } = pricingTarget;
     if (scope === 'PENDING') {
       addLineFromSearch(item, { kind: 'pending' });
       setPricingTarget(null);
@@ -843,7 +838,7 @@ export default function StaffQuotesPanel() {
     }
     if (scope === 'QUOTE') {
       const mode = { kind: 'manual', minor: minor!, reason } as const;
-      if (lineId) priceExistingLine(lineId, mode); else addLineFromSearch(item, mode);
+      if (existing) priceExistingLine(item.id, mode); else addLineFromSearch(item, mode);
       setPricingTarget(null);
       showToast('Precio manual aplicado sólo a esta cotización. La lista de precios no cambió.');
       return;
@@ -864,7 +859,7 @@ export default function StaffQuotesPanel() {
       await readApiResponseOrThrow(saved, 'No fue posible guardar el precio en la lista.');
       const refreshed = await fetch(`/api/staff/catalog/price-lists/${selectedPriceListId}`, { credentials: 'include', cache: 'no-store' });
       setPriceListDetail(await readApiResponseOrThrow<PriceListDetail>(refreshed, 'El precio se guardó, pero no fue posible actualizar la lista.'));
-      if (lineId) priceExistingLine(lineId, { kind: 'list' }); else addLineFromSearch(item, { kind: 'list' });
+      if (existing) priceExistingLine(item.id, { kind: 'list' }); else addLineFromSearch(item, { kind: 'list' });
       setPricingTarget(null);
       showToast('Precio guardado en la lista y aplicado a la cotización.');
     } catch (caught) {
@@ -1446,7 +1441,7 @@ export default function StaffQuotesPanel() {
               {pendingPriceCount > 0 && <p className="quotes-manual-note quotes-manual-note--pending" role="status"><strong>{pendingPriceCount} {pendingPriceCount === 1 ? 'concepto por cotizar' : 'conceptos por cotizar'}</strong> — {pendingPriceCount === 1 ? 'no suma' : 'no suman'} al total. Define {pendingPriceCount === 1 ? 'su' : 'sus'} precio, o espera a que se asigne en el Catálogo, para pasar a revisión.</p>}
               {manualPriceCount > 0 && <p className="quotes-manual-note" role="status"><strong>{manualPriceCount} {manualPriceCount === 1 ? 'concepto con precio manual' : 'conceptos con precio manual'}</strong> — fuera de {priceListDetail?.name ?? 'la lista'}; el precio aplica sólo a esta cotización.</p>}
               {(canEdit || canStartVersion) && <div className="quotes-add-line"><CatalogItemSearchCombobox priceListId={selectedPriceListId} currencyCode={selectedCurrency} excludeIds={draftLines.map((line) => line.catalogItemId).filter((id): id is string => id !== null)} disabled={!selectedPriceListId} onSelect={(item) => addLineFromSearch(item)} onDefinePrice={openPricing} definePriceLabel={capabilities?.quotesEditPrices || capabilities?.pricesManage ? 'Definir precio' : 'Por cotizar'} definePriceHint={capabilities?.quotesEditPrices || capabilities?.pricesManage ? 'elige uno para definir su precio aquí mismo' : 'puedes agregarlos como por cotizar'} definingPrice={Boolean(pricingTarget)} /><button className="staff-button staff-button--outline" type="button" onClick={() => setShowSpecialForm(true)}>Agregar concepto especial</button><button className="staff-button staff-button--outline" type="button" onClick={() => setShowSectionForm(true)}>Agregar sección</button></div>}
-              {(canEdit || canStartVersion) && pricingTarget && <QuotePricingDialog item={pricingTarget.item} priceListName={priceListDetail?.name ?? 'la lista seleccionada'} currencyCode={selectedCurrency} canSetQuotePrice={Boolean(capabilities?.quotesEditPrices)} canSaveToList={Boolean(capabilities?.pricesManage && priceListDetail)} canLeavePending={!pricingTarget.lineId} forExistingLine={Boolean(pricingTarget.lineId)} busy={pricingBusy} error={pricingError} onSubmit={(submission) => void submitPricing(submission)} onClose={closePricing} />}
+              {(canEdit || canStartVersion) && pricingTarget && <QuotePricingDialog item={pricingTarget.item} priceListName={priceListDetail?.name ?? 'la lista seleccionada'} currencyCode={selectedCurrency} canSetQuotePrice={Boolean(capabilities?.quotesEditPrices)} canSaveToList={Boolean(capabilities?.pricesManage && priceListDetail)} canLeavePending={!pricingTarget.existing} forExistingLine={pricingTarget.existing} busy={pricingBusy} error={pricingError} onSubmit={(submission) => void submitPricing(submission)} onClose={closePricing} />}
               {(canEdit || canStartVersion) && showSpecialForm && <PrivateDialog open onClose={() => setShowSpecialForm(false)} labelledBy="quotes-special-dialog-title" className="quotes-preflight-dialog" overlayClassName="quotes-preflight-overlay">
                 <div className="quotes-preflight-dialog__head"><h3 id="quotes-special-dialog-title">Agregar concepto especial</h3><button className="staff-dialog-close" type="button" onClick={() => setShowSpecialForm(false)} aria-label="Cerrar"><X size={18} aria-hidden="true" /></button></div>
                 <form className="catalog-form" onSubmit={addSpecialLine}><label><span>Nombre</span><input required value={specialForm.name} onChange={(event) => setSpecialForm({ ...specialForm, name: event.target.value })} placeholder="Concepto fuera de catálogo" maxLength={180} /></label><label><span>Unidad</span><input required value={specialForm.unit} onChange={(event) => setSpecialForm({ ...specialForm, unit: event.target.value })} placeholder="pieza" maxLength={40} /></label><PrivateMoneyField id="quotes-special-amount" label="Importe del concepto especial" value={specialForm.amountInput} onValueChange={(value) => setSpecialForm({ ...specialForm, amountInput: value })} placeholder="1,250.00" /><label><span>Motivo</span><input required value={specialForm.reason} onChange={(event) => setSpecialForm({ ...specialForm, reason: event.target.value })} placeholder="Por qué no está en catálogo" maxLength={300} /></label><label><span>Descripción</span><textarea rows={2} value={specialForm.description} onChange={(event) => setSpecialForm({ ...specialForm, description: event.target.value })} maxLength={2000} /></label><button className="staff-button staff-button--copper" type="submit">Agregar a la propuesta</button></form>
