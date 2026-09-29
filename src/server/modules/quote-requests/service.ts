@@ -5,6 +5,7 @@ import { fingerprintToken } from '@/server/auth/crypto';
 import { getPrisma } from '@/server/db/client';
 import { BUSINESS_TIMEZONE, timeZoneParts } from '@/lib/calendar-timezone';
 import { AppError } from '@/server/http/errors';
+import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
 import {
   formatQuoteRequestFolio,
   normalizeQuoteRequestEmail,
@@ -277,14 +278,13 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput, depende
           metadata: { folio, origin: input.origin },
         },
       });
-      await transaction.outboxEvent.create({
-        data: {
-          eventType: 'REQUEST.RECEIVED',
-          aggregateType: 'QUOTE_REQUEST',
-          aggregateId: request.id,
-          payload: { quoteRequestId: request.id, folio, origin: input.origin },
-        },
-      });
+      await recordDomainEvent(transaction, {
+        actor: input.actorUserId ? { userId: input.actorUserId, type: 'EMPLOYEE' } : null,
+        eventType: 'REQUEST.RECEIVED',
+        aggregateType: 'QUOTE_REQUEST',
+        aggregateId: request.id,
+        payload: { quoteRequestId: request.id, folio, origin: input.origin },
+      }, { now });
 
       return { quoteRequestId: request.id, folio, clientId, contactId };
     });

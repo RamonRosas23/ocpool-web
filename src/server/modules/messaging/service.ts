@@ -7,6 +7,7 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
+import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
 import {
   assertConversationOpen,
   normalizeIdempotencyKey,
@@ -208,6 +209,7 @@ async function writeMessage(
   visibility: MessageVisibility,
   input: SendMessageInput,
   now: Date,
+  options: Readonly<{ inbox?: 'default' | 'skip' }> = {},
 ) {
   const normalized = normalizeInput(input);
   const conversation = await getOrCreateConversation(transaction, request, now);
@@ -255,21 +257,20 @@ async function writeMessage(
       metadata: { conversationId: conversation.id, quoteRequestId: request.id, folio: request.folio, visibility },
     },
   });
-  await transaction.outboxEvent.create({
-    data: {
-      eventType: 'MESSAGE.CREATED',
-      aggregateType: 'CONVERSATION',
-      aggregateId: conversation.id,
-      payload: {
-        conversationId: conversation.id,
-        quoteRequestId: request.id,
-        clientId: request.clientId,
-        messageId: message.id,
-        visibility,
-        folio: request.folio,
-      },
+  await recordDomainEvent(transaction, {
+    actor: { userId: actor.userId, type: actor.type },
+    eventType: 'MESSAGE.CREATED',
+    aggregateType: 'CONVERSATION',
+    aggregateId: conversation.id,
+    payload: {
+      conversationId: conversation.id,
+      quoteRequestId: request.id,
+      clientId: request.clientId,
+      messageId: message.id,
+      visibility,
+      folio: request.folio,
     },
-  });
+  }, { now, inbox: options.inbox });
   return { ...serializeMessage(message, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE'), idempotent: false };
 }
 
@@ -348,11 +349,12 @@ export async function sendStaffMessageInTransaction(
   request: StaffMessageTransactionRequest,
   input: SendMessageInput,
   now: Date,
+  options: Readonly<{ inbox?: 'default' | 'skip' }> = {},
 ) {
   requireStaffPermission(actor, 'requests.read');
   requirePermission(actor, 'messaging.send');
   requireStaffRequestReadScope(actor, request.currentAssigneeId);
-  return writeMessage(transaction, actor, request, 'CUSTOMER', input, now);
+  return writeMessage(transaction, actor, request, 'CUSTOMER', input, now, options);
 }
 
 export async function createInternalNote(
@@ -494,14 +496,13 @@ export async function closeConversation(
         metadata: { quoteRequestId: request.id, folio: request.folio, fromStatus: conversation.status, toStatus: closed.status },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'CONVERSATION.STATUS_CHANGED',
-        aggregateType: 'CONVERSATION',
-        aggregateId: conversation.id,
-        payload: { conversationId: conversation.id, quoteRequestId: request.id, folio: request.folio, fromStatus: conversation.status, toStatus: closed.status },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'CONVERSATION.STATUS_CHANGED',
+      aggregateType: 'CONVERSATION',
+      aggregateId: conversation.id,
+      payload: { conversationId: conversation.id, quoteRequestId: request.id, folio: request.folio, fromStatus: conversation.status, toStatus: closed.status },
+    }, { now });
     return { conversationId: closed.id, quoteRequestId: request.id, status: closed.status, closedAt: closed.closedAt };
   });
 }
@@ -539,14 +540,13 @@ export async function reopenConversation(
         metadata: { quoteRequestId: request.id, folio: request.folio, fromStatus: conversation.status, toStatus: reopened.status },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'CONVERSATION.STATUS_CHANGED',
-        aggregateType: 'CONVERSATION',
-        aggregateId: conversation.id,
-        payload: { conversationId: conversation.id, quoteRequestId: request.id, folio: request.folio, fromStatus: conversation.status, toStatus: reopened.status },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'CONVERSATION.STATUS_CHANGED',
+      aggregateType: 'CONVERSATION',
+      aggregateId: conversation.id,
+      payload: { conversationId: conversation.id, quoteRequestId: request.id, folio: request.folio, fromStatus: conversation.status, toStatus: reopened.status },
+    }, { now });
     return { conversationId: reopened.id, quoteRequestId: request.id, status: reopened.status, closedAt: reopened.closedAt };
   });
 }

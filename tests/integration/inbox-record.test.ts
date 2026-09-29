@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { getPrisma } from '@/server/db/client';
+import { withInboxSavepoint } from '@/server/modules/inbox/domain-events';
 import { applyInboxEffects, recordInboxIntents, resolveInboxGroups, type InboxIntent } from '@/server/modules/inbox/record';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
@@ -126,6 +127,27 @@ describe('inbox recording', () => {
     const rows = await prisma.inboxNotification.findMany({ where: { recipientId }, orderBy: { createdAt: 'asc' } });
     expect(rows).toHaveLength(2);
     expect(rows.filter((row) => row.resolvedAt === null)).toHaveLength(1);
+    await prisma.inboxNotification.deleteMany({ where: { recipientId } });
+  });
+
+  it('keeps the rest of the transaction when the inbox work fails inside its savepoint', async () => {
+    let discardedId = '';
+    const kept: string[] = [];
+    await prisma.$transaction(async (tx) => {
+      kept.push(...(await recordInboxIntents(tx, [intent({ groupKey: `savepoint-before-${suffix}` })], new Date())).map((row) => row.id));
+      await withInboxSavepoint(tx, 'test', async () => {
+        const [discarded] = await recordInboxIntents(tx, [intent({ groupKey: `savepoint-inside-${suffix}` })], new Date());
+        discardedId = discarded.id;
+        await tx.$executeRawUnsafe('SELECT 1/0');
+      });
+      kept.push(...(await recordInboxIntents(tx, [intent({ groupKey: `savepoint-after-${suffix}` })], new Date())).map((row) => row.id));
+    });
+    const keys = (await prisma.inboxNotification.findMany({ where: { recipientId }, select: { groupKey: true } })).map((row) => row.groupKey).sort();
+    expect(keys).toEqual([`savepoint-after-${suffix}`, `savepoint-before-${suffix}`]);
+    // La señal del aviso deshecho se descarta con su SAVEPOINT; las demás llegan al confirmar.
+    await waitFor(() => kept.every((id) => received.some((payload) => payload.includes(id))));
+    expect(discardedId).not.toBe('');
+    expect(received.some((payload) => payload.includes(discardedId))).toBe(false);
     await prisma.inboxNotification.deleteMany({ where: { recipientId } });
   });
 });

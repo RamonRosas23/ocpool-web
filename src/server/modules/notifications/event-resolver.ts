@@ -2,6 +2,7 @@ import type { PrismaClient } from '@/generated/prisma/client';
 import { readCommercialV2Flags, type CommercialV2Flags } from '@/server/flags/commercial-v2';
 import type { NotificationCancellationReason } from '@/server/modules/notifications/dispatcher';
 import type { NotificationEventInput, NotificationMappingContext, NotificationRecipientContext } from '@/server/modules/notifications/templates';
+import { requestWorkspaceNotificationPath } from '@/server/modules/notifications/paths';
 
 type DbClient = PrismaClient;
 
@@ -45,13 +46,7 @@ export function customerContext(recipient: NotificationRecipientContext, quoteRe
     : { recipient, actionPath: '/portal/access', actionLabel: 'Solicitar acceso' };
 }
 
-export function requestWorkspaceNotificationPath(requestId: string, tab: 'summary' | 'quote' | 'conversation' | 'files' | 'activity', flags: CommercialV2Flags = readCommercialV2Flags()): string {
-  if (flags.commercialWorkspaceV2 && flags.requestWorkspaceV2) return `/staff/requests/${encodeURIComponent(requestId)}?tab=${tab}`;
-  // La vista clásica también abre un expediente por `?request=` (lista + detalle en la misma página;
-  // conversación y archivos van en el detalle, así que no hay pestaña). Antes el correo llevaba a la
-  // lista a secas y había que buscar el folio a mano.
-  return `/staff/requests?request=${encodeURIComponent(requestId)}`;
-}
+export { requestWorkspaceNotificationPath } from '@/server/modules/notifications/paths';
 
 function staffContext(recipient: NotificationRecipientContext, quoteRequestId: string, tab: 'summary' | 'quote' | 'conversation' | 'files' | 'activity' = 'summary', flags: CommercialV2Flags = readCommercialV2Flags()): NotificationMappingContext {
   return { recipient, actionPath: requestWorkspaceNotificationPath(quoteRequestId, tab, flags) };

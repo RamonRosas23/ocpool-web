@@ -7,6 +7,7 @@ import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { assertStaffAssigneeFilterScope, assertStaffAssigneeTargetScope, canReadGlobalStaffRequests, requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 import { inviteCustomerPortalAccessInTransaction, type CustomerAccessResult } from '@/server/modules/customer-onboarding/service';
+import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
 import { sendStaffMessageInTransaction } from '@/server/modules/messaging/service';
 import { normalizeIdempotencyKey, normalizeMessageBody } from '@/server/modules/messaging/domain';
 import { createQuoteRequest, type CreateQuoteRequestInput, type QuoteRequestResult } from '@/server/modules/quote-requests/service';
@@ -806,7 +807,7 @@ export async function requestInformationQuoteRequest(actor: Actor, quoteRequestI
     if (!request) throw new AppError('NOT_FOUND', 'La solicitud no existe.', 404);
     requireStaffRequestReadScope(actor, request.currentAssigneeId);
     if (request.status === 'INFORMACION_REQUERIDA') {
-      const existingMessage = await sendStaffMessageInTransaction(transaction, actor, request, { body: normalized.message, idempotencyKey: normalized.idempotencyKey }, now);
+      const existingMessage = await sendStaffMessageInTransaction(transaction, actor, request, { body: normalized.message, idempotencyKey: normalized.idempotencyKey }, now, { inbox: 'skip' });
       if (!existingMessage.idempotent) throw new AppError('CONFLICT', 'La solicitud ya está esperando información. Regresa a revisión para enviar una nueva solicitud.', 409);
       if (existingMessage.body !== normalized.message) throw new AppError('CONFLICT', 'La clave de idempotencia ya fue utilizada para otro mensaje.', 409);
       return {
@@ -824,7 +825,7 @@ export async function requestInformationQuoteRequest(actor: Actor, quoteRequestI
       throw new AppError('CONFLICT', 'La solicitud sólo puede esperar información durante revisión o elaboración.', 409);
     }
 
-    const message = await sendStaffMessageInTransaction(transaction, actor, request, { body: normalized.message, idempotencyKey: normalized.idempotencyKey }, now);
+    const message = await sendStaffMessageInTransaction(transaction, actor, request, { body: normalized.message, idempotencyKey: normalized.idempotencyKey }, now, { inbox: 'skip' });
     if (message.idempotent) {
       if (message.body !== normalized.message) throw new AppError('CONFLICT', 'La clave de idempotencia ya fue utilizada para otro mensaje.', 409);
       throw new AppError('CONFLICT', 'La solicitud de información ya fue procesada. Recarga el expediente.', 409);
@@ -857,14 +858,13 @@ export async function requestInformationQuoteRequest(actor: Actor, quoteRequestI
         },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'REQUEST.STATUS_CHANGED',
-        aggregateType: 'QUOTE_REQUEST',
-        aggregateId: request.id,
-        payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus: 'INFORMACION_REQUERIDA', source: 'request_information', messageId: message.id },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'REQUEST.STATUS_CHANGED',
+      aggregateType: 'QUOTE_REQUEST',
+      aggregateId: request.id,
+      payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus: 'INFORMACION_REQUERIDA', source: 'request_information', messageId: message.id },
+    }, { now });
     return {
       quoteRequestId: request.id,
       folio: request.folio,
@@ -921,14 +921,13 @@ export async function assignQuoteRequest(actor: Actor, quoteRequestId: string, i
         metadata: { folio: request.folio, assignedToId },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'REQUEST.ASSIGNED',
-        aggregateType: 'QUOTE_REQUEST',
-        aggregateId: request.id,
-        payload: { quoteRequestId: request.id, folio: request.folio, assignedToId },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'REQUEST.ASSIGNED',
+      aggregateType: 'QUOTE_REQUEST',
+      aggregateId: request.id,
+      payload: { quoteRequestId: request.id, folio: request.folio, assignedToId, assignedById: actor.userId, previousAssigneeId: request.currentAssigneeId },
+    }, { now });
     return { quoteRequestId: request.id, folio: request.folio, currentAssigneeId: assignedToId, assignedAt: now };
   });
 }
@@ -961,14 +960,13 @@ export async function takeQuoteRequest(actor: Actor, quoteRequestId: string, inp
         metadata: { folio: request.folio, assignedToId: actor.userId, mode: 'take' },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'REQUEST.ASSIGNED',
-        aggregateType: 'QUOTE_REQUEST',
-        aggregateId: request.id,
-        payload: { quoteRequestId: request.id, folio: request.folio, assignedToId: actor.userId, mode: 'take' },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'REQUEST.ASSIGNED',
+      aggregateType: 'QUOTE_REQUEST',
+      aggregateId: request.id,
+      payload: { quoteRequestId: request.id, folio: request.folio, assignedToId: actor.userId, assignedById: actor.userId, previousAssigneeId: null, mode: 'take' },
+    }, { now });
     return { quoteRequestId: request.id, folio: request.folio, currentAssigneeId: actor.userId, status: 'TAKEN' as const, assignedAt: now };
   });
 }
@@ -1009,14 +1007,13 @@ export async function markInformationReviewedQuoteRequest(actor: Actor, quoteReq
         metadata: { folio: request.folio, fromStatus: 'INFORMACION_REQUERIDA', toStatus: 'EN_REVISION' },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'REQUEST.CUSTOMER_RESPONSE',
-        aggregateType: 'QUOTE_REQUEST',
-        aggregateId: request.id,
-        payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: 'INFORMACION_REQUERIDA', toStatus: 'EN_REVISION' },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'REQUEST.CUSTOMER_RESPONSE',
+      aggregateType: 'QUOTE_REQUEST',
+      aggregateId: request.id,
+      payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: 'INFORMACION_REQUERIDA', toStatus: 'EN_REVISION' },
+    }, { now });
     return { quoteRequestId: request.id, folio: request.folio, fromStatus: 'INFORMACION_REQUERIDA' as const, toStatus: 'EN_REVISION' as const, changedAt: now };
   });
 }
@@ -1048,9 +1045,13 @@ export async function closeQuoteRequest(actor: Actor, quoteRequestId: string, in
     await transaction.auditLog.create({
       data: { actorUserId: actor.userId, action: 'quote_request.closed', entityType: 'quote_request', entityId: request.id, outcome: 'SUCCESS', metadata: { folio: request.folio, fromStatus: request.status, toStatus: 'RECHAZADA', reason: reasonLabel } },
     });
-    await transaction.outboxEvent.create({
-      data: { eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: request.id, payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus: 'RECHAZADA' } },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'REQUEST.STATUS_CHANGED',
+      aggregateType: 'QUOTE_REQUEST',
+      aggregateId: request.id,
+      payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus: 'RECHAZADA', reason: reasonLabel },
+    }, { now });
     const quote = await transaction.quote.findUnique({ where: { quoteRequestId: request.id }, select: { id: true, publishedVersion: { select: { id: true, status: true } } } });
     const published = quote?.publishedVersion ?? null;
     if (quote && published && (published.status === 'ENVIADA' || published.status === 'EN_NEGOCIACION')) {
@@ -1090,9 +1091,13 @@ export async function reopenQuoteRequest(actor: Actor, quoteRequestId: string, i
     await transaction.auditLog.create({
       data: { actorUserId: actor.userId, action: 'quote_request.reopened', entityType: 'quote_request', entityId: request.id, outcome: 'SUCCESS', metadata: { folio: request.folio, fromStatus: request.status, toStatus } },
     });
-    await transaction.outboxEvent.create({
-      data: { eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: request.id, payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus } },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'REQUEST.STATUS_CHANGED',
+      aggregateType: 'QUOTE_REQUEST',
+      aggregateId: request.id,
+      payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus },
+    }, { now });
     return { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus, changedAt: now };
   });
 }
@@ -1173,14 +1178,13 @@ export async function transitionQuoteRequest(actor: Actor, quoteRequestId: strin
         metadata: { folio: request.folio, fromStatus: request.status, toStatus: input.toStatus },
       },
     });
-    await transaction.outboxEvent.create({
-      data: {
-        eventType: 'REQUEST.STATUS_CHANGED',
-        aggregateType: 'QUOTE_REQUEST',
-        aggregateId: request.id,
-        payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus: input.toStatus },
-      },
-    });
+    await recordDomainEvent(transaction, {
+      actor: { userId: actor.userId, type: 'EMPLOYEE' },
+      eventType: 'REQUEST.STATUS_CHANGED',
+      aggregateType: 'QUOTE_REQUEST',
+      aggregateId: request.id,
+      payload: { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus: input.toStatus, reason },
+    }, { now });
     return { quoteRequestId: request.id, folio: request.folio, fromStatus: request.status, toStatus: input.toStatus, changedAt: now };
   });
 }
