@@ -2,6 +2,7 @@
 
 import { ChangeEvent, KeyboardEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { nextRovingTabIndex, PrivateSelect } from '@/components/private/ui';
+import { useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
 import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
@@ -146,16 +147,24 @@ export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPA
   // un archivo, sin ninguna guarda de orden. Una respuesta sin cursor tardía (post-subida/borrado)
   // podía reemplazar `items` por completo, descartando en silencio la lista ya paginada con "Ver más".
   const loadRequestIdRef = useRef(0);
-  const loadFiles = useCallback(async (cursor?: string) => {
+  const loadInFlightRef = useRef(false);
+  const silentReloadPendingRef = useRef(false);
+  const loadFiles = useCallback(async (cursor?: string, options: { silent?: boolean } = {}) => {
+    if (options.silent && loadInFlightRef.current) {
+      silentReloadPendingRef.current = true;
+      return;
+    }
     const requestGeneration = (loadRequestIdRef.current += 1);
+    loadInFlightRef.current = true;
     if (!capabilities.filesRead) {
       setLoading(false);
       setItems([]);
       setNextCursor(null);
+      loadInFlightRef.current = false;
       return;
     }
     if (cursor) setLoadingMore(true);
-    else setLoading(true);
+    else if (!options.silent) setLoading(true);
     try {
       const params = new URLSearchParams({ limit: '30' });
       if (cursor) params.set('cursor', cursor);
@@ -167,15 +176,22 @@ export default function StaffFilesPanel({ requestId, capabilities = DEFAULT_CAPA
       setError(null);
     } catch (caught) {
       if (loadRequestIdRef.current !== requestGeneration) return;
+      if (options.silent) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar los archivos.');
     } finally {
       if (loadRequestIdRef.current !== requestGeneration) return;
       if (cursor) setLoadingMore(false);
-      else setLoading(false);
+      else if (!options.silent) setLoading(false);
+      loadInFlightRef.current = false;
+      if (silentReloadPendingRef.current) {
+        silentReloadPendingRef.current = false;
+        void loadFiles(undefined, { silent: true });
+      }
     }
   }, [capabilities.filesRead, requestId]);
 
   useEffect(() => { void loadFiles(); }, [loadFiles]);
+  useRealtimeRequest(capabilities.filesRead ? requestId : null, ['files'], () => { void loadFiles(undefined, { silent: true }); });
 
   const loadMore = () => {
     if (!nextCursor || loadingMore) return;

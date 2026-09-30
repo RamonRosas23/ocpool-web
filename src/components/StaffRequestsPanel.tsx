@@ -1,7 +1,8 @@
 'use client';
 
 import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useInbox } from '@/components/inbox/InboxProvider';
+import { useInbox, useInboxActiveContext } from '@/components/inbox/InboxProvider';
+import { useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Archive, ArrowRight, CircleCheck, Compass, Hourglass, Inbox, MessageSquareReply, Plus, X } from 'lucide-react';
@@ -185,6 +186,7 @@ export default function StaffRequestsPanel() {
   const openRequestId = selected?.id ?? null;
   const openUnread = openRequestId ? inbox?.unreadByRequest[openRequestId] ?? 0 : 0;
   const markInboxRead = inbox?.markRead;
+  useInboxActiveContext(openRequestId);
   useEffect(() => {
     if (!openRequestId || openUnread === 0 || !markInboxRead) return;
     void markInboxRead({ quoteRequestId: openRequestId, scope: 'activity' });
@@ -259,6 +261,17 @@ export default function StaffRequestsPanel() {
   const deepLinkedIdRef = useRef<string | null>(null);
   const loadListGenerationRef = useRef(0);
   const loadDetailGenerationRef = useRef(0);
+  const selectedDataRef = useRef<RequestDetail | null>(null);
+  const loadingDetailRef = useRef(false);
+  const pendingLiveDetailRef = useRef<string | null>(null);
+  useEffect(() => { selectedDataRef.current = selected; }, [selected]);
+  useEffect(() => { loadingDetailRef.current = loadingDetail; }, [loadingDetail]);
+  const [liveUpdatedAt, setLiveUpdatedAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (liveUpdatedAt === null) return undefined;
+    const timer = window.setTimeout(() => setLiveUpdatedAt(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [liveUpdatedAt]);
 
   const loadList = useCallback(async (currentPage: number, currentStatus: string, query: string, currentView: InboxView, keepSelection = false) => {
     // UX audit fix: cambiar de filtro/página rápido (o volver a escribir en el buscador) podía dejar
@@ -316,18 +329,34 @@ export default function StaffRequestsPanel() {
     }
   }, []);
 
-  const loadDetail = useCallback(async (id: string) => {
+  const loadDetail = useCallback(async (id: string, options: { silent?: boolean } = {}) => {
+    // Una relectura en vivo no compite con una carga normal en curso (ésa ya trae lo último).
+    if (options.silent && loadingDetailRef.current) {
+      pendingLiveDetailRef.current = id;
+      return;
+    }
     // UX audit fix: hacer clic rápido entre dos expedientes de la lista podía dejar que la respuesta
     // obsoleta del primero llegara después que la del segundo y sobreescribiera en silencio el panel
     // de detalle (y por tanto el destino real de "Guardar responsable"/"Actualizar estado") con datos
     // de un expediente distinto al resaltado como seleccionado.
     const generation = (loadDetailGenerationRef.current += 1);
-    setLoadingDetail(true);
-    setError(null);
+    if (!options.silent) {
+      loadingDetailRef.current = true;
+      setLoadingDetail(true);
+      setError(null);
+    }
     try {
       const response = await fetch(`/api/staff/quote-requests/${id}`, { credentials: 'include', cache: 'no-store' });
       const data = await readApiResponseOrThrow<RequestDetail>(response, 'No fue posible cargar el expediente.');
       if (loadDetailGenerationRef.current !== generation) return;
+      if (options.silent) {
+        // Refresca el expediente sin sobrescribir una selección de responsable que el equipo esté preparando.
+        const previousAssignee = selectedDataRef.current?.currentAssignee?.id ?? '';
+        setSelected(data);
+        setAssignmentId((value) => value === previousAssignee ? data.currentAssignee?.id ?? '' : value);
+        setLiveUpdatedAt(Date.now());
+        return;
+      }
       setSelected(data);
       setAssignmentId(data.currentAssignee?.id ?? '');
       // Sin preselección: antes quedaba elegido el primer estado disponible -- a menudo "Información
@@ -339,10 +368,13 @@ export default function StaffRequestsPanel() {
       setCloseOpen(false);
       setFollowUp(null);
     } catch (caught) {
-      if (loadDetailGenerationRef.current !== generation) return;
+      if (loadDetailGenerationRef.current !== generation || options.silent) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el expediente.');
     } finally {
-      setLoadingDetail(false);
+      if (!options.silent && loadDetailGenerationRef.current === generation) {
+        loadingDetailRef.current = false;
+        setLoadingDetail(false);
+      }
     }
   }, []);
 
@@ -362,6 +394,19 @@ export default function StaffRequestsPanel() {
     if (selectedId) void loadDetail(selectedId);
     else setSelected(null);
   }, [loadDetail, selectedId]);
+
+  useEffect(() => {
+    if (loadingDetail || !pendingLiveDetailRef.current) return;
+    const id = pendingLiveDetailRef.current;
+    pendingLiveDetailRef.current = null;
+    if (id === selectedIdRef.current) void loadDetail(id, { silent: true });
+  }, [loadDetail, loadingDetail]);
+
+  useRealtimeRequest(selected?.id ?? null, ['status', 'assignment', 'quote', 'project'], (change) => {
+    if (change.self && change.reason === 'signal') return;
+    const id = selectedIdRef.current;
+    if (id) void loadDetail(id, { silent: true });
+  });
 
   // El expediente abierto vive en la URL (?request=): recargar conserva la selección, el enlace se
   // puede compartir y el buscador global (Ctrl+K) puede abrir otro sin remontar la página.
@@ -832,6 +877,7 @@ export default function StaffRequestsPanel() {
               <CloseRequestDialog open={closeOpen} requestId={selected.id} folio={selected.folio} sentVersionNumber={selected.quoteSummary?.published && ['ENVIADA', 'EN_NEGOCIACION'].includes(selected.quoteSummary.published.status) ? selected.quoteSummary.published.versionNumber : null} onClose={() => setCloseOpen(false)} onClosed={async (message) => { setCloseOpen(false); setError(null); setNotice(message); await refreshCurrent(); }} />
               <FollowUpDialog open={followUp !== null} kind={followUp ?? 'proposal'} requestId={selected.id} folio={selected.folio} contactName={selected.contact.displayName} missing={missingInformation} versionNumber={selected.quoteSummary?.published?.versionNumber ?? null} onClose={() => setFollowUp(null)} onSent={async (message) => { setFollowUp(null); setError(null); setNotice(message); await refreshCurrent(); }} />
               {messagingCapabilities.requestsEdit && <StaffRequestEditDialog open={editOpen} target={{ id: selected.id, folio: selected.folio, status: selected.status, contact: { displayName: selected.contact.displayName, email: selected.contact.email, phone: selected.contact.phone, roleTitle: selected.contact.roleTitle }, detail: selected.detail }} focus={editFocus} onClose={() => setEditOpen(false)} onSaved={async (message) => { setEditOpen(false); setError(null); setNotice(message); await refreshCurrent(); }} />}
+              {liveUpdatedAt !== null && <p className="live-updated" role="status">Actualizado hace un momento</p>}
               <section className="staff-history"><div><p className="staff-section-label">Actividad</p><h3>Historial del expediente</h3></div><ol>{selected.statusHistory.map((entry) => <li key={entry.id}><span className="staff-history__line" aria-hidden="true" /><div><strong>{statusLabel(entry.toStatus)}</strong><p>{entry.reason ?? 'Cambio registrado'} · {entry.changedBy?.displayName ?? 'Sistema'}</p><time dateTime={entry.createdAt}>{formatDateTime(entry.createdAt)}</time></div></li>)}</ol></section>
             </>}
           </section>

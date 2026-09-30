@@ -1,6 +1,7 @@
 'use client';
 
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDate } from '@/lib/format-date';
 import { getOrCreateIdempotencyKey } from '@/lib/idempotency-key';
@@ -94,10 +95,17 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
   // "Ver más" sin ningún aviso. `loadRequestIdRef` sólo deja aplicar el resultado de la llamada más
   // reciente que se haya iniciado.
   const loadRequestIdRef = useRef(0);
-  const loadFiles = useCallback(async (cursor?: string) => {
+  const loadInFlightRef = useRef(false);
+  const silentReloadPendingRef = useRef(false);
+  const loadFiles = useCallback(async (cursor?: string, options: { silent?: boolean } = {}) => {
+    if (options.silent && loadInFlightRef.current) {
+      silentReloadPendingRef.current = true;
+      return;
+    }
     const requestGeneration = (loadRequestIdRef.current += 1);
+    loadInFlightRef.current = true;
     if (cursor) setLoadingMore(true);
-    else setLoading(true);
+    else if (!options.silent) setLoading(true);
     try {
       const params = new URLSearchParams({ limit: '30' });
       if (cursor) params.set('cursor', cursor);
@@ -109,15 +117,22 @@ export default function ClientFilesPanel({ requestId }: { requestId: string }) {
       setError(null);
     } catch (caught) {
       if (loadRequestIdRef.current !== requestGeneration) return;
+      if (options.silent) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar los archivos del expediente.');
     } finally {
       if (loadRequestIdRef.current !== requestGeneration) return;
       if (cursor) setLoadingMore(false);
-      else setLoading(false);
+      else if (!options.silent) setLoading(false);
+      loadInFlightRef.current = false;
+      if (silentReloadPendingRef.current) {
+        silentReloadPendingRef.current = false;
+        void loadFiles(undefined, { silent: true });
+      }
     }
   }, [requestId]);
 
   useEffect(() => { void loadFiles(); }, [loadFiles]);
+  useRealtimeRequest(requestId, ['files'], () => { void loadFiles(undefined, { silent: true }); });
 
   const loadMore = () => {
     if (!nextCursor || loadingMore) return;

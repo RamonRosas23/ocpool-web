@@ -26,7 +26,7 @@ export async function withInboxSavepoint(tx: Prisma.TransactionClient, source: s
 
 /** Las pantallas abiertas del expediente se enteran al confirmar (señal `r`); una falla aquí nunca tumba el cambio. */
 export async function signalRequestChange(tx: Prisma.TransactionClient, input: RequestChangeInput): Promise<void> {
-  await withInboxSavepoint(tx, 'REQUEST.CHANGED', () => publishRequestChange(tx, input), 'realtime_signal');
+  await withInboxSavepoint(tx, 'realtime_signal', () => publishRequestChange(tx, input), 'realtime_signal');
 }
 
 async function signalFromEvent(tx: Prisma.TransactionClient, event: DomainEventInput): Promise<void> {

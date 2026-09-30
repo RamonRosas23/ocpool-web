@@ -10,10 +10,12 @@ import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import NotificationBell from '@/components/inbox/NotificationBell';
 import SinceLastVisitBanner from '@/components/inbox/SinceLastVisitBanner';
-import { useInbox } from '@/components/inbox/InboxProvider';
+import { useInbox, useInboxActiveContext } from '@/components/inbox/InboxProvider';
+import { useCoalesced, useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { formatDate } from '@/lib/format-date';
 import type { InboxNotification } from '@/lib/inbox-client';
+import { ANY_REQUEST } from '@/lib/realtime-subscriptions';
 import { portalNextStep, portalStages, portalStatusLabel, type PortalNextStep, type PortalStageState } from '@/lib/portal-stage';
 import { announceSignOut } from '@/lib/session-exit';
 import { moneyLabel } from '@/lib/money';
@@ -173,25 +175,44 @@ export default function ClientPortalPanel() {
   const inbox = useInbox();
   const [sinceLastVisit, setSinceLastVisit] = useState<InboxNotification[]>([]);
   const acknowledgedRequestRef = useRef<string | null>(null);
+  const loadRequestsGenerationRef = useRef(0);
+  const loadRequestsInFlightRef = useRef(false);
+  const pendingSilentListRef = useRef(false);
 
-  const loadRequests = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadRequests = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (options.silent && loadRequestsInFlightRef.current) {
+      pendingSilentListRef.current = true;
+      return;
+    }
+    const generation = (loadRequestsGenerationRef.current += 1);
+    loadRequestsInFlightRef.current = true;
+    if (!options.silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const response = await fetch('/api/portal/requests?page=1&pageSize=25', { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<ListResponse>(response);
+      if (loadRequestsGenerationRef.current !== generation) return;
       setRequests(data.items);
       setTotal(data.total);
       setRestricted(false);
       setSelectedId((current) => current && data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null);
     } catch (caught) {
+      if (loadRequestsGenerationRef.current !== generation || options.silent) return;
       const message = caught instanceof Error ? caught.message : 'No fue posible cargar tu portal.';
       setRestricted(message.includes('autenticada') || message.includes('permisos'));
       setError(message);
       setRequests([]);
       setWorkspace(null);
     } finally {
-      setLoading(false);
+      if (loadRequestsGenerationRef.current !== generation) return;
+      loadRequestsInFlightRef.current = false;
+      if (!options.silent) setLoading(false);
+      if (pendingSilentListRef.current) {
+        pendingSilentListRef.current = false;
+        void loadRequests({ silent: true });
+      }
     }
   }, []);
 
@@ -256,6 +277,7 @@ export default function ClientPortalPanel() {
   // el expediente y el resumen de avisos cargan por separado y en cualquier orden.
   const openRequestId = workspace?.request.id ?? null;
   const openUnread = openRequestId ? inbox?.unreadByRequest[openRequestId] ?? 0 : 0;
+  useInboxActiveContext(openRequestId);
   useEffect(() => {
     if (!inbox?.loaded || !openRequestId) return;
     if (acknowledgedRequestRef.current !== openRequestId) {
@@ -264,6 +286,19 @@ export default function ClientPortalPanel() {
     }
     if (openUnread > 0) void inbox.markRead({ quoteRequestId: openRequestId, scope: 'all' });
   }, [inbox, openRequestId, openUnread]);
+
+  // El riel y el expediente abierto se ponen al día solos (spec §5.4); archivos e hilo tienen su propia escucha.
+  const pendingDetailRef = useRef(false);
+  const refreshPortal = useCoalesced(() => {
+    void loadRequests({ silent: true });
+    if (pendingDetailRef.current && openRequestId) void loadDetail(openRequestId, { silent: true });
+    pendingDetailRef.current = false;
+  }, 600);
+  useRealtimeRequest(loggedOut ? null : ANY_REQUEST, ['created', 'status', 'quote', 'project'], (change) => {
+    if (change.self && change.reason === 'signal') return;
+    if (change.requestId === null || change.requestId === openRequestId) pendingDetailRef.current = true;
+    refreshPortal();
+  });
 
   if (restricted) return <PrivateSurfaceRoot className="client-portal client-portal--restricted"><section className="client-restricted"><WorkspaceLogo tone="light" className="client-restricted__logo" /><p className="client-eyebrow">Portal privado</p><h1>Acceso privado.</h1>{loggedOut ? <p role="status">Cerraste tu sesión. Para volver, solicita un nuevo enlace de acceso con tu correo.</p> : <p>Necesitas un enlace de acceso válido para consultar tus expedientes.</p>}<div className="client-restricted__actions"><Link className="client-button client-button--dark" href={requestFromUrl ? `/portal/access?request=${encodeURIComponent(requestFromUrl)}` : '/portal/access'}>Solicitar acceso</Link><Link className="client-restricted__link" href="/">Volver al sitio</Link></div></section></PrivateSurfaceRoot>;
 

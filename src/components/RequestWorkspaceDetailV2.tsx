@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { KeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useInbox } from '@/components/inbox/InboxProvider';
+import { useInbox, useInboxActiveContext } from '@/components/inbox/InboxProvider';
+import { useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
 import { nextRovingTabIndex, PrivateBlockingState, PrivateEmptyState, PrivateSkeleton, PrivateSurfaceRoot } from '@/components/private/ui';
 import RequestWorkspaceActionsV2 from '@/components/RequestWorkspaceActionsV2';
 import type { RequestWorkspaceActionsHandle } from '@/components/RequestWorkspaceActionsV2';
@@ -251,6 +252,7 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
   const openRequestId = detail?.id ?? null;
   const openUnread = openRequestId ? inbox?.unreadByRequest[openRequestId] ?? 0 : 0;
   const markInboxRead = inbox?.markRead;
+  useInboxActiveContext(openRequestId);
   useEffect(() => {
     if (!openRequestId || openUnread === 0 || !markInboxRead) return;
     void markInboxRead({ quoteRequestId: openRequestId, scope: 'activity' });
@@ -272,27 +274,31 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
   // nuevo. `loadGenerationRef` distingue la llamada más reciente sin importar quién la haya
   // iniciado, así que una respuesta obsoleta nunca sobreescribe el expediente que se está viendo.
   const loadGenerationRef = useRef(0);
-  const loadDetail = useCallback(async (signal?: AbortSignal, showLoading = true) => {
+  const loadDetail = useCallback(async (signal?: AbortSignal, showLoading = true, silent = false): Promise<boolean> => {
     const generation = (loadGenerationRef.current += 1);
     if (showLoading) setLoading(true);
-    setError(null);
+    if (!silent) setError(null);
     try {
       const response = await fetch(`/api/staff/quote-requests/${encodeURIComponent(requestId)}`, { credentials: 'include', cache: 'no-store', signal });
       const result = await readApiResponse<RequestDetail>(response, 'No fue posible cargar el expediente.');
-      if (loadGenerationRef.current !== generation) return;
+      if (loadGenerationRef.current !== generation) return false;
       if (result.ok) {
         setDetail(result.data);
+        return true;
       } else {
-        setDetail(null);
-        setError({ kind: result.kind, message: result.message });
+        if (!silent) {
+          setDetail(null);
+          setError({ kind: result.kind, message: result.message });
+        }
+        return false;
       }
     } catch (caught: unknown) {
-      if (caught instanceof DOMException && caught.name === 'AbortError') return;
-      if (loadGenerationRef.current !== generation) return;
+      if (caught instanceof DOMException && caught.name === 'AbortError') return false;
+      if (loadGenerationRef.current !== generation || silent) return false;
       setError({ kind: 'transient', message: caught instanceof Error ? caught.message : 'No fue posible cargar el expediente.' });
+      return false;
     } finally {
-      if (loadGenerationRef.current !== generation) return;
-      if (showLoading && !signal?.aborted) setLoading(false);
+      if (loadGenerationRef.current === generation && showLoading && !signal?.aborted) setLoading(false);
     }
   }, [requestId]);
 
@@ -321,6 +327,30 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
   const refreshDetail = useCallback(async () => {
     await loadDetail(undefined, false);
   }, [loadDetail]);
+
+  const [liveUpdatedAt, setLiveUpdatedAt] = useState<number | null>(null);
+  const pendingLiveRefreshRef = useRef(false);
+  useEffect(() => {
+    if (liveUpdatedAt === null) return undefined;
+    const timer = window.setTimeout(() => setLiveUpdatedAt(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [liveUpdatedAt]);
+  const refreshLiveDetail = useCallback(async () => {
+    if (loading) {
+      pendingLiveRefreshRef.current = true;
+      return;
+    }
+    if (await loadDetail(undefined, false, true)) setLiveUpdatedAt(Date.now());
+  }, [loadDetail, loading]);
+  useEffect(() => {
+    if (loading || !pendingLiveRefreshRef.current) return;
+    pendingLiveRefreshRef.current = false;
+    void refreshLiveDetail();
+  }, [loading, refreshLiveDetail]);
+  useRealtimeRequest(requestId, ['status', 'assignment', 'quote', 'project'], (change) => {
+    if (change.self && change.reason === 'signal') return;
+    void refreshLiveDetail();
+  });
 
   const openQuote = useCallback(() => {
     router.push(tabHref(requestId, 'quote', query));
@@ -415,6 +445,7 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
         {error?.kind === 'transient' && <PrivateBlockingState title="No fue posible abrir el expediente." onRetry={() => void loadDetail()}>{error.message}</PrivateBlockingState>}
         {!loading && !error && detail && <>
           {headerDetail && <RequestWorkspaceHeaderV2 backHref={`/staff/requests${backParams ? `?${backParams}` : ''}`} primaryAction={primaryAction} primaryHref={primaryAction?.kind === 'quote' ? `/staff/quotes?request=${encodeURIComponent(requestId)}` : undefined} onPrimaryAction={activateAction} secondaryActions={secondaryActions} detail={headerDetail} />}
+          {liveUpdatedAt !== null && <p className="live-updated" role="status">Actualizado hace un momento</p>}
           {createdNotice && <p className="private-status private-status--success" role="status">Solicitud creada correctamente.</p>}
           <nav className="request-workspace-v2__tabs" role="tablist" aria-label="Secciones del expediente">
             {REQUEST_WORKSPACE_TABS.map((tab) => <Link key={tab} role="tab" tabIndex={query.tab === tab ? 0 : -1} aria-selected={query.tab === tab} aria-controls="request-workspace-v2-tabpanel" className={query.tab === tab ? 'is-active' : ''} href={tabHref(requestId, tab, query)} onKeyDown={handleTabKeyDown}>{TAB_LABELS[tab]}</Link>)}
