@@ -48,6 +48,18 @@ La retención se define por clase de dato y dependencia. No se ejecutan purgas a
 
 El supervisor elegido debe ejecutar una sola instancia por entorno lógico, reiniciar ante salida anormal, conservar `SIGTERM` para shutdown limpio y alertar por backlog, edad del evento, fallos permanentes y ausencia del proceso. `SENT` sólo significa aceptación del proveedor; no representa apertura ni lectura.
 
+## Tiempo real (`/api/realtime`)
+
+La campana, los contadores y el aviso flash llegan por un canal SSE (`GET /api/realtime`). Cada proceso de Next abre una conexión propia `LISTEN ocpool_realtime` a PostgreSQL, fuera del pool de Prisma, y reparte las señales a las pestañas conectadas; cada navegador abre una sola conexión, que comparten todas sus pestañas.
+
+- **Proxy:** el canal no puede quedarse en búfer. Con Nginx, para `location /api/realtime` usa `proxy_buffering off;`, `proxy_cache off;`, `proxy_http_version 1.1;`, `proxy_set_header Connection "";` y `proxy_read_timeout` de 60 s o más (la ruta ya envía `X-Accel-Buffering: no` y `Cache-Control: no-cache, no-transform`, y un `ping` cada `REALTIME_HEARTBEAT_SECONDS`, 25 s).
+- **HTTP/2** es lo recomendado. Con HTTP/1.1 la conexión del canal ocupa una de las ~6 que el navegador permite por dominio; por eso sólo una pestaña por navegador la abre.
+- **PM2:** funciona con una o varias instancias; cada una abre su propio `LISTEN`. Cuenta una conexión más a PostgreSQL por instancia.
+- **Interruptor sin desplegar:** `REALTIME_ENABLED=false` y reinicio del proceso. La ruta responde `503` y cada navegador vuelve a consultar cada 30 s; se reactiva igual. Úsalo si el proxy corta el canal o si la base se satura de conexiones.
+- **Límites:** `REALTIME_MAX_CONNECTIONS_PER_USER` (10; al pasarlo se cierra la más vieja) y revalidación de la sesión cada `REALTIME_SESSION_RECHECK_SECONDS` (60 s). Cerrar sesión, cambiar la contraseña, cerrar otras sesiones o suspender a alguien cierra su canal al momento.
+- **Caída de la base:** la conexión `LISTEN` se reintenta sola (1 s, 2 s, 4 s… hasta 30 s) y, al volver, cada navegador relee su bandeja. Mientras tanto, los navegadores sin eventos pasan a consulta a los 60 s.
+- **Logs:** `Realtime listener connected` / `Realtime listener lost; reconnecting` / `Realtime dispatch failed`. No llevan identificadores de personas ni contenido.
+
 ## Build y reinicio seguro del runtime
 
 No ejecutes `npm run build` sobre el mismo `.next` que está sirviendo un proceso Next/PM2 activo. El build reemplaza chunks con nombres nuevos y un proceso anterior puede conservar HTML que apunta a archivos ya eliminados, provocando respuestas `404` para JavaScript/CSS y dejando la landing sin hidratación.
