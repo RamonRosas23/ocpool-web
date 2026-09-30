@@ -717,15 +717,23 @@ En `tests/integration/realtime-api.test.ts`, agrega antes del último `it` (el d
   it('streams request changes to whoever can open the file', async () => {
     const events = sseReader(await open());
     await events.next('hello');
-    const { publishRequestChange } = await import('@/server/modules/inbox/realtime-signals');
-    const request = await prisma.quoteRequest.findFirstOrThrow({ where: { currentAssigneeId: null }, select: { id: true } });
-    await publishRequestChange(prisma, { requestId: request.id, parts: ['created'], visibility: 'C' });
-    expect((await events.next('request', (event) => event.data.requestId === request.id)).data).toMatchObject({ parts: ['created'], self: false });
-    await events.cancel();
+    // Solicitud propia, creada por el equipo y sin responsable: no avisa al pool y se borra al terminar.
+    const { createQuoteRequest } = await import('@/server/modules/quote-requests/service');
+    const request = await createQuoteRequest({ idempotencyKey: `rt-api-request-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: 'RT Api Cliente', email: `rt-api-contact-${suffix}@example.test` }, detail: { projectType: 'Alberca', location: 'Durango', description: 'Fixture del evento request', consentAt: new Date() } }, { prisma });
+    try {
+      expect((await events.next('request', (event) => event.data.requestId === request.quoteRequestId)).data).toMatchObject({ parts: ['created'], self: false });
+    } finally {
+      await events.cancel();
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: request.quoteRequestId } });
+      await prisma.auditLog.deleteMany({ where: { entityId: request.quoteRequestId } });
+      await prisma.quoteRequest.deleteMany({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.deleteMany({ where: { id: request.contactId } });
+      await prisma.client.deleteMany({ where: { id: request.clientId } });
+    }
   });
 ```
 
-(El usuario de la prueba es de Ventas sin alcance global: recibe las solicitudes sin responsable.)
+(El usuario de la prueba es de Ventas sin alcance global: recibe las solicitudes sin responsable. `REQUEST.RECEIVED` publica `created` al confirmar la solicitud.)
 
 Run: `npx vitest run tests/unit/realtime-hub.test.ts tests/unit/realtime-client.test.ts`
 Expected: FAIL (`requestSignalVisibleTo` no existe; `request` no se entiende).
@@ -1659,43 +1667,132 @@ git commit -m "feat(realtime): bandeja, colas del dashboard, aprobaciones y coti
 
 - [ ] **Step 1: E2E (`REALTIME_E2E=1`)**
 
-Crear `tests/realtime-screens.spec.ts`. Usa el mismo escenario aislado que `tests/realtime-notifications.spec.ts` (Ventas con sesión, cliente con portal y sesión, solicitud a cargo de Ventas en `EN_REVISION`), con la misma limpieza. Tres pruebas:
+Crear `tests/realtime-screens.spec.ts` (escenario aislado, como `tests/realtime-notifications.spec.ts`, con su limpieza):
 
 ```ts
+import 'dotenv/config';
+import { expect, test, type Page } from '@playwright/test';
+import { fingerprintToken } from '@/server/auth/crypto';
+import { createSession } from '@/server/auth/sessions';
+import type { Actor } from '@/server/auth/types';
+import { getPrisma } from '@/server/db/client';
+import { listConversationMessages, sendCustomerMessage, sendStaffMessage } from '@/server/modules/messaging/service';
+import { createQuoteRequest } from '@/server/modules/quote-requests/service';
+import { seedIdentityCatalog } from '../prisma/seed';
+
+test.describe('pantallas en vivo', () => {
+  test.skip(process.env.REALTIME_E2E !== '1', 'Realtime E2E requires REALTIME_E2E=1 and a disposable local database.');
+  test.describe.configure({ mode: 'serial' });
+
+  const prisma = getPrisma();
+  const suffix = Date.now().toString();
+  const origin = process.env.APP_URL ?? 'http://127.0.0.1:3100';
+  const now = new Date();
+  const customerName = `Cliente Pantallas ${suffix}`;
+  const salesToken = `screens-e2e-sales-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`;
+  const customerToken = `screens-e2e-customer-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`;
+  const rateLimit = async () => ({ allowed: true, remaining: 20, retryAfterSeconds: null });
+  let requestId = '';
+  let clientId = '';
+  let contactId = '';
+  let salesId = '';
+  let customerId = '';
+  let sales: Actor;
+  let customer: Actor;
+  let sent = 0;
+
+  test.beforeAll(async () => {
+    if (process.env.REALTIME_E2E !== '1') return;
+    await seedIdentityCatalog(prisma);
+    const [salesRole, customerRole] = await Promise.all(['sales', 'customer'].map((key) => prisma.role.findUniqueOrThrow({ where: { key } })));
+    salesId = (await prisma.user.create({ data: { email: `screens-e2e-sales-${suffix}@example.test`, emailNormalized: `screens-e2e-sales-${suffix}@example.test`, displayName: `Ventas Pantallas ${suffix}`, type: 'EMPLOYEE', status: 'ACTIVE', roles: { create: { roleId: salesRole.id } } } })).id;
+    const request = await createQuoteRequest({ idempotencyKey: `screens-e2e-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: customerName, email: `screens-e2e-contact-${suffix}@example.test` }, detail: { projectType: 'Alberca con cascada', location: 'Querétaro', description: 'Fixture de pantallas en vivo', consentAt: now } }, { prisma, now });
+    requestId = request.quoteRequestId;
+    clientId = request.clientId;
+    contactId = request.contactId;
+    customerId = (await prisma.user.create({ data: { email: `screens-e2e-customer-${suffix}@example.test`, emailNormalized: `screens-e2e-customer-${suffix}@example.test`, displayName: customerName, type: 'CUSTOMER', status: 'ACTIVE', clientId, roles: { create: { roleId: customerRole.id } } } })).id;
+    await prisma.clientContact.update({ where: { id: contactId }, data: { userId: customerId } });
+    await prisma.quoteRequest.update({ where: { id: requestId }, data: { currentAssigneeId: salesId, status: 'EN_REVISION' } });
+    sales = { userId: salesId, type: 'EMPLOYEE', clientId: null, permissionKeys: new Set(['requests.read', 'messaging.read', 'messaging.send']), mfaVerified: true };
+    customer = { userId: customerId, type: 'CUSTOMER', clientId, permissionKeys: new Set(['messaging.read', 'messaging.send']), mfaVerified: false };
+    await createSession({ userId: salesId, ipAddress: null, userAgent: 'screens-e2e' }, { prisma, tokenGenerator: () => salesToken });
+    await createSession({ userId: customerId, ipAddress: null, userAgent: 'screens-e2e' }, { prisma, tokenGenerator: () => customerToken });
+  });
+
+  test.afterAll(async () => {
+    if (process.env.REALTIME_E2E !== '1') return;
+    const conversations = await prisma.conversation.findMany({ where: { quoteRequestId: requestId }, select: { id: true } });
+    const files = await prisma.fileAttachment.findMany({ where: { quoteRequestId: requestId }, select: { id: true, storageObjectId: true } });
+    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, ...conversations.map(({ id }) => id), ...files.map(({ id }) => id)] } } });
+    await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: requestId }, { actorUserId: { in: [salesId, customerId] } }] } });
+    await prisma.fileAttachment.deleteMany({ where: { quoteRequestId: requestId } });
+    await prisma.storageObject.deleteMany({ where: { id: { in: files.map(({ storageObjectId }) => storageObjectId) } } });
+    await prisma.conversation.deleteMany({ where: { quoteRequestId: requestId } });
+    await prisma.quoteRequest.deleteMany({ where: { id: requestId } });
+    await prisma.clientContact.deleteMany({ where: { id: contactId } });
+    await prisma.session.deleteMany({ where: { userId: { in: [salesId, customerId] } } });
+    for (const userId of [salesId, customerId]) await prisma.authRateLimit.deleteMany({ where: { scope: 'messaging-send', keyHash: fingerprintToken(`${userId}:${requestId}`) } });
+    await prisma.user.deleteMany({ where: { id: { in: [salesId, customerId] } } });
+    await prisma.client.deleteMany({ where: { id: clientId } });
+    await prisma.$disconnect();
+  });
+
+  const next = () => { sent += 1; return `screens-e2e-${sent}-${suffix}`; };
+  const liveOn = (page: Page) => page.waitForResponse((response) => new URL(response.url()).pathname === '/api/realtime' && response.status() === 200);
+  const signIn = (page: Page, token: string) => page.context().addCookies([{ name: 'ocpool_session', value: token, url: origin }]);
+
   test('el hilo del portal se actualiza solo cuando el equipo responde', async ({ page }) => {
-    await page.context().addCookies([{ name: 'ocpool_session', value: customerToken, url: origin }]);
+    await signIn(page, customerToken);
     const live = liveOn(page);
     await page.goto(`/portal?request=${requestId}`);
     await live;
     await expect(page.getByRole('heading', { name: 'Conversación del expediente' })).toBeVisible();
-    await sendStaffMessage(sales, requestId, { body: 'Ya quedó tu propuesta.', idempotencyKey: `screens-staff-1-${suffix}` }, { prisma, rateLimit });
+    await sendStaffMessage(sales, requestId, { body: 'Ya quedó tu propuesta.', idempotencyKey: next() }, { prisma, rateLimit });
     await expect(page.locator('.client-messaging__list')).toContainText('Ya quedó tu propuesta.', { timeout: 5_000 });
     await expect(page.locator('.thread-divider')).toHaveText('Nuevo');
   });
 
-  test('el equipo ve el mensaje del cliente sin flash y el "Visto" cuando el cliente lo lee', async ({ page }) => {
-    await page.context().addCookies([{ name: 'ocpool_session', value: salesToken, url: origin }]);
+  test('el equipo ve el mensaje del cliente sin flash y el Visto cuando el cliente lo lee', async ({ page }) => {
+    await signIn(page, salesToken);
     const live = liveOn(page);
     await page.goto(`/staff/requests?request=${requestId}`);
     await live;
     await expect(page.getByRole('heading', { name: 'Correspondencia' })).toBeVisible();
-    await sendCustomerMessage(customer, requestId, { body: 'Perfecto, gracias.', idempotencyKey: `screens-customer-1-${suffix}` }, { prisma, rateLimit });
+    await sendCustomerMessage(customer, requestId, { body: 'Perfecto, gracias.', idempotencyKey: next() }, { prisma, rateLimit });
     await expect(page.locator('.staff-messaging__list')).toContainText('Perfecto, gracias.', { timeout: 5_000 });
+    // El expediente está abierto: su actividad no destella.
     await expect(page.getByRole('region', { name: 'Avisos al momento' }).getByRole('status')).toHaveCount(0);
-    await sendStaffMessage(sales, requestId, { body: '¿Agendamos visita?', idempotencyKey: `screens-staff-2-${suffix}` }, { prisma, rateLimit });
+    await sendStaffMessage(sales, requestId, { body: '¿Agendamos visita?', idempotencyKey: next() }, { prisma, rateLimit });
     await expect(page.locator('.staff-messaging__list')).toContainText('¿Agendamos visita?', { timeout: 5_000 });
     await listConversationMessages(customer, requestId, {}, { prisma });
     await expect(page.locator('.thread-seen')).toContainText('Visto', { timeout: 5_000 });
   });
 
-  test('un archivo del cliente aparece solo en Archivos', async ({ page }) => {
-    // Se registra un archivo disponible con los servicios de private-files del escenario (reservar, subir el
-    // objeto al almacenamiento de pruebas y completar), igual que tests/private-files.spec.ts, y se espera verlo
-    // en la sección de Archivos del expediente abierto en menos de 5 s.
+  test('un archivo que sube el cliente aparece solo en el expediente del equipo', async ({ browser }) => {
+    const staffContext = await browser.newContext();
+    const customerContext = await browser.newContext();
+    try {
+      const staffPage = await staffContext.newPage();
+      await staffContext.addCookies([{ name: 'ocpool_session', value: salesToken, url: origin }]);
+      const live = liveOn(staffPage);
+      await staffPage.goto(`/staff/requests?request=${requestId}`);
+      await live;
+      const customerPage = await customerContext.newPage();
+      await customerContext.addCookies([{ name: 'ocpool_session', value: customerToken, url: origin }]);
+      await customerPage.goto(`/portal?request=${requestId}`);
+      await expect(customerPage.getByRole('heading', { name: 'Archivos del expediente' })).toBeVisible();
+      await customerPage.locator('input[type="file"]').setInputFiles({ name: 'planos-en-vivo.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-') });
+      await expect(customerPage.locator('.client-file').filter({ hasText: 'planos-en-vivo.pdf' }).getByText('Disponible', { exact: true })).toBeVisible();
+      await expect(staffPage.getByText('planos-en-vivo.pdf').first()).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await staffContext.close();
+      await customerContext.close();
+    }
   });
+});
 ```
 
-La tercera prueba reutiliza el helper de carga de `tests/private-files.spec.ts` (o el de `client-portal.spec.ts`): se revisa en la ejecución cuál expone la subida de punta a punta con el almacenamiento local, y se copia su patrón.
+Si la sección de Archivos del detalle clásico no está a la vista al abrir el expediente, la tercera prueba abre primero esa sección con su control (se revisa el nombre accesible en la ejecución) antes de esperar el archivo.
 
 Run (servidor de desarrollo aislado en :3100 con `NEXT_DIST_DIR=.next-e2e`, rutas calentadas): `APP_URL=http://127.0.0.1:3100 REALTIME_E2E=1 REUSE_E2E_SERVER=1 npx playwright test tests/realtime-screens.spec.ts tests/realtime-notifications.spec.ts --reporter=list`
 Expected: todas pasan (repite una vez si falla por compilación en frío).
