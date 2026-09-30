@@ -8,6 +8,7 @@ import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { requireStaffRequestReadScope } from '@/server/auth/request-scope';
 import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
+import { publishRequestChange } from '@/server/modules/inbox/realtime-signals';
 import {
   assertConversationOpen,
   normalizeIdempotencyKey,
@@ -388,7 +389,7 @@ export async function listConversationMessages(
   if (actor.type === 'EMPLOYEE') requireStaffRequestReadScope(actor, request.currentAssigneeId);
 
   const conversation = await prisma.conversation.findUnique({ where: { quoteRequestId: request.id } });
-  if (!conversation) return { conversation: null, items: [] as SerializedMessage[], nextCursor: null };
+  if (!conversation) return { conversation: null, items: [] as SerializedMessage[], nextCursor: null, latestCursor: filters.cursor ?? null, ...(actor.type === 'EMPLOYEE' ? { customerRead: null } : {}) };
 
   const canReadInternal = actor.type === 'EMPLOYEE' && actor.permissionKeys.has('messaging.internal_notes.read');
   const messages = await prisma.conversationMessage.findMany({
@@ -407,7 +408,10 @@ export async function listConversationMessages(
     include: { sender: { select: { id: true, displayName: true, type: true } } },
   });
   const hasNext = messages.length > limit;
-  const items = (hasNext ? messages.slice(0, limit) : messages).map((message) => serializeMessage(message, actor.type === 'EMPLOYEE'));
+  const page = hasNext ? messages.slice(0, limit) : messages;
+  const items = page.map((message) => serializeMessage(message, actor.type === 'EMPLOYEE'));
+  // Cursor del último mensaje devuelto: una vista en vivo lo usa para pedir sólo lo que llegó después.
+  const latestCursor = page.length > 0 ? encodeCursor(page[page.length - 1]) : filters.cursor ?? null;
 
   // W1-01: opening the tab marks it read up to the conversation's actual latest
   // visible message (not just whatever page was fetched) -- pagination cursor
@@ -430,10 +434,38 @@ export async function listConversationMessages(
     }
   }
 
+  // "Visto por el cliente" (spec §5.4): abrir el hilo marca su lectura con la misma función monótona y, si avanzó,
+  // el equipo con el expediente abierto se entera (sólo el equipo: la señal es interna).
+  if (actor.type === 'CUSTOMER') {
+    const latestVisible = await prisma.conversationMessage.findFirst({
+      where: { conversationId: conversation.id, visibility: 'CUSTOMER' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, createdAt: true },
+    });
+    if (latestVisible) {
+      try {
+        const previous = await prisma.conversationReadState.findUnique({ where: { conversationId_userId: { conversationId: conversation.id, userId: actor.userId } }, select: { lastReadAt: true } });
+        await markConversationRead(prisma, conversation.id, actor.userId, latestVisible.id, latestVisible.createdAt);
+        if (!previous || latestVisible.createdAt > previous.lastReadAt) {
+          await publishRequestChange(prisma, { requestId: request.id, parts: ['read'], visibility: 'I', actorId: actor.userId });
+        }
+      } catch { /* la lectura es de mejor esfuerzo: nunca bloquea la respuesta ya obtenida. */ }
+    }
+  }
+  const customerRead = actor.type === 'EMPLOYEE'
+    ? await prisma.conversationReadState.findFirst({
+      where: { conversationId: conversation.id, user: { type: 'CUSTOMER', clientId: request.clientId } },
+      orderBy: { lastReadAt: 'desc' },
+      select: { lastReadAt: true, updatedAt: true },
+    })
+    : null;
+
   return {
     conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE'),
     items,
     nextCursor: hasNext ? encodeCursor(messages[limit - 1]) : null,
+    latestCursor,
+    ...(actor.type === 'EMPLOYEE' ? { customerRead: customerRead ? { through: customerRead.lastReadAt, at: customerRead.updatedAt } : null } : {}),
   };
 }
 
