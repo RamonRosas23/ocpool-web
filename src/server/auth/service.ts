@@ -4,6 +4,7 @@ import { getSessionContext } from '@/server/auth/sessions';
 import { createMfaEnrollment, unprotectMfaSecret, verifyTotpCode } from '@/server/auth/mfa';
 import { getPrisma } from '@/server/db/client';
 import { readServerEnv } from '@/server/env';
+import { publishSessionsClosed } from '@/server/realtime/publish';
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
 
@@ -423,6 +424,7 @@ export async function consumePasswordRecovery(input: { rawToken: string; newPass
     await transaction.user.update({ where: { id: user.id }, data: { passwordHash, ...(activated ? { status: 'ACTIVE' } : {}) } });
     await transaction.authToken.updateMany({ where: { userId: user.id, type: 'PASSWORD_RESET', consumedAt: null, id: { not: token.id } }, data: { consumedAt: now } });
     await transaction.session.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: now } });
+    await publishSessionsClosed(transaction, { userId: user.id });
     await recordAuthEvent(transaction, { eventType: 'PASSWORD_RESET_CONSUMED', outcome: 'SUCCESS', userId: user.id, context: input.context, metadata: { tokenId: token.id, activated } });
     return true;
   });
@@ -436,6 +438,7 @@ export async function logout(rawToken: string, context: AuthRequestContext, depe
   await prisma.$transaction(async (transaction) => {
     const revoked = await transaction.session.updateMany({ where: { id: session.sessionId, revokedAt: null }, data: { revokedAt: now } });
     if (revoked.count !== 1) return;
+    await publishSessionsClosed(transaction, { userId: session.actor.userId, sessionId: session.sessionId });
     await recordAuthEvent(transaction, { eventType: 'LOGOUT', outcome: 'SUCCESS', userId: session.actor.userId, context });
     await recordAuthEvent(transaction, { eventType: 'SESSION_REVOKED', outcome: 'SUCCESS', userId: session.actor.userId, context, metadata: { sessionId: session.sessionId } });
   });

@@ -6,6 +6,7 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { notifyInbox } from '@/server/modules/inbox/domain-events';
+import { publishSessionsClosed } from '@/server/realtime/publish';
 import {
   isTeamRole,
   primaryTeamRole,
@@ -301,6 +302,7 @@ export async function suspendTeamMember(actor: Actor, userId: string, input: { r
 
     await transaction.user.update({ where: { id: member.id }, data: { status: 'SUSPENDED' } });
     const revoked = await transaction.session.updateMany({ where: { userId: member.id, revokedAt: null }, data: { revokedAt: now } });
+    await publishSessionsClosed(transaction, { userId: member.id });
     await transaction.authToken.updateMany({ where: { userId: member.id, consumedAt: null }, data: { consumedAt: now } });
 
     const requests = await transaction.quoteRequest.findMany({ where: { currentAssigneeId: member.id, status: { in: [...OPEN_REQUEST_STATUSES] } }, select: { id: true, folio: true } });
@@ -411,6 +413,7 @@ export async function revokeTeamMemberSessions(actor: Actor, userId: string, dep
   return prisma.$transaction(async (transaction) => {
     const member = await loadManageableMember(transaction, actor, userId);
     const revoked = await transaction.session.updateMany({ where: { userId: member.id, revokedAt: null, expiresAt: { gt: now } }, data: { revokedAt: now } });
+    if (revoked.count > 0) await publishSessionsClosed(transaction, { userId: member.id });
     await audit(transaction, actor, 'team.sessions_revoked', member.id, { member: member.displayName, sessions: revoked.count });
     return { id: member.id, sessionsRevoked: revoked.count };
   });

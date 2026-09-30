@@ -3,6 +3,7 @@ import { compareToken, fingerprintToken, generateOpaqueToken } from '@/server/au
 import type { Actor, SessionCookieOptions } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { readServerEnv } from '@/server/env';
+import { publishSessionsClosed } from '@/server/realtime/publish';
 import type { PrismaClient } from '@/generated/prisma/client';
 
 type SessionDependencies = {
@@ -95,12 +96,14 @@ export async function getActorFromSession(rawToken: string, dependencies: Sessio
 
 export async function revokeSession(sessionId: string, _reason: string, dependencies: SessionDependencies = {}): Promise<void> {
   const prisma = dependencies.prisma ?? getPrisma();
-  await prisma.session.updateMany({ where: { id: sessionId, revokedAt: null }, data: { revokedAt: dependencies.now ?? new Date() } });
+  const revoked = await prisma.session.updateManyAndReturn({ where: { id: sessionId, revokedAt: null }, data: { revokedAt: dependencies.now ?? new Date() }, select: { userId: true } });
+  for (const { userId } of revoked) await publishSessionsClosed(prisma, { userId, sessionId });
 }
 
 export async function revokeAllUserSessions(userId: string, dependencies: SessionDependencies = {}): Promise<void> {
   const prisma = dependencies.prisma ?? getPrisma();
   await prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: dependencies.now ?? new Date() } });
+  await publishSessionsClosed(prisma, { userId });
 }
 
 export function createSessionCookie(rawToken: string, expiresAt: Date, now = new Date(), secure = process.env.NODE_ENV === 'production'): SessionCookieOptions {

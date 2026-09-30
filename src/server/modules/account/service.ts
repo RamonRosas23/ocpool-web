@@ -7,6 +7,7 @@ import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { readServerEnv } from '@/server/env';
 import { AppError } from '@/server/http/errors';
+import { publishSessionsClosed } from '@/server/realtime/publish';
 import { primaryTeamRole, TEAM_ROLE_LABELS, type TeamRoleKey } from '@/server/modules/team/domain';
 
 export type AccountServiceDependencies = Readonly<{
@@ -95,6 +96,7 @@ export async function changeAccountPassword(actor: Actor, currentSessionId: stri
   return prisma.$transaction(async (transaction) => {
     await transaction.user.update({ where: { id: user.id }, data: { passwordHash } });
     const revoked = await transaction.session.updateMany({ where: { userId: user.id, revokedAt: null, id: { not: currentSessionId } }, data: { revokedAt: now } });
+    if (revoked.count > 0) await publishSessionsClosed(transaction, { userId: user.id, keepSessionId: currentSessionId });
     await transaction.authToken.updateMany({ where: { userId: user.id, type: 'PASSWORD_RESET', consumedAt: null }, data: { consumedAt: now } });
     await recordAuthEvent(transaction, { eventType: 'PASSWORD_CHANGED', outcome: 'SUCCESS', userId: user.id, context, metadata: { otherSessionsRevoked: revoked.count } });
     return { otherSessionsRevoked: revoked.count };
@@ -156,6 +158,7 @@ export async function confirmAccountMfaEnrollment(actor: Actor, currentSessionId
     });
     await transaction.session.updateMany({ where: { id: currentSessionId, userId: actor.userId, revokedAt: null }, data: { mfaVerified: true } });
     const revoked = await transaction.session.updateMany({ where: { userId: actor.userId, revokedAt: null, id: { not: currentSessionId } }, data: { revokedAt: now } });
+    if (revoked.count > 0) await publishSessionsClosed(transaction, { userId: actor.userId, keepSessionId: currentSessionId });
     await recordAuthEvent(transaction, { eventType: 'MFA_ENROLLED', outcome: 'SUCCESS', userId: actor.userId, context, metadata: { otherSessionsRevoked: revoked.count } });
     return { enabled: true, otherSessionsRevoked: revoked.count };
   });
@@ -194,6 +197,7 @@ export async function revokeAccountSession(actor: Actor, currentSessionId: strin
   return prisma.$transaction(async (transaction) => {
     const revoked = await transaction.session.updateMany({ where: { id: sessionId, userId: actor.userId, revokedAt: null }, data: { revokedAt: now } });
     if (revoked.count !== 1) throw new AppError('NOT_FOUND', 'Esa sesión ya estaba cerrada.', 404);
+    await publishSessionsClosed(transaction, { userId: actor.userId, sessionId });
     await recordAuthEvent(transaction, { eventType: 'SESSION_REVOKED', outcome: 'SUCCESS', userId: actor.userId, context, metadata: { sessionId, origin: 'account' } });
     return { revoked: 1 };
   });
@@ -206,6 +210,7 @@ export async function revokeOtherAccountSessions(actor: Actor, currentSessionId:
   const now = dependencies.now ?? new Date();
   return prisma.$transaction(async (transaction) => {
     const revoked = await transaction.session.updateMany({ where: { userId: actor.userId, revokedAt: null, id: { not: currentSessionId } }, data: { revokedAt: now } });
+    if (revoked.count > 0) await publishSessionsClosed(transaction, { userId: actor.userId, keepSessionId: currentSessionId });
     if (revoked.count > 0) await recordAuthEvent(transaction, { eventType: 'SESSION_REVOKED', outcome: 'SUCCESS', userId: actor.userId, context, metadata: { count: revoked.count, origin: 'account_others' } });
     return { revoked: revoked.count };
   });
