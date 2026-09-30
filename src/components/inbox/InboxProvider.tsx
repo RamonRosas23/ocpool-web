@@ -8,7 +8,8 @@ import { flashReducer, type FlashItem } from '@/lib/inbox-flash';
 import { defaultPreferences, readPreferences, writePreference, type InboxPreferences } from '@/lib/inbox-preferences';
 import { createChime, type Chime } from '@/lib/inbox-sound';
 import { signOutAnnounced } from '@/lib/session-exit';
-import { applyNotificationEvent, shouldFlash, type RealtimeEvent } from '@/lib/realtime-client';
+import { applyNotificationEvent, shouldFlash, type RealtimeEvent, type RequestPart } from '@/lib/realtime-client';
+import { createRequestSubscriptions, type RequestChange } from '@/lib/realtime-subscriptions';
 import { useInboxRealtime, type RealtimeOrigin } from './useInboxRealtime';
 
 export type InboxSurface = 'staff' | 'portal';
@@ -32,6 +33,9 @@ export type InboxContextValue = {
   /** Sube cada vez que algo pide abrir el panel (el "y N más" del flash). */
   panelRequest: number;
   requestPanel: () => void;
+  /** Suscribe una vista a los cambios de un expediente (o de cualquiera, con '*'); devuelve cómo dejar de escuchar. */
+  subscribeRequest: (requestId: string, parts: readonly RequestPart[], callback: (change: RequestChange) => void) => () => void;
+  setActiveRequest: (quoteRequestId: string | null) => void;
   preferences: InboxPreferences;
   setSound: (on: boolean) => void;
   desktop: DesktopPermission;
@@ -80,6 +84,10 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
   const preferencesRef = useRef(preferences);
   const chime = useRef<Chime | null>(null);
   const listRefreshTimer = useRef<number | null>(null);
+  const [subscriptions] = useState(createRequestSubscriptions);
+  const connectedOnce = useRef(false);
+  const activeRequest = useRef<string | null>(null);
+  const lastReturn = useRef(0);
 
   useEffect(() => {
     preferencesRef.current = preferences;
@@ -130,16 +138,24 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
 
   useEffect(() => {
     if (!available || live) return undefined;
-    const onVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
-    const timer = window.setInterval(onVisible, POLL_INTERVAL_MS);
-    window.addEventListener('focus', onVisible);
-    document.addEventListener('visibilitychange', onVisible);
+    const refreshCounts = () => { if (document.visibilityState === 'visible') void refresh(); };
+    // Sin canal, las vistas abiertas se ponen al día al volver a la pestaña (spec §4.4); `focus` y
+    // `visibilitychange` llegan juntos, así que se cuenta una sola vuelta.
+    const onReturn = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - lastReturn.current < 1_000) return;
+      lastReturn.current = Date.now();
+      void refresh();
+      subscriptions.refreshAll();
+    };
+    const timer = window.setInterval(refreshCounts, POLL_INTERVAL_MS);
+    window.addEventListener('focus', onReturn);
+    document.addEventListener('visibilitychange', onReturn);
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener('focus', onVisible);
-      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onReturn);
+      document.removeEventListener('visibilitychange', onReturn);
     };
-  }, [available, live, refresh]);
+  }, [available, live, refresh, subscriptions]);
 
   useEffect(() => () => {
     inFlight.current?.abort();
@@ -198,9 +214,17 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
   const handleRealtime = useCallback((event: RealtimeEvent, origin: RealtimeOrigin) => {
     switch (event.type) {
       case 'hello':
-      case 'resync':
-        // Al (re)conectar pudo cambiar algo sin que llegaran sus eventos.
+        // Al reconectar pudieron perderse cambios: se relee la bandeja y, si no es la primera vez, cada vista abierta.
         void refresh();
+        if (connectedOnce.current) subscriptions.refreshAll();
+        connectedOnce.current = true;
+        return;
+      case 'resync':
+        void refresh();
+        subscriptions.refreshAll();
+        return;
+      case 'request':
+        subscriptions.dispatch(event.requestId, event.parts, event.self);
         return;
       case 'counts':
         applyLive((current) => ({ ...current, unread: event.unread, actionRequired: event.actionRequired }));
@@ -216,7 +240,7 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
         const notice = event.notification;
         // "Tomada por Ana", "Ya no aplica"…: el flash de algo ya atendido desaparece.
         if (event.mode === 'resolved' || notice.resolvedAt || notice.readAt) dispatchFlash({ type: 'dismiss', ids: [notice.id] });
-        if (!shouldFlash(event, null)) return;
+        if (!shouldFlash(event, activeRequest.current)) return;
         if (document.visibilityState === 'visible') {
           dispatchFlash({ type: 'show', notification: notice });
           if (preferencesRef.current.sound) chime.current?.play(notice.priority === 'URGENT' ? 'URGENT' : 'HIGH');
@@ -230,7 +254,7 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
         return;
       }
     }
-  }, [applyLive, refresh, router, scheduleListRefresh, surface]);
+  }, [applyLive, refresh, router, scheduleListRefresh, subscriptions, surface]);
 
   useInboxRealtime(available && loaded, { onEvent: handleRealtime, onLive: setLive });
 
@@ -256,6 +280,9 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
   const dismissFlash = useCallback((id: string) => dispatchFlash({ type: 'dismiss', ids: [id] }), []);
   const pauseFlash = useCallback((id: string, paused: boolean, remainingMs?: number) => dispatchFlash({ type: 'pause', id, paused, remainingMs }), []);
   const requestPanel = useCallback(() => setPanelRequest((current) => current + 1), []);
+  const setActiveRequest = useCallback((quoteRequestId: string | null) => {
+    activeRequest.current = quoteRequestId;
+  }, []);
 
   const setSound = useCallback((on: boolean) => {
     writePreference(surface, 'sound', on);
@@ -291,15 +318,27 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
     pauseFlash,
     panelRequest,
     requestPanel,
+    subscribeRequest: subscriptions.subscribe,
+    setActiveRequest,
     preferences,
     setSound,
     desktop,
     setDesktop,
-  }), [surface, available, loaded, unread, summary, refresh, markRead, live, flashes, dismissFlash, pauseFlash, panelRequest, requestPanel, preferences, setSound, desktop, setDesktop]);
+  }), [surface, available, loaded, unread, summary, refresh, markRead, live, flashes, dismissFlash, pauseFlash, panelRequest, requestPanel, subscriptions, setActiveRequest, preferences, setSound, desktop, setDesktop]);
 
   return <InboxContext.Provider value={value}>{children}</InboxContext.Provider>;
 }
 
 export function useInbox(): InboxContextValue | null {
   return useContext(InboxContext);
+}
+
+/** Una vista con un expediente abierto lo registra: su actividad no destella, porque ya se ve en pantalla (spec §5.3). */
+export function useInboxActiveContext(quoteRequestId: string | null): void {
+  const setActiveRequest = useInbox()?.setActiveRequest;
+  useEffect(() => {
+    if (!setActiveRequest) return undefined;
+    setActiveRequest(quoteRequestId);
+    return () => setActiveRequest(null);
+  }, [setActiveRequest, quoteRequestId]);
 }
