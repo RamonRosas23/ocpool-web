@@ -2406,3 +2406,6 @@ a.expediente-journey__item:focus-visible { outline: 2px solid var(--private-colo
   .account-qr { width: 164px; height: 164px; }
 }
 .account-card h2[tabindex="-1"]:focus { outline: none; }
+.staff-inbox__news { border: 0; border-radius: 999px; padding: 4px 10px; background: var(--private-tint-accent); color: var(--private-color-accent); cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+.staff-inbox__news:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.quotes-remote-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 12px; border: 1px solid color-mix(in srgb, var(--private-color-accent) 30%, transparent); border-radius: var(--private-radius-panel); padding: 10px 14px; background: var(--private-tint-accent); color: var(--private-color-ink); font-size: 13px; }

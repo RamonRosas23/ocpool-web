@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
@@ -29,6 +29,8 @@ import {
 } from '@/lib/request-workspace-query';
 import { formatDateTime } from '@/lib/format-date';
 import { requestWorkspaceScrollStorageKey } from '@/lib/request-workspace-scroll';
+import { useCoalesced, useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
+import { ANY_REQUEST } from '@/lib/realtime-subscriptions';
 
 const VIEW_LABELS: Record<RequestWorkspaceView, string> = {
   all: 'Todas las solicitudes',
@@ -90,6 +92,8 @@ export default function RequestWorkspaceV2Panel() {
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
+  const [liveToken, setLiveToken] = useState(0);
+  const liveRefreshRef = useRef(false);
   const [assignees, setAssignees] = useState<AssigneeResponse['items']>([]);
   const [canCreate, setCanCreate] = useState(false);
   const [canAssign, setCanAssign] = useState(false);
@@ -179,6 +183,7 @@ export default function RequestWorkspaceV2Panel() {
   }, [capabilitiesRetryToken]);
 
   const updateQuery = useCallback((changes: Partial<RequestWorkspaceQuery>) => {
+    liveRefreshRef.current = false;
     const nextQuery = { ...query, ...changes };
     router.replace(`${pathname}${queryHref(nextQuery)}`, { scroll: false });
   }, [pathname, query, router]);
@@ -190,9 +195,13 @@ export default function RequestWorkspaceV2Panel() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    setAccessDenied(false);
+    const silent = liveRefreshRef.current;
+    liveRefreshRef.current = false;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+      setAccessDenied(false);
+    }
     const requestUrl = serializedQuery ? `/api/staff/quote-requests?${serializedQuery}` : '/api/staff/quote-requests';
     fetch(requestUrl, { credentials: 'include', cache: 'no-store', signal: controller.signal })
       .then((response) => readApiResponse<ListResponse>(response, 'No fue posible cargar las solicitudes.'))
@@ -202,20 +211,32 @@ export default function RequestWorkspaceV2Panel() {
           setItems(result.data.items);
           setTotal(result.data.total);
           setTotalPages(Math.max(result.data.totalPages, 1));
+          setError(null);
+          setAccessDenied(false);
           return;
         }
+        if (silent) return;
         setAccessDenied(result.kind === 'forbidden');
         setError(result.message);
         setItems([]);
       })
       .catch((caught: unknown) => {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        if (silent) return;
         setError(caught instanceof Error ? caught.message : 'No fue posible cargar las solicitudes.');
         setItems([]);
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [retryToken, serializedQuery]);
+  }, [liveToken, retryToken, serializedQuery]);
+
+  const refreshList = useCoalesced(() => {
+    liveRefreshRef.current = true;
+    setLiveToken((token) => token + 1);
+  }, 800);
+  useRealtimeRequest(ANY_REQUEST, ['created', 'status', 'assignment'], (change) => {
+    if (!(change.self && change.reason === 'signal')) refreshList();
+  });
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -250,7 +271,7 @@ export default function RequestWorkspaceV2Panel() {
           {hasFilters && <PrivateButton type="button" variant="quiet" onClick={() => { setSearchInput(''); updateQuery({ view: defaultView, query: '', stage: null, assigneeId: null, age: 'all', sort: 'newest', page: 1 }); }}>Limpiar</PrivateButton>}
         </form>
         {capabilitiesError && <PrivateBlockingState title="No fue posible validar los permisos." onRetry={() => setCapabilitiesRetryToken((current) => current + 1)}>{capabilitiesError}</PrivateBlockingState>}
-        {error && <PrivateBlockingState title="No fue posible cargar las solicitudes." onRetry={() => setRetryToken((current) => current + 1)}>{error}</PrivateBlockingState>}
+        {error && <PrivateBlockingState title="No fue posible cargar las solicitudes." onRetry={() => { liveRefreshRef.current = false; setRetryToken((current) => current + 1); }}>{error}</PrivateBlockingState>}
         <section className="request-workspace-v2__results" aria-label="Cola de solicitudes">
           <div className="request-workspace-v2__results-head"><div><p className="private-kicker">Admisión</p><h2>{loading ? 'Actualizando resultados' : `${items.length} solicitudes`}</h2></div><span>Página {query.page} de {totalPages}</span></div>
           {loading && <PrivateSkeleton label="Cargando solicitudes" />}

@@ -30,6 +30,7 @@ import { revealWhenStacked } from '@/lib/reveal-when-stacked';
 import { quoteNextStep, quoteStageSteps, type QuoteNextStepTarget, type QuoteStageStepState } from '@/lib/quote-stage';
 import { moneyLabel } from '@/lib/money';
 import { QUOTE_REQUEST_STATUS_LABELS, QUOTE_VERSION_STATUS_LABELS, statusToneIcon } from '@/lib/labels';
+import { useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
 
 type AutosaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict' | 'offline';
 
@@ -331,6 +332,8 @@ export default function StaffQuotesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [autosaveState, setAutosaveState] = useState<AutosaveState>('saved');
   const [autosaveMessage, setAutosaveMessage] = useState<string | null>(null);
+  const [remoteChange, setRemoteChange] = useState(false);
+  const remoteInteractionRef = useRef(true);
   const [repriceDialogOpen, setRepriceDialogOpen] = useState(false);
   const [publishPreflight, setPublishPreflight] = useState<{ documentStatus: DocumentStatus; contentDigest: string | null; loading: boolean } | null>(null);
   const deepLinkedIdRef = useRef<string | null>(null);
@@ -355,6 +358,10 @@ export default function StaffQuotesPanel() {
   useEffect(() => { draftLinesRef.current = draftLines; }, [draftLines]);
   const draftSectionsRef = useRef<DraftSection[]>([]);
   useEffect(() => { draftSectionsRef.current = draftSections; }, [draftSections]);
+  const editorSnapshot = () => JSON.stringify({
+    draft: draftSnapshotKey(selectedPriceListIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current, draftSectionsRef.current),
+    taxProfileId: selectedTaxProfileIdRef.current,
+  });
   const { showToast } = usePrivateToast();
 
   const loadBase = useCallback(async (currentPage: number, query: string) => {
@@ -422,18 +429,29 @@ export default function StaffQuotesPanel() {
     }
   }, [listScope]);
 
-  const loadWorkspace = useCallback(async (requestId: string) => {
+  const loadWorkspace = useCallback(async (requestId: string, options: { silent?: boolean } = {}) => {
     // UX audit fix: sin esta guarda, cambiar rápido de una cotización a otra podía dejar que la
     // respuesta obsoleta de la primera llegara después que la de la segunda y sobreescribiera en
     // silencio todo el borrador en edición (líneas, lista de precios, vigencia) con datos de la
     // solicitud equivocada, mientras la UI seguía mostrando la segunda como seleccionada.
+    if (options.silent && remoteInteractionRef.current) {
+      setRemoteChange(true);
+      return;
+    }
     const generation = (loadWorkspaceGenerationRef.current += 1);
-    setLoadingWorkspace(true);
-    setError(null);
+    const snapshotAtStart = options.silent ? editorSnapshot() : null;
+    if (!options.silent) {
+      setLoadingWorkspace(true);
+      setError(null);
+    }
     try {
       const response = await fetch(`/api/staff/quotes/${requestId}`, { credentials: 'include', cache: 'no-store' });
       const data = await readApiResponseOrThrow<Workspace>(response, 'No fue posible cargar el expediente de cotización.');
       if (loadWorkspaceGenerationRef.current !== generation) return;
+      if (options.silent && (remoteInteractionRef.current || snapshotAtStart !== editorSnapshot())) {
+        setRemoteChange(true);
+        return;
+      }
       setWorkspace(data);
       const currentVersion = data.quote?.currentVersion;
       const preferredList = data.priceLists.find((list) => list.currencyCode === (currentVersion?.currencyCode ?? data.request.detail?.currencyCode)) ?? data.priceLists[0];
@@ -489,12 +507,17 @@ export default function StaffQuotesPanel() {
       }, freshDraftSections);
       setAutosaveState('saved');
       setAutosaveMessage(null);
+      setRemoteChange(false);
     } catch (caught) {
       if (loadWorkspaceGenerationRef.current !== generation) return;
+      if (options.silent) {
+        setRemoteChange(true);
+        return;
+      }
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el expediente de cotización.');
       setWorkspace(null);
     } finally {
-      setLoadingWorkspace(false);
+      if (loadWorkspaceGenerationRef.current === generation) setLoadingWorkspace(false);
     }
   }, []);
 
@@ -505,7 +528,11 @@ export default function StaffQuotesPanel() {
     revealPendingRef.current = false;
     revealWhenStacked(mainRef.current, '(max-width: 1100px)');
   }, [loadingWorkspace, workspace]);
-  useEffect(() => { if (selectedId) void loadWorkspace(selectedId); else setWorkspace(null); }, [loadWorkspace, selectedId]);
+  useEffect(() => {
+    setRemoteChange(false);
+    if (selectedId) void loadWorkspace(selectedId);
+    else setWorkspace(null);
+  }, [loadWorkspace, selectedId]);
   useEffect(() => {
     const requestFromUrl = new URLSearchParams(window.location.search).get('request');
     if (requestFromUrl) { deepLinkedIdRef.current = requestFromUrl; setSelectedId(requestFromUrl); }
@@ -1177,6 +1204,13 @@ export default function StaffQuotesPanel() {
   const [approvalRequestDialog, setApprovalRequestDialog] = useState<'DISCOUNT' | 'SPECIAL_CONCEPT' | null>(null);
   const [approvalRequestReason, setApprovalRequestReason] = useState('');
   const [rejectApprovalReason, setRejectApprovalReason] = useState('');
+  const remoteLoadBlocked = autosaveState !== 'saved' || saving || pricingBusy || showSectionForm || showSpecialForm || pricingTarget !== null || repriceDialogOpen || returnToDraftDialogOpen || rejectVersionDialogOpen || rejectApprovalDialog !== null || approvalRequestDialog !== null || publishPreflight !== null;
+  remoteInteractionRef.current = remoteLoadBlocked;
+  useRealtimeRequest(selectedId, ['quote', 'approvals'], (change) => {
+    if (change.self && change.reason === 'signal') return;
+    if (!remoteInteractionRef.current && selectedId) void loadWorkspace(selectedId, { silent: true });
+    else setRemoteChange(true);
+  });
 
   const confirmReturnToDraft = async () => {
     if (!currentVersion || !returnToDraftReason.trim()) return;
@@ -1452,7 +1486,7 @@ export default function StaffQuotesPanel() {
               </aside>
               </div>
               {draftLines.length > 0 && <button type="button" className="quotes-mobile-total-bar" onClick={() => document.getElementById('quotes-actions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><span>Total<strong>{preview.valid ? moneyLabel(preview.total, selectedCurrency) : 'Revisa las líneas'}</strong></span><span className="quotes-mobile-total-bar__cta">Ver acciones<ChevronDown size={14} aria-hidden="true" /></span></button>}
-              <div className="quotes-actions" id="quotes-actions" tabIndex={-1}><PrivateDatePicker id="quotes-valid-until" label="Vigencia hasta" value={validUntil} onValueChange={setValidUntil} disabled={!canEdit && !canStartVersion} />{canEdit ? <button className="staff-button staff-button--dark" type="button" disabled={autosaveState === 'saving' || autosaveState === 'saved' || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void persistDraft()}>{autosaveState === 'saving' ? 'Guardando…' : 'Guardar ahora'}</button> : null}{canStartVersion ? <button className="staff-button staff-button--dark" type="button" disabled={saving || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void createVersionFromSent()}>{saving ? 'Creando…' : 'Crear nueva versión'}</button> : null}{(currentVersion?.status === 'ENVIADA' || currentVersion?.status === 'EN_NEGOCIACION') && capabilities?.quotesSend ? <button className="staff-button staff-button--outline" type="button" disabled={saving} onClick={() => { setRejectVersionReason(''); setRejectVersionDialogOpen(true); }}>Rechazar versión</button> : null}{currentVersion?.status === 'BORRADOR' && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || autosaveState === 'saving' || autosaveState === 'dirty' || autosaveState === 'conflict' || draftLines.length === 0 || pendingPriceCount > 0} title={pendingPriceCount > 0 ? 'Hay conceptos por cotizar: define su precio antes de pasar a revisión.' : undefined} onClick={() => void transition('EN_REVISION')}>Pasar a revisión</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesCreate ? <button className="staff-button staff-button--outline" type="button" disabled={saving} onClick={() => { setReturnToDraftReason(''); setReturnToDraftDialogOpen(true); }}>Volver a borrador</button> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval && !hasApprovedDiscount && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeDiscountApproval)} onClick={() => openApprovalRequest('DISCOUNT')}>{activeDiscountApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasDiscount && activeDiscountApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideDiscountApproval(activeDiscountApproval.id, 'APPROVED')}>Aprobar descuento</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => { setRejectApprovalReason(''); setRejectApprovalDialog({ kind: 'DISCOUNT', approvalId: activeDiscountApproval.id }); }}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && !hasApprovedSpecial && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeSpecialApproval)} onClick={() => openApprovalRequest('SPECIAL_CONCEPT')}>{activeSpecialApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación de concepto especial'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && activeSpecialApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideSpecialApproval(activeSpecialApproval.id, 'APPROVED')}>Aprobar concepto especial</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => { setRejectApprovalReason(''); setRejectApprovalDialog({ kind: 'SPECIAL_CONCEPT', approvalId: activeSpecialApproval.id }); }}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && canPublish && (!requiresDiscountApproval || hasApprovedDiscount) && (!hasSpecialLines || hasApprovedSpecial) ? <button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void openPublishPreflight()}>Enviar cotización</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesSend && !capabilities.quotesPdfGenerate ? <p className="quotes-action-note">Tu perfil puede enviar, pero necesita permiso para preparar el PDF comercial.</p> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval ? <p className="quotes-action-note">{discountApproval ? `${approvalStatusLabel(discountApproval.status)}${discountApproval.status === 'REJECTED' && discountApproval.reason ? `: «${discountApproval.reason.trim().replace(/[.\s]+$/u, '')}»` : ''}. ` : ''}{hasApprovedDiscount ? 'La versión tiene una aprobación vigente.' : 'Esta versión no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines ? <p className="quotes-action-note">{specialApproval ? `${approvalStatusLabel(specialApproval.status)}${specialApproval.status === 'REJECTED' && specialApproval.reason ? `: «${specialApproval.reason.trim().replace(/[.\s]+$/u, '')}»` : ''}. ` : ''}{hasApprovedSpecial ? 'Los conceptos especiales tienen una aprobación vigente.' : 'Esta versión tiene conceptos especiales y no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}</div>
+              {remoteChange && <div className="quotes-remote-note" role="status"><span>Hay cambios nuevos en esta cotización; guarda para verlos.</span>{autosaveState === 'saved' && !remoteLoadBlocked && selectedId ? <button type="button" className="staff-button staff-button--outline" onClick={() => void loadWorkspace(selectedId, { silent: true })}>Actualizar</button> : null}</div>}<div className="quotes-actions" id="quotes-actions" tabIndex={-1}><PrivateDatePicker id="quotes-valid-until" label="Vigencia hasta" value={validUntil} onValueChange={setValidUntil} disabled={!canEdit && !canStartVersion} />{canEdit ? <button className="staff-button staff-button--dark" type="button" disabled={autosaveState === 'saving' || autosaveState === 'saved' || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void persistDraft()}>{autosaveState === 'saving' ? 'Guardando…' : 'Guardar ahora'}</button> : null}{canStartVersion ? <button className="staff-button staff-button--dark" type="button" disabled={saving || !preview.valid || draftLines.length === 0 || !selectedPriceListId} onClick={() => void createVersionFromSent()}>{saving ? 'Creando…' : 'Crear nueva versión'}</button> : null}{(currentVersion?.status === 'ENVIADA' || currentVersion?.status === 'EN_NEGOCIACION') && capabilities?.quotesSend ? <button className="staff-button staff-button--outline" type="button" disabled={saving} onClick={() => { setRejectVersionReason(''); setRejectVersionDialogOpen(true); }}>Rechazar versión</button> : null}{currentVersion?.status === 'BORRADOR' && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || autosaveState === 'saving' || autosaveState === 'dirty' || autosaveState === 'conflict' || draftLines.length === 0 || pendingPriceCount > 0} title={pendingPriceCount > 0 ? 'Hay conceptos por cotizar: define su precio antes de pasar a revisión.' : undefined} onClick={() => void transition('EN_REVISION')}>Pasar a revisión</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesCreate ? <button className="staff-button staff-button--outline" type="button" disabled={saving} onClick={() => { setReturnToDraftReason(''); setReturnToDraftDialogOpen(true); }}>Volver a borrador</button> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval && !hasApprovedDiscount && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeDiscountApproval)} onClick={() => openApprovalRequest('DISCOUNT')}>{activeDiscountApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasDiscount && activeDiscountApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideDiscountApproval(activeDiscountApproval.id, 'APPROVED')}>Aprobar descuento</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => { setRejectApprovalReason(''); setRejectApprovalDialog({ kind: 'DISCOUNT', approvalId: activeDiscountApproval.id }); }}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && !hasApprovedSpecial && capabilities?.quotesCreate ? <button className="staff-button" type="button" disabled={saving || Boolean(activeSpecialApproval)} onClick={() => openApprovalRequest('SPECIAL_CONCEPT')}>{activeSpecialApproval?.status === 'REQUESTED' ? 'Aprobación solicitada' : 'Solicitar aprobación de concepto especial'}</button> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines && activeSpecialApproval?.status === 'REQUESTED' && capabilities?.quotesApproveDiscount ? <><button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void decideSpecialApproval(activeSpecialApproval.id, 'APPROVED')}>Aprobar concepto especial</button><button className="staff-button staff-button--danger" type="button" disabled={saving} onClick={() => { setRejectApprovalReason(''); setRejectApprovalDialog({ kind: 'SPECIAL_CONCEPT', approvalId: activeSpecialApproval.id }); }}>Rechazar</button></> : null}{currentVersion?.status === 'EN_REVISION' && canPublish && (!requiresDiscountApproval || hasApprovedDiscount) && (!hasSpecialLines || hasApprovedSpecial) ? <button className="staff-button staff-button--copper" type="button" disabled={saving} onClick={() => void openPublishPreflight()}>Enviar cotización</button> : null}{currentVersion?.status === 'EN_REVISION' && capabilities?.quotesSend && !capabilities.quotesPdfGenerate ? <p className="quotes-action-note">Tu perfil puede enviar, pero necesita permiso para preparar el PDF comercial.</p> : null}{currentVersion?.status === 'EN_REVISION' && requiresDiscountApproval ? <p className="quotes-action-note">{discountApproval ? `${approvalStatusLabel(discountApproval.status)}${discountApproval.status === 'REJECTED' && discountApproval.reason ? `: «${discountApproval.reason.trim().replace(/[.\s]+$/u, '')}»` : ''}. ` : ''}{hasApprovedDiscount ? 'La versión tiene una aprobación vigente.' : 'Esta versión no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}{currentVersion?.status === 'EN_REVISION' && hasSpecialLines ? <p className="quotes-action-note">{specialApproval ? `${approvalStatusLabel(specialApproval.status)}${specialApproval.status === 'REJECTED' && specialApproval.reason ? `: «${specialApproval.reason.trim().replace(/[.\s]+$/u, '')}»` : ''}. ` : ''}{hasApprovedSpecial ? 'Los conceptos especiales tienen una aprobación vigente.' : 'Esta versión tiene conceptos especiales y no puede enviarse hasta contar con una aprobación vigente.'}</p> : null}</div>
               {hasDiscount && currentVersion?.approvals.length ? <div className="quotes-approval-summary" aria-label="Historial de aprobación de descuento"><strong>Control de descuento</strong>{currentVersion.approvals.filter((approval) => approval.type === 'DISCOUNT').slice(0, 3).map((approval) => <span key={approval.id}>{approvalStatusLabel(approval.status)} · {formatDateTime(approval.requestedAt)}</span>)}</div> : null}
               {hasSpecialLines && currentVersion?.approvals.length ? <div className="quotes-approval-summary" aria-label="Historial de aprobación de conceptos especiales"><strong>Control de concepto especial</strong>{currentVersion.approvals.filter((approval) => approval.type === 'SPECIAL_CONCEPT').slice(0, 3).map((approval) => <span key={approval.id}>{approvalStatusLabel(approval.status)} · {formatDateTime(approval.requestedAt)}</span>)}</div> : null}
             </section>

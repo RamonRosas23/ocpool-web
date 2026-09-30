@@ -14,6 +14,8 @@ import { readApiResponse } from '@/lib/api-response-error';
 import type { PendingPriceGroup } from '@/lib/staff-catalog-types';
 import { errorCategoryLabel, eventLabel, templateLabel } from '@/lib/notification-labels';
 import { usePersistentState } from '@/lib/use-persistent-state';
+import { useCoalesced, useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
+import { ANY_REQUEST } from '@/lib/realtime-subscriptions';
 
 type MetricSummary = {
   sampleSize: number | null;
@@ -237,6 +239,10 @@ export default function StaffDashboardPanel() {
   const canReadProjects = session?.capabilities.projectsRead === true;
   const canAssignPrices = session?.capabilities.pricesManage === true;
   const [projectsQueue, setProjectsQueue] = useState<{ items: ProjectQueueItem[]; total: number } | null>(null);
+  const [queuesToken, setQueuesToken] = useState(0);
+  const queuesLoadedRef = useRef(false);
+  const refreshQueues = useCoalesced(() => setQueuesToken((token) => token + 1), 2_000);
+  useRealtimeRequest(ANY_REQUEST, ['created', 'status', 'assignment', 'messages', 'quote', 'approvals', 'project'], refreshQueues);
 
   // Proyectos en arranque: sólo para perfiles con lectura de proyectos (así nunca se dispara una
   // petición que el servidor rechazaría). Un fallo aquí no tumba el resto del tablero.
@@ -248,7 +254,7 @@ export default function StaffDashboardPanel() {
       .then((result) => { if (result.ok) setProjectsQueue({ items: result.data.items, total: result.data.total }); })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [canReadProjects]);
+  }, [canReadProjects, queuesToken]);
 
   // Precios por asignar: conceptos que Ventas dejó "por cotizar" y esperan precio en su lista. Sólo para
   // quien puede asignarlos; un fallo aquí no tumba el resto del tablero.
@@ -273,7 +279,7 @@ export default function StaffDashboardPanel() {
       .then((result) => { if (result.ok) setWaitingQueue(result.data); })
       .catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [queuesToken]);
 
   // Aceptadas sin proyecto: la aceptación crea el proyecto sola; esto sólo aparece con aceptaciones
   // anteriores a eso o si la creación automática falló, para que ninguna venta se quede sin arranque.
@@ -285,14 +291,14 @@ export default function StaffDashboardPanel() {
       .then((result) => { if (result.ok) setAcceptedQueue(result.data); })
       .catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [queuesToken]);
 
   // W1-02 (primer corte): "qué atender ahora" reutiliza el mismo endpoint y scope de R1 (mine/sin
   // asignar) — sin score opaco, cada fila es un expediente real con enlace directo al expediente exacto.
   useEffect(() => {
     const controller = new AbortController();
     const loadQueues = async () => {
-      setQueuesLoading(true);
+      if (!queuesLoadedRef.current) setQueuesLoading(true);
       setQueuesError(null);
       try {
         // El scope "workspace" (view=mine/unassigned) fija su propio pageSize=20 en el servidor;
@@ -316,6 +322,7 @@ export default function StaffDashboardPanel() {
           readApiResponse<{ items: FailedNotification[]; total: number }>(failedNotificationsResponse, 'No fue posible cargar los avisos fallidos.'),
         ]);
         if (mineResult.ok) setMineQueue(mineResult.data);
+        queuesLoadedRef.current = true;
         if (unassignedResult.ok) setUnassignedQueue(unassignedResult.data);
         // Un actor sin permiso de aprobar (ej. ventas) recibe [] del servidor, no un 403 — esta
         // cola simplemente no le aplica, así que la tarjeta no se renderiza para ese rol.
@@ -345,7 +352,7 @@ export default function StaffDashboardPanel() {
     };
     void loadQueues();
     return () => controller.abort();
-  }, [canSeeDeliveries]);
+  }, [canSeeDeliveries, queuesToken]);
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);

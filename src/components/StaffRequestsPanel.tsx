@@ -2,7 +2,7 @@
 
 import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useInbox, useInboxActiveContext } from '@/components/inbox/InboxProvider';
-import { useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
+import { useCoalesced, useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Archive, ArrowRight, CircleCheck, Compass, Hourglass, Inbox, MessageSquareReply, Plus, X } from 'lucide-react';
@@ -13,6 +13,7 @@ import { relativeTimeLabel } from '@/lib/relative-time';
 import { revealWhenStacked } from '@/lib/reveal-when-stacked';
 import { getRequestWorkspacePrimaryAction } from '@/lib/request-workspace-primary-action';
 import { usePersistentState } from '@/lib/use-persistent-state';
+import { ANY_REQUEST } from '@/lib/realtime-subscriptions';
 import StaffFilesPanel, { type StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import StaffMessagingPanel, { type StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
 import StaffRequestEditDialog, { type StaffRequestEditFocus } from '@/components/StaffRequestEditDialog';
@@ -264,6 +265,8 @@ export default function StaffRequestsPanel() {
   const selectedDataRef = useRef<RequestDetail | null>(null);
   const loadingDetailRef = useRef(false);
   const pendingLiveDetailRef = useRef<string | null>(null);
+  const [listNews, setListNews] = useState(0);
+  const requestListRef = useRef<HTMLDivElement>(null);
   useEffect(() => { selectedDataRef.current = selected; }, [selected]);
   useEffect(() => { loadingDetailRef.current = loadingDetail; }, [loadingDetail]);
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<number | null>(null);
@@ -273,14 +276,16 @@ export default function StaffRequestsPanel() {
     return () => window.clearTimeout(timer);
   }, [liveUpdatedAt]);
 
-  const loadList = useCallback(async (currentPage: number, currentStatus: string, query: string, currentView: InboxView, keepSelection = false) => {
+  const loadList = useCallback(async (currentPage: number, currentStatus: string, query: string, currentView: InboxView, keepSelection = false, options: { silent?: boolean } = {}) => {
     // UX audit fix: cambiar de filtro/página rápido (o volver a escribir en el buscador) podía dejar
     // que la respuesta obsoleta de una combinación anterior llegara después que la vigente y
     // sobreescribiera en silencio la lista/paginación/selección con datos que ya no corresponden a
     // los filtros mostrados.
     const generation = (loadListGenerationRef.current += 1);
-    setLoadingList(true);
-    setError(null);
+    if (!options.silent) {
+      setLoadingList(true);
+      setError(null);
+    }
     try {
       // "Mías" y "Sin asignar" usan el modo de bandeja de trabajo del mismo endpoint (el que ya usa
       // el dashboard para sus colas); "Todas" conserva la consulta original sin cambios.
@@ -293,6 +298,7 @@ export default function StaffRequestsPanel() {
       const result = await readApiResponse<ListResponse>(response, 'No fue posible cargar el inbox.');
       if (loadListGenerationRef.current !== generation) return;
       if (!result.ok) {
+        if (options.silent) return;
         setAccessDenied(result.kind === 'forbidden');
         setError(result.message);
         setItems([]);
@@ -300,6 +306,7 @@ export default function StaffRequestsPanel() {
         return;
       }
       const data = result.data;
+      setListNews(0);
       setItems(data.items);
       setTotal(data.total);
       setTotalPages(Math.max(data.totalPages, 1));
@@ -320,12 +327,13 @@ export default function StaffRequestsPanel() {
       });
     } catch (caught) {
       if (loadListGenerationRef.current !== generation) return;
+      if (options.silent) return;
       setAccessDenied(false);
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar el inbox.');
       setItems([]);
       setSelected(null);
     } finally {
-      setLoadingList(false);
+      if (loadListGenerationRef.current === generation) setLoadingList(false);
     }
   }, []);
 
@@ -382,6 +390,15 @@ export default function StaffRequestsPanel() {
     if (!statusFilterHydrated || !viewHydrated) return;
     void loadList(page, statusFilter, appliedSearch, view);
   }, [appliedSearch, loadList, page, statusFilter, statusFilterHydrated, view, viewHydrated]);
+
+  const onListChange = useCoalesced(() => {
+    if (page === 1 && (requestListRef.current?.scrollTop ?? 0) < 8) void loadList(page, statusFilter, appliedSearch, view, true, { silent: true });
+    else setListNews((count) => count + 1);
+  }, 800);
+  useRealtimeRequest(ANY_REQUEST, ['created', 'status', 'assignment'], (change) => {
+    if (change.self && change.reason === 'signal') return;
+    onListChange();
+  });
 
   useEffect(() => {
     if (!selected || loadingDetail || !revealPendingRef.current) return;
@@ -799,8 +816,8 @@ export default function StaffRequestsPanel() {
               <PrivateSelect key={statusFilterHydrated ? 'hydrated' : 'pending'} id="requests-status-filter" optionalHint={false} label="Estado" value={statusFilterDraft} onValueChange={applyStatusFilter} options={STATUS_OPTIONS.map((status) => ({ value: status, label: statusLabel(status) }))} placeholder="Todos los estados" />
             </form>
 
-            <div className="staff-inbox__head"><span>{loadingList ? 'Actualizando…' : `Mostrando ${items.length} de ${total}`}</span>{filtersActive && <button type="button" className="staff-inbox__reset" onClick={resetFilters}>Limpiar filtros</button>}</div>
-            <div className="staff-request-list" aria-live="polite">
+            <div className="staff-inbox__head"><span>{loadingList ? 'Actualizando…' : `Mostrando ${items.length} de ${total}`}</span>{listNews > 0 && <button type="button" className="staff-inbox__news" onClick={() => { setListNews(0); void loadList(page, statusFilter, appliedSearch, view, true); }}>{listNews === 1 ? 'Hay 1 novedad' : `Hay ${listNews} novedades`} · Actualizar</button>}{filtersActive && <button type="button" className="staff-inbox__reset" onClick={resetFilters}>Limpiar filtros</button>}</div>
+            <div ref={requestListRef} className="staff-request-list" aria-live="polite">
               {loadingList && <div className="staff-list-placeholder"><span /><span /><span /></div>}
               {!loadingList && items.length === 0 && <div className="staff-empty staff-empty--compact"><span className="staff-empty__mark" aria-hidden="true"><Inbox size={20} /></span>{view === 'mine' && !statusFilter && !appliedSearch
                 ? <><h2>Aún no tienes expedientes a tu cargo.</h2><p>Toma uno de la vista «Sin asignar» para empezar a trabajarlo.</p><button type="button" className="staff-button" onClick={() => applyView('unassigned')}>Ver sin asignar</button></>

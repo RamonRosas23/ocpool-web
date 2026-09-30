@@ -2,7 +2,7 @@
 
 import { ArrowUpRight, Check, ChevronDown, Inbox, X } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffHeader from '@/components/StaffHeader';
 import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
@@ -11,6 +11,8 @@ import { formatDateTime } from '@/lib/format-date';
 import { moneyLabel } from '@/lib/money';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { relativeTimeLabel } from '@/lib/relative-time';
+import { useCoalesced, useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
+import { ANY_REQUEST } from '@/lib/realtime-subscriptions';
 
 type ApprovalType = 'DISCOUNT' | 'PRICE_OVERRIDE' | 'SPECIAL_CONCEPT';
 
@@ -110,11 +112,16 @@ export default function StaffApprovalsPanel() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<ApprovalItem | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const loadedRef = useRef(false);
+  const refreshApprovals = useCoalesced(() => setReloadKey((key) => key + 1), 2_000);
+  useRealtimeRequest(ANY_REQUEST, ['approvals'], (change) => {
+    if (!(change.self && change.reason === 'signal')) refreshApprovals();
+  });
 
   useEffect(() => {
     const controller = new AbortController();
     const load = async () => {
-      setLoading(true);
+      if (!loadedRef.current) setLoading(true);
       setError(null);
       try {
         const response = await fetch(`/api/staff/quotes/approvals?page=${page}`, { credentials: 'include', cache: 'no-store', signal: controller.signal });
@@ -125,6 +132,7 @@ export default function StaffApprovalsPanel() {
         }
         setAccessDenied(false);
         setData(result.data);
+        loadedRef.current = true;
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
         setError(caught instanceof Error ? caught.message : 'No fue posible cargar las aprobaciones pendientes.');
