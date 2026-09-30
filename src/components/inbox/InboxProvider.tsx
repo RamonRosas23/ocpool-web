@@ -7,6 +7,7 @@ import { desktopPermission, requestDesktopPermission, showDesktopNotification, t
 import { flashReducer, type FlashItem } from '@/lib/inbox-flash';
 import { defaultPreferences, readPreferences, writePreference, type InboxPreferences } from '@/lib/inbox-preferences';
 import { createChime, type Chime } from '@/lib/inbox-sound';
+import { signOutAnnounced } from '@/lib/session-exit';
 import { applyNotificationEvent, shouldFlash, type RealtimeEvent } from '@/lib/realtime-client';
 import { useInboxRealtime, type RealtimeOrigin } from './useInboxRealtime';
 
@@ -206,8 +207,9 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
         scheduleListRefresh();
         return;
       case 'bye':
-        // La sesión se cerró (salida, contraseña nueva, suspensión): todas las pestañas vuelven a entrar.
-        if (event.reason === 'session') window.location.assign(surface === 'staff' ? '/login' : '/portal/access');
+        // La sesión se cerró (salida, contraseña nueva, suspensión): las pestañas vuelven a la pantalla de acceso,
+        // salvo la que cerró su propia sesión, que ya muestra su salida.
+        if (event.reason === 'session' && !signOutAnnounced()) window.location.assign(surface === 'staff' ? '/login' : '/portal/access');
         return;
       case 'notification': {
         applyLive((current) => applyNotificationEvent(current, event));

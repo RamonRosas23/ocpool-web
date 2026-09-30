@@ -15,6 +15,7 @@ import PrivateSurfaceRoot from '@/components/private/PrivateSurfaceRoot';
 import { formatDate } from '@/lib/format-date';
 import type { InboxNotification } from '@/lib/inbox-client';
 import { portalNextStep, portalStages, portalStatusLabel, type PortalNextStep, type PortalStageState } from '@/lib/portal-stage';
+import { announceSignOut } from '@/lib/session-exit';
 import { moneyLabel } from '@/lib/money';
 import { QUOTE_VERSION_STATUS_LABELS, statusToneIcon } from '@/lib/labels';
 
@@ -242,6 +243,8 @@ export default function ClientPortalPanel() {
   }, [selectedId]);
 
   const logout = async () => {
+    // El canal en vivo recibirá el cierre de esta sesión: esta pestaña se queda y muestra "Cerraste tu sesión".
+    announceSignOut();
     await fetch('/api/auth/session', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' } }).catch(() => undefined);
     setLoggedOut(true);
     setRestricted(true);

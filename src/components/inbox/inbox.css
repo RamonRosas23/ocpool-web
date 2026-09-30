@@ -88,8 +88,8 @@
 .client-since__dismiss:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
 
 /* Aviso flash (spec §5.3): arriba a la derecha bajo el encabezado, por encima de los toasts. Vacío no estorba. */
-.inbox-flash-stack { position: fixed; z-index: calc(var(--private-z-toast) + 5); top: calc(var(--staff-header-height, 64px) + 12px); right: 16px; display: grid; gap: 10px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
-.inbox-flash-stack > * { pointer-events: auto; }
+.inbox-flashes { position: fixed; z-index: calc(var(--private-z-toast) + 5); top: calc(var(--staff-header-height, 64px) + 12px); right: 16px; display: grid; gap: 10px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
+.inbox-flashes > * { pointer-events: auto; }
 .inbox-flash { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) 28px; align-items: start; gap: 10px; overflow: hidden; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); padding: 12px 10px 14px 12px; background: var(--private-color-surface); color: var(--private-color-ink); box-shadow: var(--private-shadow-popover); text-align: left; animation: inbox-flash-in 220ms cubic-bezier(.2, .7, .2, 1); }
 .inbox-flash.is-urgent { border-color: color-mix(in srgb, var(--private-color-danger) 45%, var(--private-color-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--private-color-danger) 16%, transparent), var(--private-shadow-popover); }
 .inbox-flash__main { display: grid; min-width: 0; gap: 8px; }
@@ -103,13 +103,13 @@
 .inbox-flash__close:hover, .inbox-flash__close:focus-visible { background: var(--private-color-surface-muted); outline: 0; }
 .inbox-flash__close:focus-visible { box-shadow: 0 0 0 2px var(--private-color-focus); }
 .inbox-flash__progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: var(--private-color-accent); transform-origin: left; animation: inbox-flash-progress linear forwards; }
-.inbox-flash-stack__more { justify-self: end; min-height: 34px; border: 1px solid var(--private-color-border-control); border-radius: 999px; padding: 0 14px; background: var(--private-color-surface); color: var(--private-color-brand); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 700; box-shadow: var(--private-shadow-card); }
-.inbox-flash-stack__more:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.inbox-flashes__more { justify-self: end; min-height: 34px; border: 1px solid var(--private-color-border-control); border-radius: 999px; padding: 0 14px; background: var(--private-color-surface); color: var(--private-color-brand); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 700; box-shadow: var(--private-shadow-card); }
+.inbox-flashes__more:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
 @keyframes inbox-flash-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 @keyframes inbox-flash-progress { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
 @media (max-width: 768px) {
-  .inbox-flash-stack { top: 12px; right: 16px; left: 16px; width: auto; }
+  .inbox-flashes { top: 12px; right: 16px; left: 16px; width: auto; }
   .notices-page__filters { grid-template-columns: minmax(0, 1fr); }
   .inbox-panel { position: fixed; top: var(--inbox-panel-top, 72px); right: 12px; bottom: 12px; left: 12px; width: auto; max-height: none; }
   .inbox-bell__label { display: none; }

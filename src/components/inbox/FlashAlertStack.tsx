@@ -83,9 +83,9 @@ export default function FlashAlertStack() {
   if (!inbox?.available) return null;
   const { shown, overflow } = visibleFlashes(inbox.flashes, mobile);
   return (
-    <section className="inbox-flash-stack" aria-label="Avisos al momento" aria-live="polite" aria-relevant="additions">
+    <section className="inbox-flashes" aria-label="Avisos al momento" aria-live="polite" aria-relevant="additions">
       {shown.map((item) => <FlashCard key={`${item.notification.id}:${item.revision}`} item={item} onDismiss={inbox.dismissFlash} onPause={inbox.pauseFlash} onOpen={openItem} actions={inbox.surface === 'staff' ? actionsFor(item.notification) : null} />)}
-      {overflow > 0 && <button type="button" className="inbox-flash-stack__more" onClick={inbox.requestPanel}>y {overflow} más</button>}
+      {overflow > 0 && <button type="button" className="inbox-flashes__more" onClick={inbox.requestPanel}>y {overflow} más</button>}
     </section>
   );
 }
