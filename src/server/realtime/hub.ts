@@ -1,6 +1,6 @@
 import type { Actor } from '@/server/auth/types';
 import type { InboxNotificationDto } from '@/server/modules/inbox/service';
-import type { RealtimeSignal } from './publish';
+import type { RealtimeSignal, RequestPart } from './publish';
 import { formatEventCursor } from './sse';
 
 export type ByeReason = 'session' | 'replaced';
@@ -17,6 +17,7 @@ export type RealtimeNotificationPayload = Readonly<{
 export type RealtimeServerEvent =
   | Readonly<{ event: 'notification'; id: string; data: RealtimeNotificationPayload }>
   | Readonly<{ event: 'counts'; data: RealtimeCounts }>
+  | Readonly<{ event: 'request'; data: Readonly<{ requestId: string; parts: readonly RequestPart[]; self: boolean; at: string }> }>
   | Readonly<{ event: 'resync'; data: Readonly<Record<string, never>> }>;
 
 export type RealtimeConnection = {
@@ -35,6 +36,14 @@ export type RealtimeHubDependencies = Readonly<{
   loadRequestUnread: (actor: Actor, quoteRequestId: string) => Promise<number>;
   maxConnectionsPerUser: () => number;
 }>;
+
+/** Alcance de `r` (spec §4.2): igual que el de lectura de expedientes; el cliente sólo lo suyo y visible. */
+export function requestSignalVisibleTo(actor: Actor, signal: Extract<RealtimeSignal, { t: 'r' }>): boolean {
+  if (actor.type === 'CUSTOMER') return signal.v === 'C' && actor.clientId === signal.c;
+  if (actor.type !== 'EMPLOYEE') return false;
+  if (actor.permissionKeys.has('requests.read.global')) return true;
+  return signal.a === null || signal.a === actor.userId || signal.pa === actor.userId;
+}
 
 /**
  * Registro de conexiones por persona y reparto de señales (spec §4.2). No guarda contenido: relee cada aviso
@@ -67,7 +76,10 @@ export class RealtimeHub {
   }
 
   async dispatch(signal: RealtimeSignal): Promise<void> {
-    if (signal.t === 'r') return;
+    if (signal.t === 'r') {
+      this.deliverRequest(signal);
+      return;
+    }
     if (!this.byUser.has(signal.u)) return;
     if (signal.t === 's') {
       this.closeSessions(signal);
@@ -94,6 +106,16 @@ export class RealtimeHub {
       if (!closes) continue;
       this.unregister(connection);
       connection.close('session');
+    }
+  }
+
+  private deliverRequest(signal: Extract<RealtimeSignal, { t: 'r' }>): void {
+    const at = new Date().toISOString();
+    for (const connections of this.byUser.values()) {
+      for (const connection of connections) {
+        if (!requestSignalVisibleTo(connection.actor, signal)) continue;
+        connection.send({ event: 'request', data: { requestId: signal.r, parts: signal.p, self: signal.b === connection.userId, at } });
+      }
     }
   }
 

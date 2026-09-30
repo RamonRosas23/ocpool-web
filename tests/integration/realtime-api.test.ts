@@ -141,6 +141,24 @@ describe('realtime API', () => {
     await events.cancel();
   });
 
+  it('streams request changes to whoever can open the file', async () => {
+    const events = sseReader(await open());
+    await events.next('hello');
+    // Solicitud propia, creada por el equipo y sin responsable: no avisa al pool y se borra al terminar.
+    const { createQuoteRequest } = await import('@/server/modules/quote-requests/service');
+    const request = await createQuoteRequest({ idempotencyKey: `rt-api-request-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: 'RT Api Cliente', email: `rt-api-contact-${suffix}@example.test` }, detail: { projectType: 'Alberca', location: 'Durango', description: 'Fixture del evento request', consentAt: new Date() } }, { prisma });
+    try {
+      expect((await events.next('request', (event) => event.data.requestId === request.quoteRequestId)).data).toMatchObject({ parts: ['created'], self: false });
+    } finally {
+      await events.cancel();
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: request.quoteRequestId } });
+      await prisma.auditLog.deleteMany({ where: { entityId: request.quoteRequestId } });
+      await prisma.quoteRequest.deleteMany({ where: { id: request.quoteRequestId } });
+      await prisma.clientContact.deleteMany({ where: { id: request.contactId } });
+      await prisma.client.deleteMany({ where: { id: request.clientId } });
+    }
+  }, 10_000);
+
   it('says bye and ends the stream when the session is revoked', async () => {
     const events = sseReader(await open());
     await events.next('hello');

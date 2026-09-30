@@ -98,6 +98,8 @@ describe('realtime client', () => {
     expect(parseRealtimeEvent('notification', JSON.stringify({ mode: 'deleted', notification: notice(), unread: 1, actionRequired: 0 }))).toBeNull();
     expect(parseRealtimeEvent('counts', '{"unread":-1,"actionRequired":0}')).toBeNull();
     expect(parseRealtimeEvent('bye', '{"reason":"session"}')).toEqual({ type: 'bye', reason: 'session' });
+    expect(parseRealtimeEvent('request', JSON.stringify({ requestId: REQUEST, parts: ['messages', 'bogus'], self: true, at: 'x' }))).toEqual({ type: 'request', requestId: REQUEST, parts: ['messages'], self: true });
+    expect(parseRealtimeEvent('request', JSON.stringify({ requestId: REQUEST, parts: ['bogus'] }))).toBeNull();
     expect(parseRealtimeEvent('resync', '{}')).toEqual({ type: 'resync' });
     expect(parseRealtimeEvent('ping', '{"at":"x"}')).toBeNull();
     expect(parseRealtimeEvent('counts', 'not json')).toBeNull();

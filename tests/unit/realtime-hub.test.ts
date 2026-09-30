@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Actor } from '@/server/auth/types';
 import type { InboxNotificationDto } from '@/server/modules/inbox/service';
-import { RealtimeHub, type ByeReason, type RealtimeConnection, type RealtimeHubDependencies, type RealtimeServerEvent } from '@/server/realtime/hub';
+import { RealtimeHub, requestSignalVisibleTo, type ByeReason, type RealtimeConnection, type RealtimeHubDependencies, type RealtimeServerEvent } from '@/server/realtime/hub';
 
 const USER = '5a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
 const OTHER = '6b2c3d4e-5f60-4b7c-9d8e-0f1a2b3c4d5e';
@@ -153,5 +153,34 @@ describe('realtime hub', () => {
     expect(kept.events).toEqual([{ event: 'resync', data: {} }]);
     expect(gone.events).toEqual([]);
     expect(hub.size).toBe(1);
+  });
+
+  it('sends request changes only to whoever can open the file', async () => {
+    const { hub } = createHub();
+    const OWNER = USER;
+    const CLIENT = '1f2e3d4c-5b6a-4978-8a6b-5c4d3e2f1a0b';
+    const manager = { ...connection('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', SESSION_A), actor: { ...actorFor('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), permissionKeys: new Set(['requests.read.global']) } };
+    const owner = connection(OWNER, SESSION_A);
+    const otherSales = connection(OTHER, SESSION_B);
+    const customer = { ...connection('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', SESSION_A), actor: { userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', type: 'CUSTOMER' as const, clientId: CLIENT, permissionKeys: new Set<string>(), mfaVerified: false } };
+    for (const each of [manager, owner, otherSales, customer]) hub.register(each);
+    await hub.dispatch({ t: 'r', r: REQUEST, c: CLIENT, a: OWNER, b: OWNER, p: ['messages'], v: 'C' });
+    expect(manager.events).toEqual([{ event: 'request', data: { requestId: REQUEST, parts: ['messages'], self: false, at: expect.any(String) } }]);
+    expect(owner.events).toEqual([{ event: 'request', data: expect.objectContaining({ self: true }) }]);
+    expect(otherSales.events).toEqual([]);
+    expect(customer.events).toHaveLength(1);
+    await hub.dispatch({ t: 'r', r: REQUEST, c: CLIENT, a: OWNER, p: ['approvals'], v: 'I' });
+    expect(customer.events).toHaveLength(1);
+  });
+
+  it('decides the scope of a request change like the request read scope', () => {
+    const signal = { t: 'r' as const, r: REQUEST, c: 'client', a: USER, p: ['status' as const], v: 'I' as const };
+    expect(requestSignalVisibleTo(actorFor(USER), signal)).toBe(true);
+    expect(requestSignalVisibleTo(actorFor(OTHER), signal)).toBe(false);
+    expect(requestSignalVisibleTo(actorFor(OTHER), { ...signal, pa: OTHER })).toBe(true);
+    expect(requestSignalVisibleTo(actorFor(OTHER), { ...signal, a: null })).toBe(true);
+    expect(requestSignalVisibleTo({ userId: OTHER, type: 'CUSTOMER', clientId: 'client', permissionKeys: new Set(), mfaVerified: false }, signal)).toBe(false);
+    expect(requestSignalVisibleTo({ userId: OTHER, type: 'CUSTOMER', clientId: 'client', permissionKeys: new Set(), mfaVerified: false }, { ...signal, v: 'C' })).toBe(true);
+    expect(requestSignalVisibleTo({ userId: OTHER, type: 'CUSTOMER', clientId: 'another', permissionKeys: new Set(), mfaVerified: false }, { ...signal, v: 'C' })).toBe(false);
   });
 });

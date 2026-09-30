@@ -14,6 +14,7 @@ export type RealtimeEvent =
   | Readonly<{ type: 'hello'; unread: number; actionRequired: number }>
   | RealtimeNotificationEvent
   | Readonly<{ type: 'counts'; unread: number; actionRequired: number }>
+  | Readonly<{ type: 'request'; requestId: string; parts: RequestPart[]; self: boolean }>
   | Readonly<{ type: 'resync' }>
   | Readonly<{ type: 'bye'; reason: string }>;
 
@@ -24,7 +25,7 @@ export const REQUEST_PARTS = ['created', 'messages', 'files', 'status', 'assignm
 export type RequestPart = (typeof REQUEST_PARTS)[number];
 
 export const REALTIME_URL = '/api/realtime';
-export const REALTIME_EVENT_TYPES = ['hello', 'notification', 'counts', 'resync', 'bye', 'ping'] as const;
+export const REALTIME_EVENT_TYPES = ['hello', 'notification', 'counts', 'request', 'resync', 'bye', 'ping'] as const;
 export const LATEST_LIMIT = 20;
 export const REALTIME_MAX_ERRORS = 3;
 export const REALTIME_SILENCE_MS = 60_000;
@@ -34,6 +35,7 @@ const PRIORITIES: ReadonlySet<string> = new Set(['URGENT', 'HIGH', 'NORMAL', 'IN
 const MODES: ReadonlySet<string> = new Set(['created', 'updated', 'resolved']);
 const ACTIVITY_KINDS: ReadonlySet<string> = new Set(['customer.activity', 'team.activity']);
 const EVENT_SOURCE_CLOSED = 2;
+const PART_SET: ReadonlySet<string> = new Set(REQUEST_PARTS);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -74,6 +76,10 @@ export function parseRealtimeEvent(type: string, raw: string): RealtimeEvent | n
     case 'notification':
       if (unread === null || actionRequired === null || !isNotification(data.notification) || typeof data.mode !== 'string' || !MODES.has(data.mode)) return null;
       return { type: 'notification', mode: data.mode as RealtimeNotificationEvent['mode'], notification: data.notification, unread, actionRequired, requestUnread: asCount(data.requestUnread) };
+    case 'request': {
+      const parts = Array.isArray(data.parts) ? data.parts.filter((part): part is RequestPart => typeof part === 'string' && PART_SET.has(part)) : [];
+      return typeof data.requestId === 'string' && parts.length > 0 ? { type: 'request', requestId: data.requestId, parts, self: data.self === true } : null;
+    }
     case 'resync':
       return { type: 'resync' };
     case 'bye':
