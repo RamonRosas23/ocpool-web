@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, CheckCheck, X } from 'lucide-react';
+import { Bell, CheckCheck, Monitor, MonitorOff, MonitorUp, Volume2, VolumeX, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { badgeCount, filterInbox, groupInboxByDay, type InboxFilter, type InboxNotification } from '@/lib/inbox-client';
@@ -50,6 +50,14 @@ export default function NotificationBell({ className }: Readonly<{ className?: s
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [open, refresh]);
+
+  // "y N más" del flash abre el panel.
+  const panelRequest = inbox?.panelRequest ?? 0;
+  useEffect(() => {
+    if (panelRequest === 0) return;
+    setPanelTop(Math.round((triggerRef.current?.getBoundingClientRect().bottom ?? 64) + 8));
+    setOpen(true);
+  }, [panelRequest]);
 
   if (!inbox || !inbox.available) return null;
   const staff = inbox.surface === 'staff';
@@ -110,7 +118,17 @@ export default function NotificationBell({ className }: Readonly<{ className?: s
               </section>
             ))}
           </div>
-          {staff && <div className="inbox-panel__foot"><Link href="/staff/notifications" onClick={() => setOpen(false)}>Ver todas</Link></div>}
+          <div className="inbox-panel__foot">
+            {staff && <Link href="/staff/notifications" onClick={() => setOpen(false)}>Ver todas</Link>}
+            <div className="inbox-panel__prefs" role="group" aria-label="Cómo avisarte">
+              <button type="button" className="inbox-pref" aria-pressed={inbox.preferences.sound} onClick={() => inbox.setSound(!inbox.preferences.sound)}>
+                {inbox.preferences.sound ? <Volume2 size={15} aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}Sonido
+              </button>
+              {inbox.desktop === 'default' && <button type="button" className="inbox-pref" onClick={() => void inbox.setDesktop(true)}><MonitorUp size={15} aria-hidden="true" />Activar alertas de escritorio</button>}
+              {inbox.desktop === 'granted' && <button type="button" className="inbox-pref" aria-pressed={inbox.preferences.desktop} onClick={() => void inbox.setDesktop(!inbox.preferences.desktop)}><Monitor size={15} aria-hidden="true" />Alertas de escritorio</button>}
+              {inbox.desktop === 'denied' && <span className="inbox-pref inbox-pref--note"><MonitorOff size={15} aria-hidden="true" />Escritorio bloqueado en el navegador</span>}
+            </div>
+          </div>
         </div>
       )}
     </div>

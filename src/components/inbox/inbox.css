@@ -25,7 +25,13 @@
 .inbox-filter[aria-pressed="true"] { border-color: var(--private-color-accent); background: var(--private-tint-accent); color: var(--private-color-accent); }
 .inbox-filter:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
 .inbox-panel__body { overflow-y: auto; overscroll-behavior: contain; padding: 4px 0 8px; }
-.inbox-panel__foot { display: flex; justify-content: center; border-top: 1px solid var(--private-color-border); padding: 10px; }
+.inbox-panel__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; border-top: 1px solid var(--private-color-border); padding: 8px 12px; }
+.inbox-panel__foot > a { padding: 0 4px; }
+.inbox-panel__prefs { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.inbox-pref { display: inline-flex; min-height: 32px; align-items: center; gap: 6px; border: 0; border-radius: var(--private-radius-sm); padding: 0 8px; background: transparent; color: var(--private-color-ink-muted); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 650; }
+.inbox-pref[aria-pressed="true"] { color: var(--private-color-accent); }
+.inbox-pref:hover, .inbox-pref:focus-visible { background: var(--private-color-surface-muted); outline: 0; }
+.inbox-pref--note, .inbox-pref--note:hover { background: transparent; cursor: default; font-weight: 600; }
 .inbox-panel__foot a { color: var(--private-color-accent); font-size: 13px; font-weight: 700; text-decoration: none; }
 .inbox-panel__foot a:hover { text-decoration: underline; }
 
@@ -81,7 +87,29 @@
 .client-since__dismiss { display: inline-grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border: 0; border-radius: var(--private-radius-sm); background: transparent; color: var(--private-color-ink-muted); cursor: pointer; }
 .client-since__dismiss:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
 
+/* Aviso flash (spec §5.3): arriba a la derecha bajo el encabezado, por encima de los toasts. Vacío no estorba. */
+.inbox-flash-stack { position: fixed; z-index: calc(var(--private-z-toast) + 5); top: calc(var(--staff-header-height, 64px) + 12px); right: 16px; display: grid; gap: 10px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
+.inbox-flash-stack > * { pointer-events: auto; }
+.inbox-flash { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) 28px; align-items: start; gap: 10px; overflow: hidden; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); padding: 12px 10px 14px 12px; background: var(--private-color-surface); color: var(--private-color-ink); box-shadow: var(--private-shadow-popover); text-align: left; animation: inbox-flash-in 220ms cubic-bezier(.2, .7, .2, 1); }
+.inbox-flash.is-urgent { border-color: color-mix(in srgb, var(--private-color-danger) 45%, var(--private-color-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--private-color-danger) 16%, transparent), var(--private-shadow-popover); }
+.inbox-flash__main { display: grid; min-width: 0; gap: 8px; }
+.inbox-flash__link { display: grid; gap: 2px; color: inherit; text-decoration: none; }
+.inbox-flash__link strong { font-size: 14px; font-weight: 750; line-height: 1.35; }
+.inbox-flash__link span { display: -webkit-box; overflow: hidden; color: var(--private-color-ink-muted); font-size: 12.5px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.inbox-flash__link:hover strong { color: var(--private-color-brand); }
+.inbox-flash__link:focus-visible { border-radius: 4px; outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.inbox-flash__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.inbox-flash__close { display: inline-grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: var(--private-radius-sm); background: transparent; color: var(--private-color-ink-muted); cursor: pointer; }
+.inbox-flash__close:hover, .inbox-flash__close:focus-visible { background: var(--private-color-surface-muted); outline: 0; }
+.inbox-flash__close:focus-visible { box-shadow: 0 0 0 2px var(--private-color-focus); }
+.inbox-flash__progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: var(--private-color-accent); transform-origin: left; animation: inbox-flash-progress linear forwards; }
+.inbox-flash-stack__more { justify-self: end; min-height: 34px; border: 1px solid var(--private-color-border-control); border-radius: 999px; padding: 0 14px; background: var(--private-color-surface); color: var(--private-color-brand); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 700; box-shadow: var(--private-shadow-card); }
+.inbox-flash-stack__more:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+@keyframes inbox-flash-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes inbox-flash-progress { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
 @media (max-width: 768px) {
+  .inbox-flash-stack { top: 12px; right: 16px; left: 16px; width: auto; }
   .notices-page__filters { grid-template-columns: minmax(0, 1fr); }
   .inbox-panel { position: fixed; top: var(--inbox-panel-top, 72px); right: 12px; bottom: 12px; left: 12px; width: auto; max-height: none; }
   .inbox-bell__label { display: none; }
@@ -89,6 +117,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .inbox-panel { animation: none; }
+  .inbox-panel, .inbox-flash { animation: none; }
+  .inbox-flash__progress { display: none; }
   .inbox-item, .inbox-bell__trigger { transition: none; }
 }

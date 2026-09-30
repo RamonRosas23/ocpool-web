@@ -48,9 +48,15 @@ describe('flash queue, preferences and sound', () => {
     expect(visibleFlashes(state, false).shown.map((item) => item.notification.id)).toEqual(['d', 'c', 'b']);
     expect(visibleFlashes(state, false).overflow).toBe(1);
     expect(visibleFlashes(state, true)).toMatchObject({ overflow: 2 });
+    // Lo urgente no queda escondido tras una ráfaga de avisos altos.
+    const withUrgent = ['x', 'y', 'z'].reduce<FlashItem[]>((current, id) => show(current, id), show([], 'urgent', 'URGENT'));
+    expect(visibleFlashes(withUrgent, true).shown.map((item) => item.notification.id)).toEqual(['urgent', 'z']);
     const burst = Array.from({ length: FLASH_QUEUE_LIMIT + 5 }, (_, index) => `n${index}`).reduce<FlashItem[]>((current, id) => show(current, id), []);
     expect(burst).toHaveLength(FLASH_QUEUE_LIMIT);
     expect(burst[0].notification.id).toBe(`n${FLASH_QUEUE_LIMIT + 4}`);
+    const urgentThenBurst = Array.from({ length: FLASH_QUEUE_LIMIT + 5 }, (_, index) => `h${index}`).reduce<FlashItem[]>((current, id) => show(current, id), show([], 'urgent', 'URGENT'));
+    expect(urgentThenBurst).toHaveLength(FLASH_QUEUE_LIMIT);
+    expect(urgentThenBurst.some((item) => item.notification.id === 'urgent')).toBe(true);
   });
 
   it('keeps sound on for the team and off for customers until each person changes it', () => {
