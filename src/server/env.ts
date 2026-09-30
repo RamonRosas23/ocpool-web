@@ -42,6 +42,11 @@ const serverEnvSchema = z.object({
   NOTIFICATION_LEASE_SECONDS: integerEnv(300, 5, 3600),
   NOTIFICATION_MAX_ATTEMPTS: integerEnv(5, 1, 20),
   NOTIFICATION_POLL_INTERVAL_MS: integerEnv(2000, 100, 60_000),
+  // Tiempo real (spec 2026-09-29 §12). Con REALTIME_ENABLED=false todos consultan cada 30 s, sin desplegar.
+  REALTIME_ENABLED: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+  REALTIME_HEARTBEAT_SECONDS: integerEnv(25, 5, 120),
+  REALTIME_SESSION_RECHECK_SECONDS: integerEnv(60, 10, 600),
+  REALTIME_MAX_CONNECTIONS_PER_USER: integerEnv(10, 1, 50),
   MFA_ENCRYPTION_KEY: encryptionKey,
   AUTH_DELIVERY_ENCRYPTION_KEY: encryptionKey,
   NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: encryptionKey,
