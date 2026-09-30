@@ -19,6 +19,10 @@ export type RealtimeEvent =
 
 export type RealtimeMode = 'connecting' | 'live' | 'polling' | 'closed';
 
+/** La misma lista que `REQUEST_PARTS` del servidor (una prueba lo comprueba). */
+export const REQUEST_PARTS = ['created', 'messages', 'files', 'status', 'assignment', 'quote', 'approvals', 'read', 'project'] as const;
+export type RequestPart = (typeof REQUEST_PARTS)[number];
+
 export const REALTIME_URL = '/api/realtime';
 export const REALTIME_EVENT_TYPES = ['hello', 'notification', 'counts', 'resync', 'bye', 'ping'] as const;
 export const LATEST_LIMIT = 20;

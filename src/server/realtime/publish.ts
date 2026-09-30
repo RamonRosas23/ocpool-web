@@ -4,17 +4,26 @@ import type { PrismaClient } from '@/generated/prisma/client';
 /** Canal único de tiempo real (spec 2026-09-29 §4.1). El payload lleva sólo identificadores, nunca contenido. */
 export const REALTIME_CHANNEL = 'ocpool_realtime';
 
+/** Partes de un expediente que una pantalla puede estar mostrando (spec §4.1). */
+export const REQUEST_PARTS = ['created', 'messages', 'files', 'status', 'assignment', 'quote', 'approvals', 'read', 'project'] as const;
+export type RequestPart = (typeof REQUEST_PARTS)[number];
+/** `C`: el cliente puede verlo; `I`: sólo el equipo. */
+export type RequestVisibility = 'C' | 'I';
+
 export type RealtimeSignal =
   | Readonly<{ t: 'n'; u: string; id: string; m: 'created' | 'updated' | 'resolved' }>
   | Readonly<{ t: 'u'; u: string }>
   /** Cerrar conexiones: con `sid`, sólo las de esa sesión; con `keep`, todas menos esa; sin ninguno, todas. */
-  | Readonly<{ t: 's'; u: string; sid?: string; keep?: string }>;
+  | Readonly<{ t: 's'; u: string; sid?: string; keep?: string }>
+  /** Cambió algo del expediente `r` (cliente `c`, responsable `a`, anterior `pa`, autor `b`). Sin contenido. */
+  | Readonly<{ t: 'r'; r: string; c: string; a: string | null; pa?: string; b?: string; p: readonly RequestPart[]; v: RequestVisibility }>;
 
 type SqlClient = PrismaClient | Prisma.TransactionClient;
 
 const MAX_PAYLOAD_LENGTH = 7_900;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const NOTIFICATION_MODES: ReadonlySet<string> = new Set(['created', 'updated', 'resolved']);
+const PART_SET: ReadonlySet<string> = new Set(REQUEST_PARTS);
 
 export function encodeRealtimeSignal(signal: RealtimeSignal): string {
   const payload = JSON.stringify(signal);
@@ -27,6 +36,23 @@ function uuidField(value: Readonly<Record<string, unknown>>, key: string): strin
   return typeof field === 'string' && UUID_PATTERN.test(field) ? field : null;
 }
 
+/** undefined = ausente; null = presente pero inválido. */
+function optionalUuid(value: Readonly<Record<string, unknown>>, key: string): string | null | undefined {
+  return value[key] === undefined ? undefined : uuidField(value, key);
+}
+
+function decodeRequestSignal(value: Readonly<Record<string, unknown>>): RealtimeSignal | null {
+  const requestId = uuidField(value, 'r');
+  const clientId = uuidField(value, 'c');
+  const assigneeId = value.a === null ? null : uuidField(value, 'a');
+  const previousAssigneeId = optionalUuid(value, 'pa');
+  const actorId = optionalUuid(value, 'b');
+  const parts = Array.isArray(value.p) ? [...new Set(value.p.filter((part): part is RequestPart => typeof part === 'string' && PART_SET.has(part)))] : [];
+  if (!requestId || !clientId || (value.a !== null && !assigneeId) || previousAssigneeId === null || actorId === null) return null;
+  if (parts.length === 0 || (value.v !== 'C' && value.v !== 'I')) return null;
+  return { t: 'r', r: requestId, c: clientId, a: assigneeId, ...(previousAssigneeId ? { pa: previousAssigneeId } : {}), ...(actorId ? { b: actorId } : {}), p: parts, v: value.v };
+}
+
 /** El hub sólo actúa sobre señales bien formadas: un payload ajeno o dañado se ignora. */
 export function decodeRealtimeSignal(payload: string): RealtimeSignal | null {
   let parsed: unknown;
@@ -37,6 +63,7 @@ export function decodeRealtimeSignal(payload: string): RealtimeSignal | null {
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   const value = parsed as Record<string, unknown>;
+  if (value.t === 'r') return decodeRequestSignal(value);
   const userId = uuidField(value, 'u');
   if (!userId) return null;
   if (value.t === 'n') {

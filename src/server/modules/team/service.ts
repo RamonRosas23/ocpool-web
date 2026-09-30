@@ -5,7 +5,7 @@ import { issueEmployeeAccessTokenInTransaction, recordAuthEvent, type AuthReques
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
-import { notifyInbox } from '@/server/modules/inbox/domain-events';
+import { notifyInbox, signalRequestChange } from '@/server/modules/inbox/domain-events';
 import { publishSessionsClosed } from '@/server/realtime/publish';
 import {
   isTeamRole,
@@ -317,6 +317,7 @@ export async function suspendTeamMember(actor: Actor, userId: string, input: { r
         await transaction.quoteRequest.update({ where: { id: request.id }, data: { currentAssigneeId: null } });
         await transaction.auditLog.create({ data: { actorUserId: actor.userId, action: 'quote_request.unassigned', entityType: 'quote_request', entityId: request.id, outcome: 'SUCCESS', metadata: { folio: request.folio, source: 'team.suspension' } } });
       }
+      await signalRequestChange(transaction, { requestId: request.id, parts: ['assignment'], visibility: 'I', actorId: actor.userId, previousAssigneeId: member.id });
     }
     const projects = await transaction.project.findMany({ where: { ownerId: member.id, status: 'EN_TRANSICION' }, select: { id: true, folio: true } });
     for (const project of projects) {

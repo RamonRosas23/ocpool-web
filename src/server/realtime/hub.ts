@@ -67,6 +67,7 @@ export class RealtimeHub {
   }
 
   async dispatch(signal: RealtimeSignal): Promise<void> {
+    if (signal.t === 'r') return;
     if (!this.byUser.has(signal.u)) return;
     if (signal.t === 's') {
       this.closeSessions(signal);
@@ -96,7 +97,7 @@ export class RealtimeHub {
     }
   }
 
-  private async deliver(signal: Exclude<RealtimeSignal, { t: 's' }>): Promise<void> {
+  private async deliver(signal: Extract<RealtimeSignal, { t: 'n' | 'u' }>): Promise<void> {
     const targets = [...(this.byUser.get(signal.u) ?? [])];
     if (targets.length === 0) return;
     // Todas las conexiones de la misma persona comparten alcance: se consulta una sola vez.

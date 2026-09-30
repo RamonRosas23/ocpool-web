@@ -7,7 +7,7 @@ import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
 import { assertStaffAssigneeFilterScope, assertStaffAssigneeTargetScope, canReadGlobalStaffRequests, requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 import { inviteCustomerPortalAccessInTransaction, type CustomerAccessResult } from '@/server/modules/customer-onboarding/service';
-import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
+import { recordDomainEvent, signalRequestChange } from '@/server/modules/inbox/domain-events';
 import { sendStaffMessageInTransaction } from '@/server/modules/messaging/service';
 import { normalizeIdempotencyKey, normalizeMessageBody } from '@/server/modules/messaging/domain';
 import { createQuoteRequest, type CreateQuoteRequestInput, type QuoteRequestResult } from '@/server/modules/quote-requests/service';
@@ -772,6 +772,8 @@ export async function updateStaffQuoteRequest(actor: Actor, quoteRequestId: stri
       },
     });
 
+    // Editar datos no es un evento de dominio, pero las pantallas abiertas del expediente deben verlo.
+    await signalRequestChange(transaction, { requestId, parts: ['status'], visibility: 'C', actorId: actor.userId });
     return { quoteRequestId: requestId, folio: existing.folio, changedFields, updatedAt: now };
   });
 }
