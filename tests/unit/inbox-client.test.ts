@@ -3,7 +3,7 @@ import { badgeCount, fetchInboxSummary, filterInbox, groupInboxByDay, InboxReque
 
 const item = (overrides: Partial<InboxNotification>): InboxNotification => ({
   id: 'n1', kind: 'customer.activity', priority: 'HIGH', title: 'Aviso', body: null, actionPath: '/staff/requests', quoteRequestId: null, folio: null, clientName: null,
-  occurrences: 1, actionRequired: false, createdAt: '2026-09-29T10:00:00', lastActivityAt: '2026-09-29T10:00:00', readAt: null, resolvedAt: null, resolvedNote: null,
+  occurrences: 1, actionRequired: false, createdAt: '2026-09-29T10:00:00', lastActivityAt: '2026-09-29T10:00:00', updatedAt: '2026-09-29T10:00:00', readAt: null, resolvedAt: null, resolvedNote: null,
   ...overrides,
 });
 

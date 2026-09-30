@@ -25,6 +25,7 @@ export type InboxNotificationDto = Readonly<{
   actionRequired: boolean;
   createdAt: string;
   lastActivityAt: string;
+  updatedAt: string;
   readAt: string | null;
   resolvedAt: string | null;
   resolvedNote: string | null;
@@ -45,6 +46,7 @@ const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 50;
 const MAX_IDS = 100;
 const MAX_SEARCH_LENGTH = 60;
+const RESUME_LIMIT = 50;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 /** Lo que cuenta la campana: sin leer, sin resolver y no informativo. */
@@ -56,12 +58,12 @@ const ACTION_WHERE: Prisma.InboxNotificationWhereInput = { actionRequired: true,
 
 const DTO_SELECT = {
   id: true, kind: true, priority: true, title: true, body: true, actionPath: true, quoteRequestId: true, data: true,
-  occurrences: true, actionRequired: true, createdAt: true, lastActivityAt: true, readAt: true, resolvedAt: true, resolvedNote: true,
+  occurrences: true, actionRequired: true, createdAt: true, lastActivityAt: true, updatedAt: true, readAt: true, resolvedAt: true, resolvedNote: true,
 } as const;
 
 type DtoRow = Prisma.InboxNotificationGetPayload<{ select: typeof DTO_SELECT }>;
 
-function requireInboxActor(actor: Actor): void {
+export function requireInboxAccess(actor: Actor): void {
   if (actor.type !== 'CUSTOMER') return;
   if (!actor.clientId) throw new AppError('FORBIDDEN', 'No tienes permisos para realizar esta acción.', 403);
   requirePermission(actor, 'portal.self.read');
@@ -90,6 +92,7 @@ function toDto(row: DtoRow): InboxNotificationDto | null {
     actionRequired: row.actionRequired,
     createdAt: row.createdAt.toISOString(),
     lastActivityAt: row.lastActivityAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
     readAt: row.readAt?.toISOString() ?? null,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
     resolvedNote: row.resolvedNote,
@@ -109,7 +112,7 @@ function decodeCursor(value: string | undefined): { at: Date; id: string } | nul
 }
 
 export async function getInboxCounts(actor: Actor, dependencies: Dependencies = {}): Promise<InboxCounts> {
-  requireInboxActor(actor);
+  requireInboxAccess(actor);
   const prisma = dependencies.prisma ?? getPrisma();
   const scope = inboxScopeWhere(actor);
   const [unread, actionRequired] = await Promise.all([
@@ -120,7 +123,7 @@ export async function getInboxCounts(actor: Actor, dependencies: Dependencies = 
 }
 
 export async function getInboxSummary(actor: Actor, dependencies: Dependencies = {}): Promise<InboxSummary> {
-  requireInboxActor(actor);
+  requireInboxAccess(actor);
   const prisma = dependencies.prisma ?? getPrisma();
   const scope = inboxScopeWhere(actor);
   const [counts, latest, byRequest] = await Promise.all([
@@ -148,7 +151,7 @@ function searchWhere(query: string | undefined): Prisma.InboxNotificationWhereIn
 }
 
 export async function listInbox(actor: Actor, input: Readonly<{ filter?: InboxFilter; cursor?: string; limit?: number; category?: InboxCategory; q?: string }> = {}, dependencies: Dependencies = {}): Promise<InboxPage> {
-  requireInboxActor(actor);
+  requireInboxAccess(actor);
   const prisma = dependencies.prisma ?? getPrisma();
   const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
   const cursor = decodeCursor(input.cursor);
@@ -173,7 +176,7 @@ export async function listInbox(actor: Actor, input: Readonly<{ filter?: InboxFi
 }
 
 export async function markInboxRead(actor: Actor, input: MarkInboxReadInput, dependencies: Dependencies = {}): Promise<InboxCounts & Readonly<{ updated: number }>> {
-  requireInboxActor(actor);
+  requireInboxAccess(actor);
   const prisma = dependencies.prisma ?? getPrisma();
   const now = dependencies.now ?? new Date();
   let where: Prisma.InboxNotificationWhereInput;
@@ -195,4 +198,31 @@ export async function markInboxRead(actor: Actor, input: MarkInboxReadInput, dep
   // Otros dispositivos de la misma persona recalculan su contador (lo escucha el bloque 2).
   if (result.count > 0) await publishRealtime(prisma, { t: 'u', u: actor.userId });
   return { updated: result.count, ...(await getInboxCounts(actor, { prisma })) };
+}
+
+/** Un aviso tal como lo ve su destinatario, con el alcance vigente; null si ya no le corresponde (spec §4.2). */
+export async function getInboxNotificationForActor(actor: Actor, id: string, dependencies: Dependencies = {}): Promise<InboxNotificationDto | null> {
+  if (!UUID_PATTERN.test(id)) return null;
+  const prisma = dependencies.prisma ?? getPrisma();
+  const row = await prisma.inboxNotification.findFirst({ where: { AND: [inboxScopeWhere(actor), { id }] }, select: DTO_SELECT });
+  return row ? toDto(row) : null;
+}
+
+/** Sin leer de un expediente, con el mismo criterio que la campana ("N nuevas" del portal y lectura al abrir). */
+export async function getRequestUnreadCount(actor: Actor, quoteRequestId: string, dependencies: Dependencies = {}): Promise<number> {
+  if (!UUID_PATTERN.test(quoteRequestId)) return 0;
+  const prisma = dependencies.prisma ?? getPrisma();
+  return prisma.inboxNotification.count({ where: { AND: [inboxScopeWhere(actor), BADGE_WHERE, { quoteRequestId }] } });
+}
+
+/** Reanudación con `Last-Event-ID`: lo que cambió después del cursor, en orden de actualización. */
+export async function listInboxUpdatedSince(actor: Actor, cursor: Readonly<{ at: Date; id: string }>, dependencies: Dependencies = {}): Promise<Readonly<{ items: InboxNotificationDto[]; more: boolean }>> {
+  const prisma = dependencies.prisma ?? getPrisma();
+  const rows = await prisma.inboxNotification.findMany({
+    where: { AND: [inboxScopeWhere(actor), { OR: [{ updatedAt: { gt: cursor.at } }, { updatedAt: cursor.at, id: { gt: cursor.id } }] }] },
+    orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+    take: RESUME_LIMIT + 1,
+    select: DTO_SELECT,
+  });
+  return { items: rows.slice(0, RESUME_LIMIT).flatMap((row) => toDto(row) ?? []), more: rows.length > RESUME_LIMIT };
 }

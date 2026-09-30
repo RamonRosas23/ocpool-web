@@ -17,6 +17,7 @@ export type InboxNotification = {
   actionRequired: boolean;
   createdAt: string;
   lastActivityAt: string;
+  updatedAt: string;
   readAt: string | null;
   resolvedAt: string | null;
   resolvedNote: string | null;
