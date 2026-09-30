@@ -433,6 +433,12 @@
 .staff-messaging__panel.is-internal { border-left: 3px solid rgba(138, 99, 46, .45); padding-left: 14px; }
 .staff-messaging__more { display: flex; margin: 0 auto 16px; }
 .staff-messaging__list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+/* Hilo en vivo: separador "Nuevo", píldora de mensajes fuera de la vista y "Visto". */
+.thread-divider { display: flex; align-items: center; gap: 10px; color: var(--private-color-accent); font-size: 11.5px; font-weight: 750; letter-spacing: .06em; list-style: none; text-transform: uppercase; }
+.thread-divider::before, .thread-divider::after { flex: 1; height: 1px; background: color-mix(in srgb, var(--private-color-accent) 40%, transparent); content: ''; }
+.thread-new-pill { position: sticky; z-index: 2; bottom: 16px; display: flex; width: max-content; min-height: 36px; align-items: center; margin: 12px auto 0; border: 0; border-radius: 999px; padding: 0 16px; background: var(--private-color-brand); color: #fff; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; box-shadow: var(--private-shadow-popover); }
+.thread-new-pill:focus-visible { outline: 2px solid var(--private-color-focus); outline-offset: 2px; }
+.thread-seen { margin: 6px 0 0; color: var(--private-color-ink-muted); font-size: 12px; text-align: right; }
 .staff-message { max-width: 92%; border: 1px solid rgba(27, 82, 102, .14); border-radius: 4px 14px 14px 14px; padding: 12px 14px 13px; background: #eef4f5; }
 .staff-message--internal { border-color: rgba(138, 99, 46, .2); background: #f7f0e3; }
 .staff-message__meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; color: var(--private-color-ink-muted); font-size: 12px; }

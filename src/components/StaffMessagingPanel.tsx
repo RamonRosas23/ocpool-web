@@ -1,11 +1,13 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { FormEvent, Fragment, KeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { nextRovingTabIndex } from '@/components/private/ui';
+import { useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
 import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
 import { loadThroughLatest } from '@/lib/load-latest-messages';
+import { mergeThread, seenAt, type CustomerRead } from '@/lib/live-thread';
 import { relativeTimeLabel } from '@/lib/relative-time';
 
 export type StaffMessagingCapabilities = {
@@ -43,6 +45,8 @@ type StaffConversationResponse = {
   conversation: StaffConversation | null;
   items: StaffMessage[];
   nextCursor: string | null;
+  latestCursor?: string | null;
+  customerRead?: CustomerRead | null;
 };
 
 type StaffConversationStatusResponse = {
@@ -56,20 +60,16 @@ type ErrorResponse = { error?: { message?: string; requestId?: string } };
 
 const MAX_MESSAGE_LENGTH = 10_000;
 
+/** El final de la lista está a la vista: lo nuevo se ve sin avisar. */
+function listBottomVisible(list: HTMLElement | null): boolean {
+  return !list || list.getBoundingClientRect().bottom <= window.innerHeight + 24;
+}
+
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & ErrorResponse;
   if (!response.ok) throw new Error(getApiErrorMessage(data, 'No fue posible completar la operación.'));
   return data as T;
-}
-
-function mergeMessages(current: StaffMessage[], incoming: StaffMessage[]): StaffMessage[] {
-  const byId = new Map(current.map((message) => [message.id, message]));
-  incoming.forEach((message) => byId.set(message.id, message));
-  return [...byId.values()].sort((left, right) => {
-    const dateDiff = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
-    return dateDiff || left.id.localeCompare(right.id);
-  });
 }
 
 export default function StaffMessagingPanel({ requestId, capabilities, draft: controlledDraft, onDraftChange }: { requestId: string; capabilities: StaffMessagingCapabilities; draft?: string; onDraftChange?: (draft: string) => void }) {
@@ -94,6 +94,18 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
   const [confirmation, setConfirmation] = useState<ConversationStatus | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
+  const [customerRead, setCustomerRead] = useState<CustomerRead | null>(null);
+  // Primer mensaje que llegó en vivo (separador "Nuevo") y cuántos quedaron fuera de la vista (píldora).
+  const [newFromId, setNewFromId] = useState<string | null>(null);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const latestCursorRef = useRef<string | null>(null);
+  const messagesRef = useRef<StaffMessage[]>([]);
+  const listRef = useRef<HTMLOListElement>(null);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => {
+    setNewFromId(null);
+    setUnseenCount(0);
+  }, [mode]);
 
   // UX audit fix: este componente no se remonta al cambiar de solicitud seleccionada
   // (StaffRequestsPanel.tsx renderiza `<StaffMessagingPanel requestId={...} />` sin `key`, misma
@@ -128,8 +140,11 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
 
   const applyResponse = (data: StaffConversationResponse) => {
     setConversation(data.conversation);
+    messagesRef.current = data.items;
     setMessages(data.items);
     setNextCursor(data.nextCursor);
+    setCustomerRead(data.customerRead ?? null);
+    latestCursorRef.current = data.latestCursor ?? null;
   };
 
   useEffect(() => {
@@ -141,8 +156,13 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
     setConfirmation(null);
     setSendIdempotencyKey(null);
     setConversation(null);
+    messagesRef.current = [];
     setMessages([]);
     setNextCursor(null);
+    setCustomerRead(null);
+    setNewFromId(null);
+    setUnseenCount(0);
+    latestCursorRef.current = null;
     if (!onDraftChange) setLocalDraft('');
     void loadThroughLatest((cursor) => loadMessages(cursor, controller.signal)).then((data) => {
       if (!controller.signal.aborted) applyResponse(data);
@@ -172,11 +192,51 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
     void loadMessages(nextCursor).then((data) => {
       if (isStale()) return;
       setConversation(data.conversation);
-      setMessages((current) => mergeMessages(current, data.items));
+      setCustomerRead(data.customerRead ?? null);
+      const merged = mergeThread(messagesRef.current, data.items).items;
+      messagesRef.current = merged;
+      setMessages(merged);
       setNextCursor(data.nextCursor);
+      latestCursorRef.current = data.latestCursor ?? latestCursorRef.current;
     }).catch((caught: unknown) => {
       if (!isStale()) setError(caught instanceof Error ? caught.message : 'No fue posible cargar más mensajes.');
     }).finally(() => setLoadingMore(false));
+  };
+
+  // En vivo (spec §5.4): pide sólo lo posterior al último mensaje conocido. Lo propio no es "Nuevo".
+  const fetchNewer = (markNew: boolean) => {
+    const bottomVisible = listBottomVisible(listRef.current);
+    void loadThroughLatest((cursor) => loadMessages(cursor ?? latestCursorRef.current ?? undefined)).then((data) => {
+      if (isStale()) return;
+      setConversation(data.conversation);
+      setCustomerRead(data.customerRead ?? null);
+      latestCursorRef.current = data.latestCursor ?? latestCursorRef.current;
+      const { items, added } = mergeThread(messagesRef.current, data.items);
+      if (added.length === 0) return;
+      messagesRef.current = items;
+      setMessages(items);
+      if (!markNew) return;
+      const addedIds = new Set(added);
+      const visibleAdded = items.filter((message) => addedIds.has(message.id) && message.visibility === mode);
+      if (visibleAdded.length === 0) return;
+      setNewFromId((current) => current ?? visibleAdded[0].id);
+      if (!bottomVisible) setUnseenCount((count) => count + visibleAdded.length);
+    }).catch(() => undefined);
+  };
+  useRealtimeRequest(canRead ? requestId : null, ['messages', 'read'], (change) => fetchNewer(!change.self));
+
+  // La píldora se va sola cuando la persona baja hasta el final.
+  useEffect(() => {
+    if (unseenCount === 0) return undefined;
+    const onScroll = () => { if (listBottomVisible(listRef.current)) setUnseenCount(0); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [unseenCount]);
+
+  const revealNew = () => {
+    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    if (newFromId) document.getElementById(`staff-message-${newFromId}`)?.scrollIntoView({ behavior, block: 'center' });
+    setUnseenCount(0);
   };
 
   const sendMessage = (event: FormEvent<HTMLFormElement>) => {
@@ -197,7 +257,10 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
     }).then(readJson<StaffMessage & { conversation: StaffConversation }>).then((data) => {
       if (isStale()) return;
       setConversation(data.conversation);
-      setMessages((current) => mergeMessages(current, [data]));
+      const merged = mergeThread(messagesRef.current, [data]).items;
+      messagesRef.current = merged;
+      setMessages(merged);
+      setNewFromId(null);
       updateDraft('');
       setSendIdempotencyKey(null);
       setAnnouncement(mode === 'CUSTOMER' ? 'Mensaje compartido enviado.' : 'Nota interna guardada.');
@@ -228,6 +291,7 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
   };
 
   const visibleMessages = useMemo(() => messages.filter((message) => message.visibility === mode), [messages, mode]);
+  const seenLabelAt = mode === 'CUSTOMER' ? seenAt(visibleMessages, customerRead, (message) => message.sender?.type !== 'CUSTOMER') : null;
   const sharedCount = messages.filter((message) => message.visibility === 'CUSTOMER').length;
   const internalCount = messages.filter((message) => message.visibility === 'INTERNAL').length;
   const closed = conversation?.status === 'CLOSED';
@@ -274,12 +338,17 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
       </div>
       <div id={mode === 'CUSTOMER' ? sharedPanelId : internalPanelId} role="tabpanel" aria-labelledby={mode === 'CUSTOMER' ? sharedTabId : internalTabId} className={`staff-messaging__panel${mode === 'INTERNAL' ? ' is-internal' : ''}`}>
         {visibleMessages.length === 0 && <div className="staff-messaging__empty"><strong>{mode === 'CUSTOMER' ? 'Aún no hay mensajes compartidos.' : 'Aún no hay notas internas.'}</strong><span>{mode === 'CUSTOMER' ? 'Las respuestas de este hilo quedarán visibles para el cliente.' : 'Usa este espacio para coordinar detalles que no deben salir del equipo.'}</span></div>}
-        {visibleMessages.length > 0 && <ol className="staff-messaging__list" aria-live="polite">
-          {visibleMessages.map((message) => <li className={`staff-message${message.visibility === 'INTERNAL' ? ' staff-message--internal' : ''}`} key={message.id}>
-            <div className="staff-message__meta"><strong>{message.sender?.type === 'CUSTOMER' ? 'Cliente' : message.sender?.displayName ?? 'Equipo OCPOOL'}</strong><time dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>{relativeTimeLabel(message.createdAt)}</time><span>{message.visibility === 'CUSTOMER' ? 'Visible para cliente' : 'Sólo equipo'}</span></div>
-            <p>{message.body}</p>
-          </li>)}
+        {visibleMessages.length > 0 && <ol ref={listRef} className="staff-messaging__list" aria-live="polite">
+          {visibleMessages.map((message) => <Fragment key={message.id}>
+            {message.id === newFromId && <li className="thread-divider" aria-hidden="true"><span>Nuevo</span></li>}
+            <li id={`staff-message-${message.id}`} className={`staff-message${message.visibility === 'INTERNAL' ? ' staff-message--internal' : ''}`}>
+              <div className="staff-message__meta"><strong>{message.sender?.type === 'CUSTOMER' ? 'Cliente' : message.sender?.displayName ?? 'Equipo OCPOOL'}</strong><time dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>{relativeTimeLabel(message.createdAt)}</time><span>{message.visibility === 'CUSTOMER' ? 'Visible para cliente' : 'Sólo equipo'}</span></div>
+              <p>{message.body}</p>
+            </li>
+          </Fragment>)}
         </ol>}
+        {seenLabelAt && <p className="thread-seen" title={formatDateTime(seenLabelAt)}>Visto · {relativeTimeLabel(seenLabelAt)}</p>}
+        {unseenCount > 0 && <button type="button" className="thread-new-pill" onClick={revealNew}>{unseenCount === 1 ? '1 mensaje nuevo' : `${unseenCount} mensajes nuevos`} ↓</button>}
         {nextCursor && <button type="button" className="staff-messaging__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando mensajes…' : 'Cargar mensajes más recientes'}</button>}
         {closed ? <div className="staff-messaging__closed" role="status"><strong>Conversación cerrada.</strong><span>El historial permanece disponible; reabre la conversación para continuar.</span></div> : canCompose ? <form className="staff-messaging__composer" onSubmit={sendMessage}>
           <label htmlFor={composerId}>{modeLabel}</label>

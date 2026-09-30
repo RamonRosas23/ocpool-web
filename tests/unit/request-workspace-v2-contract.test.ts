@@ -160,7 +160,9 @@ describe('request workspace V2 route contract', () => {
     const thread = readProjectFile('src/components/ClientMessagingThread.tsx');
 
     expect(thread.match(/setNextCursor\(null\)/g)).toHaveLength(1);
-    expect(thread).toContain('setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data])');
+    expect(thread).toContain('const merged = mergeThread(messagesRef.current, [data]).items;');
+    expect(thread).toContain('messagesRef.current = merged;');
+    expect(thread).toContain('setMessages(merged);');
   });
 
   it('keeps client file uploads recoverable with visible progress', () => {

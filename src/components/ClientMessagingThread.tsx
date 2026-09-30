@@ -1,10 +1,12 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { FormEvent, Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useRealtimeRequest } from '@/components/inbox/useRealtimeRequest';
 import { getOrCreateMessageIdempotencyKey } from '@/lib/message-idempotency';
 import { getApiErrorMessage } from '@/lib/api-error-message';
 import { formatDateTime } from '@/lib/format-date';
 import { loadThroughLatest } from '@/lib/load-latest-messages';
+import { mergeThread } from '@/lib/live-thread';
 import { relativeTimeLabel } from '@/lib/relative-time';
 
 type PortalMessage = {
@@ -29,11 +31,17 @@ type PortalConversationResponse = {
   conversation: PortalConversation | null;
   items: PortalMessage[];
   nextCursor: string | null;
+  latestCursor?: string | null;
 };
 
 type PortalErrorResponse = { error?: { message?: string; requestId?: string } };
 
 const MAX_MESSAGE_LENGTH = 10_000;
+
+/** El final de la lista está a la vista: lo nuevo se ve sin avisar. */
+function listBottomVisible(list: HTMLElement | null): boolean {
+  return !list || list.getBoundingClientRect().bottom <= window.innerHeight + 24;
+}
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = await response.json().catch(() => ({})) as T & PortalErrorResponse;
@@ -59,6 +67,12 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
   const [sendError, setSendError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
+  const [newFromId, setNewFromId] = useState<string | null>(null);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const latestCursorRef = useRef<string | null>(null);
+  const messagesRef = useRef<PortalMessage[]>([]);
+  const listRef = useRef<HTMLOListElement>(null);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   // UX audit fix: `retry`/`loadMore` no tenían ninguna guarda contra respuesta obsoleta, a diferencia
   // del efecto de montaje (que sí usa `AbortController`) -- como este componente no se vuelve a montar
@@ -82,14 +96,20 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     setError(null);
     setSendError(null);
     setConversation(null);
+    messagesRef.current = [];
     setMessages([]);
     setNextCursor(null);
+    setNewFromId(null);
+    setUnseenCount(0);
+    latestCursorRef.current = null;
     setSendIdempotencyKey(null);
     void loadThroughLatest((cursor) => loadMessages(cursor, controller.signal)).then((data) => {
       if (controller.signal.aborted) return;
       setConversation(data.conversation);
+      messagesRef.current = data.items;
       setMessages(data.items);
       setNextCursor(data.nextCursor);
+      latestCursorRef.current = data.latestCursor ?? null;
     }).catch((caught: unknown) => {
       if (controller.signal.aborted) return;
       setError(caught instanceof Error ? caught.message : 'No fue posible cargar la conversación.');
@@ -105,8 +125,10 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     void loadThroughLatest((cursor) => loadMessages(cursor)).then((data) => {
       if (isStale()) return;
       setConversation(data.conversation);
+      messagesRef.current = data.items;
       setMessages(data.items);
       setNextCursor(data.nextCursor);
+      latestCursorRef.current = data.latestCursor ?? null;
     }).catch((caught: unknown) => {
       if (!isStale()) setError(caught instanceof Error ? caught.message : 'No fue posible cargar la conversación.');
     }).finally(() => setLoading(false));
@@ -118,14 +140,44 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     void loadMessages(nextCursor).then((data) => {
       if (isStale()) return;
       setConversation(data.conversation);
-      setMessages((current) => {
-        const known = new Set(current.map((message) => message.id));
-        return [...current, ...data.items.filter((message) => !known.has(message.id))];
-      });
+      const merged = mergeThread(messagesRef.current, data.items).items;
+      messagesRef.current = merged;
+      setMessages(merged);
       setNextCursor(data.nextCursor);
+      latestCursorRef.current = data.latestCursor ?? latestCursorRef.current;
     }).catch((caught: unknown) => {
       if (!isStale()) setError(caught instanceof Error ? caught.message : 'No fue posible cargar más mensajes.');
     }).finally(() => setLoadingMore(false));
+  };
+
+  const fetchNewer = (markNew: boolean) => {
+    const bottomVisible = listBottomVisible(listRef.current);
+    void loadThroughLatest((cursor) => loadMessages(cursor ?? latestCursorRef.current ?? undefined)).then((data) => {
+      if (isStale()) return;
+      setConversation(data.conversation);
+      latestCursorRef.current = data.latestCursor ?? latestCursorRef.current;
+      const { items, added } = mergeThread(messagesRef.current, data.items);
+      if (added.length === 0) return;
+      messagesRef.current = items;
+      setMessages(items);
+      if (!markNew) return;
+      setNewFromId((current) => current ?? added[0]);
+      if (!bottomVisible) setUnseenCount((count) => count + added.length);
+    }).catch(() => undefined);
+  };
+  useRealtimeRequest(requestId, ['messages', 'read'], (change) => fetchNewer(!change.self));
+
+  useEffect(() => {
+    if (unseenCount === 0) return undefined;
+    const onScroll = () => { if (listBottomVisible(listRef.current)) setUnseenCount(0); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [unseenCount]);
+
+  const revealNew = () => {
+    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    if (newFromId) document.getElementById(`client-message-${newFromId}`)?.scrollIntoView({ behavior, block: 'center' });
+    setUnseenCount(0);
   };
 
   const sendMessage = (event: FormEvent<HTMLFormElement>) => {
@@ -145,7 +197,10 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     }).then(readJson<PortalMessage & { conversation: PortalConversation }>).then((data) => {
       if (isStale()) return;
       setConversation(data.conversation);
-      setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data]);
+      const merged = mergeThread(messagesRef.current, [data]).items;
+      messagesRef.current = merged;
+      setMessages(merged);
+      setNewFromId(null);
       setDraft('');
       setSendIdempotencyKey(null);
       setAnnouncement('Mensaje enviado.');
@@ -170,12 +225,16 @@ export default function ClientMessagingThread({ requestId }: { requestId: string
     {!loading && error && <div className="client-messaging__error" role="alert"><p>{error}</p><button type="button" className="client-messaging__retry" onClick={retry}>Reintentar</button></div>}
     {!loading && !error && <>
       {messages.length === 0 && <div className="client-messaging__empty"><strong>Aún no hay mensajes.</strong><span>Escribe una actualización o una duda y el equipo la verá en este expediente.</span></div>}
-      {messages.length > 0 && <ol className="client-messaging__list" aria-live="polite">
-        {messages.map((message) => <li className={`client-message client-message--${message.sender?.type === 'EMPLOYEE' ? 'team' : 'client'}`} key={message.id}>
-          <div className="client-message__meta"><strong>{authorLabel(message)}</strong><time dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>{relativeTimeLabel(message.createdAt)}</time></div>
-          <p>{message.body}</p>
-        </li>)}
+      {messages.length > 0 && <ol ref={listRef} className="client-messaging__list" aria-live="polite">
+        {messages.map((message) => <Fragment key={message.id}>
+          {message.id === newFromId && <li className="thread-divider" aria-hidden="true"><span>Nuevo</span></li>}
+          <li id={`client-message-${message.id}`} className={`client-message client-message--${message.sender?.type === 'EMPLOYEE' ? 'team' : 'client'}`}>
+            <div className="client-message__meta"><strong>{authorLabel(message)}</strong><time dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>{relativeTimeLabel(message.createdAt)}</time></div>
+            <p>{message.body}</p>
+          </li>
+        </Fragment>)}
       </ol>}
+      {unseenCount > 0 && <button type="button" className="thread-new-pill" onClick={revealNew}>{unseenCount === 1 ? '1 mensaje nuevo' : `${unseenCount} mensajes nuevos`} ↓</button>}
       {nextCursor && <button type="button" className="client-messaging__more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Cargando mensajes…' : 'Cargar mensajes más recientes'}</button>}
       {conversation?.status === 'CLOSED' ? <div className="client-messaging__closed" role="status"><strong>Esta conversación está cerrada.</strong><span>El expediente conserva su historial como referencia. Si necesitas continuar, ponte en contacto con OCPOOL.</span></div> : <form className="client-messaging__composer" onSubmit={sendMessage}>
         <label htmlFor={composerId}>Escribe una actualización</label>

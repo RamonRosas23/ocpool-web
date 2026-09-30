@@ -40,4 +40,13 @@ describe('loadThroughLatest', () => {
     expect(calls).toEqual([undefined]);
     expect(new Set(result.items.map((item) => item.id)).size).toBe(12);
   });
+
+  it('keeps the extra fields of the last page', async () => {
+    const pages = [
+      { conversation: null, items: [{ id: 'a' }], nextCursor: '1', latestCursor: 'cursor-a' },
+      { conversation: null, items: [{ id: 'b' }], nextCursor: null, latestCursor: 'cursor-b' },
+    ];
+    const result = await loadThroughLatest(async (cursor?: string) => pages[cursor ? 1 : 0]);
+    expect(result).toEqual({ conversation: null, items: [{ id: 'a' }, { id: 'b' }], nextCursor: null, latestCursor: 'cursor-b' });
+  });
 });
