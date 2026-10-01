@@ -49,4 +49,9 @@ describe('portalNextStep', () => {
     expect(portalNextStep({ ...base, status: 'ACEPTADA', hasQuote: true, quoteAccepted: true })).toMatchObject({ title: 'Aceptaste la propuesta', owner: 'team' });
     expect(portalNextStep({ ...base, status: 'CONVERTIDA_EN_PROYECTO' }).owner).toBe('done');
   });
+
+  it('guides the customer to the conversation after declining a proposal', () => {
+    expect(portalNextStep({ ...base, status: 'EN_NEGOCIACION', hasQuote: true, proposalDeclined: true }))
+      .toMatchObject({ title: 'Declinaste esta propuesta', target: 'conversation', cta: 'Pedir una nueva versión', owner: 'team' });
+  });
 });

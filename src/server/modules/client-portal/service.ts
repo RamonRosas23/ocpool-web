@@ -310,7 +310,7 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
               },
               statusHistory: {
                 orderBy: { createdAt: 'asc' },
-                select: { id: true, fromStatus: true, toStatus: true, createdAt: true },
+                select: { id: true, fromStatus: true, toStatus: true, createdAt: true, changedBy: { select: { type: true } } },
               },
               generatedDocuments: {
                 where: { documentType: 'QUOTE_PDF' },
@@ -368,6 +368,9 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
     { ...currentVersion, pdfReady: isGeneratedQuotePdfReady(currentVersion.generatedDocuments[0]) },
     await resolveCommercialTermsRecord(prisma, currentVersion.termsVersionId),
   ) : null;
+  const customerDecline = currentVersion?.status === 'RECHAZADA'
+    ? currentVersion.statusHistory.find((entry) => entry.toStatus === 'RECHAZADA' && entry.changedBy?.type === 'CUSTOMER') ?? null
+    : null;
   // Si el cliente ya pidió cambios a la versión vigente, su siguiente paso es esperar la nueva versión.
   const changeRequest = currentVersion && ['ENVIADA', 'EN_NEGOCIACION'].includes(currentVersion.status)
     ? await findLatestChangeRequest(prisma, request.id, currentVersion.versionNumber)
@@ -387,7 +390,7 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
     quote: quote ? {
       id: quote.id,
       currentVersionId: serializedCurrentVersion?.id ?? null,
-      currentVersion: serializedCurrentVersion,
+      currentVersion: serializedCurrentVersion ? { ...serializedCurrentVersion, declinedAt: customerDecline?.createdAt.toISOString() ?? null } : null,
       changesRequestedAt: changeRequest ? changeRequest.at.toISOString() : null,
       versions: serializedVersions,
       history: serializeStatusHistory(versions.flatMap((version) => version.statusHistory)),

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { PrivateDialog } from '@/components/private/ui';
 import { changeRequestBody } from '@/lib/change-request';
+import { DECLINE_REASONS, type DeclineReasonCode } from '@/lib/decline-request';
+import { formatDateTime } from '@/lib/format-date';
 
 type QuoteVersionActionData = Readonly<{
   id: string;
@@ -13,6 +15,7 @@ type QuoteVersionActionData = Readonly<{
   status: string;
   validUntil: string | null;
   pdfReady: boolean;
+  declinedAt?: string | null;
 }>;
 
 type ErrorResponse = { error?: { message?: string } };
@@ -27,6 +30,8 @@ type Props = Readonly<{
   contactDisplayName: string;
   onAccepted: () => void;
   onChangeRequested: () => void;
+  onDeclined: () => void;
+  onRequestNewVersion: () => void;
 }>;
 
 // Mismos estados de expediente que acepta el servidor: ofrecer "Revisar y aceptar" fuera de ellos
@@ -47,7 +52,7 @@ function createIdempotencyKey(): string {
   return `portal-quote-${Date.now()}-${globalThis.crypto.randomUUID()}`;
 }
 
-export default function ClientQuoteActions({ quoteId, requestId, version, requestStatus, validity, contactDisplayName, onAccepted, onChangeRequested }: Props) {
+export default function ClientQuoteActions({ quoteId, requestId, version, requestStatus, validity, contactDisplayName, onAccepted, onChangeRequested, onDeclined, onRequestNewVersion }: Props) {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -61,14 +66,29 @@ export default function ClientQuoteActions({ quoteId, requestId, version, reques
   const [acceptanceError, setAcceptanceError] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [changeDialogOpen, setChangeDialogOpen] = useState(false);
+  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
+  const [declineReason, setDeclineReason] = useState<DeclineReasonCode | null>(null);
+  const [declineComment, setDeclineComment] = useState('');
+  const [declineSending, setDeclineSending] = useState(false);
+  const [declineError, setDeclineError] = useState<string | null>(null);
+  const [declineSent, setDeclineSent] = useState(false);
   const signerInputRef = useRef<HTMLInputElement | null>(null);
   const idempotencyKeyRef = useRef<string | null>(null);
+  const declineIdempotencyKeyRef = useRef<string | null>(null);
   const versionIdRef = useRef(version.id);
   useEffect(() => { versionIdRef.current = version.id; }, [version.id]);
 
   // Si el servidor publica una versión nueva mientras el panel sigue montado, la vista previa
   // cacheada de la anterior no debe reaparecer bajo el mismo componente.
-  useEffect(() => { setPreviewUrl(null); }, [version.id]);
+  useEffect(() => {
+    setPreviewUrl(null);
+    declineIdempotencyKeyRef.current = null;
+    setDeclineDialogOpen(false);
+    setDeclineReason(null);
+    setDeclineComment('');
+    setDeclineError(null);
+    setDeclineSent(false);
+  }, [version.id]);
 
   // En pantallas táctiles muchos navegadores (Chrome en Android) no muestran un PDF dentro de un
   // iframe: ahí se ofrece abrirlo en el visor del teléfono en vez de un recuadro que no carga.
@@ -204,6 +224,45 @@ export default function ClientQuoteActions({ quoteId, requestId, version, reques
     }
   };
 
+  const openDeclineDialog = () => {
+    if (!declineIdempotencyKeyRef.current) declineIdempotencyKeyRef.current = `portal-decline-${requestId}-${version.id}-${globalThis.crypto.randomUUID()}`;
+    setDeclineReason(null);
+    setDeclineComment('');
+    setDeclineError(null);
+    setDeclineSent(false);
+    setDeclineDialogOpen(true);
+  };
+
+  const submitDecline = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!declineReason || (declineReason === 'OTHER' && !declineComment.trim())) return;
+    setDeclineSending(true);
+    setDeclineError(null);
+    try {
+      const response = await fetch(`/api/portal/quotes/${quoteId}/decline`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          versionId: version.id,
+          reason: declineReason,
+          comment: declineComment,
+          idempotencyKey: declineIdempotencyKeyRef.current ?? `portal-decline-${requestId}-${version.id}-${globalThis.crypto.randomUUID()}`,
+        }),
+      });
+      await readResponse(response);
+      declineIdempotencyKeyRef.current = null;
+      setDeclineSent(true);
+      onDeclined();
+    } catch (caught) {
+      // Conserva la llave: si el servidor confirmó pero la respuesta se perdió, el reintento es seguro.
+      setDeclineError(caught instanceof Error ? caught.message : 'No fue posible enviar tu respuesta.');
+    } finally {
+      setDeclineSending(false);
+    }
+  };
+
   const submitAcceptance = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!signerName.trim()) {
@@ -234,6 +293,10 @@ export default function ClientQuoteActions({ quoteId, requestId, version, reques
   };
 
   const available = acceptanceIsAvailable(version, validity, requestStatus);
+  const declineAvailable = version.pdfReady
+    && (version.status === 'ENVIADA' || version.status === 'EN_NEGOCIACION')
+    && !validity.expired
+    && (requestStatus === 'COTIZACION_DISPONIBLE' || requestStatus === 'EN_NEGOCIACION');
   const alreadyAccepted = version.status === 'ACEPTADA';
   // Retirada: el equipo cerró el expediente (o esta versión). Pedir cambios sobre ella no tiene sentido;
   // la vía para retomarlo es la conversación.
@@ -247,6 +310,7 @@ export default function ClientQuoteActions({ quoteId, requestId, version, reques
         </button>
         : <span className="client-quote-action-state client-quote-action-state--muted">PDF en preparación</span>}
       {!alreadyAccepted && !retired && <button className="client-quote-action client-quote-action--secondary" type="button" onClick={openChangeDialog}>Solicitar cambios</button>}
+      {declineAvailable && <button className="client-quote-action client-quote-action--secondary" type="button" onClick={openDeclineDialog}>No me interesa esta propuesta</button>}
       {available && <button className="client-quote-action client-quote-action--primary" type="button" onClick={openDialog}>Revisar y aceptar</button>}
       {alreadyAccepted && <span className="client-quote-action-state" role="status"><i aria-hidden="true" />Aceptada</span>}
       {/* UX audit fix: RECHAZADA es un estado real y visible para el cliente (CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES
@@ -254,7 +318,8 @@ export default function ClientQuoteActions({ quoteId, requestId, version, reques
           el cliente no veía ningún estado ni explicación, sólo "Descargar PDF"/"Solicitar cambios" sin contexto.
           Se revisa antes que `validity.expired` porque ambas condiciones pueden ser ciertas a la vez (una versión
           rechazada también puede tener su fecha de vigencia ya pasada) y el motivo real es el rechazo, no la fecha. */}
-      {!available && !alreadyAccepted && retired && <span className="client-quote-action-state client-quote-action-state--muted">Esta versión ya no está vigente. Si quieres retomarla, escríbenos en la conversación.</span>}
+      {version.declinedAt && <span className="client-quote-action-state client-quote-action-state--muted" role="status">Declinaste esta propuesta el {formatDateTime(version.declinedAt)}.</span>}
+      {!available && !alreadyAccepted && retired && !version.declinedAt && <span className="client-quote-action-state client-quote-action-state--muted">Esta versión ya no está vigente. Si quieres retomarla, escríbenos en la conversación.</span>}
       {!available && !alreadyAccepted && !retired && (validity.expired || requestStatus === 'VENCIDA') && <span className="client-quote-action-state client-quote-action-state--muted">Propuesta vencida. Solicita cambios para recibir una versión actualizada.</span>}
     </div>
     {pdfError && <p className="client-quote-action-error" role="alert">{pdfError}</p>}
@@ -283,6 +348,16 @@ export default function ClientQuoteActions({ quoteId, requestId, version, reques
         <label className="client-accept-field"><span>¿Qué te gustaría ajustar?</span><textarea value={changeMessage} onChange={(event) => setChangeMessage(event.target.value)} maxLength={4000} rows={4} required placeholder="Por ejemplo: ajustar el alcance, revisar el presupuesto, cambiar materiales…" /></label>
         {changeError && <p className="client-quote-action-error" role="alert">{changeError}</p>}
         <div className="client-accept-dialog__actions"><button className="client-quote-action client-quote-action--quiet" type="button" onClick={() => setChangeDialogOpen(false)} disabled={changeSending}>Cancelar</button><button className="client-quote-action client-quote-action--primary" type="submit" disabled={changeSending || !changeMessage.trim()}>{changeSending ? 'Enviando…' : 'Enviar solicitud'}</button></div>
+      </form>}
+    </PrivateDialog>
+    <PrivateDialog open={declineDialogOpen} onClose={() => { if (!declineSending) setDeclineDialogOpen(false); }} className="client-accept-dialog" overlayClassName="client-accept-overlay" labelledBy="client-decline-title" describedBy="client-decline-description">
+      <div className="client-accept-dialog__head"><div><p className="client-eyebrow">Respuesta a tu propuesta</p><h2 id="client-decline-title">Declinar versión {version.versionNumber}</h2></div><button className="client-accept-dialog__close" type="button" onClick={() => setDeclineDialogOpen(false)} disabled={declineSending} aria-label="Cerrar respuesta"><X size={20} aria-hidden="true" /></button></div>
+      {declineSent ? <div className="client-accept-success" role="status"><span className="client-accept-success__mark" aria-hidden="true">✓</span><h3>Tu respuesta fue enviada.</h3><p>Tu asesor recibió tu respuesta y podrá prepararte otra versión.</p><button className="client-quote-action client-quote-action--primary" type="button" onClick={() => { setDeclineDialogOpen(false); onRequestNewVersion(); }}>Ir a la conversación</button></div> : <form onSubmit={submitDecline}>
+        <p id="client-decline-description" className="client-accept-dialog__copy">Elige el motivo que mejor describe tu decisión. Tu asesor recibirá tu respuesta y podrá prepararte otra versión.</p>
+        <fieldset className="client-decline-options"><legend>¿Por qué no te interesa esta propuesta?</legend>{DECLINE_REASONS.map(({ code, label }) => <label key={code}><input type="radio" name="decline-reason" value={code} checked={declineReason === code} onChange={() => setDeclineReason(code)} required /><span>{label}</span></label>)}</fieldset>
+        <label className="client-accept-field"><span>Comentario (opcional)</span><textarea value={declineComment} onChange={(event) => setDeclineComment(event.target.value)} maxLength={1000} rows={3} required={declineReason === 'OTHER'} placeholder="Si quieres, agrega un detalle para tu asesor…" /></label>
+        {declineError && <p className="client-quote-action-error" role="alert">{declineError}</p>}
+        <div className="client-accept-dialog__actions"><button className="client-quote-action client-quote-action--quiet" type="button" onClick={() => setDeclineDialogOpen(false)} disabled={declineSending}>Cancelar</button><button className="client-quote-action client-quote-action--primary" type="submit" disabled={declineSending || !declineReason || (declineReason === 'OTHER' && !declineComment.trim())}>{declineSending ? 'Enviando…' : 'Declinar propuesta'}</button></div>
       </form>}
     </PrivateDialog>
   </>;

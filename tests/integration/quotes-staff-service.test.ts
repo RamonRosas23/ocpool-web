@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
-import { assignQuoteRequest } from '@/server/modules/quote-requests/staff-service';
+import { assignQuoteRequest, getStaffQuoteRequest } from '@/server/modules/quote-requests/staff-service';
 import { createQuoteVersion, returnQuoteToDraft, submitQuoteForReview, transitionQuoteVersion } from '@/server/modules/quotes/service';
 import { getQuoteWorkspace, listQuoteVersionHistory, listQuoteWorkspaces } from '@/server/modules/quotes/staff-service';
 import { getPrisma } from '@/server/db/client';
@@ -236,6 +236,9 @@ describe('staff quote workspace service', () => {
     const employee = await prisma.user.create({
       data: { email: `quote-staff-projection-employee-${suffix}@example.test`, emailNormalized: `quote-staff-projection-employee-${suffix}@example.test`, displayName: 'Quote staff projection employee', type: 'EMPLOYEE', status: 'ACTIVE' },
     });
+    const customer = await prisma.user.create({
+      data: { email: `quote-staff-projection-customer-${suffix}@example.test`, emailNormalized: `quote-staff-projection-customer-${suffix}@example.test`, displayName: 'Quote staff projection customer', type: 'CUSTOMER', status: 'ACTIVE' },
+    });
     const category = await prisma.catalogCategory.create({ data: { code: `STAFF-PROJ-${suffix}`, name: 'Staff projection workspace' } });
     const item = await prisma.catalogItem.create({ data: { code: `STAFF-PROJ-ITEM-${suffix}`, name: 'Staff projection item', unit: 'pieza', categoryId: category.id } });
     const priceList = await prisma.priceList.create({ data: { code: `STAFF-PROJ-PRICE-${suffix}`, name: 'Staff projection prices', currencyCode: 'MXN', validFrom: now } });
@@ -266,11 +269,23 @@ describe('staff quote workspace service', () => {
         lines: [{ catalogItemId: item.id, quantity: '2' }],
       }, { prisma, now });
 
+      const conversation = await prisma.conversation.create({ data: { quoteRequestId: request.quoteRequestId, clientId: request.clientId } });
+      const declinedAt = new Date(now.getTime() + 1_000);
+      await prisma.conversationMessage.createMany({ data: [
+        { conversationId: conversation.id, senderUserId: customer.id, visibility: 'CUSTOMER', body: 'Propuesta V1 declinada: El precio. La propuesta se sale del presupuesto', createdAt: declinedAt },
+        { conversationId: conversation.id, senderUserId: customer.id, visibility: 'CUSTOMER', body: '¿Podemos hablarlo?', createdAt: new Date(now.getTime() + 2_000) },
+        { conversationId: conversation.id, senderUserId: customer.id, visibility: 'CUSTOMER', body: 'Propuesta V2 declinada: Elegí otra opción.', createdAt: new Date(now.getTime() + 3_000) },
+        { conversationId: conversation.id, senderUserId: employee.id, visibility: 'CUSTOMER', body: 'Propuesta V1 declinada: Los tiempos.', createdAt: new Date(now.getTime() + 4_000) },
+      ] });
+
       const revisingWorkspace = await getQuoteWorkspace(employeeActor, request.quoteRequestId, { prisma });
       expect(revisingWorkspace.quote?.publishedVersion).toMatchObject({ id: firstVersion.versionId, status: 'ENVIADA' });
       expect(revisingWorkspace.quote?.workingVersion).toMatchObject({ id: secondVersion.versionId, versionNumber: 2, status: 'BORRADOR' });
       expect(revisingWorkspace.projection).toMatchObject({ stage: 'REVISANDO_CAMBIOS', actorExpected: 'STAFF', primaryAction: 'QUOTE_SUBMIT_FOR_REVIEW' });
       expect(revisingWorkspace.projection.publishedVersion).toMatchObject({ id: firstVersion.versionId });
+      expect(revisingWorkspace.declineRequest).toMatchObject({ at: declinedAt.toISOString(), reason: 'PRICE', message: 'Propuesta V1 declinada: El precio. La propuesta se sale del presupuesto' });
+      const requestDetail = await getStaffQuoteRequest(actor(employee.id, ['requests.read']), request.quoteRequestId, { prisma });
+      expect(requestDetail.quoteSummary).toMatchObject({ declineRequest: { at: declinedAt.toISOString(), reason: 'PRICE' } });
     } finally {
       const aggregateIds = [request.quoteRequestId, ...(quoteId ? [quoteId] : [])];
       const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: request.quoteRequestId } }, select: { id: true } })).map(({ id }) => id);
@@ -280,7 +295,7 @@ describe('staff quote workspace service', () => {
       await prisma.quoteRequest.delete({ where: { id: request.quoteRequestId } });
       await prisma.clientContact.delete({ where: { id: request.contactId } });
       await prisma.client.delete({ where: { id: request.clientId } });
-      await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.user.deleteMany({ where: { id: { in: [employee.id, customer.id] } } });
       await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
       await prisma.priceList.delete({ where: { id: priceList.id } });
       await prisma.catalogItem.delete({ where: { id: item.id } });

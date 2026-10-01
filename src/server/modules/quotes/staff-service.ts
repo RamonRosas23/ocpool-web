@@ -10,6 +10,7 @@ import { deriveGeneratedDocumentState } from '@/server/modules/quote-documents/d
 import { isRecoverableNotificationErrorCode } from '@/server/modules/notifications/domain';
 import { getLatestAggregateNotificationDelivery } from '@/server/modules/notifications/operations';
 import { findLatestChangeRequest } from '@/server/modules/messaging/change-requests';
+import { findLatestDeclineRequest } from '@/server/modules/messaging/decline-requests';
 import { resolveQuoteWorkspaceProjection, type WorkspaceApprovalStatus, type WorkspaceVersionInput } from '@/server/modules/quotes/workspace-projection';
 import { isManualPriceLine, type QuoteVersionStatus } from '@/server/modules/quotes/domain';
 import { resolveDiscountApprovalThresholdBps } from '@/server/modules/quotes/service';
@@ -549,7 +550,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
       name: priceList.name,
       currencyCode: priceList.currencyCode,
     }));
-  const [historyPage, latestDelivery, lastCustomerVisibleMessage, taxProfiles, changeRequest, project, acceptance] = await Promise.all([
+  const [historyPage, latestDelivery, lastCustomerVisibleMessage, taxProfiles, changeRequest, declineRequest, project, acceptance] = await Promise.all([
     loadQuoteHistoryPage(prisma, versionSummaries.map((version) => version.id), undefined, DEFAULT_QUOTE_HISTORY_PAGE_SIZE),
     quote ? getLatestAggregateNotificationDelivery(prisma, 'QUOTE', quote.id) : Promise.resolve(null),
     prisma.conversationMessage.findFirst({
@@ -566,6 +567,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
     publishedVersionRaw && ['ENVIADA', 'EN_NEGOCIACION'].includes(publishedVersionRaw.status)
       ? findLatestChangeRequest(prisma, request.id, publishedVersionRaw.versionNumber)
       : Promise.resolve(null),
+    publishedVersionRaw ? findLatestDeclineRequest(prisma, request.id, publishedVersionRaw.versionNumber) : Promise.resolve(null),
     // Después de la aceptación: el proyecto de arranque (o la aceptación, para convertirla a mano).
     prisma.project.findUnique({ where: { quoteRequestId: request.id }, select: { id: true, folio: true, status: true } }),
     quote ? prisma.quoteAcceptance.findFirst({ where: { quoteId: quote.id }, orderBy: { acceptedAt: 'desc' }, select: { id: true, acceptedAt: true } }) : Promise.resolve(null),
@@ -612,6 +614,7 @@ export async function getQuoteWorkspace(actor: Actor, quoteRequestId: string, de
     priceLists,
     taxProfiles,
     changeRequest: changeRequest ? { at: changeRequest.at.toISOString(), message: changeRequest.message } : null,
+    declineRequest: declineRequest && publishedVersionRaw ? { ...declineRequest, at: declineRequest.at.toISOString(), versionNumber: publishedVersionRaw.versionNumber } : null,
     project,
     acceptance,
     projection,

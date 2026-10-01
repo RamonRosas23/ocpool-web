@@ -47,13 +47,14 @@ export function portalStages(status: string): PortalStage[] {
   }));
 }
 
-export function portalNextStep(input: { status: string; hasQuote: boolean; quoteExpired: boolean; quoteAccepted: boolean; quoteActionable: boolean; changesRequested?: boolean }): PortalNextStep {
-  const { status, hasQuote, quoteExpired, quoteAccepted, quoteActionable, changesRequested = false } = input;
+export function portalNextStep(input: { status: string; hasQuote: boolean; quoteExpired: boolean; quoteAccepted: boolean; quoteActionable: boolean; changesRequested?: boolean; proposalDeclined?: boolean }): PortalNextStep {
+  const { status, hasQuote, quoteExpired, quoteAccepted, quoteActionable, changesRequested = false, proposalDeclined = false } = input;
   if (status === 'CONVERTIDA_EN_PROYECTO') return { title: 'Tu proyecto está en marcha', detail: 'El equipo ya prepara el arranque. Cualquier duda, escríbenos en la conversación.', target: 'conversation', cta: 'Escribir al equipo', owner: 'done' };
   if (quoteAccepted || status === 'ACEPTADA') return { title: 'Aceptaste la propuesta', detail: 'Gracias. Estamos preparando el arranque de tu proyecto y te avisaremos del siguiente paso.', target: null, owner: 'team' };
   // Expediente cerrado: va antes que la propuesta, porque una versión retirada también puede tener su
   // vigencia vencida y lo que el cliente necesita saber es que el expediente se cerró y cómo retomarlo.
   if (status === 'RECHAZADA') return { title: 'Este expediente se cerró', detail: 'Si quieres retomarlo, escríbenos en la conversación y lo reabrimos contigo.', target: 'conversation', cta: 'Escribir al equipo', owner: 'customer' };
+  if (status === 'EN_NEGOCIACION' && proposalDeclined) return { title: 'Declinaste esta propuesta', detail: 'Tu asesor recibió tu respuesta y podrá prepararte otra versión.', target: 'conversation', cta: 'Pedir una nueva versión', owner: 'team' };
   if (status === 'INFORMACION_REQUERIDA') return { title: 'Necesitamos algunos datos', detail: 'Revisa el mensaje del equipo y responde en la conversación para que podamos avanzar.', target: 'conversation', cta: 'Ir a la conversación', owner: 'customer' };
   // VENCIDA (estado heredado) significa "la propuesta enviada venció", aunque su fecha diga otra cosa.
   if (hasQuote && (quoteExpired || status === 'VENCIDA')) return { title: 'Tu propuesta venció', detail: 'Solicita una versión actualizada y el equipo la preparará para ti.', target: 'quote', cta: 'Ver propuesta', owner: 'customer' };

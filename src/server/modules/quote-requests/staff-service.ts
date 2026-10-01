@@ -1,5 +1,6 @@
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
+import { findLatestDeclineRequest } from '@/server/modules/messaging/decline-requests';
 import { hasPermission, requirePermission } from '@/server/auth/permissions';
 import type { AuthRequestContext } from '@/server/auth/service';
 import type { Actor } from '@/server/auth/types';
@@ -537,7 +538,7 @@ export async function getStaffQuoteRequest(actor: Actor, quoteRequestId: string,
       select: {
         id: true,
         currentVersion: { select: { versionNumber: true, status: true, validUntil: true } },
-        publishedVersion: { select: { versionNumber: true, status: true, validUntil: true, publishedAt: true } },
+        publishedVersion: { select: { id: true, versionNumber: true, status: true, validUntil: true, publishedAt: true } },
         quoteAcceptances: { orderBy: { acceptedAt: 'desc' }, take: 1, select: { id: true, acceptedAt: true, signerName: true } },
       },
     }),
@@ -548,6 +549,9 @@ export async function getStaffQuoteRequest(actor: Actor, quoteRequestId: string,
     current: quote.currentVersion,
     published: quote.publishedVersion,
     acceptance: quote.quoteAcceptances[0] ?? null,
+    declineRequest: quote.publishedVersion
+      ? await findLatestDeclineRequest(prisma, request.id, quote.publishedVersion.versionNumber).then((decline) => decline ? { ...decline, at: decline.at.toISOString(), versionNumber: quote.publishedVersion!.versionNumber } : null)
+      : null,
   } : null;
   return { ...request, detail: serializeDetail(request.detail), assignments: activity.assignments, statusHistory: activity.statusHistory, activityNextCursor: activity.nextCursor, informationRequest, conversationPulse, quoteSummary, project, ...projectAvailableActions(actor, request.status, request.currentAssignee?.id ?? null) };
 }

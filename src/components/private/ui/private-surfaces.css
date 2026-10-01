@@ -1409,6 +1409,12 @@ a.staff-workqueue__more:hover { background: var(--private-color-surface-muted); 
 .client-accept-dialog__copy { margin: 0 0 18px; color: var(--private-color-ink-muted); font-size: 14.5px; line-height: 1.65; }
 .client-accept-field { display: grid; gap: 6px; margin-top: 14px; }
 .client-accept-field > span { color: var(--private-color-ink); font-size: 13.5px; font-weight: 650; letter-spacing: 0; text-transform: none; }
+.client-decline-options { display: grid; gap: 7px; margin: 0; border: 0; padding: 0; }
+.client-decline-options legend { margin-bottom: 8px; color: var(--private-color-ink); font-size: 14px; font-weight: 700; }
+.client-decline-options label { display: flex; min-height: 42px; align-items: center; gap: 11px; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-sm); padding: 8px 11px; background: var(--private-color-surface); color: var(--private-color-ink); cursor: pointer; font-size: 13.5px; line-height: 1.35; }
+.client-decline-options label:has(input:checked) { border-color: var(--private-color-copper); background: var(--private-tint-copper); }
+.client-decline-options input { width: 17px; height: 17px; flex: 0 0 auto; margin: 0; accent-color: var(--private-color-copper); }
+.client-decline-options input:focus-visible { outline: 3px solid var(--private-color-accent); outline-offset: 3px; }
 .client-accept-preview { margin: 0 0 18px; overflow: hidden; border: 1px solid var(--private-color-border); border-radius: var(--private-radius-panel); background: #fff; }
 .client-accept-preview iframe { display: block; width: 100%; height: min(46vh, 420px); border: 0; }
 .client-accept-preview__loading { display: grid; height: 180px; place-items: center; color: var(--private-color-ink-muted); font-size: 13.5px; }

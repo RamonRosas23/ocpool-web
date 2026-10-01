@@ -23,6 +23,7 @@ describe('customer portal scoped service', () => {
     const requestA = await createQuoteRequest({ idempotencyKey: `portal-a-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: `Portal A ${suffix}`, email: `portal-a-${suffix}@example.test` }, detail: { projectType: 'Residencial', location: 'Culiacán', description: 'Cliente A alcance compartido', consentAt: now } }, { prisma, now });
     const requestB = await createQuoteRequest({ idempotencyKey: `portal-b-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: `Portal B ${suffix}`, email: `portal-b-${suffix}@example.test` }, detail: { projectType: 'Comercial', location: 'Mazatlán', description: 'Cliente B privado', consentAt: now } }, { prisma, now });
     const employee = await prisma.user.create({ data: { email: `portal-employee-${suffix}@example.test`, emailNormalized: `portal-employee-${suffix}@example.test`, displayName: 'Portal fixture employee', type: 'EMPLOYEE', status: 'ACTIVE' } });
+    const customer = await prisma.user.create({ data: { email: `portal-customer-${suffix}@example.test`, emailNormalized: `portal-customer-${suffix}@example.test`, displayName: 'Portal fixture customer', type: 'CUSTOMER', status: 'ACTIVE' } });
     const category = await prisma.catalogCategory.create({ data: { code: `PORTAL-${suffix}`, name: 'Portal fixture' } });
     const item = await prisma.catalogItem.create({ data: { code: `PORTAL-ITEM-${suffix}`, name: 'Portal snapshot item', unit: 'pieza', categoryId: category.id } });
     const priceList = await prisma.priceList.create({ data: { code: `PORTAL-PRICE-${suffix}`, name: 'Portal fixture prices', currencyCode: 'MXN', validFrom: now } });
@@ -39,8 +40,11 @@ describe('customer portal scoped service', () => {
       await transitionQuoteVersion(employeeActor, quoteA.versionId, 'ENVIADA', { prisma, now });
       const quoteAWorking = await createQuoteVersion(employeeActor, { quoteRequestId: requestA.quoteRequestId, priceListId: priceList.id, lines: [{ catalogItemId: item.id, quantity: '3', taxBasisPoints: 1600 }] }, { prisma, now });
       await transitionQuoteVersion(employeeActor, quoteAWorking.versionId, 'EN_REVISION', { prisma, now });
+      const declinedAt = new Date(now.getTime() + 1_000);
+      await prisma.quoteVersion.update({ where: { id: quoteA.versionId }, data: { status: 'RECHAZADA' } });
+      await prisma.quoteStatusHistory.create({ data: { quoteVersionId: quoteA.versionId, fromStatus: 'ENVIADA', toStatus: 'RECHAZADA', changedById: customer.id, reason: 'Declinada por el cliente · El precio', createdAt: declinedAt } });
       await prisma.catalogItem.update({ where: { id: item.id }, data: { name: 'Portal catálogo actualizado' } });
-      const customerActor = actor('customer-user-a', requestA.clientId, 'CUSTOMER', ['portal.self.read']);
+      const customerActor = actor(customer.id, requestA.clientId, 'CUSTOMER', ['portal.self.read']);
 
       const list = await listCustomerQuoteRequests(customerActor, {}, { prisma });
       expect(list.items).toHaveLength(1);
@@ -50,6 +54,7 @@ describe('customer portal scoped service', () => {
       expect(detail.request).toMatchObject({ id: requestA.quoteRequestId, client: { id: requestA.clientId }, detail: { description: 'Cliente A alcance compartido' } });
       expect(detail.quote?.currentVersion).toMatchObject({ id: quoteA.versionId, totalMinor: '18560', termsVersion: 'v1', termsLabel: 'Condiciones comerciales y aviso de privacidad OCPOOL' });
       expect(detail.quote?.currentVersion?.pdfReady).toBe(false);
+      expect(detail.quote?.currentVersion).toMatchObject({ declinedAt: declinedAt.toISOString() });
       expect(detail.quote?.currentVersion?.lines[0]).toMatchObject({ name: 'Portal snapshot item', quantityMilliunits: '2000', unitPriceMinor: '8000', taxMinor: '2560', totalMinor: '18560' });
       expect(detail.quote?.versions.map((version) => version.id)).toContain(quoteA.versionId);
       expect(detail.quote?.versions.map((version) => version.id)).not.toContain(quoteAWorking.versionId);
@@ -67,7 +72,7 @@ describe('customer portal scoped service', () => {
       await prisma.quoteRequest.deleteMany({ where: { id: { in: requestIds } } });
       await prisma.clientContact.deleteMany({ where: { id: { in: [requestA.contactId, requestB.contactId] } } });
       await prisma.client.deleteMany({ where: { id: { in: [requestA.clientId, requestB.clientId] } } });
-      await prisma.user.delete({ where: { id: employee.id } });
+      await prisma.user.deleteMany({ where: { id: { in: [employee.id, customer.id] } } });
       await prisma.priceListItem.deleteMany({ where: { priceListId: priceList.id } });
       await prisma.priceList.delete({ where: { id: priceList.id } });
       await prisma.catalogItem.delete({ where: { id: item.id } });
