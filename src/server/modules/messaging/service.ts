@@ -50,6 +50,7 @@ type LockedRequest = {
 };
 
 export type StaffMessageTransactionRequest = LockedRequest;
+export type CustomerMessageTransactionRequest = LockedRequest;
 
 type SerializedSender = {
   id?: string;
@@ -214,7 +215,6 @@ async function writeMessage(
 ) {
   const normalized = normalizeInput(input);
   const conversation = await getOrCreateConversation(transaction, request, now);
-  assertConversationCanReceiveMessages(conversation.status);
 
   const existing = await transaction.conversationMessage.findUnique({
     where: {
@@ -235,6 +235,8 @@ async function writeMessage(
     }
     return { ...serializeMessage(existing, actor.type === 'EMPLOYEE'), conversation: serializeConversation(conversation, actor.type === 'EMPLOYEE'), idempotent: true };
   }
+
+  assertConversationCanReceiveMessages(conversation.status);
 
   const message = await transaction.conversationMessage.create({
     data: {
@@ -355,6 +357,19 @@ export async function sendStaffMessageInTransaction(
   requireStaffPermission(actor, 'requests.read');
   requirePermission(actor, 'messaging.send');
   requireStaffRequestReadScope(actor, request.currentAssigneeId);
+  return writeMessage(transaction, actor, request, 'CUSTOMER', input, now, options);
+}
+
+export async function sendCustomerMessageInTransaction(
+  transaction: Prisma.TransactionClient,
+  actor: Actor,
+  request: CustomerMessageTransactionRequest,
+  input: SendMessageInput,
+  now: Date,
+  options: Readonly<{ inbox?: 'default' | 'skip' }> = {},
+) {
+  const clientId = requireCustomerPermission(actor, 'messaging.send');
+  if (request.clientId !== clientId) genericNotFound();
   return writeMessage(transaction, actor, request, 'CUSTOMER', input, now, options);
 }
 
