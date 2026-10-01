@@ -74,17 +74,21 @@ Si llega actividad normal del cliente o del equipo para el expediente abierto, n
 | `npm run lint` | Correcto |
 | `npx vitest run tests/unit` | 76 archivos, 446 pruebas correctas |
 | `RUN_DB_TESTS=1 npx vitest run tests/integration --maxWorkers=1` | 65 archivos, 209 pruebas correctas |
-| `REALTIME_E2E=1` con `tests/realtime-screens.spec.ts` y `tests/realtime-notifications.spec.ts` en `:3010` | 3 pruebas nuevas y 4 de notificaciones correctas |
-| E2E completa con `INBOX_E2E=1 REALTIME_E2E=1` | 47 correctas, 41 omitidas y el fallo de línea base descrito arriba |
+| E2E enfocada de tiempo real en `:3010` | 9 pruebas de pantallas y 4 de notificaciones correctas |
+| Actualización deliberada de la bandeja V2 | 1/1 correcta con las banderas V2 habilitadas en el servidor y Playwright |
+| E2E completa con `INBOX_E2E=1 REALTIME_E2E=1` | 53 correctas, 42 omitidas y el fallo de línea base descrito arriba |
 | Auditoría de limpieza en la base | Cero usuarios, contactos, expedientes relacionados o avisos sobrantes con prefijos `rt-`, `realtime-e2e-`, `screens-` y `qa-realtime-` |
 
 Comandos E2E ejecutados en PowerShell, con un servidor dedicado en `:3010` y build temporal `.next-qa`:
 
 ```powershell
 $env:APP_URL='http://127.0.0.1:3010'; $env:E2E_PORT='3010'; $env:NEXT_DIST_DIR='.next-qa'; $env:REALTIME_E2E='1'; npx playwright test tests/realtime-screens.spec.ts tests/realtime-notifications.spec.ts --reporter=list
-$env:INBOX_E2E='1'; npx playwright test --reporter=list
+$env:APP_URL='http://127.0.0.1:3010'; $env:E2E_PORT='3010'; $env:NEXT_DIST_DIR='.next-qa'; $env:INBOX_E2E='1'; $env:REALTIME_E2E='1'; npx playwright test --reporter=list
+$env:APP_URL='http://127.0.0.1:3010'; $env:E2E_PORT='3010'; $env:NEXT_DIST_DIR='.next-qa'; $env:REQUEST_WORKSPACE_V2_E2E='1'; $env:OCPOOL_V2_FLAGS_APPROVED='true'; $env:OCPOOL_V2_FLAG_COMMERCIAL_WORKSPACE_V2='true'; $env:OCPOOL_V2_FLAG_REQUEST_WORKSPACE_V2='true'; npx playwright test tests/request-workspace-v2.spec.ts -g 'holds live list changes while the operator is browsing and offers a deliberate refresh' --reporter=list
 ```
 
 ## Lo que sigue
 
 El bloque 3 cubre las pantallas en vivo y la lectura del cliente. Quedan para el bloque 4 las nuevas señales iniciadas por el cliente (declinar una propuesta, abrir una propuesta y entrar al portal). El bloque 5 queda para correo inteligente, plantillas pendientes, recordatorios y preferencias de notificación.
+
+La validación con proxy/PM2 y las mediciones empíricas de latencia y accesibilidad requieren el entorno desplegado y siguen pendientes.
