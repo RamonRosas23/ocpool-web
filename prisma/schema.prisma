@@ -41,6 +41,11 @@ enum InboxPriority {
   INFO
 }
 
+enum InboxActivityEmail {
+  DIGEST
+  OFF
+}
+
 enum UserType {
   CUSTOMER
   EMPLOYEE
@@ -348,6 +353,24 @@ model InboxNotification {
   @@map("inbox_notifications")
 }
 
+model InboxPreference {
+  userId         String             @id @db.Uuid
+  soundEnabled   Boolean?
+  desktopEnabled Boolean            @default(false)
+  activityEmail  InboxActivityEmail @default(DIGEST)
+  updatedAt      DateTime           @default(now()) @updatedAt @db.Timestamptz(3)
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("inbox_preferences")
+}
+
+model InboxReminder {
+  key       String   @id @db.VarChar(200)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("inbox_reminders")
+}
+
 model Client {
   id              String           @id @default(uuid()) @db.Uuid
   displayName     String           @db.VarChar(180)
@@ -399,6 +422,7 @@ model User {
   notificationDeliveries          NotificationDelivery[]    @relation("NotificationRecipient")
   inboxNotifications              InboxNotification[]       @relation("InboxRecipient")
   inboxNotificationsCaused        InboxNotification[]       @relation("InboxActor")
+  inboxPreference                 InboxPreference?
   quoteApprovalsRequested         QuoteApproval[]           @relation("QuoteApprovalRequester")
   quoteApprovalsDecided           QuoteApproval[]           @relation("QuoteApprovalDecider")
   specialConceptPromotions        SpecialConceptPromotion[]
