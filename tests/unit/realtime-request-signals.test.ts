@@ -40,6 +40,9 @@ describe('request signals', () => {
     expect(requestSignalFor({ eventType: 'QUOTE.VERSION_REJECTED', aggregateType: 'QUOTE', aggregateId: USER, payload: { quoteRequestId: REQUEST, fromStatus: 'ENVIADA' } })).toMatchObject({ visibility: 'C' });
     expect(requestSignalFor({ eventType: 'QUOTE.VERSION_REJECTED', aggregateType: 'QUOTE', aggregateId: USER, payload: { quoteRequestId: REQUEST, fromStatus: 'EN_REVISION' } })).toMatchObject({ visibility: 'I' });
     expect(requestSignalFor({ eventType: 'QUOTE.VERSION_REOPENED', aggregateType: 'QUOTE', aggregateId: USER, payload: { quoteRequestId: REQUEST } })).toMatchObject({ parts: ['quote', 'approvals'], visibility: 'I' });
+    expect(requestSignalFor({ eventType: 'QUOTE.DECLINED', aggregateType: 'QUOTE', aggregateId: USER, payload: { quoteRequestId: REQUEST } })).toEqual({ requestId: REQUEST, parts: ['quote', 'status'], visibility: 'C', previousAssigneeId: null });
+    expect(requestSignalFor({ eventType: 'QUOTE.VIEWED', aggregateType: 'QUOTE', aggregateId: USER, payload: { quoteRequestId: REQUEST } })).toBeNull();
+    expect(requestSignalFor({ eventType: 'CUSTOMER.PORTAL_ACTIVATED', aggregateType: 'CLIENT', aggregateId: USER, payload: { quoteRequestId: REQUEST } })).toBeNull();
     expect(requestSignalFor({ eventType: 'PRICES.PENDING_RESOLVED', aggregateType: 'PRICE_LIST', aggregateId: USER, payload: {} })).toBeNull();
     expect(requestSignalFor({ eventType: 'MESSAGE.CREATED', aggregateType: 'CONVERSATION', aggregateId: USER, payload: {} })).toBeNull();
     expect(requestSignalFor({ eventType: 'SOMETHING.NEW', aggregateType: 'QUOTE_REQUEST', aggregateId: REQUEST, payload: {} })).toBeNull();

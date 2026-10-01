@@ -125,4 +125,11 @@ describe('inbox rules for quotes and approvals', () => {
     }
     expect((await inboxOf(customerId)).some((row) => row.kind === 'quote.accepted')).toBe(false);
   });
+
+  it('sends a decline urgently to the assignee and normally to managers, never to the customer', async () => {
+    await event('QUOTE.DECLINED', { userId: customerId, type: 'CUSTOMER' }, { quoteVersionId: sentVersionId, versionNumber: 1, reason: 'PRICE' });
+    expect((await inboxOf(authorId)).find((row) => row.kind === 'quote.declined')).toMatchObject({ priority: 'URGENT', title: `customer ${suffix} declinó la propuesta V1`, body: 'Motivo: El precio.' });
+    expect((await inboxOf(managerId)).find((row) => row.kind === 'quote.declined')).toMatchObject({ priority: 'NORMAL', title: `customer ${suffix} declinó la propuesta V1` });
+    expect((await inboxOf(customerId)).some((row) => row.kind === 'quote.declined')).toBe(false);
+  });
 });

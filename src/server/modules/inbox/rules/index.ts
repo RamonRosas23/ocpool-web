@@ -4,7 +4,7 @@ import { deliveryFailedEffects, deliveryRecoveredEffects } from './deliveries';
 import { fileAvailableEffects, messageCreatedEffects } from './messages';
 import { pendingPriceResolvedEffects } from './prices';
 import { projectCreatedEffects, projectOwnerChangedEffects, workReassignedEffects } from './projects';
-import { approvalRequestedEffects, approvalResolvedEffects, quoteAcceptedEffects, quoteDraftSavedEffects, quotePublishedEffects, quoteReturnedEffects } from './quotes';
+import { approvalRequestedEffects, approvalResolvedEffects, portalActivatedEffects, quoteAcceptedEffects, quoteDeclinedEffects, quoteDraftSavedEffects, quotePublishedEffects, quoteReturnedEffects, quoteViewedEffects } from './quotes';
 import { customerResponseReviewedEffects, requestAssignedEffects, requestReceivedEffects, requestStatusChangedEffects } from './requests';
 import type { DomainEventInput } from './types';
 
@@ -25,6 +25,9 @@ export async function resolveInboxEffects(tx: Prisma.TransactionClient, event: D
     case 'QUOTE.APPROVAL_REQUESTED': return approvalRequestedEffects(tx, event);
     case 'QUOTE.APPROVAL_RESOLVED': return approvalResolvedEffects(tx, event);
     case 'QUOTE.ACCEPTED': return quoteAcceptedEffects(tx, event);
+    case 'QUOTE.DECLINED': return quoteDeclinedEffects(tx, event);
+    case 'QUOTE.VIEWED': return quoteViewedEffects(tx, event);
+    case 'CUSTOMER.PORTAL_ACTIVATED': return portalActivatedEffects(tx, event);
     case 'PROJECT.CREATED': return projectCreatedEffects(tx, event);
     case 'PROJECT.OWNER_CHANGED': return projectOwnerChangedEffects(tx, event);
     case 'TEAM.WORK_REASSIGNED': return workReassignedEffects(tx, event);

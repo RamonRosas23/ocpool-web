@@ -43,6 +43,9 @@ describe('inbox text', () => {
       expect(text.body === null || text.body.length <= 400, kind).toBe(true);
     }
     expect(renderInboxText('quote.accepted', { actorName: 'Juan Pérez', versionNumber: 2, totalLabel: 'Total aceptado: MXN 485,000.00' })).toEqual({ title: 'Juan Pérez aceptó la propuesta V2', body: 'Total aceptado: MXN 485,000.00' });
+    expect(renderInboxText('quote.declined', { actorName: 'Juan Pérez', versionNumber: 2, reason: 'El precio' })).toEqual({ title: 'Juan Pérez declinó la propuesta V2', body: 'Motivo: El precio.' });
+    expect(renderInboxText('quote.viewed', { actorName: 'Juan Pérez', versionNumber: 2, folio: 'OCQ-2' })).toEqual({ title: 'Juan Pérez abrió la propuesta V2', body: 'OCQ-2' });
+    expect(renderInboxText('customer.portal_activated', { actorName: 'Juan Pérez', folio: 'OCQ-2' })).toEqual({ title: 'Juan Pérez activó su portal', body: 'OCQ-2' });
     expect(renderInboxText('request.new_unassigned', { projectType: 'Alberca con jacuzzi', location: 'Monterrey', clientName: 'Sofía Garza', folio: 'OCQ-2026-000130' })).toEqual({ title: 'Nueva solicitud: Alberca con jacuzzi en Monterrey', body: 'Sofía Garza · OCQ-2026-000130' });
     expect(renderInboxText('approval.resolved', { actorName: 'Pedro', approvalType: 'DISCOUNT', approvalStatus: 'REJECTED', folio: 'OCQ-1', reason: 'Excede el margen' }).title).toBe('Pedro rechazó tu descuento en OCQ-1');
   });

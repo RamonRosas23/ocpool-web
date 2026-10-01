@@ -66,6 +66,12 @@ function draft(kind: InboxKind, data: InboxData): { title: string; body: string 
       return { title: `${customer} pidió cambios a la propuesta${versionLabel(data)}`, body: data.preview ?? null };
     case 'quote.accepted':
       return { title: `${customer} aceptó la propuesta${versionLabel(data)}`, body: data.totalLabel ?? null };
+    case 'quote.declined':
+      return { title: `${customer} declinó la propuesta${versionLabel(data)}`, body: data.reason ? `Motivo: ${data.reason}.` : null };
+    case 'quote.viewed':
+      return { title: `${customer} abrió la propuesta${versionLabel(data)}`, body: data.folio ?? null };
+    case 'customer.portal_activated':
+      return { title: `${customer} activó su portal`, body: data.folio ?? null };
     case 'request.assigned_to_you':
       return { title: `${actor} te asignó ${folio}`, body: joinParts([data.projectType && data.location ? `${data.projectType} en ${data.location}` : data.projectType, data.clientName]) };
     case 'request.unassigned_from_you':

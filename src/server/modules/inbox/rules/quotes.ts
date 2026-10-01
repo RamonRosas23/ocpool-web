@@ -1,5 +1,7 @@
 import type { Prisma } from '@/generated/prisma/client';
-import { activeEmployees, activeStaffWithPermissions, APPROVER_PERMISSIONS, displayNameOf, excludeUser, loadRequestInboxContext, MANAGER_PERMISSIONS, PRICE_MANAGER_PERMISSIONS, textOf, uuidOf } from '../audience';
+import { DECLINE_REASON_CODES, declineReasonLabel, type DeclineReasonCode } from '@/lib/decline-request';
+import { QUOTE_REQUEST_CLOSABLE_STATUSES } from '@/server/modules/quote-requests/domain';
+import { activeEmployees, activeStaffWithPermissions, APPROVER_PERMISSIONS, displayNameOf, excludeUser, loadRequestInboxContext, MANAGER_PERMISSIONS, POOL_PERMISSIONS, PRICE_MANAGER_PERMISSIONS, textOf, uuidOf } from '../audience';
 import { totalLabel } from '../format';
 import { customerRequestPath, STAFF_APPROVALS_PATH, STAFF_PENDING_PRICES_PATH, staffRequestPath } from '../paths';
 import { NO_INBOX_EFFECTS, type InboxEffects, type InboxIntent, type InboxResolution } from '../record';
@@ -14,6 +16,67 @@ async function loadVersion(tx: Prisma.TransactionClient, versionId: string | nul
 async function staleApprovalResolutions(tx: Prisma.TransactionClient, quoteVersionId: string, keepApprovalId?: string): Promise<InboxResolution[]> {
   const stale = await tx.quoteApproval.findMany({ where: { quoteVersionId, status: { in: ['SUPERSEDED', 'CANCELLED'] }, ...(keepApprovalId ? { id: { not: keepApprovalId } } : {}) }, select: { id: true } });
   return stale.map((approval) => ({ groupKey: `approval:${approval.id}`, note: 'Ya no aplica: la cotización cambió' }));
+}
+
+async function customerActionStaff(tx: Prisma.TransactionClient, assigneeId: string | null, actorId: string | null) {
+  const recipients = assigneeId
+    ? await activeEmployees(tx, [assigneeId])
+    : await activeStaffWithPermissions(tx, POOL_PERMISSIONS);
+  return excludeUser(recipients, actorId);
+}
+
+export async function quoteDeclinedEffects(tx: Prisma.TransactionClient, event: DomainEventInput): Promise<InboxEffects> {
+  const requestId = uuidOf(event.payload.quoteRequestId);
+  const version = await loadVersion(tx, uuidOf(event.payload.quoteVersionId));
+  if (!requestId || !version) return NO_INBOX_EFFECTS;
+  const context = await loadRequestInboxContext(tx, requestId);
+  if (!context) return NO_INBOX_EFFECTS;
+  const actorId = event.actor?.userId ?? null;
+  const actorName = (await displayNameOf(tx, actorId)) ?? context.contactName;
+  const rawReason = textOf(event.payload.reason);
+  const reason = rawReason && (DECLINE_REASON_CODES as readonly string[]).includes(rawReason)
+    ? declineReasonLabel(rawReason as DeclineReasonCode)
+    : undefined;
+  const byRecipient = new Map<string, { id: string; priority: 'URGENT' | 'NORMAL' }>();
+  for (const user of await customerActionStaff(tx, context.assigneeId, actorId)) byRecipient.set(user.id, { id: user.id, priority: 'URGENT' });
+  for (const user of excludeUser(await activeStaffWithPermissions(tx, MANAGER_PERMISSIONS), actorId)) {
+    if (!byRecipient.has(user.id)) byRecipient.set(user.id, { id: user.id, priority: 'NORMAL' });
+  }
+  return {
+    intents: [...byRecipient.values()].map(({ id, priority }): InboxIntent => ({ recipientId: id, kind: 'quote.declined', priority, quoteRequestId: context.id, actorId, groupKey: null, actionPath: staffRequestPath(context.id, 'quote'), actionRequired: false, data: { folio: context.folio, actorName, versionNumber: version.versionNumber, reason } })),
+    resolutions: [],
+  };
+}
+
+export async function quoteViewedEffects(tx: Prisma.TransactionClient, event: DomainEventInput): Promise<InboxEffects> {
+  const requestId = uuidOf(event.payload.quoteRequestId);
+  const version = await loadVersion(tx, uuidOf(event.payload.quoteVersionId));
+  if (!requestId || !version) return NO_INBOX_EFFECTS;
+  const context = await loadRequestInboxContext(tx, requestId);
+  if (!context) return NO_INBOX_EFFECTS;
+  const actorId = event.actor?.userId ?? null;
+  const actorName = (await displayNameOf(tx, actorId)) ?? context.contactName;
+  const recipients = await customerActionStaff(tx, context.assigneeId, actorId);
+  return {
+    intents: recipients.map((user): InboxIntent => ({ recipientId: user.id, kind: 'quote.viewed', priority: 'INFO', quoteRequestId: context.id, actorId, groupKey: `quote-viewed:${version.id}:${actorId ?? 'customer'}`, actionPath: staffRequestPath(context.id, 'quote'), actionRequired: false, data: { folio: context.folio, actorName, versionNumber: version.versionNumber } })),
+    resolutions: [],
+  };
+}
+
+export async function portalActivatedEffects(tx: Prisma.TransactionClient, event: DomainEventInput): Promise<InboxEffects> {
+  const clientId = uuidOf(event.payload.clientId) ?? (event.aggregateType === 'CLIENT' ? uuidOf(event.aggregateId) : null);
+  if (!clientId) return NO_INBOX_EFFECTS;
+  const actorId = event.actor?.userId ?? null;
+  const actorName = (await displayNameOf(tx, actorId)) ?? 'El cliente';
+  const requests = await tx.quoteRequest.findMany({ where: { clientId, status: { in: [...QUOTE_REQUEST_CLOSABLE_STATUSES] } }, select: { id: true }, orderBy: { createdAt: 'asc' } });
+  const intents: InboxIntent[] = [];
+  for (const request of requests) {
+    const context = await loadRequestInboxContext(tx, request.id);
+    if (!context) continue;
+    const recipients = await customerActionStaff(tx, context.assigneeId, actorId);
+    intents.push(...recipients.map((user): InboxIntent => ({ recipientId: user.id, kind: 'customer.portal_activated', priority: 'INFO', quoteRequestId: context.id, actorId, groupKey: `portal-activated:${context.id}`, actionPath: staffRequestPath(context.id), actionRequired: false, data: { folio: context.folio, actorName } })));
+  }
+  return { intents, resolutions: [] };
 }
 
 export async function quotePublishedEffects(tx: Prisma.TransactionClient, event: DomainEventInput): Promise<InboxEffects> {
