@@ -254,9 +254,9 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
   const markInboxRead = inbox?.markRead;
   useInboxActiveContext(openRequestId);
   useEffect(() => {
-    if (!openRequestId || openUnread === 0 || !markInboxRead) return;
+    if (!inbox?.visible || !openRequestId || openUnread === 0 || !markInboxRead) return;
     void markInboxRead({ quoteRequestId: openRequestId, scope: 'activity' });
-  }, [openRequestId, openUnread, markInboxRead]);
+  }, [inbox?.visible, openRequestId, openUnread, markInboxRead]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<{ kind: ApiResponseErrorKind; message: string } | null>(null);
   const [capabilities, setCapabilities] = useState<WorkspaceCapabilities | null>(null);
@@ -347,8 +347,7 @@ export default function RequestWorkspaceDetailV2({ requestId }: { requestId: str
     pendingLiveRefreshRef.current = false;
     void refreshLiveDetail();
   }, [loading, refreshLiveDetail]);
-  useRealtimeRequest(requestId, ['status', 'assignment', 'quote', 'project'], (change) => {
-    if (change.self && change.reason === 'signal') return;
+  useRealtimeRequest(requestId, ['status', 'assignment', 'quote', 'project'], () => {
     void refreshLiveDetail();
   });
 

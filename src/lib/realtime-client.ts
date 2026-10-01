@@ -106,11 +106,11 @@ export function applyNotificationEvent(summary: InboxSummary, event: RealtimeNot
 }
 
 /** Spec §5.3: sólo URGENT y HIGH destellan; la actividad del expediente que ya está abierto no, salvo lo urgente. */
-export function shouldFlash(event: RealtimeNotificationEvent, activeRequestId: string | null): boolean {
+export function shouldFlash(event: RealtimeNotificationEvent, activeRequestId: string | null, visible = true): boolean {
   const notice = event.notification;
   if (event.mode === 'resolved' || notice.readAt || notice.resolvedAt) return false;
   if (notice.priority !== 'URGENT' && notice.priority !== 'HIGH') return false;
-  if (notice.priority === 'HIGH' && notice.quoteRequestId !== null && notice.quoteRequestId === activeRequestId && ACTIVITY_KINDS.has(notice.kind)) return false;
+  if (visible && notice.priority === 'HIGH' && notice.quoteRequestId !== null && notice.quoteRequestId === activeRequestId && ACTIVITY_KINDS.has(notice.kind)) return false;
   return true;
 }
 

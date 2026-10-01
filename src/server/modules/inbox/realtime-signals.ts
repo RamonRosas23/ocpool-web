@@ -29,7 +29,7 @@ export const REQUEST_SIGNAL_RULES: Readonly<Record<string, RequestSignalRule | n
   'QUOTE.VERSION_CREATED': { parts: ['quote'], visibility: 'I' },
   'QUOTE.VERSION_UPDATED': { parts: ['quote'], visibility: 'I' },
   'QUOTE.VERSION_SUBMITTED': { parts: ['quote'], visibility: 'I' },
-  'QUOTE.VERSION_REOPENED': { parts: ['quote'], visibility: 'I' },
+  'QUOTE.VERSION_REOPENED': { parts: ['quote', 'approvals'], visibility: 'I' },
   'QUOTE.VERSION_STATUS_CHANGED': { parts: ['quote'], visibility: 'I' },
   // Rechazar una versión que el cliente ya tenía cambia su propuesta; rechazarla en revisión, no.
   'QUOTE.VERSION_REJECTED': { parts: ['quote'], visibility: (payload) => (SENT_VERSION_STATUSES.has(String(payload.fromStatus)) ? 'C' : 'I') },

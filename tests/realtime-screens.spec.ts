@@ -1,16 +1,19 @@
 import 'dotenv/config';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIResponse, type Page } from '@playwright/test';
 import { fingerprintToken } from '@/server/auth/crypto';
 import { createSession } from '@/server/auth/sessions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
+import { getPrivateStorage } from '@/server/modules/private-files/storage';
+import { publishRequestChange } from '@/server/modules/inbox/realtime-signals';
+import { createQuoteVersion } from '@/server/modules/quotes/service';
 import { listConversationMessages, sendCustomerMessage, sendStaffMessage } from '@/server/modules/messaging/service';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { seedIdentityCatalog } from '../prisma/seed';
 
 test.describe('pantallas en vivo', () => {
   test.skip(process.env.REALTIME_E2E !== '1', 'Realtime E2E requires REALTIME_E2E=1 and a disposable local database.');
-  test.describe.configure({ mode: 'serial' });
+  test.describe.configure({ mode: 'default' });
 
   const prisma = getPrisma();
   const suffix = Date.now().toString();
@@ -21,6 +24,12 @@ test.describe('pantallas en vivo', () => {
   const customerToken = `screens-e2e-customer-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`;
   const rateLimit = async () => ({ allowed: true, remaining: 20, retryAfterSeconds: null });
   let requestId = '';
+  let secondaryRequestId = '';
+  let quoteId = '';
+  let quoteVersionId = '';
+  let categoryId = '';
+  let catalogItemId = '';
+  let priceListId = '';
   let clientId = '';
   let contactId = '';
   let salesId = '';
@@ -41,33 +50,58 @@ test.describe('pantallas en vivo', () => {
     customerId = (await prisma.user.create({ data: { email: `screens-e2e-customer-${suffix}@example.test`, emailNormalized: `screens-e2e-customer-${suffix}@example.test`, displayName: customerName, type: 'CUSTOMER', status: 'ACTIVE', clientId, roles: { create: { roleId: customerRole.id } } } })).id;
     await prisma.clientContact.update({ where: { id: contactId }, data: { userId: customerId } });
     await prisma.quoteRequest.update({ where: { id: requestId }, data: { currentAssigneeId: salesId, status: 'EN_REVISION' } });
+    const secondary = await createQuoteRequest({ idempotencyKey: `screens-e2e-secondary-${suffix}`, origin: 'STAFF_CREATED', contact: { displayName: customerName, email: `screens-e2e-contact-${suffix}@example.test` }, detail: { projectType: 'Proyecto alterno en vivo', location: 'Puebla', description: 'Segundo fixture para carreras de detalle.', consentAt: now } }, { prisma, now });
+    secondaryRequestId = secondary.quoteRequestId;
     sales = { userId: salesId, type: 'EMPLOYEE', clientId: null, permissionKeys: new Set(['requests.read', 'messaging.read', 'messaging.send']), mfaVerified: true };
     customer = { userId: customerId, type: 'CUSTOMER', clientId, permissionKeys: new Set(['messaging.read', 'messaging.send']), mfaVerified: false };
+    await prisma.quoteRequest.update({ where: { id: secondaryRequestId }, data: { currentAssigneeId: salesId, status: 'EN_ELABORACION' } });
+    categoryId = (await prisma.catalogCategory.create({ data: { code: `SCREEN-${suffix}`, name: `Pantalla ${suffix}` } })).id;
+    catalogItemId = (await prisma.catalogItem.create({ data: { code: `SCREEN-ITEM-${suffix}`, name: `Artículo en vivo ${suffix}`, unit: 'pieza', categoryId } })).id;
+    priceListId = (await prisma.priceList.create({ data: { code: `SCREEN-LIST-${suffix}`, name: `Lista en vivo ${suffix}`, currencyCode: 'MXN', validFrom: now } })).id;
+    await prisma.priceListItem.create({ data: { priceListId, catalogItemId, unitPriceMinor: 10000n, validFrom: now } });
+    const quote = await createQuoteVersion({ ...sales, permissionKeys: new Set(['requests.read', 'quotes.create', 'prices.read']) }, { quoteRequestId: secondaryRequestId, priceListId, lines: [{ catalogItemId, quantity: '1' }] }, { prisma, now });
+    quoteId = quote.quoteId;
+    quoteVersionId = quote.versionId;
+    await prisma.quoteVersion.update({ where: { id: quoteVersionId }, data: { status: 'ENVIADA', publishedAt: now } });
+    await prisma.quote.update({ where: { id: quoteId }, data: { currentVersionId: quoteVersionId, publishedVersionId: quoteVersionId, workingVersionId: null } });
+    await prisma.quoteRequest.update({ where: { id: secondaryRequestId }, data: { status: 'COTIZACION_DISPONIBLE' } });
     await createSession({ userId: salesId, ipAddress: null, userAgent: 'screens-e2e' }, { prisma, tokenGenerator: () => salesToken });
     await createSession({ userId: customerId, ipAddress: null, userAgent: 'screens-e2e' }, { prisma, tokenGenerator: () => customerToken });
   });
 
   test.afterAll(async () => {
     if (process.env.REALTIME_E2E !== '1') return;
-    const conversations = await prisma.conversation.findMany({ where: { quoteRequestId: requestId }, select: { id: true } });
-    const files = await prisma.fileAttachment.findMany({ where: { quoteRequestId: requestId }, select: { id: true, storageObjectId: true } });
-    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, ...conversations.map(({ id }) => id), ...files.map(({ id }) => id)] } } });
-    await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: requestId }, { actorUserId: { in: [salesId, customerId] } }] } });
-    await prisma.fileAttachment.deleteMany({ where: { quoteRequestId: requestId } });
+    const requestIds = [requestId, secondaryRequestId].filter(Boolean);
+    const conversations = await prisma.conversation.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true } });
+    const files = await prisma.fileAttachment.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } });
+    const versionIds = quoteId ? (await prisma.quoteVersion.findMany({ where: { quoteId }, select: { id: true } })).map(({ id }) => id) : [];
+    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [...requestIds, quoteId, ...conversations.map(({ id }) => id), ...files.map(({ id }) => id)].filter(Boolean) } } });
+    await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: [...requestIds, quoteId, ...versionIds].filter(Boolean) } }, { actorUserId: { in: [salesId, customerId] } }] } });
+    await Promise.all(files.map(({ storageObject }) => getPrivateStorage().delete(storageObject.storageKey).catch(() => undefined)));
+    await prisma.fileAttachment.deleteMany({ where: { quoteRequestId: { in: requestIds } } });
     await prisma.storageObject.deleteMany({ where: { id: { in: files.map(({ storageObjectId }) => storageObjectId) } } });
-    await prisma.conversation.deleteMany({ where: { quoteRequestId: requestId } });
-    await prisma.quoteRequest.deleteMany({ where: { id: requestId } });
+    await prisma.conversation.deleteMany({ where: { quoteRequestId: { in: requestIds } } });
+    if (quoteId) await prisma.quote.delete({ where: { id: quoteId } });
+    await prisma.quoteRequest.deleteMany({ where: { id: { in: requestIds } } });
     await prisma.clientContact.deleteMany({ where: { id: contactId } });
     await prisma.session.deleteMany({ where: { userId: { in: [salesId, customerId] } } });
     for (const userId of [salesId, customerId]) await prisma.authRateLimit.deleteMany({ where: { scope: 'messaging-send', keyHash: fingerprintToken(`${userId}:${requestId}`) } });
     await prisma.user.deleteMany({ where: { id: { in: [salesId, customerId] } } });
     await prisma.client.deleteMany({ where: { id: clientId } });
+    if (priceListId) await prisma.priceList.delete({ where: { id: priceListId } });
+    if (catalogItemId) await prisma.catalogItem.delete({ where: { id: catalogItemId } });
+    if (categoryId) await prisma.catalogCategory.delete({ where: { id: categoryId } });
     await prisma.$disconnect();
   });
 
   const next = () => { sent += 1; return `screens-e2e-${sent}-${suffix}`; };
   const liveOn = (page: Page) => page.waitForResponse((response) => new URL(response.url()).pathname === '/api/realtime' && response.status() === 200);
   const signIn = (page: Page, token: string) => page.context().addCookies([{ name: 'ocpool_session', value: token, url: origin }]);
+  const deferred = <T,>() => {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    const promise = new Promise<T>((done) => { resolve = done; });
+    return { promise, resolve };
+  };
 
   test('el hilo del portal se actualiza solo cuando el equipo responde', async ({ page }) => {
     await signIn(page, customerToken);
@@ -121,5 +155,138 @@ test.describe('pantallas en vivo', () => {
       await staffContext.close();
       await customerContext.close();
     }
+  });
+
+  test('un aviso de otro expediente no reemplaza el detalle que el cliente está abriendo', async ({ page }) => {
+    await signIn(page, customerToken);
+    const live = liveOn(page);
+    await page.goto(`/portal?request=${requestId}`);
+    await live;
+    await expect(page.locator('.client-detail')).toContainText('Querétaro');
+
+    const requestStarted = deferred<void>();
+    const releaseRequest = deferred<void>();
+    await page.route(`**/api/portal/requests/${secondaryRequestId}`, async (route) => {
+      requestStarted.resolve();
+      await releaseRequest.promise;
+      await route.continue();
+    });
+    await page.locator('.client-request-row').filter({ hasText: 'Proyecto alterno en vivo' }).click();
+    await requestStarted.promise;
+    await publishRequestChange(prisma, { requestId, parts: ['status'], visibility: 'C' });
+    await page.waitForTimeout(750);
+    releaseRequest.resolve();
+
+    await expect(page.locator('.client-request-row').filter({ hasText: 'Proyecto alterno en vivo' })).toHaveClass(/is-selected/);
+    await expect(page.locator('.client-detail')).toContainText('Puebla', { timeout: 5_000 });
+    await expect(page.locator('.client-detail')).not.toContainText('Querétaro');
+  });
+
+  test('un mensaje recibido durante la carga inicial no desaparece al llegar la respuesta anterior del portal', async ({ page }) => {
+    await signIn(page, customerToken);
+    const live = liveOn(page);
+    const initialCaptured = deferred<{ response: APIResponse; body: Buffer }>();
+    const releaseInitial = deferred<void>();
+    let held = false;
+    await page.route(`**/api/portal/requests/${requestId}/messages?*`, async (route) => {
+      if (held) { await route.continue(); return; }
+      held = true;
+      const response = await route.fetch();
+      const body = await response.body();
+      initialCaptured.resolve({ response, body });
+      await releaseInitial.promise;
+      await route.fulfill({ response, body });
+    });
+    await page.goto(`/portal?request=${requestId}`);
+    await live;
+    await initialCaptured.promise;
+    const body = `Respuesta durante la carga portal ${suffix}`;
+    const newerResponse = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/portal/requests/${requestId}/messages` && response.request().method() === 'GET');
+    await sendStaffMessage(sales, requestId, { body, idempotencyKey: next() }, { prisma, rateLimit });
+    await newerResponse;
+    releaseInitial.resolve();
+    await expect(page.locator('.client-messaging__list')).toContainText(body, { timeout: 5_000 });
+  });
+
+  test('un mensaje recibido durante la carga inicial no desaparece al llegar la respuesta anterior del equipo', async ({ page }) => {
+    await signIn(page, salesToken);
+    const live = liveOn(page);
+    const initialCaptured = deferred<{ response: APIResponse; body: Buffer }>();
+    const releaseInitial = deferred<void>();
+    let held = false;
+    await page.route(`**/api/staff/quote-requests/${requestId}/messages?*`, async (route) => {
+      if (held) { await route.continue(); return; }
+      held = true;
+      const response = await route.fetch();
+      const body = await response.body();
+      initialCaptured.resolve({ response, body });
+      await releaseInitial.promise;
+      await route.fulfill({ response, body });
+    });
+    await page.goto(`/staff/requests?request=${requestId}`);
+    await live;
+    await expect(page.getByRole('heading', { name: 'Correspondencia' })).toBeVisible();
+    await initialCaptured.promise;
+    const body = `Mensaje durante la carga del equipo ${suffix}`;
+    const newerResponse = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/staff/quote-requests/${requestId}/messages` && response.request().method() === 'GET');
+    await sendCustomerMessage(customer, requestId, { body, idempotencyKey: next() }, { prisma, rateLimit });
+    await newerResponse;
+    releaseInitial.resolve();
+    await expect(page.locator('.staff-messaging__list')).toContainText(body, { timeout: 5_000 });
+  });
+
+  test('una pestaña oculta del portal no marca como leído el mensaje que no se ha visto', async ({ page }) => {
+    await signIn(page, customerToken);
+    const live = liveOn(page);
+    await page.goto(`/portal?request=${requestId}`);
+    await live;
+    await expect(page.getByRole('heading', { name: 'Conversación del expediente' })).toBeVisible();
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect.poll(() => page.evaluate(() => document.visibilityState)).toBe('hidden');
+    const sentMessage = await sendStaffMessage(sales, requestId, { body: `Sólo debe leerse al volver ${suffix}`, idempotencyKey: next() }, { prisma, rateLimit });
+    const conversation = await prisma.conversation.findUniqueOrThrow({ where: { quoteRequestId: requestId }, select: { id: true } });
+    await page.waitForTimeout(1_000);
+    const readWhileHidden = await prisma.conversationReadState.findUnique({ where: { conversationId_userId: { conversationId: conversation.id, userId: customerId } }, select: { lastReadMessageId: true } });
+    expect(readWhileHidden?.lastReadMessageId).not.toBe(sentMessage.id);
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect.poll(async () => (await prisma.conversationReadState.findUnique({ where: { conversationId_userId: { conversationId: conversation.id, userId: customerId } }, select: { lastReadMessageId: true } }))?.lastReadMessageId).toBe(sentMessage.id);
+  });
+
+  test('el constructor conserva la nueva versión que se está editando ante una señal remota', async ({ page }) => {
+    await signIn(page, salesToken);
+    const live = liveOn(page);
+    await page.goto(`/staff/quotes?request=${secondaryRequestId}`);
+    await live;
+    const quantity = page.getByRole('textbox', { name: `Cantidad de Artículo en vivo ${suffix}` });
+    await expect(quantity).toHaveValue('1');
+    await quantity.fill('2');
+
+    await publishRequestChange(prisma, { requestId: secondaryRequestId, parts: ['quote'], visibility: 'I' });
+    await expect(page.getByRole('status').filter({ hasText: 'Hay cambios nuevos en esta cotización' })).toBeVisible({ timeout: 5_000 });
+    await expect(quantity).toHaveValue('2');
+  });
+
+  test('una señal propia refresca el expediente abierto en las demás pestañas del equipo', async ({ context }) => {
+    await context.addCookies([{ name: 'ocpool_session', value: salesToken, url: origin }]);
+    const first = await context.newPage();
+    const second = await context.newPage();
+    const eitherPageLive = Promise.any([liveOn(first), liveOn(second)]);
+    await Promise.all([first.goto(`/staff/requests?request=${requestId}`), second.goto(`/staff/requests?request=${requestId}`)]);
+    await eitherPageLive;
+    await expect.poll(async () => Promise.all([first, second].map((page) => page.evaluate(async () => (await navigator.locks.query()).pending?.some((lock) => lock.name === 'ocpool-realtime') ?? false))).then((pending) => pending.some(Boolean))).toBe(true);
+    await expect(first.locator('.staff-detail__header .staff-status-pill')).toHaveText('En revisión');
+    await expect(second.locator('.staff-detail__header .staff-status-pill')).toHaveText('En revisión');
+
+    await prisma.quoteRequest.update({ where: { id: requestId }, data: { status: 'COTIZACION_DISPONIBLE' } });
+    await publishRequestChange(prisma, { requestId, parts: ['status'], visibility: 'I', actorId: salesId });
+    await expect(first.locator('.staff-detail__header .staff-status-pill')).toHaveText('Cotización disponible', { timeout: 5_000 });
+    await expect(second.locator('.staff-detail__header .staff-status-pill')).toHaveText('Cotización disponible', { timeout: 5_000 });
   });
 });

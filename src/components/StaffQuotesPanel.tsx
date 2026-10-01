@@ -248,6 +248,10 @@ function draftSnapshotKey(priceListId: string, validUntilValue: string, lines: D
   });
 }
 
+function editorSnapshotKey(priceListId: string, taxProfileId: string, validUntilValue: string, lines: DraftLine[], content: ContentFields, sections: DraftSection[]): string {
+  return JSON.stringify({ draft: draftSnapshotKey(priceListId, validUntilValue, lines, content, sections), taxProfileId });
+}
+
 function calculatePreview(line: DraftLine, priceMinor: string | undefined) {
   const quantity = parseQuantity(line.quantity);
   // "Por cotizar": todavía sin precio, no suma al total (el servidor lo guarda en cero).
@@ -343,6 +347,7 @@ export default function StaffQuotesPanel() {
   const loadWorkspaceGenerationRef = useRef(0);
   const persistDraftGenerationRef = useRef(0);
   const savedSnapshotRef = useRef('');
+  const savedEditorSnapshotRef = useRef('');
   const expectedUpdatedAtRef = useRef<string | null>(null);
   const lastAttemptSnapshotRef = useRef('');
   const errorRetryCountRef = useRef(0);
@@ -358,10 +363,7 @@ export default function StaffQuotesPanel() {
   useEffect(() => { draftLinesRef.current = draftLines; }, [draftLines]);
   const draftSectionsRef = useRef<DraftSection[]>([]);
   useEffect(() => { draftSectionsRef.current = draftSections; }, [draftSections]);
-  const editorSnapshot = () => JSON.stringify({
-    draft: draftSnapshotKey(selectedPriceListIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current, draftSectionsRef.current),
-    taxProfileId: selectedTaxProfileIdRef.current,
-  });
+  const editorSnapshot = () => editorSnapshotKey(selectedPriceListIdRef.current, selectedTaxProfileIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current, draftSectionsRef.current);
   const { showToast } = usePrivateToast();
 
   const loadBase = useCallback(async (currentPage: number, query: string) => {
@@ -485,26 +487,23 @@ export default function StaffQuotesPanel() {
         discountBasisPoints: String(line.discountBasisPoints),
         taxBasisPoints: String(line.taxBasisPoints),
       }));
+      const freshContentFields: ContentFields = {
+        scopeText: currentVersion?.scopeText ?? '',
+        exclusionsText: currentVersion?.exclusionsText ?? '',
+        paymentTermsText: currentVersion?.paymentTermsText ?? '',
+        warrantyText: currentVersion?.warrantyText ?? '',
+        publicNotesText: currentVersion?.publicNotesText ?? '',
+      };
       setSelectedPriceListId(freshPriceListId);
       setSelectedTaxProfileId(freshTaxProfileId);
       setValidUntil(freshValidUntil);
-      setContentFields({
-        scopeText: currentVersion?.scopeText ?? '',
-        exclusionsText: currentVersion?.exclusionsText ?? '',
-        paymentTermsText: currentVersion?.paymentTermsText ?? '',
-        warrantyText: currentVersion?.warrantyText ?? '',
-        publicNotesText: currentVersion?.publicNotesText ?? '',
-      });
+      setContentFields(freshContentFields);
       setDraftLines(freshDraftLines);
       setDraftSections(freshDraftSections);
       expectedUpdatedAtRef.current = currentVersion?.updatedAt ?? null;
-      savedSnapshotRef.current = draftSnapshotKey(freshPriceListId, freshValidUntil, freshDraftLines, {
-        scopeText: currentVersion?.scopeText ?? '',
-        exclusionsText: currentVersion?.exclusionsText ?? '',
-        paymentTermsText: currentVersion?.paymentTermsText ?? '',
-        warrantyText: currentVersion?.warrantyText ?? '',
-        publicNotesText: currentVersion?.publicNotesText ?? '',
-      }, freshDraftSections);
+      const freshEditorSnapshot = editorSnapshotKey(freshPriceListId, freshTaxProfileId, freshValidUntil, freshDraftLines, freshContentFields, freshDraftSections);
+      savedSnapshotRef.current = freshEditorSnapshot;
+      savedEditorSnapshotRef.current = freshEditorSnapshot;
       setAutosaveState('saved');
       setAutosaveMessage(null);
       setRemoteChange(false);
@@ -1002,7 +1001,7 @@ export default function StaffQuotesPanel() {
   const persistDraft = useCallback(async (): Promise<boolean> => {
     if (!workspace || !selectedPriceListId || draftLines.length === 0 || !preview.valid || !capabilities?.quotesCreate) return true;
     if (!currentVersion || currentVersion.status === 'BORRADOR') {
-      const snapshotToPersist = draftSnapshotKey(selectedPriceListId, validUntil, draftLines, contentFields, draftSections);
+      const snapshotToPersist = editorSnapshotKey(selectedPriceListId, selectedTaxProfileId, validUntil, draftLines, contentFields, draftSections);
       if (snapshotToPersist === savedSnapshotRef.current) return true;
       if (snapshotToPersist !== lastAttemptSnapshotRef.current) errorRetryCountRef.current = 0;
       lastAttemptSnapshotRef.current = snapshotToPersist;
@@ -1052,9 +1051,10 @@ export default function StaffQuotesPanel() {
         if (persistDraftGenerationRef.current !== generation) return true;
         errorRetryCountRef.current = 0;
         savedSnapshotRef.current = snapshotToPersist;
+        savedEditorSnapshotRef.current = snapshotToPersist;
         // Re-congela el precio snapshot (fidelidad S0-02) sólo si nada cambió localmente durante el round-trip;
         // si el usuario ya siguió editando, dejamos sus ediciones intactas — el próximo ciclo las persistirá.
-        const localUnchanged = draftSnapshotKey(selectedPriceListIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current, draftSectionsRef.current) === snapshotToPersist;
+        const localUnchanged = editorSnapshotKey(selectedPriceListIdRef.current, selectedTaxProfileIdRef.current, validUntilRef.current, draftLinesRef.current, contentFieldsRef.current, draftSectionsRef.current) === snapshotToPersist;
         if (freshVersion && localUnchanged) {
           const persistedByItem = new Map(freshVersion.lines.filter((line) => line.catalogItemId !== null).map((line) => [line.catalogItemId as string, line]));
           // El servidor resuelve con la lista un concepto "por cotizar" que ya tiene precio ahí: se avisa.
@@ -1129,13 +1129,13 @@ export default function StaffQuotesPanel() {
   useEffect(() => {
     if (!canEdit || !workspace || !selectedPriceListId || draftLines.length === 0) return;
     if (autosaveState === 'saving' || autosaveState === 'offline') return;
-    const liveSnapshot = draftSnapshotKey(selectedPriceListId, validUntil, draftLines, contentFields, draftSections);
+    const liveSnapshot = editorSnapshotKey(selectedPriceListId, selectedTaxProfileId, validUntil, draftLines, contentFields, draftSections);
     if (liveSnapshot === savedSnapshotRef.current) { if (autosaveState !== 'saved') setAutosaveState('saved'); return; }
     if (autosaveState === 'error' && liveSnapshot === lastAttemptSnapshotRef.current && errorRetryCountRef.current >= 3) return;
     setAutosaveState((current) => current === 'saved' || current === 'error' ? 'dirty' : current);
     const timer = setTimeout(() => { void persistDraft(); }, AUTOSAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [canEdit, workspace, selectedPriceListId, validUntil, draftLines, draftSections, contentFields, autosaveState, persistDraft]);
+  }, [canEdit, workspace, selectedPriceListId, selectedTaxProfileId, validUntil, draftLines, draftSections, contentFields, autosaveState, persistDraft]);
 
   const retryDraftSaveNow = () => { errorRetryCountRef.current = 0; void persistDraft(); };
 
@@ -1204,10 +1204,10 @@ export default function StaffQuotesPanel() {
   const [approvalRequestDialog, setApprovalRequestDialog] = useState<'DISCOUNT' | 'SPECIAL_CONCEPT' | null>(null);
   const [approvalRequestReason, setApprovalRequestReason] = useState('');
   const [rejectApprovalReason, setRejectApprovalReason] = useState('');
-  const remoteLoadBlocked = autosaveState !== 'saved' || saving || pricingBusy || showSectionForm || showSpecialForm || pricingTarget !== null || repriceDialogOpen || returnToDraftDialogOpen || rejectVersionDialogOpen || rejectApprovalDialog !== null || approvalRequestDialog !== null || publishPreflight !== null;
+  const editorHasUnsavedChanges = editorSnapshotKey(selectedPriceListId, selectedTaxProfileId, validUntil, draftLines, contentFields, draftSections) !== savedEditorSnapshotRef.current;
+  const remoteLoadBlocked = editorHasUnsavedChanges || autosaveState !== 'saved' || saving || pricingBusy || showSectionForm || showSpecialForm || pricingTarget !== null || repriceDialogOpen || returnToDraftDialogOpen || rejectVersionDialogOpen || rejectApprovalDialog !== null || approvalRequestDialog !== null || publishPreflight !== null;
   remoteInteractionRef.current = remoteLoadBlocked;
-  useRealtimeRequest(selectedId, ['quote', 'approvals'], (change) => {
-    if (change.self && change.reason === 'signal') return;
+  useRealtimeRequest(selectedId, ['quote', 'approvals'], () => {
     if (!remoteInteractionRef.current && selectedId) void loadWorkspace(selectedId, { silent: true });
     else setRemoteChange(true);
   });

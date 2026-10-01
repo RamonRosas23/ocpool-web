@@ -19,6 +19,8 @@ export type InboxContextValue = {
   /** `false` sin sesión (401/403): la campana no se muestra. */
   available: boolean;
   loaded: boolean;
+  /** La pestaña está a la vista; se usa para no marcar conversaciones como leídas en segundo plano. */
+  visible: boolean;
   unread: number;
   actionRequired: number;
   latest: InboxNotification[];
@@ -70,6 +72,7 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
   const [summary, setSummary] = useState<InboxSummary>(EMPTY);
   const [available, setAvailable] = useState(true);
   const [loaded, setLoaded] = useState(false);
+  const [visible, setVisible] = useState(false);
   const [live, setLive] = useState(false);
   const [flashes, dispatchFlash] = useReducer(flashReducer, []);
   const [panelRequest, setPanelRequest] = useState(0);
@@ -92,6 +95,13 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
   useEffect(() => {
     preferencesRef.current = preferences;
   }, [preferences]);
+
+  useEffect(() => {
+    const syncVisibility = () => setVisible(document.visibilityState === 'visible');
+    syncVisibility();
+    document.addEventListener('visibilitychange', syncVisibility);
+    return () => document.removeEventListener('visibilitychange', syncVisibility);
+  }, []);
 
   const refresh = useCallback(async () => {
     inFlight.current?.abort();
@@ -240,7 +250,7 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
         const notice = event.notification;
         // "Tomada por Ana", "Ya no aplica"…: el flash de algo ya atendido desaparece.
         if (event.mode === 'resolved' || notice.resolvedAt || notice.readAt) dispatchFlash({ type: 'dismiss', ids: [notice.id] });
-        if (!shouldFlash(event, activeRequest.current)) return;
+        if (!shouldFlash(event, activeRequest.current, document.visibilityState === 'visible')) return;
         if (document.visibilityState === 'visible') {
           dispatchFlash({ type: 'show', notification: notice });
           if (preferencesRef.current.sound) chime.current?.play(notice.priority === 'URGENT' ? 'URGENT' : 'HIGH');
@@ -306,6 +316,7 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
     surface,
     available,
     loaded,
+    visible,
     unread,
     actionRequired: available ? summary.actionRequired : 0,
     latest: summary.latest,
@@ -324,7 +335,7 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
     setSound,
     desktop,
     setDesktop,
-  }), [surface, available, loaded, unread, summary, refresh, markRead, live, flashes, dismissFlash, pauseFlash, panelRequest, requestPanel, subscriptions, setActiveRequest, preferences, setSound, desktop, setDesktop]);
+  }), [surface, available, loaded, visible, unread, summary, refresh, markRead, live, flashes, dismissFlash, pauseFlash, panelRequest, requestPanel, subscriptions, setActiveRequest, preferences, setSound, desktop, setDesktop]);
 
   return <InboxContext.Provider value={value}>{children}</InboxContext.Provider>;
 }
@@ -335,10 +346,11 @@ export function useInbox(): InboxContextValue | null {
 
 /** Una vista con un expediente abierto lo registra: su actividad no destella, porque ya se ve en pantalla (spec §5.3). */
 export function useInboxActiveContext(quoteRequestId: string | null): void {
-  const setActiveRequest = useInbox()?.setActiveRequest;
+  const inbox = useInbox();
+  const setActiveRequest = inbox?.setActiveRequest;
   useEffect(() => {
     if (!setActiveRequest) return undefined;
-    setActiveRequest(quoteRequestId);
+    setActiveRequest(inbox?.visible ? quoteRequestId : null);
     return () => setActiveRequest(null);
-  }, [setActiveRequest, quoteRequestId]);
+  }, [inbox?.visible, setActiveRequest, quoteRequestId]);
 }

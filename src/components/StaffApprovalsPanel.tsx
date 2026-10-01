@@ -114,8 +114,8 @@ export default function StaffApprovalsPanel() {
   const [rejectReason, setRejectReason] = useState('');
   const loadedRef = useRef(false);
   const refreshApprovals = useCoalesced(() => setReloadKey((key) => key + 1), 2_000);
-  useRealtimeRequest(ANY_REQUEST, ['approvals'], (change) => {
-    if (!(change.self && change.reason === 'signal')) refreshApprovals();
+  useRealtimeRequest(ANY_REQUEST, ['approvals'], () => {
+    refreshApprovals();
   });
 
   useEffect(() => {

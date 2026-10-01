@@ -39,6 +39,7 @@ describe('request signals', () => {
     expect(requestSignalFor({ eventType: 'REQUEST.ASSIGNED', aggregateType: 'QUOTE_REQUEST', aggregateId: REQUEST, payload: { previousAssigneeId: USER } })).toEqual({ requestId: REQUEST, parts: ['assignment'], visibility: 'I', previousAssigneeId: USER });
     expect(requestSignalFor({ eventType: 'QUOTE.VERSION_REJECTED', aggregateType: 'QUOTE', aggregateId: USER, payload: { quoteRequestId: REQUEST, fromStatus: 'ENVIADA' } })).toMatchObject({ visibility: 'C' });
     expect(requestSignalFor({ eventType: 'QUOTE.VERSION_REJECTED', aggregateType: 'QUOTE', aggregateId: USER, payload: { quoteRequestId: REQUEST, fromStatus: 'EN_REVISION' } })).toMatchObject({ visibility: 'I' });
+    expect(requestSignalFor({ eventType: 'QUOTE.VERSION_REOPENED', aggregateType: 'QUOTE', aggregateId: USER, payload: { quoteRequestId: REQUEST } })).toMatchObject({ parts: ['quote', 'approvals'], visibility: 'I' });
     expect(requestSignalFor({ eventType: 'PRICES.PENDING_RESOLVED', aggregateType: 'PRICE_LIST', aggregateId: USER, payload: {} })).toBeNull();
     expect(requestSignalFor({ eventType: 'MESSAGE.CREATED', aggregateType: 'CONVERSATION', aggregateId: USER, payload: {} })).toBeNull();
     expect(requestSignalFor({ eventType: 'SOMETHING.NEW', aggregateType: 'QUOTE_REQUEST', aggregateId: REQUEST, payload: {} })).toBeNull();

@@ -189,9 +189,9 @@ export default function StaffRequestsPanel() {
   const markInboxRead = inbox?.markRead;
   useInboxActiveContext(openRequestId);
   useEffect(() => {
-    if (!openRequestId || openUnread === 0 || !markInboxRead) return;
+    if (!inbox?.visible || !openRequestId || openUnread === 0 || !markInboxRead) return;
     void markInboxRead({ quoteRequestId: openRequestId, scope: 'activity' });
-  }, [openRequestId, openUnread, markInboxRead]);
+  }, [inbox?.visible, openRequestId, openUnread, markInboxRead]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [statusFilter, setStatusFilter, statusFilterHydrated] = usePersistentState('ocpool.staff.requests.statusFilter', '');
   // El estado se aplicaba de inmediato al elegirlo mientras la búsqueda de texto, en el mismo
@@ -395,8 +395,7 @@ export default function StaffRequestsPanel() {
     if (page === 1 && (requestListRef.current?.scrollTop ?? 0) < 8) void loadList(page, statusFilter, appliedSearch, view, true, { silent: true });
     else setListNews((count) => count + 1);
   }, 800);
-  useRealtimeRequest(ANY_REQUEST, ['created', 'status', 'assignment'], (change) => {
-    if (change.self && change.reason === 'signal') return;
+  useRealtimeRequest(ANY_REQUEST, ['created', 'status', 'assignment'], () => {
     onListChange();
   });
 
@@ -419,8 +418,7 @@ export default function StaffRequestsPanel() {
     if (id === selectedIdRef.current) void loadDetail(id, { silent: true });
   }, [loadDetail, loadingDetail]);
 
-  useRealtimeRequest(selected?.id ?? null, ['status', 'assignment', 'quote', 'project'], (change) => {
-    if (change.self && change.reason === 'signal') return;
+  useRealtimeRequest(selected?.id ?? null, ['status', 'assignment', 'quote', 'project'], () => {
     const id = selectedIdRef.current;
     if (id) void loadDetail(id, { silent: true });
   });

@@ -139,12 +139,16 @@ export default function StaffMessagingPanel({ requestId, capabilities, draft: co
   }, [requestId]);
 
   const applyResponse = (data: StaffConversationResponse) => {
+    const currentLatest = messagesRef.current.at(-1);
+    const incomingLatest = data.items.at(-1);
+    const responseIsCurrent = !currentLatest || Boolean(incomingLatest && Date.parse(incomingLatest.createdAt) >= Date.parse(currentLatest.createdAt));
+    const merged = mergeThread(messagesRef.current, data.items).items;
     setConversation(data.conversation);
-    messagesRef.current = data.items;
-    setMessages(data.items);
-    setNextCursor(data.nextCursor);
+    messagesRef.current = merged;
+    setMessages(merged);
+    if (responseIsCurrent) setNextCursor(data.nextCursor);
     setCustomerRead(data.customerRead ?? null);
-    latestCursorRef.current = data.latestCursor ?? null;
+    if (responseIsCurrent) latestCursorRef.current = data.latestCursor ?? latestCursorRef.current;
   };
 
   useEffect(() => {

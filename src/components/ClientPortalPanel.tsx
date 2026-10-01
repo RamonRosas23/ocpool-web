@@ -164,6 +164,7 @@ async function readResponse<T>(response: Response): Promise<T> {
 export default function ClientPortalPanel() {
   const [requests, setRequests] = useState<RequestSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -197,7 +198,10 @@ export default function ClientPortalPanel() {
       setRequests(data.items);
       setTotal(data.total);
       setRestricted(false);
-      setSelectedId((current) => current && data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null);
+      const current = selectedIdRef.current;
+      const nextSelectedId = current && data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? null;
+      selectedIdRef.current = nextSelectedId;
+      setSelectedId(nextSelectedId);
     } catch (caught) {
       if (loadRequestsGenerationRef.current !== generation || options.silent) return;
       const message = caught instanceof Error ? caught.message : 'No fue posible cargar tu portal.';
@@ -217,12 +221,21 @@ export default function ClientPortalPanel() {
   }, []);
 
   const loadDetailGenerationRef = useRef(0);
+  const loadDetailInFlightRef = useRef(false);
+  const pendingSilentDetailRef = useRef<string | null>(null);
+  const loadDetailRef = useRef<(requestId: string, options?: { silent?: boolean }) => Promise<void>>(() => Promise.resolve());
   const loadDetail = useCallback(async (requestId: string, options: { silent?: boolean } = {}) => {
     // UX audit fix: sin esta guarda, hacer clic rápido entre dos solicitudes propias del cliente
     // podía dejar que la respuesta obsoleta de la primera llegara después que la de la segunda y
     // sobreescribiera en silencio el expediente mostrado (totales/estado/líneas de la cotización)
     // con datos de una solicitud distinta a la que aparece resaltada como seleccionada.
+    if (options.silent && requestId !== selectedIdRef.current) return;
+    if (options.silent && loadDetailInFlightRef.current) {
+      pendingSilentDetailRef.current = requestId;
+      return;
+    }
     const generation = (loadDetailGenerationRef.current += 1);
+    loadDetailInFlightRef.current = true;
     // "silent": refresca el expediente abierto sin esqueleto (p. ej. tras pedir cambios, con el
     // diálogo de confirmación aún en pantalla); si falla, se conserva lo que ya se veía.
     if (!options.silent) setLoadingDetail(true);
@@ -230,19 +243,31 @@ export default function ClientPortalPanel() {
     try {
       const response = await fetch(`/api/portal/requests/${requestId}`, { credentials: 'include', cache: 'no-store' });
       const data = await readResponse<Workspace>(response);
-      if (loadDetailGenerationRef.current !== generation) return;
+      if (loadDetailGenerationRef.current !== generation || requestId !== selectedIdRef.current) return;
       setWorkspace(data);
       // La tarjeta del riel refleja el mismo estado que el detalle (p. ej. "Aceptada" justo después
       // de aceptar, en vez de seguir diciendo "Cotización disponible").
       setRequests((current) => current.map((item) => item.id === data.request.id ? { ...item, status: data.request.status, updatedAt: data.request.updatedAt } : item));
     } catch (caught) {
-      if (loadDetailGenerationRef.current !== generation || options.silent) return;
+      if (loadDetailGenerationRef.current !== generation || requestId !== selectedIdRef.current || options.silent) return;
       const message = caught instanceof Error ? caught.message : 'No fue posible cargar el expediente.';
       setError(message);
       setWorkspace(null);
     } finally {
-      if (!options.silent) setLoadingDetail(false);
+      if (loadDetailGenerationRef.current === generation) {
+        loadDetailInFlightRef.current = false;
+        if (!options.silent) setLoadingDetail(false);
+        const pendingId = pendingSilentDetailRef.current;
+        pendingSilentDetailRef.current = null;
+        if (pendingId && pendingId === selectedIdRef.current) queueMicrotask(() => { void loadDetailRef.current(pendingId, { silent: true }); });
+      }
     }
+  }, []);
+  useEffect(() => { loadDetailRef.current = loadDetail; }, [loadDetail]);
+
+  const selectRequest = useCallback((requestId: string | null) => {
+    selectedIdRef.current = requestId;
+    setSelectedId(requestId);
   }, []);
 
   const [requestFromUrl, setRequestFromUrl] = useState<string | null>(null);
@@ -251,8 +276,8 @@ export default function ClientPortalPanel() {
   useEffect(() => { if (selectedId) void loadDetail(selectedId); else setWorkspace(null); }, [loadDetail, selectedId]);
   useEffect(() => {
     const requestId = new URLSearchParams(window.location.search).get('request');
-    if (requestId) { setSelectedId(requestId); setRequestFromUrl(requestId); }
-  }, []);
+    if (requestId) { selectRequest(requestId); setRequestFromUrl(requestId); }
+  }, [selectRequest]);
 
   // El expediente abierto vive en la URL: recargar o guardar el enlace regresa al mismo proyecto.
   useEffect(() => {
@@ -275,11 +300,11 @@ export default function ClientPortalPanel() {
 
   // Lo nuevo del expediente abierto se muestra una vez ("Desde tu última visita") y queda leído. Es reactivo:
   // el expediente y el resumen de avisos cargan por separado y en cualquier orden.
-  const openRequestId = workspace?.request.id ?? null;
+  const openRequestId = workspace?.request.id === selectedId ? selectedId : null;
   const openUnread = openRequestId ? inbox?.unreadByRequest[openRequestId] ?? 0 : 0;
   useInboxActiveContext(openRequestId);
   useEffect(() => {
-    if (!inbox?.loaded || !openRequestId) return;
+    if (!inbox?.loaded || !inbox.visible || !openRequestId) return;
     if (acknowledgedRequestRef.current !== openRequestId) {
       acknowledgedRequestRef.current = openRequestId;
       setSinceLastVisit(inbox.latest.filter((item) => item.quoteRequestId === openRequestId && !item.readAt && !item.resolvedAt));
@@ -291,12 +316,12 @@ export default function ClientPortalPanel() {
   const pendingDetailRef = useRef(false);
   const refreshPortal = useCoalesced(() => {
     void loadRequests({ silent: true });
-    if (pendingDetailRef.current && openRequestId) void loadDetail(openRequestId, { silent: true });
+    const currentSelectedId = selectedIdRef.current;
+    if (pendingDetailRef.current && currentSelectedId) void loadDetail(currentSelectedId, { silent: true });
     pendingDetailRef.current = false;
   }, 600);
   useRealtimeRequest(loggedOut ? null : ANY_REQUEST, ['created', 'status', 'quote', 'project'], (change) => {
-    if (change.self && change.reason === 'signal') return;
-    if (change.requestId === null || change.requestId === openRequestId) pendingDetailRef.current = true;
+    if (change.requestId === null || change.requestId === selectedIdRef.current) pendingDetailRef.current = true;
     refreshPortal();
   });
 
@@ -321,7 +346,7 @@ export default function ClientPortalPanel() {
       <section className="client-hero"><div><p className="client-eyebrow">Espacios que toman forma</p><h1>Tu proyecto, <em>en cada etapa.</em></h1><p className="client-hero__copy">Aquí encontrarás el avance de tus solicitudes y las propuestas que hemos preparado para ti.</p></div><div className="client-hero__note"><span>Expedientes</span><strong>{total.toString().padStart(2, '0')}</strong><small>seguimiento privado</small></div></section>
       {error && <p className="client-alert" role="alert">{error}</p>}
       <section className="client-layout" aria-label="Portal de cliente">
-        <aside className="client-request-rail"><div className="client-section-head"><p className="client-eyebrow">Tus proyectos</p><span>{loading ? 'Cargando…' : `${requests.length} expediente${requests.length === 1 ? '' : 's'}`}</span></div><div className="client-request-list" aria-live="polite">{loading && <div className="client-skeleton"><i /><i /><i /></div>}{!loading && requests.length === 0 && (error ? <div className="client-empty client-empty--small"><strong>No pudimos cargar tus expedientes.</strong><span>Suele ser momentáneo. Intenta de nuevo en unos segundos.</span><button type="button" className="client-quote-action client-empty__retry" onClick={() => void loadRequests()}>Reintentar</button></div> : <div className="client-empty client-empty--small"><strong>Aún no hay expedientes.</strong><span>Cuando iniciemos una conversación, aparecerá aquí.</span></div>)}{!loading && requests.map((item) => <button type="button" className={`client-request-row${selectedId === item.id ? ' is-selected' : ''}${inbox?.unreadByRequest[item.id] ? ' is-unread' : ''}`} key={item.id} onClick={() => setSelectedId(item.id)}><span className="client-request-row__mark" aria-hidden="true" /><span><strong>{item.folio}</strong><b>{item.detail?.projectType ?? 'Proyecto OCPOOL'}</b><small>{item.detail?.location ?? 'Ubicación por confirmar'}</small>{inbox?.unreadByRequest[item.id] ? <span className="client-request-row__news">{inbox.unreadByRequest[item.id] === 1 ? '1 nueva' : `${inbox.unreadByRequest[item.id]} nuevas`}</span> : null}</span><em>{statusLabel(item.status)}</em></button>)}</div></aside>
+        <aside className="client-request-rail"><div className="client-section-head"><p className="client-eyebrow">Tus proyectos</p><span>{loading ? 'Cargando…' : `${requests.length} expediente${requests.length === 1 ? '' : 's'}`}</span></div><div className="client-request-list" aria-live="polite">{loading && <div className="client-skeleton"><i /><i /><i /></div>}{!loading && requests.length === 0 && (error ? <div className="client-empty client-empty--small"><strong>No pudimos cargar tus expedientes.</strong><span>Suele ser momentáneo. Intenta de nuevo en unos segundos.</span><button type="button" className="client-quote-action client-empty__retry" onClick={() => void loadRequests()}>Reintentar</button></div> : <div className="client-empty client-empty--small"><strong>Aún no hay expedientes.</strong><span>Cuando iniciemos una conversación, aparecerá aquí.</span></div>)}{!loading && requests.map((item) => <button type="button" className={`client-request-row${selectedId === item.id ? ' is-selected' : ''}${inbox?.unreadByRequest[item.id] ? ' is-unread' : ''}`} key={item.id} onClick={() => selectRequest(item.id)}><span className="client-request-row__mark" aria-hidden="true" /><span><strong>{item.folio}</strong><b>{item.detail?.projectType ?? 'Proyecto OCPOOL'}</b><small>{item.detail?.location ?? 'Ubicación por confirmar'}</small>{inbox?.unreadByRequest[item.id] ? <span className="client-request-row__news">{inbox.unreadByRequest[item.id] === 1 ? '1 nueva' : `${inbox.unreadByRequest[item.id]} nuevas`}</span> : null}</span><em>{statusLabel(item.status)}</em></button>)}</div></aside>
         <section className="client-detail">
           {(loadingDetail || (loading && !workspace)) && <div className="client-detail-loading"><i /><i /><i /></div>}
           {!loadingDetail && !loading && !workspace && <div className="client-empty"><WorkspaceLogo className="client-empty__logo" /><h2>Elige un expediente.</h2><p>Selecciona un proyecto para ver su alcance y propuesta.</p></div>}

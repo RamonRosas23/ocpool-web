@@ -124,6 +124,8 @@ describe('realtime client', () => {
     expect(shouldFlash(event({ notification: notice({ priority: 'NORMAL' }) }), null)).toBe(false);
     // La actividad del expediente abierto no destella, salvo lo urgente.
     expect(shouldFlash(event(), REQUEST)).toBe(false);
+    // Una pestaña oculta no cuenta como alguien que está mirando el expediente; si ninguna otra lo muestra, el escritorio puede avisar.
+    expect(shouldFlash(event(), REQUEST, false)).toBe(true);
     expect(shouldFlash(event({ notification: notice({ kind: 'quote.changes_requested', priority: 'URGENT' }) }), REQUEST)).toBe(true);
     expect(shouldFlash(event({ notification: notice({ kind: 'approval.resolved' }) }), REQUEST)).toBe(true);
   });

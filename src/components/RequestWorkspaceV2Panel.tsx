@@ -94,6 +94,11 @@ export default function RequestWorkspaceV2Panel() {
   const [retryToken, setRetryToken] = useState(0);
   const [liveToken, setLiveToken] = useState(0);
   const liveRefreshRef = useRef(false);
+  const resultsRef = useRef<HTMLElement | null>(null);
+  const pointerInResultsRef = useRef(false);
+  const focusInResultsRef = useRef(false);
+  const lastInteractionAtRef = useRef(0);
+  const [listNews, setListNews] = useState(0);
   const [assignees, setAssignees] = useState<AssigneeResponse['items']>([]);
   const [canCreate, setCanCreate] = useState(false);
   const [canAssign, setCanAssign] = useState(false);
@@ -129,6 +134,7 @@ export default function RequestWorkspaceV2Panel() {
 
   useEffect(() => {
     const saveScrollPosition = () => {
+      if (window.scrollY > 8) lastInteractionAtRef.current = Date.now();
       try {
         window.sessionStorage.setItem(scrollStorageKey, String(window.scrollY));
       } catch {
@@ -145,14 +151,26 @@ export default function RequestWorkspaceV2Panel() {
     };
 
     window.addEventListener('scroll', saveScrollPosition, { passive: true });
+    const noteInteraction = () => { lastInteractionAtRef.current = Date.now(); };
+    window.addEventListener('pointerdown', noteInteraction, { passive: true });
+    window.addEventListener('wheel', noteInteraction, { passive: true });
+    window.addEventListener('keydown', noteInteraction);
     if (!loading) {
       const frame = window.requestAnimationFrame(restoreScrollPosition);
       return () => {
         window.cancelAnimationFrame(frame);
         window.removeEventListener('scroll', saveScrollPosition);
+        window.removeEventListener('pointerdown', noteInteraction);
+        window.removeEventListener('wheel', noteInteraction);
+        window.removeEventListener('keydown', noteInteraction);
       };
     }
-    return () => window.removeEventListener('scroll', saveScrollPosition);
+    return () => {
+      window.removeEventListener('scroll', saveScrollPosition);
+      window.removeEventListener('pointerdown', noteInteraction);
+      window.removeEventListener('wheel', noteInteraction);
+      window.removeEventListener('keydown', noteInteraction);
+    };
   }, [loading, scrollStorageKey]);
 
   useEffect(() => {
@@ -234,9 +252,21 @@ export default function RequestWorkspaceV2Panel() {
     liveRefreshRef.current = true;
     setLiveToken((token) => token + 1);
   }, 800);
-  useRealtimeRequest(ANY_REQUEST, ['created', 'status', 'assignment'], (change) => {
-    if (!(change.self && change.reason === 'signal')) refreshList();
+  const refreshListNow = () => {
+    setListNews(0);
+    liveRefreshRef.current = true;
+    setLiveToken((token) => token + 1);
+  };
+  useRealtimeRequest(ANY_REQUEST, ['created', 'status', 'assignment'], () => {
+    const activelyBrowsing = window.scrollY > 8
+      || pointerInResultsRef.current
+      || focusInResultsRef.current
+      || Date.now() - lastInteractionAtRef.current < 3_000;
+    if (activelyBrowsing) setListNews((count) => count + 1);
+    else refreshList();
   });
+
+  useEffect(() => { setListNews(0); }, [serializedQuery]);
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -272,8 +302,17 @@ export default function RequestWorkspaceV2Panel() {
         </form>
         {capabilitiesError && <PrivateBlockingState title="No fue posible validar los permisos." onRetry={() => setCapabilitiesRetryToken((current) => current + 1)}>{capabilitiesError}</PrivateBlockingState>}
         {error && <PrivateBlockingState title="No fue posible cargar las solicitudes." onRetry={() => { liveRefreshRef.current = false; setRetryToken((current) => current + 1); }}>{error}</PrivateBlockingState>}
-        <section className="request-workspace-v2__results" aria-label="Cola de solicitudes">
+        <section
+          className="request-workspace-v2__results"
+          aria-label="Cola de solicitudes"
+          ref={resultsRef}
+          onPointerEnter={() => { pointerInResultsRef.current = true; }}
+          onPointerLeave={() => { pointerInResultsRef.current = false; }}
+          onFocusCapture={() => { focusInResultsRef.current = true; }}
+          onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) focusInResultsRef.current = false; }}
+        >
           <div className="request-workspace-v2__results-head"><div><p className="private-kicker">Admisión</p><h2>{loading ? 'Actualizando resultados' : `${items.length} solicitudes`}</h2></div><span>Página {query.page} de {totalPages}</span></div>
+          {listNews > 0 && <button className="request-workspace-v2__news" type="button" onClick={refreshListNow}>Hay {listNews} novedades · Actualizar</button>}
           {loading && <PrivateSkeleton label="Cargando solicitudes" />}
           {!loading && !error && items.length === 0 && <PrivateEmptyState title={hasFilters ? 'No hay coincidencias.' : 'Aún no hay solicitudes.'}>{hasFilters ? 'Prueba con otro término o ajusta los filtros de la cola.' : 'Las nuevas solicitudes aparecerán aquí cuando sean recibidas.'}</PrivateEmptyState>}
           {!loading && items.length > 0 && <ul className="request-workspace-v2__list">{items.map((item) => <li key={item.id}><Link className="request-workspace-v2__row" href={`/staff/requests/${encodeURIComponent(item.id)}${queryHref({ ...query, tab: 'summary' })}`}><span className={`request-workspace-v2__status request-workspace-v2__status--${item.status.toLowerCase()}`} aria-hidden="true" /><span className="request-workspace-v2__row-main"><strong>{item.folio}</strong><span>{item.client.displayName}</span><small>{item.detail?.projectType ?? 'Sin tipo de proyecto'} · {item.detail?.location ?? 'Sin ubicación'}</small></span><span className="request-workspace-v2__row-meta"><strong>{item.currentAssignee?.displayName ?? 'Sin responsable'}</strong><small>{QUOTE_REQUEST_STATUS_LABELS[item.status]}</small><time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time></span><span className="request-workspace-v2__row-action" aria-hidden="true">Abrir →</span></Link></li>)}</ul>}

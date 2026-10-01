@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { expect, test } from '@playwright/test';
 import { createSession } from '@/server/auth/sessions';
 import { getPrisma } from '@/server/db/client';
+import { publishRequestChange } from '@/server/modules/inbox/realtime-signals';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
 import { seedIdentityCatalog } from '../prisma/seed';
 import { expectNoSeriousA11yViolations } from './a11y';
@@ -26,6 +27,9 @@ test.describe('request workspace V2 opt-in flow', () => {
   let reassignClientId = '';
   let reassignContactId = '';
   let reassignTargetId = '';
+  let liveRequestId = '';
+  let liveClientId = '';
+  let liveContactId = '';
 
   test.beforeAll(async () => {
     await seedIdentityCatalog(prisma);
@@ -102,6 +106,13 @@ test.describe('request workspace V2 opt-in flow', () => {
     }
     if (reassignContactId) await prisma.clientContact.delete({ where: { id: reassignContactId } });
     if (reassignClientId) await prisma.client.delete({ where: { id: reassignClientId } });
+    if (liveRequestId) {
+      await prisma.outboxEvent.deleteMany({ where: { aggregateId: liveRequestId } });
+      await prisma.auditLog.deleteMany({ where: { entityId: liveRequestId } });
+      await prisma.quoteRequest.delete({ where: { id: liveRequestId } });
+    }
+    if (liveContactId) await prisma.clientContact.delete({ where: { id: liveContactId } });
+    if (liveClientId) await prisma.client.delete({ where: { id: liveClientId } });
     if (userId) await prisma.user.delete({ where: { id: userId } });
     if (reassignTargetId) await prisma.user.delete({ where: { id: reassignTargetId } });
     await prisma.$disconnect();
@@ -313,5 +324,35 @@ test.describe('request workspace V2 opt-in flow', () => {
     await expect(page.getByRole('heading', { name: 'Operador workspace V2' })).toBeVisible();
     await expect(page.getByText('Esta solicitud está tomada por ti.')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
+  });
+
+  test('holds live list changes while the operator is browsing and offers a deliberate refresh', async ({ page }) => {
+    await page.context().addCookies([{ name: 'ocpool_session', value: sessionToken, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const live = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/realtime' && response.status() === 200);
+    await page.goto('/staff/requests');
+    await live;
+    await expect(page.getByRole('heading', { name: 'Solicitudes', exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)).toBe(true);
+    await page.evaluate(() => { window.scrollTo(0, 240); window.dispatchEvent(new Event('scroll')); });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(8);
+
+    const name = `Cliente novedad V2 ${suffix}`;
+    const request = await createQuoteRequest({
+      idempotencyKey: `workspace-v2-live-${suffix}-1234`,
+      origin: 'PUBLIC_FORM',
+      contact: { displayName: name, email: `workspace-v2-live-${suffix}@example.test` },
+      detail: { projectType: 'Residencial', location: 'Chihuahua', description: 'Solicitud recién llegada mientras la cola está en uso.', consentAt: new Date() },
+    }, { prisma });
+    liveRequestId = request.quoteRequestId;
+    liveClientId = request.clientId;
+    liveContactId = request.contactId;
+    await publishRequestChange(prisma, { requestId: liveRequestId, parts: ['created'], visibility: 'I' });
+
+    const update = page.getByRole('button', { name: /Hay \d+ novedades? · Actualizar/ });
+    await expect(update).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(name, { exact: true })).toHaveCount(0);
+    await update.click();
+    await expect(page.getByText(name, { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 });
