@@ -390,6 +390,7 @@ model User {
   requestAssignmentsCreated       RequestAssignment[]       @relation("RequestAssignmentActor")
   requestStatusChanges            RequestStatusHistory[]    @relation("RequestStatusHistoryActor")
   quoteVersionsCreated            QuoteVersion[]            @relation("QuoteVersionCreator")
+  quoteVersionViews               QuoteVersionView[]
   quoteAcceptances                QuoteAcceptance[]         @relation("QuoteAcceptanceActor")
   quoteStatusChanges              QuoteStatusHistory[]      @relation("QuoteStatusHistoryActor")
   closedConversations             Conversation[]            @relation("ConversationCloser")
@@ -854,6 +855,7 @@ model QuoteVersion {
   acceptance         QuoteAcceptance?
   approvals          QuoteApproval[]
   publication        QuotePublication?
+  customerViews      QuoteVersionView[]
   createdAt          DateTime                 @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime                 @updatedAt @db.Timestamptz(3)
 
@@ -949,7 +951,7 @@ model QuoteStatusHistory {
   fromStatus     QuoteVersionStatus?
   toStatus       QuoteVersionStatus
   changedById    String?             @db.Uuid
-  reason         String?             @db.VarChar(500)
+  reason         String?             @db.VarChar(1200)
   createdAt      DateTime            @default(now()) @db.Timestamptz(3)
   quoteVersion   QuoteVersion        @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
   changedBy      User?               @relation("QuoteStatusHistoryActor", fields: [changedById], references: [id], onDelete: SetNull)
@@ -957,6 +959,19 @@ model QuoteStatusHistory {
   @@index([quoteVersionId, createdAt])
   @@index([changedById, createdAt])
   @@map("quote_status_history")
+}
+
+model QuoteVersionView {
+  quoteVersionId String       @db.Uuid
+  userId         String       @db.Uuid
+  firstViewedAt  DateTime     @db.Timestamptz(3)
+  lastViewedAt   DateTime     @db.Timestamptz(3)
+  quoteVersion   QuoteVersion @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([quoteVersionId, userId])
+  @@index([userId, lastViewedAt])
+  @@map("quote_version_views")
 }
 
 model QuoteApproval {

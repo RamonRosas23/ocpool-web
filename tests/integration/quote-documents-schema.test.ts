@@ -55,6 +55,18 @@ describe('quote document and acceptance relational schema', () => {
       });
 
       expect(document.status).toBe('READY');
+      const firstViewedAt = now;
+      const lastViewedAt = new Date(now.getTime() + 1000);
+      const view = await prisma.quoteVersionView.create({ data: { quoteVersionId: version.id, userId: employee.id, firstViewedAt, lastViewedAt } });
+      expect(view.firstViewedAt).toEqual(firstViewedAt);
+      expect(view.lastViewedAt).toEqual(lastViewedAt);
+      await expect(prisma.quoteVersionView.create({ data: { quoteVersionId: version.id, userId: employee.id, firstViewedAt: lastViewedAt, lastViewedAt } })).rejects.toMatchObject({ code: 'P2002' });
+      expect(await prisma.quoteVersionView.count({ where: { quoteVersionId: version.id, userId: employee.id } })).toBe(1);
+
+      const longReason = `Declinada por el cliente · Otro motivo: ${'x'.repeat(1000)}`;
+      const history = await prisma.quoteStatusHistory.create({ data: { quoteVersionId: version.id, fromStatus: 'ENVIADA', toStatus: 'RECHAZADA', reason: longReason, changedById: employee.id } });
+      expect(history.reason).toBe(longReason);
+
       await expect(prisma.generatedDocument.create({
         data: { quoteId: quote.id, quoteVersionId: version.id, templateVersion: 'quote-pdf-v1' },
       })).rejects.toThrow();
