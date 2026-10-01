@@ -1,11 +1,14 @@
 import 'dotenv/config';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 import { fingerprintToken } from '@/server/auth/crypto';
 import { createSession, revokeAllUserSessions } from '@/server/auth/sessions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { sendCustomerMessage } from '@/server/modules/messaging/service';
 import { createQuoteRequest } from '@/server/modules/quote-requests/service';
+import { createQuoteVersion, transitionQuoteVersion } from '@/server/modules/quotes/service';
+import { generateQuotePdf } from '@/server/modules/quote-documents/service';
+import { getPrivateStorage } from '@/server/modules/private-files/storage';
 import { seedIdentityCatalog } from '../prisma/seed';
 import { expectNoSeriousA11yViolations } from './a11y';
 
@@ -19,12 +22,17 @@ test.describe('avisos en tiempo real', () => {
   const now = new Date();
   const customerName = `Cliente RT ${suffix}`;
   const salesToken = `realtime-e2e-sales-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`;
+  const customerToken = `realtime-e2e-customer-${suffix}-abcdefghijklmnopqrstuvwxyz-123456`;
   const rateLimit = async () => ({ allowed: true, remaining: 20, retryAfterSeconds: null });
   let requestId = '';
   let clientId = '';
   let contactId = '';
   let salesId = '';
   let customerId = '';
+  let quoteId = '';
+  let categoryId = '';
+  let itemId = '';
+  let priceListId = '';
   let customer: Actor;
   let sent = 0;
 
@@ -40,23 +48,53 @@ test.describe('avisos en tiempo real', () => {
     contactId = request.contactId;
     customerId = (await prisma.user.create({ data: { email: `realtime-e2e-customer-${suffix}@example.test`, emailNormalized: `realtime-e2e-customer-${suffix}@example.test`, displayName: customerName, type: 'CUSTOMER', status: 'ACTIVE', clientId, roles: { create: { roleId: customerRole.id } } } })).id;
     await prisma.clientContact.update({ where: { id: contactId }, data: { userId: customerId } });
-    await prisma.quoteRequest.update({ where: { id: requestId }, data: { currentAssigneeId: salesId, status: 'EN_REVISION' } });
-    customer = { userId: customerId, type: 'CUSTOMER', clientId, permissionKeys: new Set(['messaging.read', 'messaging.send']), mfaVerified: false };
+    await prisma.quoteRequest.update({ where: { id: requestId }, data: { currentAssigneeId: salesId, status: 'EN_ELABORACION' } });
+    customer = { userId: customerId, type: 'CUSTOMER', clientId, permissionKeys: new Set(['messaging.read', 'messaging.send', 'quotes.accept']), mfaVerified: false };
     await createSession({ userId: salesId, ipAddress: null, userAgent: 'realtime-e2e' }, { prisma, tokenGenerator: () => salesToken });
+    await createSession({ userId: customerId, ipAddress: null, userAgent: 'realtime-e2e' }, { prisma, tokenGenerator: () => customerToken });
+
+    const category = await prisma.catalogCategory.create({ data: { code: `RT-E2E-${suffix}`, name: 'Realtime E2E' } });
+    categoryId = category.id;
+    const item = await prisma.catalogItem.create({ data: { code: `RT-E2E-ITEM-${suffix}`, name: 'Propuesta de prueba en tiempo real', unit: 'pieza', categoryId } });
+    itemId = item.id;
+    const priceList = await prisma.priceList.create({ data: { code: `RT-E2E-PRICE-${suffix}`, name: 'Realtime E2E prices', currencyCode: 'MXN', validFrom: now } });
+    priceListId = priceList.id;
+    await prisma.priceListItem.create({ data: { priceListId, catalogItemId: itemId, unitPriceMinor: 250000n, validFrom: now } });
+    const quoteActor: Actor = { userId: salesId, type: 'EMPLOYEE', clientId: null, permissionKeys: new Set(['quotes.read', 'quotes.create', 'quotes.send', 'quotes.pdf.generate']), mfaVerified: true };
+    const quote = await createQuoteVersion(quoteActor, { quoteRequestId: requestId, priceListId, lines: [{ catalogItemId: itemId, quantity: '1', taxBasisPoints: 1600 }], validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) }, { prisma, now });
+    quoteId = quote.quoteId;
+    await transitionQuoteVersion(quoteActor, quote.versionId, 'EN_REVISION', { prisma, now });
+    await transitionQuoteVersion(quoteActor, quote.versionId, 'ENVIADA', { prisma, now });
+    await generateQuotePdf(quoteActor, quote.versionId, { prisma, now });
   });
 
   test.afterAll(async () => {
     if (process.env.REALTIME_E2E !== '1') return;
     const conversations = await prisma.conversation.findMany({ where: { quoteRequestId: requestId }, select: { id: true } });
-    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, ...conversations.map(({ id }) => id)] } } });
-    await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: requestId }, { actorUserId: { in: [salesId, customerId] } }] } });
+    const aggregateIds = [requestId, quoteId, ...conversations.map(({ id }) => id)].filter(Boolean);
+    const versionIds = (await prisma.quoteVersion.findMany({ where: { quote: { quoteRequestId: requestId } }, select: { id: true } })).map(({ id }) => id);
+    const documents = quoteId ? await prisma.generatedDocument.findMany({ where: { quoteId }, select: { id: true, storageObjectId: true, storageObject: { select: { storageKey: true } } } }) : [];
+    const storage = getPrivateStorage();
+    for (const document of documents) if (document.storageObject?.storageKey) await storage.delete(document.storageObject.storageKey);
+    await prisma.notificationDelivery.deleteMany({ where: { outboxEvent: { aggregateId: { in: aggregateIds } } } });
+    await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: { in: [...aggregateIds, ...versionIds] } }, { actorUserId: { in: [salesId, customerId] } }] } });
     await prisma.conversation.deleteMany({ where: { quoteRequestId: requestId } });
+    await prisma.generatedDocument.deleteMany({ where: { quoteId } });
+    await prisma.storageObject.deleteMany({ where: { id: { in: documents.flatMap((document) => document.storageObjectId ? [document.storageObjectId] : []) } } });
+    await prisma.quote.deleteMany({ where: { quoteRequestId: requestId } });
+    await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: aggregateIds } } });
     await prisma.quoteRequest.deleteMany({ where: { id: requestId } });
     await prisma.clientContact.deleteMany({ where: { id: contactId } });
     await prisma.session.deleteMany({ where: { userId: { in: [salesId, customerId] } } });
     await prisma.authRateLimit.deleteMany({ where: { scope: 'messaging-send', keyHash: fingerprintToken(`${customerId}:${requestId}`) } });
     await prisma.user.deleteMany({ where: { id: { in: [salesId, customerId] } } });
     await prisma.client.deleteMany({ where: { id: clientId } });
+    if (priceListId) {
+      await prisma.priceListItem.deleteMany({ where: { priceListId } });
+      await prisma.priceList.delete({ where: { id: priceListId } });
+    }
+    if (itemId) await prisma.catalogItem.delete({ where: { id: itemId } });
+    if (categoryId) await prisma.catalogCategory.delete({ where: { id: categoryId } });
     await prisma.$disconnect();
   });
 
@@ -123,6 +161,47 @@ test.describe('avisos en tiempo real', () => {
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(375);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
+  });
+
+  test('el cliente declina en móvil y el responsable recibe el aviso urgente con la versión y el motivo', async ({ page, browser }: { page: Page; browser: Browser }) => {
+    await page.context().addCookies([{ name: 'ocpool_session', value: salesToken, url: origin }]);
+    const live = liveOn(page);
+    await page.goto('/staff');
+    await live;
+
+    const customerContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    try {
+      await customerContext.addCookies([{ name: 'ocpool_session', value: customerToken, url: origin }]);
+      const customerPage = await customerContext.newPage();
+      await customerPage.goto('/portal');
+      await expect(customerPage.getByRole('button', { name: 'No me interesa esta propuesta' })).toBeVisible();
+      await customerPage.getByRole('button', { name: 'No me interesa esta propuesta' }).click();
+      const dialog = customerPage.getByRole('dialog', { name: 'Declinar versión 1' });
+      await expect(dialog).toBeVisible();
+      const priceReason = dialog.getByRole('radio', { name: 'El precio' });
+      await expect(priceReason).toBeVisible();
+      await priceReason.focus();
+      await customerPage.keyboard.press('Space');
+      await expect(priceReason).toBeChecked();
+      const dialogBox = await dialog.boundingBox();
+      expect(dialogBox?.x).toBeGreaterThanOrEqual(0);
+      expect((dialogBox?.x ?? 0) + (dialogBox?.width ?? 0)).toBeLessThanOrEqual(390);
+      expect(await customerPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await dialog.getByRole('button', { name: 'Declinar propuesta' }).click();
+      await expect(dialog.getByText('Tu respuesta fue enviada.')).toBeVisible({ timeout: 8_000 });
+      await expect(customerPage.getByText(/Declinaste esta propuesta el/u)).toBeVisible({ timeout: 8_000 });
+      await expect(customerPage.getByRole('button', { name: 'Pedir una nueva versión' })).toBeVisible();
+
+      const urgentFlash = page.getByRole('alert').filter({ hasText: `${customerName} declinó la propuesta V1` });
+      await expect(urgentFlash).toBeVisible({ timeout: 8_000 });
+      await expect(urgentFlash).toContainText('Motivo: El precio.');
+      await expect(page.getByRole('button', { name: /Notificaciones, \d+ sin leer/ })).toBeVisible();
+
+      await page.goto(`/staff/quotes?request=${encodeURIComponent(requestId)}`);
+      await expect(page.getByText('El cliente declinó la V1 · El precio.')).toBeVisible();
+    } finally {
+      await customerContext.close();
+    }
   });
 
   test('una sesión revocada sale al momento a la pantalla de acceso', async ({ page }) => {

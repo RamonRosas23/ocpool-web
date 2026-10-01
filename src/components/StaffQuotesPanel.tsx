@@ -13,6 +13,7 @@ import { assignListPrice } from '@/lib/price-list-assign';
 import { moneyInputLabel, parseMoneyInput } from '@/lib/money-input';
 import { zonedCalendarDateEndOfDayToUtc } from '@/lib/calendar-timezone';
 import { builderValidUntil } from '@/lib/quote-validity';
+import { declineReasonLabel, type DeclineReasonCode } from '@/lib/decline-request';
 import WorkspaceLogo from '@/components/WorkspaceLogo';
 import WorkspaceBrand from '@/components/WorkspaceBrand';
 import StaffHeader from '@/components/StaffHeader';
@@ -143,7 +144,7 @@ type Workspace = {
   taxProfiles: Array<{ id: string; code: string; name: string; ratePercentBasisPoints: number }>;
   /** Petición de cambios del cliente sobre la versión publicada (portal → "Solicitar cambios"). */
   changeRequest?: { at: string; message: string } | null;
-  declineRequest?: { at: string; reason: string; message: string; versionNumber: number } | null;
+  declineRequest?: { at: string; reason: DeclineReasonCode; message: string; versionNumber: number } | null;
   /** Después de la aceptación: el proyecto de arranque y la aceptación (para convertirla a mano). */
   project?: { id: string; folio: string; status: string } | null;
   acceptance?: { id: string; acceptedAt: string } | null;
@@ -1384,7 +1385,7 @@ export default function StaffQuotesPanel() {
           {!loadingWorkspace && workspace && <>
             <div className="quotes-main__top"><div><p className="staff-kicker">{workspace.request.origin === 'PUBLIC_FORM' ? 'Solicitud pública' : 'Solicitud interna'}</p><h2>{workspace.request.folio}</h2><p className="staff-detail__date">{workspace.request.client.displayName} · Actualizado {formatDateTime(workspace.request.updatedAt)}</p><Link className="quotes-main__request-link" href={`/staff/requests?request=${workspace.request.id}`} onClick={(event) => guardNavigation(event, `/staff/requests?request=${workspace.request.id}`)}>Ver expediente<ArrowUpRight size={14} aria-hidden="true" /></Link></div><StatusPill status={workspace.request.status} /></div>
             <ExpedienteJourney here="quote" requestId={workspace.request.id} requestStatus={workspace.request.status} quote={currentVersion ? { versionNumber: currentVersion.versionNumber, status: currentVersion.status, validUntil: currentVersion.validUntil } : null} project={workspace.project ?? null} />
-            {workspace.declineRequest && <p className="quotes-action-note" role="status">El cliente declinó la V{workspace.declineRequest.versionNumber} · {workspace.declineRequest.reason}. Consulta el comentario en la conversación.</p>}
+            {workspace.declineRequest && <p className="quotes-action-note" role="status">El cliente declinó la V{workspace.declineRequest.versionNumber} · {declineReasonLabel(workspace.declineRequest.reason)}. Consulta el comentario en la conversación.</p>}
             <section className="quotes-stage" aria-label="Avance de la cotización"><ol className="quotes-stage__steps">{stageSteps.map((step, index) => <li key={step.key} className={`quotes-stage__step is-${step.state}`} aria-current={step.state === 'current' ? 'step' : undefined}><span className="quotes-stage__marker" aria-hidden="true">{step.state === 'done' ? <Check size={13} strokeWidth={2.6} /> : step.state === 'closed' ? <X size={13} strokeWidth={2.6} /> : index + 1}</span><span className="quotes-stage__label">{step.label}<span className="sr-only">{STAGE_STATE_LABELS[step.state]}</span>{step.note && <small>{step.note}</small>}</span></li>)}</ol><div className={`quotes-next quotes-next--${nextStep.tone}`}><span className="quotes-next__icon" aria-hidden="true">{nextStep.tone === 'waiting' ? <Hourglass size={18} /> : nextStep.tone === 'blocked' ? <AlertTriangle size={18} /> : nextStep.tone === 'done' ? <CircleCheck size={18} /> : <Compass size={18} />}</span><div className="quotes-next__body"><p className="staff-section-label">Siguiente paso</p><h3>{nextStep.title}</h3><p>{nextStep.detail}</p></div>{(() => {
               // Aceptada: lleva al proyecto de arranque o lo crea con un clic (aceptaciones anteriores o
               // si la creación automática falló).

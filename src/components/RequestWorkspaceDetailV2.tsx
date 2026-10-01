@@ -16,6 +16,7 @@ import RequestWorkspaceHeaderV2, { type RequestWorkspaceHeaderAction } from '@/c
 import type { StaffFilesCapabilities } from '@/components/StaffFilesPanel';
 import type { StaffMessagingCapabilities } from '@/components/StaffMessagingPanel';
 import { formatDateTime } from '@/lib/format-date';
+import { declineReasonLabel, type DeclineReasonCode } from '@/lib/decline-request';
 import { normalizeRequestWorkspaceQuery, QUOTE_REQUEST_STATUS_LABELS, REQUEST_WORKSPACE_TABS, serializeRequestWorkspaceQuery } from '@/lib/request-workspace-query';
 import type { RequestWorkspaceTab } from '@/lib/request-workspace-query';
 import { readApiResponse, readApiResponseOrThrow, type ApiResponseErrorKind } from '@/lib/api-response-error';
@@ -74,7 +75,7 @@ type RequestDetail = {
   activityNextCursor: string | null;
   availableStatusTransitions: QuoteRequestStatus[];
   availableActions: string[];
-  quoteSummary?: { declineRequest?: { at: string; reason: string; message: string; versionNumber: number } | null } | null;
+  quoteSummary?: { declineRequest?: { at: string; reason: DeclineReasonCode; message: string; versionNumber: number } | null } | null;
 };
 
 type WorkspaceCapabilities = StaffMessagingCapabilities & StaffFilesCapabilities & {
@@ -105,7 +106,7 @@ type QuoteWorkspace = {
     publishedVersion?: QuoteVersionSummary | null;
     versions: QuoteVersionSummary[];
   } | null;
-  declineRequest?: { at: string; reason: string; message: string; versionNumber: number } | null;
+  declineRequest?: { at: string; reason: DeclineReasonCode; message: string; versionNumber: number } | null;
 };
 
 // UX audit fix: Intl.NumberFormat's `style: 'currency'` renders only the bare symbol ("$1,650.00"),
@@ -144,7 +145,7 @@ function handleTabKeyDown(event: KeyboardEvent<HTMLAnchorElement>) {
 
 function SummaryTab({ detail }: { detail: RequestDetail }) {
   return <>
-    {detail.quoteSummary?.declineRequest && <p className="quotes-action-note" role="status">El cliente declinó la V{detail.quoteSummary.declineRequest.versionNumber} · {detail.quoteSummary.declineRequest.reason}. Consulta el comentario en la conversación.</p>}
+    {detail.quoteSummary?.declineRequest && <p className="quotes-action-note" role="status">El cliente declinó la V{detail.quoteSummary.declineRequest.versionNumber} · {declineReasonLabel(detail.quoteSummary.declineRequest.reason)}. Consulta el comentario en la conversación.</p>}
     <section className="request-workspace-v2__detail-grid" aria-label="Resumen del expediente">
       <article><p className="private-kicker">Cliente y contacto</p><h2>{detail.contact.displayName}</h2><a href={`mailto:${detail.contact.email}`}>{detail.contact.email}</a>{detail.contact.phone && <a href={`tel:${detail.contact.phone}`}>{detail.contact.phone}</a>}<p className="request-workspace-v2__muted">{detail.currentAssignee ? `Responsable: ${detail.currentAssignee.displayName}` : 'Sin responsable asignado'}</p></article>
       <article><p className="private-kicker">Proyecto</p><h2>{detail.detail?.projectType ?? 'Sin tipo de proyecto'}</h2><p>{detail.detail?.location ?? 'Sin ubicación'}</p>{detail.detail?.dimensions && <p>{detail.detail.dimensions}</p>}<p className="request-workspace-v2__muted">Etapa: {detail.detail?.projectStage ?? 'Por definir'}</p></article>
@@ -238,7 +239,7 @@ function QuoteTab({ requestId, detail }: { requestId: string; detail: RequestDet
   return <section className="request-workspace-v2__quote" aria-labelledby="request-workspace-v2-quote-title">
     <div className="request-workspace-v2__section-heading"><div><p className="private-kicker">Control comercial</p><h2 id="request-workspace-v2-quote-title">Cotización vigente</h2></div><span className="request-workspace-v2__detail-status">Versión {version.versionNumber}</span></div>
     <div className="request-workspace-v2__quote-summary"><div><span>Total</span><strong>{formatCurrencyMinor(version.totalMinor, version.currencyCode)}</strong></div><div><span>Estado</span><strong>{quoteStatusLabel(version.status)}</strong></div><div><span>Vigencia</span><strong>{version.validUntil ? formatDateTime(version.validUntil) : 'Sin fecha de vencimiento'}</strong></div></div>
-    {workspace?.declineRequest && <p className="quotes-action-note" role="status">El cliente declinó la V{workspace.declineRequest.versionNumber} · {workspace.declineRequest.reason}. Consulta el comentario en la conversación.</p>}
+    {workspace?.declineRequest && <p className="quotes-action-note" role="status">El cliente declinó la V{workspace.declineRequest.versionNumber} · {declineReasonLabel(workspace.declineRequest.reason)}. Consulta el comentario en la conversación.</p>}
     <div className="request-workspace-v2__quote-history"><p className="private-kicker">Versiones</p><ul>{quote.versions.map((candidate) => <li key={candidate.id}><span>Versión {candidate.versionNumber}</span><span>{quoteStatusLabel(candidate.status)}</span><span>{formatDateTime(candidate.updatedAt)}</span></li>)}</ul></div>
     {detail.availableActions.includes('quote.open') && <Link className="private-button private-button--primary" href={`/staff/quotes?request=${encodeURIComponent(requestId)}`}>Abrir constructor</Link>}
   </section>;
