@@ -34,6 +34,23 @@
 .inbox-pref--note, .inbox-pref--note:hover { background: transparent; cursor: default; font-weight: 600; }
 .inbox-panel__foot a { color: var(--private-color-accent); font-size: 13px; font-weight: 700; text-decoration: none; }
 .inbox-panel__foot a:hover { text-decoration: underline; }
+.inbox-pref-settings { display: grid; gap: 12px; margin-top: 16px; }
+.inbox-pref-settings--compact { width: 100%; gap: 8px; margin: 0; }
+.inbox-pref-settings__channels { display: flex; flex-wrap: wrap; gap: 4px; }
+.inbox-pref-settings__channels .inbox-pref { padding: 0 9px; }
+.inbox-pref-settings__channels .inbox-pref:disabled { cursor: wait; opacity: .55; }
+.inbox-pref-settings__email { display: flex; flex-wrap: wrap; gap: 8px 16px; min-width: 0; margin: 0; border: 0; padding: 0; }
+.inbox-pref-settings__email legend { width: 100%; margin-bottom: 5px; color: var(--private-color-ink); font-size: 12.5px; font-weight: 700; }
+.inbox-pref-settings__email label { display: inline-flex; align-items: center; gap: 7px; color: var(--private-color-ink-muted); cursor: pointer; font-size: 12.5px; }
+.inbox-pref-settings__email input { accent-color: var(--private-color-accent); }
+.inbox-pref-settings__email:disabled { opacity: .6; }
+.inbox-pref-settings__email:disabled label { cursor: wait; }
+.inbox-pref-settings__message { margin: 0; color: var(--private-color-ink-muted); font-size: 12px; }
+.inbox-pref-settings__message[role="alert"] { color: var(--private-color-danger); }
+.inbox-pref-settings--compact .inbox-pref-settings__email { gap: 6px 12px; }
+.inbox-pref-settings--compact .inbox-pref-settings__email legend { font-size: 12px; }
+.inbox-pref-settings--compact .inbox-pref-settings__email label { font-size: 12px; }
+.inbox-bell--portal .inbox-panel__foot { align-items: stretch; }
 
 .inbox-group h3 { margin: 10px 16px 4px; color: var(--private-color-ink-muted); font-size: 11.5px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .inbox-group ul { margin: 0; padding: 0; list-style: none; }

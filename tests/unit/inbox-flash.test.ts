@@ -60,18 +60,18 @@ describe('flash queue, preferences and sound', () => {
   });
 
   it('keeps sound on for the team and off for customers until each person changes it', () => {
-    expect(defaultPreferences('staff')).toEqual({ sound: true, desktop: false });
-    expect(defaultPreferences('portal')).toEqual({ sound: false, desktop: false });
+    expect(defaultPreferences('staff')).toEqual({ sound: true, desktop: false, activityEmail: 'DIGEST' });
+    expect(defaultPreferences('portal')).toEqual({ sound: false, desktop: false, activityEmail: 'DIGEST' });
     const storage = new MemoryStorage();
     writePreference('portal', 'sound', true, storage);
     writePreference('portal', 'desktop', true, storage);
-    expect(readPreferences('portal', storage)).toEqual({ sound: true, desktop: true });
-    expect(readPreferences('staff', storage)).toEqual({ sound: true, desktop: false });
+    expect(readPreferences('portal', storage)).toEqual({ sound: true, desktop: true, activityEmail: 'DIGEST' });
+    expect(readPreferences('staff', storage)).toEqual({ sound: true, desktop: false, activityEmail: 'DIGEST' });
     writePreference('staff', 'sound', false, storage);
-    expect(readPreferences('staff', storage)).toEqual({ sound: false, desktop: false });
-    expect(readPreferences('staff', null)).toEqual({ sound: true, desktop: false });
+    expect(readPreferences('staff', storage)).toEqual({ sound: false, desktop: false, activityEmail: 'DIGEST' });
+    expect(readPreferences('staff', null)).toEqual({ sound: true, desktop: false, activityEmail: 'DIGEST' });
     const broken = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };
-    expect(readPreferences('staff', broken)).toEqual({ sound: true, desktop: false });
+    expect(readPreferences('staff', broken)).toEqual({ sound: true, desktop: false, activityEmail: 'DIGEST' });
     expect(() => writePreference('staff', 'sound', false, broken)).not.toThrow();
   });
 

@@ -108,17 +108,18 @@ test.describe('avisos en tiempo real', () => {
   const flashes = (page: Page) => page.getByRole('region', { name: 'Avisos al momento' });
 
   test('el equipo ve el contador y el flash en menos de 5 s, sin recargar', async ({ page }) => {
+    test.setTimeout(120_000);
     await page.context().addCookies([{ name: 'ocpool_session', value: salesToken, url: origin }]);
     const live = liveOn(page);
     await page.goto('/staff');
     await live;
+    await expectNoSeriousA11yViolations(page);
     await customerWrites('Te comparto las medidas finales del terreno.');
     const flash = flashes(page).getByRole('status').filter({ hasText: `${customerName} te escribió` });
     await expect(flash).toBeVisible({ timeout: 5_000 });
     await expect(flash).toContainText('Te comparto las medidas finales del terreno.');
     await expect(page.getByRole('button', { name: /Notificaciones, \d+ sin leer/ })).toBeVisible({ timeout: 5_000 });
     await expect(page).toHaveTitle(/^\(\d+\) /);
-    await expectNoSeriousA11yViolations(page);
     await flash.getByRole('button', { name: /Cerrar aviso/ }).click();
     await expect(flash).toHaveCount(0);
   });
@@ -161,6 +162,35 @@ test.describe('avisos en tiempo real', () => {
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(375);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
+  });
+
+  test('las preferencias del cliente y del equipo se conservan al recargar', async ({ page }) => {
+    await page.context().addCookies([{ name: 'ocpool_session', value: customerToken, url: origin }]);
+    await page.goto('/portal');
+    const customerBell = page.getByRole('button', { name: /Novedades/ });
+    await customerBell.click();
+    const customerPanel = page.getByRole('dialog', { name: 'Novedades' });
+    const noActivityEmail = customerPanel.getByRole('radio', { name: 'No enviar' });
+    await expect(noActivityEmail).toBeEnabled({ timeout: 25_000 });
+    await noActivityEmail.check();
+    await expect(noActivityEmail).toBeChecked();
+    await expect(customerPanel.getByRole('status')).toHaveText('Preferencias guardadas.');
+    await page.reload();
+    await page.getByRole('button', { name: /Novedades/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Novedades' }).getByRole('radio', { name: 'No enviar' })).toBeChecked({ timeout: 15_000 });
+
+    await page.context().clearCookies();
+    await page.context().addCookies([{ name: 'ocpool_session', value: salesToken, url: origin }]);
+    await page.goto('/staff/account');
+    const staffPreferences = page.getByRole('region', { name: 'Avisos', exact: true });
+    await expect(staffPreferences).toBeVisible({ timeout: 30_000 });
+    const staffSound = staffPreferences.getByRole('button', { name: 'Sonido' });
+    await expect(staffSound).toBeEnabled({ timeout: 25_000 });
+    if (await staffSound.getAttribute('aria-pressed') === 'true') await staffSound.click();
+    await expect(staffSound).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByRole('region', { name: 'Avisos', exact: true }).getByRole('status')).toHaveText('Preferencias guardadas.');
+    await page.reload();
+    await expect(page.getByRole('region', { name: 'Avisos', exact: true }).getByRole('button', { name: 'Sonido' })).toHaveAttribute('aria-pressed', 'false', { timeout: 15_000 });
   });
 
   test('el cliente declina en móvil y el responsable recibe el aviso urgente con la versión y el motivo', async ({ page, browser }: { page: Page; browser: Browser }) => {

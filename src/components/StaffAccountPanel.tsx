@@ -11,6 +11,7 @@ import { PrivateBlockingState, PrivateLinkButton } from '@/components/private/ui
 import { usePrivateToast } from '@/components/private/ui/PrivateToast';
 import AccountMfaSection, { type AccountSecurity } from '@/components/staff/AccountMfaSection';
 import { ConfirmMemberDialog } from '@/components/staff/TeamMemberDialogs';
+import InboxPreferencesControls from '@/components/inbox/InboxPreferencesControls';
 import { accountActivityLabel } from '@/lib/account-activity';
 import { readApiResponse, readApiResponseOrThrow } from '@/lib/api-response-error';
 import { formatDate, formatDateTime } from '@/lib/format-date';
@@ -106,6 +107,10 @@ export default function StaffAccountPanel() {
           {data && <div className="account-layout">
             <div className="account-layout__main">
               <ProfileCard profile={data.profile} onRenamed={async (displayName) => { showToast(`Listo: ahora apareces como ${displayName}.`); router.refresh(); setReloadKey((current) => current + 1); }} />
+              <section className="account-card" id="account-notifications" aria-labelledby="account-notifications-heading">
+                <div className="account-card__head"><div><h2 id="account-notifications-heading">Avisos</h2><p>Elige cómo recibir los mensajes y archivos de tus expedientes.</p></div></div>
+                <InboxPreferencesControls />
+              </section>
               <PasswordCard email={data.profile.email} onChanged={(otherSessionsRevoked) => refresh(`Contraseña actualizada.${otherSessionsRevoked ? ` Cerramos ${plural(otherSessionsRevoked, 'sesión', 'sesiones')} en otros equipos.` : ''}`)} />
               <AccountMfaSection security={data.security} onChanged={refresh} />
               <SessionsCard sessions={data.sessions} onChanged={refresh} />

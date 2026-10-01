@@ -5,8 +5,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { fetchInboxSummary, InboxRequestError, postInboxRead, titleWithBadge, type InboxNotification, type InboxSummary, type MarkReadInput } from '@/lib/inbox-client';
 import { desktopPermission, requestDesktopPermission, showDesktopNotification, type DesktopPermission } from '@/lib/inbox-desktop';
 import { flashReducer, type FlashItem } from '@/lib/inbox-flash';
-import { defaultPreferences, readPreferences, writePreference, type InboxPreferences } from '@/lib/inbox-preferences';
+import { defaultPreferences, readLegacyPreferences, clearLegacyPreferences, writePreference, type InboxPreferences } from '@/lib/inbox-preferences';
 import { createChime, type Chime } from '@/lib/inbox-sound';
+import { readApiResponseOrThrow } from '@/lib/api-response-error';
 import { signOutAnnounced } from '@/lib/session-exit';
 import { applyNotificationEvent, shouldFlash, type RealtimeEvent, type RequestPart } from '@/lib/realtime-client';
 import { createRequestSubscriptions, type RequestChange } from '@/lib/realtime-subscriptions';
@@ -39,10 +40,30 @@ export type InboxContextValue = {
   subscribeRequest: (requestId: string, parts: readonly RequestPart[], callback: (change: RequestChange) => void) => () => void;
   setActiveRequest: (quoteRequestId: string | null) => void;
   preferences: InboxPreferences;
-  setSound: (on: boolean) => void;
+  preferencesReady: boolean;
+  preferenceMessage: string | null;
+  setSound: (on: boolean) => Promise<void>;
   desktop: DesktopPermission;
   setDesktop: (on: boolean) => Promise<void>;
+  setActivityEmail: (value: InboxPreferences['activityEmail']) => Promise<void>;
 };
+
+type InboxPreferenceResponse = InboxPreferences & { saved: boolean };
+type InboxPreferencePatch = Partial<InboxPreferences>;
+
+function preferencesFromResponse(value: InboxPreferenceResponse): InboxPreferences {
+  return { sound: value.sound, desktop: value.desktop, activityEmail: value.activityEmail };
+}
+
+async function requestPreferences(method: 'GET' | 'PATCH', patch?: InboxPreferencePatch): Promise<InboxPreferenceResponse> {
+  const response = await fetch('/api/notifications/preferences', {
+    method,
+    credentials: 'include',
+    cache: 'no-store',
+    ...(patch ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) } : {}),
+  });
+  return readApiResponseOrThrow<InboxPreferenceResponse>(response, 'No fue posible guardar tus preferencias de avisos.');
+}
 
 const InboxContext = createContext<InboxContextValue | null>(null);
 // Respaldo cuando no hay canal en vivo: al navegar, al volver a la pestaña y cada 30 s.
@@ -77,7 +98,9 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
   const [flashes, dispatchFlash] = useReducer(flashReducer, []);
   const [panelRequest, setPanelRequest] = useState(0);
   // Sólo el panel abierto y los flashes los muestran, y nada de eso se pinta en el servidor.
-  const [preferences, setPreferences] = useState<InboxPreferences>(() => (typeof window === 'undefined' ? defaultPreferences(surface) : readPreferences(surface)));
+  const [preferences, setPreferences] = useState<InboxPreferences>(() => defaultPreferences(surface));
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  const [preferenceMessage, setPreferenceMessage] = useState<string | null>(null);
   const [desktop, setDesktopState] = useState<DesktopPermission>(() => desktopPermission());
   const inFlight = useRef<AbortController | null>(null);
   // Cada escritura (marcar leído) y cada evento en vivo cambian la generación: un resumen pedido antes llega con
@@ -85,6 +108,9 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
   const writeGeneration = useRef(0);
   const latestWrite = useRef(0);
   const preferencesRef = useRef(preferences);
+  const preferenceLoadStarted = useRef(false);
+  const preferenceWriteSequence = useRef(0);
+  const preferenceWriteQueue = useRef<Promise<void>>(Promise.resolve());
   const chime = useRef<Chime | null>(null);
   const listRefreshTimer = useRef<number | null>(null);
   const [subscriptions] = useState(createRequestSubscriptions);
@@ -185,16 +211,46 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
     };
   }, []);
 
-  // Lo que se cambia en otra pestaña (sonido, escritorio) rige aquí también.
+  const loadPreferences = useCallback(async (importLegacy: boolean) => {
+    setPreferenceMessage('Cargando tus preferencias…');
+    try {
+      let result = await requestPreferences('GET');
+      if (result.saved) {
+        clearLegacyPreferences(surface);
+      } else if (importLegacy) {
+        const legacy = readLegacyPreferences(surface);
+        if (legacy) {
+          result = await requestPreferences('PATCH', legacy);
+          clearLegacyPreferences(surface);
+        }
+      }
+      const next = preferencesFromResponse(result);
+      preferencesRef.current = next;
+      setPreferences(next);
+      setPreferenceMessage(null);
+    } catch (error) {
+      setPreferenceMessage(error instanceof Error ? error.message : 'No fue posible cargar tus preferencias.');
+    } finally {
+      setPreferencesReady(true);
+    }
+  }, [surface]);
+
+  useEffect(() => {
+    if (!available || signedOutPage || preferenceLoadStarted.current) return;
+    preferenceLoadStarted.current = true;
+    void loadPreferences(true);
+  }, [available, signedOutPage, loadPreferences]);
+
+  // Otra pestaña sólo anuncia el cambio; el valor siempre se vuelve a leer del servidor.
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== null && !event.key.startsWith(PREFERENCE_KEY_PREFIX)) return;
-      setPreferences(readPreferences(surface));
+      void loadPreferences(false);
       setDesktopState(desktopPermission());
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, [surface]);
+  }, [loadPreferences]);
 
   const unread = available ? summary.unread : 0;
 
@@ -294,12 +350,44 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
     activeRequest.current = quoteRequestId;
   }, []);
 
-  const setSound = useCallback((on: boolean) => {
-    writePreference(surface, 'sound', on);
-    setPreferences((current) => ({ ...current, sound: on }));
+  const savePreferences = useCallback((patch: InboxPreferencePatch): Promise<void> => {
+    if (!preferencesReady) return Promise.resolve();
+    const sequence = ++preferenceWriteSequence.current;
+    const optimistic = { ...preferencesRef.current, ...patch };
+    preferencesRef.current = optimistic;
+    setPreferences(optimistic);
+    setPreferenceMessage('Guardando tus preferencias…');
+
+    const operation = preferenceWriteQueue.current.then(async () => {
+      const result = await requestPreferences('PATCH', patch);
+      if (sequence !== preferenceWriteSequence.current) return;
+      const next = preferencesFromResponse(result);
+      preferencesRef.current = next;
+      setPreferences(next);
+      // storage notifica a las demás pestañas; sus valores se vuelven a leer siempre desde la API.
+      writePreference(surface, 'sound', next.sound);
+      writePreference(surface, 'desktop', next.desktop);
+      setPreferenceMessage('Preferencias guardadas.');
+    }).catch(async (error: unknown) => {
+      if (sequence !== preferenceWriteSequence.current) return;
+      try {
+        const latest = preferencesFromResponse(await requestPreferences('GET'));
+        preferencesRef.current = latest;
+        setPreferences(latest);
+      } catch {
+        // Se conserva el cambio visible y se informa que no se pudo confirmar en el servidor.
+      }
+      setPreferenceMessage(error instanceof Error ? error.message : 'No fue posible guardar tus preferencias.');
+    });
+    preferenceWriteQueue.current = operation;
+    return operation;
+  }, [preferencesReady, surface]);
+
+  const setSound = useCallback(async (on: boolean) => {
     // El clic que lo enciende también habilita el audio.
     if (on) chime.current?.unlock();
-  }, [surface]);
+    await savePreferences({ sound: on });
+  }, [savePreferences]);
 
   const setDesktop = useCallback(async (on: boolean) => {
     if (on && desktopPermission() !== 'granted') {
@@ -307,10 +395,11 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
       setDesktopState(permission);
       if (permission !== 'granted') return;
     }
-    writePreference(surface, 'desktop', on);
-    setPreferences((current) => ({ ...current, desktop: on }));
     setDesktopState(desktopPermission());
-  }, [surface]);
+    await savePreferences({ desktop: on });
+  }, [savePreferences]);
+
+  const setActivityEmail = useCallback((activityEmail: InboxPreferences['activityEmail']) => savePreferences({ activityEmail }), [savePreferences]);
 
   const value = useMemo<InboxContextValue>(() => ({
     surface,
@@ -332,10 +421,13 @@ export function InboxProvider({ surface, children }: { surface: InboxSurface; ch
     subscribeRequest: subscriptions.subscribe,
     setActiveRequest,
     preferences,
+    preferencesReady,
+    preferenceMessage,
     setSound,
     desktop,
     setDesktop,
-  }), [surface, available, loaded, visible, unread, summary, refresh, markRead, live, flashes, dismissFlash, pauseFlash, panelRequest, requestPanel, subscriptions, setActiveRequest, preferences, setSound, desktop, setDesktop]);
+    setActivityEmail,
+  }), [surface, available, loaded, visible, unread, summary, refresh, markRead, live, flashes, dismissFlash, pauseFlash, panelRequest, requestPanel, subscriptions, setActiveRequest, preferences, preferencesReady, preferenceMessage, setSound, desktop, setDesktop, setActivityEmail]);
 
   return <InboxContext.Provider value={value}>{children}</InboxContext.Provider>;
 }

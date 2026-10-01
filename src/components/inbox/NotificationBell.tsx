@@ -1,11 +1,12 @@
 'use client';
 
-import { Bell, CheckCheck, Monitor, MonitorOff, MonitorUp, Volume2, VolumeX, X } from 'lucide-react';
+import { Bell, CheckCheck, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { badgeCount, filterInbox, groupInboxByDay, type InboxFilter, type InboxNotification } from '@/lib/inbox-client';
 import { useInbox } from './InboxProvider';
 import NotificationItem from './NotificationItem';
+import InboxPreferencesControls from './InboxPreferencesControls';
 import { useInboxActions } from './useInboxActions';
 
 const STAFF_FILTERS: ReadonlyArray<{ key: InboxFilter; label: string }> = [
@@ -119,15 +120,10 @@ export default function NotificationBell({ className }: Readonly<{ className?: s
             ))}
           </div>
           <div className="inbox-panel__foot">
-            {staff && <Link href="/staff/notifications" onClick={() => setOpen(false)}>Ver todas</Link>}
-            <div className="inbox-panel__prefs" role="group" aria-label="Cómo avisarte">
-              <button type="button" className="inbox-pref" aria-pressed={inbox.preferences.sound} onClick={() => inbox.setSound(!inbox.preferences.sound)}>
-                {inbox.preferences.sound ? <Volume2 size={15} aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}Sonido
-              </button>
-              {inbox.desktop === 'default' && <button type="button" className="inbox-pref" onClick={() => void inbox.setDesktop(true)}><MonitorUp size={15} aria-hidden="true" />Activar alertas de escritorio</button>}
-              {inbox.desktop === 'granted' && <button type="button" className="inbox-pref" aria-pressed={inbox.preferences.desktop} onClick={() => void inbox.setDesktop(!inbox.preferences.desktop)}><Monitor size={15} aria-hidden="true" />Alertas de escritorio</button>}
-              {inbox.desktop === 'denied' && <span className="inbox-pref inbox-pref--note"><MonitorOff size={15} aria-hidden="true" />Escritorio bloqueado en el navegador</span>}
-            </div>
+            {staff ? <>
+              <Link href="/staff/notifications" onClick={() => setOpen(false)}>Ver todas</Link>
+              <Link href="/staff/account#account-notifications" onClick={() => setOpen(false)}>Preferencias de avisos</Link>
+            </> : <InboxPreferencesControls variant="compact" />}
           </div>
         </div>
       )}
