@@ -288,6 +288,7 @@ describe('notification mappers and templates', () => {
           preview: 'Mensaje de prueba',
           fileName: 'planos.pdf',
           expiresMinutes: 15,
+          expiresInHours: 24,
         },
       });
 
@@ -366,5 +367,50 @@ describe('notification mappers and templates', () => {
     const rendered = renderNotificationTemplate({ templateKey: 'message.created', templateVersion: 'v1', data: { appUrl: 'http://localhost:3000', recipientName: 'Laura', folio: 'OCQ-2026-000001', preview: 'Hola', actionUrl: 'http://localhost:3000/staff/requests' } });
     expect(rendered.html).toContain('El cliente respondió en el expediente OCQ-2026-000001:');
     expect(rendered.html).not.toContain('Tu equipo OCPOOL respondió');
+  });
+
+  it('maps each newly approved business event to its audience and bounded safe fields', () => {
+    const staff = { userId: '00000000-0000-4000-8000-000000000010', email: 'staff@example.test', displayName: 'Laura', audience: 'STAFF' as const };
+    const customer = { userId: '00000000-0000-4000-8000-000000000011', email: 'customer@example.test', displayName: 'Ana', audience: 'CUSTOMER' as const };
+    const requestId = '00000000-0000-4000-8000-000000000012';
+    const quoteId = '00000000-0000-4000-8000-000000000013';
+    const versionId = '00000000-0000-4000-8000-000000000014';
+    const projectId = '00000000-0000-4000-8000-000000000015';
+
+    const declined = mapNotificationEvent({ eventType: 'QUOTE.DECLINED', aggregateType: 'QUOTE_REQUEST', aggregateId: requestId, payload: { quoteId, quoteVersionId: versionId, quoteRequestId: requestId, folio: 'OCQ-2026-000001', versionNumber: 2, reason: 'PRICE' } }, { recipient: staff, actionPath: `/staff/requests?request=${requestId}&tab=quote`, senderName: 'Ana', messagePreview: 'El precio. <img src=x>' });
+    expect(declined).toMatchObject({ kind: 'INTENT', templateKey: 'quote.declined', safePayload: { folio: 'OCQ-2026-000001', versionNumber: 2, reason: 'El precio', preview: 'El precio. <img src=x>' } });
+
+    const information = mapNotificationEvent({ eventType: 'REQUEST.STATUS_CHANGED', aggregateType: 'QUOTE_REQUEST', aggregateId: requestId, payload: { quoteRequestId: requestId, folio: 'OCQ-2026-000001', fromStatus: 'EN_REVISION', toStatus: 'INFORMACION_REQUERIDA', source: 'request_information', messageId: versionId } }, { recipient: customer, actionPath: `/portal?request=${requestId}`, projectType: 'Residencial', messagePreview: 'Comparte las medidas de <la alberca>.' });
+    expect(information).toMatchObject({ kind: 'INTENT', templateKey: 'request.information_needed', safePayload: { folio: 'OCQ-2026-000001', projectType: 'Residencial', preview: 'Comparte las medidas de <la alberca>.' } });
+
+    const started = mapNotificationEvent({ eventType: 'PROJECT.CREATED', aggregateType: 'PROJECT', aggregateId: projectId, payload: { projectId, folio: 'OCP-2026-000001', quoteRequestId: requestId, source: 'customer_acceptance', ownerId: null } }, { recipient: customer, actionPath: `/portal?request=${requestId}`, projectFolio: 'OCP-2026-000001', folio: 'OCQ-2026-000001', ownerName: 'Carlos & equipo' });
+    expect(started).toMatchObject({ kind: 'INTENT', templateKey: 'project.started', safePayload: { projectFolio: 'OCP-2026-000001', folio: 'OCQ-2026-000001', ownerName: 'Carlos & equipo' } });
+
+    const projectOwner = mapNotificationEvent({ eventType: 'PROJECT.CREATED', aggregateType: 'PROJECT', aggregateId: projectId, payload: { projectId, folio: 'OCP-2026-000001', quoteRequestId: requestId, source: 'staff', ownerId: staff.userId, createdById: '00000000-0000-4000-8000-000000000016' } }, { recipient: staff, actionPath: `/staff/projects/${projectId}`, projectFolio: 'OCP-2026-000001', folio: 'OCQ-2026-000001', clientName: 'Ana & familia', senderName: 'Gerencia' });
+    expect(projectOwner).toMatchObject({ kind: 'INTENT', templateKey: 'project.assigned', safePayload: { projectFolio: 'OCP-2026-000001', clientName: 'Ana & familia', senderName: 'Gerencia' } });
+
+    const assigned = mapNotificationEvent({ eventType: 'PROJECT.OWNER_CHANGED', aggregateType: 'PROJECT', aggregateId: projectId, payload: { projectId, ownerId: staff.userId, projectFolio: 'OCP-2026-000001', quoteRequestId: requestId, folio: 'OCQ-2026-000001' } }, { recipient: staff, actionPath: `/staff/requests?request=${requestId}`, projectFolio: 'OCP-2026-000001', folio: 'OCQ-2026-000001', senderName: 'Gerencia', clientName: 'Ana & familia' });
+    expect(assigned).toMatchObject({ kind: 'INTENT', templateKey: 'project.assigned', safePayload: { projectFolio: 'OCP-2026-000001', folio: 'OCQ-2026-000001', clientName: 'Ana & familia', senderName: 'Gerencia' } });
+
+    const expiring = mapNotificationEvent({ eventType: 'QUOTE.EXPIRING', aggregateType: 'QUOTE', aggregateId: quoteId, payload: { quoteId, quoteVersionId: versionId, quoteRequestId: requestId, folio: 'OCQ-2026-000001', versionNumber: 2, expiresInHours: 24 } }, { recipient: customer, actionPath: `/portal?request=${requestId}` });
+    expect(expiring).toMatchObject({ kind: 'INTENT', templateKey: 'quote.expiring', safePayload: { folio: 'OCQ-2026-000001', versionNumber: 2, expiresInHours: 24 } });
+  });
+
+  it('renders every new commercial email in Spanish and escapes user-controlled content', () => {
+    const cases = [
+      { templateKey: 'quote.declined', actionUrl: 'http://localhost:3000/staff/requests', data: { folio: 'OCQ-2026-000001', versionNumber: 2, senderName: 'Ana <script>alert(1)</script>', reason: 'El precio', preview: '<img src=x onerror=alert(1)>' }, expected: 'declinó la propuesta' },
+      { templateKey: 'request.information_needed', actionUrl: 'http://localhost:3000/portal', data: { folio: 'OCQ-2026-000001', projectType: 'Residencial', preview: '<script>alert(1)</script>' }, expected: 'información' },
+      { templateKey: 'project.started', actionUrl: 'http://localhost:3000/portal', data: { folio: 'OCQ-2026-000001', projectFolio: 'OCP-2026-000001', ownerName: 'Carlos <script>' }, expected: 'proyecto' },
+      { templateKey: 'project.assigned', actionUrl: 'http://localhost:3000/staff/requests', data: { folio: 'OCQ-2026-000001', projectFolio: 'OCP-2026-000001', clientName: 'Ana <script>', senderName: 'Gerencia' }, expected: 'proyecto' },
+      { templateKey: 'quote.expiring', actionUrl: 'http://localhost:3000/portal', data: { folio: 'OCQ-2026-000001', versionNumber: 2, expiresInHours: 24 }, expected: 'vigencia' },
+    ] as const;
+
+    for (const item of cases) {
+      const rendered = renderNotificationTemplate({ templateKey: item.templateKey, templateVersion: 'v1', data: { appUrl: 'http://localhost:3000', recipientName: 'Ana <script>alert(1)</script>', actionUrl: item.actionUrl, ...item.data } });
+      expect(`${rendered.subject} ${rendered.text}`.toLocaleLowerCase('es-MX')).toContain(item.expected);
+      expect(rendered.html).toContain('&lt;script&gt;');
+      expect(rendered.html).not.toContain('<script>');
+      expect(rendered.text).toContain(item.actionUrl);
+    }
   });
 });

@@ -1,8 +1,10 @@
 import type { PrismaClient } from '@/generated/prisma/client';
 import { parseAnyChangeRequest } from '@/lib/change-request';
+import { parseDeclineRequest } from '@/lib/decline-request';
 import { readCommercialV2Flags, type CommercialV2Flags } from '@/server/flags/commercial-v2';
 import type { NotificationCancellationReason } from '@/server/modules/notifications/dispatcher';
 import type { NotificationEventInput, NotificationMappingContext, NotificationRecipientContext } from '@/server/modules/notifications/templates';
+import { staffProjectPath } from '@/server/modules/inbox/paths';
 import { requestWorkspaceNotificationPath, type StaffRequestTab } from '@/server/modules/notifications/paths';
 
 type DbClient = PrismaClient;
@@ -129,6 +131,16 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       const recipient = activeStaff(request.currentAssignee);
       return recipient ? { kind: 'RECIPIENTS', contexts: [staffContext(recipient, request.id, 'summary', flags)] } : cancellation('NO_RECIPIENT');
     }
+    case 'REQUEST.STATUS_CHANGED': {
+      if (event.aggregateType !== 'QUOTE_REQUEST' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
+      if (stringValue(payload, 'source') !== 'request_information' || stringValue(payload, 'toStatus') !== 'INFORMACION_REQUERIDA') return cancellation('UNSUPPORTED_EVENT');
+      const request = await prisma.quoteRequest.findUnique({ where: { id: event.aggregateId }, include: { client: true, contact: { include: { user: true } }, detail: { select: { projectType: true } } } });
+      const messageId = stringValue(payload, 'messageId');
+      const message = isUuid(messageId) ? await prisma.conversationMessage.findUnique({ where: { id: messageId }, select: { body: true, visibility: true, conversation: { select: { quoteRequestId: true } }, sender: { select: { type: true } } } }) : null;
+      if (!request || request.id !== stringValue(payload, 'quoteRequestId') || request.folio !== stringValue(payload, 'folio') || request.status !== 'INFORMACION_REQUERIDA' || !message || message.visibility !== 'CUSTOMER' || message.conversation.quoteRequestId !== request.id || message.sender?.type !== 'EMPLOYEE') return cancellation('INVALID_PAYLOAD');
+      const recipient = request.client.status === 'ACTIVE' ? contactRecipient(request.contact) : null;
+      return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, request.id), folio: request.folio, projectType: request.detail?.projectType ?? undefined, messagePreview: message.body }] } : cancellation('NO_RECIPIENT');
+    }
     case 'QUOTE.VERSION_STATUS_CHANGED':
     case 'QUOTE.PUBLISHED': {
       if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
@@ -139,6 +151,40 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       const recipient = quote?.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(quote.quoteRequest.contact) : null;
       if (!quote || !quoteVersionId || !quoteRequestId || stringValue(payload, 'folio') !== quote.quoteRequest.folio || quote.quoteRequestId !== quoteRequestId || !quoteVersion) return cancellation('INVALID_PAYLOAD');
       return recipient ? { kind: 'RECIPIENTS', contexts: [customerContext(recipient, quoteRequestId)] } : cancellation('NO_RECIPIENT');
+    }
+    case 'QUOTE.DECLINED': {
+      if (event.aggregateType !== 'QUOTE_REQUEST' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
+      const quoteId = stringValue(payload, 'quoteId');
+      const quoteVersionId = stringValue(payload, 'quoteVersionId');
+      const quoteRequestId = stringValue(payload, 'quoteRequestId');
+      const versionNumber = typeof payload.versionNumber === 'number' && Number.isInteger(payload.versionNumber) ? payload.versionNumber : null;
+      const quote = isUuid(quoteId) ? await prisma.quote.findUnique({ where: { id: quoteId }, include: { quoteRequest: { include: { currentAssignee: true, client: true, contact: { include: { user: true } } } } } }) : null;
+      const version = quote && isUuid(quoteVersionId) ? await prisma.quoteVersion.findFirst({ where: { id: quoteVersionId, quoteId: quote.id }, select: { id: true, versionNumber: true, status: true } }) : null;
+      if (!quote || quote.quoteRequestId !== event.aggregateId || quote.quoteRequestId !== quoteRequestId || quote.quoteRequest.folio !== stringValue(payload, 'folio') || !version || version.status !== 'RECHAZADA' || version.versionNumber !== versionNumber) return cancellation('INVALID_PAYLOAD');
+      const staffRecipient = activeStaff(quote.quoteRequest.currentAssignee);
+      const contexts = staffRecipient
+        ? [staffContext(staffRecipient, quote.quoteRequestId, 'quote', flags)]
+        : await managerContexts(prisma, quote.quoteRequestId, 'quote', flags);
+      if (contexts.length === 0) return cancellation('NO_RECIPIENT');
+      const message = await prisma.conversationMessage.findFirst({
+        where: { conversation: { quoteRequestId: quote.quoteRequestId }, visibility: 'CUSTOMER', body: { startsWith: `Propuesta V${version.versionNumber} declinada:` }, sender: { type: 'CUSTOMER' } },
+        orderBy: { createdAt: 'desc' },
+        select: { body: true },
+      });
+      const decline = message ? parseDeclineRequest(message.body) : null;
+      const preview = decline?.versionNumber === version.versionNumber ? decline.comment ?? undefined : undefined;
+      const senderName = quote.quoteRequest.contact.displayName || quote.quoteRequest.client.displayName;
+      return { kind: 'RECIPIENTS', contexts: contexts.map((context) => ({ ...context, folio: quote.quoteRequest.folio, versionNumber: version.versionNumber, senderName, ...(preview ? { messagePreview: preview } : {}) })) };
+    }
+    case 'QUOTE.EXPIRING': {
+      if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
+      const quoteVersionId = stringValue(payload, 'quoteVersionId');
+      const quoteRequestId = stringValue(payload, 'quoteRequestId');
+      const quote = await prisma.quote.findUnique({ where: { id: event.aggregateId }, include: { quoteRequest: { include: { client: true, contact: { include: { user: true } } } }, publishedVersion: { select: { id: true, versionNumber: true, status: true, validUntil: true } } } });
+      const version = quote?.publishedVersion;
+      if (!quote || quoteRequestId !== quote.quoteRequestId || stringValue(payload, 'quoteId') !== quote.id || stringValue(payload, 'folio') !== quote.quoteRequest.folio || !version || version.id !== quoteVersionId || version.versionNumber !== payload.versionNumber || !['ENVIADA', 'EN_NEGOCIACION'].includes(version.status) || !version.validUntil || version.validUntil <= new Date()) return cancellation('INVALID_PAYLOAD');
+      const recipient = quote.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(quote.quoteRequest.contact) : null;
+      return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, quote.quoteRequestId), folio: quote.quoteRequest.folio, versionNumber: version.versionNumber, expiresInHours: typeof payload.expiresInHours === 'number' ? payload.expiresInHours : undefined }] } : cancellation('NO_RECIPIENT');
     }
     case 'QUOTE.APPROVAL_REQUESTED': {
       if (event.aggregateType !== 'QUOTE' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
@@ -195,6 +241,36 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       if (contexts.length === 0) return cancellation('NO_RECIPIENT');
       return { kind: 'RECIPIENTS', contexts };
     }
+    case 'PROJECT.CREATED': {
+      if (event.aggregateType !== 'PROJECT' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
+      const project = await prisma.project.findUnique({ where: { id: event.aggregateId }, include: { owner: true, quoteRequest: { include: { currentAssignee: true, client: true, contact: { include: { user: true } } } } } });
+      if (!project || stringValue(payload, 'projectId') !== project.id || stringValue(payload, 'folio') !== project.folio || stringValue(payload, 'quoteRequestId') !== project.quoteRequestId || (stringValue(payload, 'ownerId') ?? null) !== project.ownerId) return cancellation('INVALID_PAYLOAD');
+      const source = stringValue(payload, 'source');
+      if (source !== 'staff' && source !== 'customer_acceptance') return cancellation('INVALID_PAYLOAD');
+      const contexts: NotificationMappingContext[] = [];
+      const customer = project.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(project.quoteRequest.contact) : null;
+      if (customer) contexts.push({ ...customerContext(customer, project.quoteRequestId), projectFolio: project.folio, folio: project.quoteRequest.folio, ownerName: activeStaff(project.owner)?.displayName });
+      const owner = activeStaff(project.owner);
+      const createdById = stringValue(payload, 'createdById');
+      const ownerAlreadyNotified = source === 'customer_acceptance' && owner?.userId === project.quoteRequest.currentAssigneeId;
+      if (owner && owner.userId !== createdById && !ownerAlreadyNotified) {
+        const actor = isUuid(createdById) ? await prisma.user.findUnique({ where: { id: createdById }, select: { id: true, email: true, type: true, status: true, displayName: true } }) : null;
+        contexts.push({ recipient: owner, actionPath: staffProjectPath(project.id), projectFolio: project.folio, folio: project.quoteRequest.folio, clientName: project.quoteRequest.client.displayName, senderName: activeStaff(actor)?.displayName ?? 'El equipo OCPOOL' });
+      }
+      return contexts.length ? { kind: 'RECIPIENTS', contexts } : cancellation('NO_RECIPIENT');
+    }
+    case 'PROJECT.OWNER_CHANGED': {
+      if (event.aggregateType !== 'PROJECT' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
+      const ownerId = stringValue(payload, 'ownerId');
+      const assignedById = stringValue(payload, 'assignedById');
+      const project = await prisma.project.findUnique({ where: { id: event.aggregateId }, include: { owner: true, quoteRequest: { include: { client: true } } } });
+      if (!project || stringValue(payload, 'projectId') !== project.id || !isUuid(ownerId) || project.ownerId !== ownerId) return cancellation('INVALID_PAYLOAD');
+      if (assignedById === ownerId) return cancellation('SELF_ACTION');
+      const recipient = activeStaff(project.owner);
+      if (!recipient) return cancellation('NO_RECIPIENT');
+      const actor = isUuid(assignedById) ? await prisma.user.findUnique({ where: { id: assignedById }, select: { id: true, email: true, type: true, status: true, displayName: true } }) : null;
+      return { kind: 'RECIPIENTS', contexts: [{ recipient, actionPath: staffProjectPath(project.id), projectFolio: project.folio, folio: project.quoteRequest.folio, clientName: project.quoteRequest.client.displayName, senderName: activeStaff(actor)?.displayName ?? 'El equipo OCPOOL' }] };
+    }
     case 'MESSAGE.CREATED': {
       if (event.aggregateType !== 'CONVERSATION' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');
       const messageId = stringValue(payload, 'messageId');
@@ -205,6 +281,11 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
       if (message.visibility !== 'CUSTOMER' || stringValue(payload, 'visibility') !== 'CUSTOMER') return cancellation('INVALID_PAYLOAD');
       if (message.sender?.type === 'CUSTOMER') {
         const change = parseAnyChangeRequest(message.body);
+        const declined = parseDeclineRequest(message.body);
+        // La declinación ya tiene su evento comercial y su correo `quote.declined`.
+        if (declined) return cancellation('INBOX_DIGEST');
+        // Las respuestas normales se atienden desde la bandeja; sólo la petición de cambios conserva correo inmediato.
+        if (!change) return cancellation('INBOX_DIGEST');
         const tab = change ? 'quote' : 'conversation';
         const assignee = activeStaff(conversation.quoteRequest.currentAssignee);
         // Sin responsable, la respuesta del cliente llega a Gerencia en vez de perderse (antes: NO_RECIPIENT).
@@ -214,7 +295,9 @@ export async function resolveNotificationEvent(prisma: DbClient, event: Notifica
         return { kind: 'RECIPIENTS', contexts: contexts.map((context) => ({ ...context, senderName: sender, messagePreview: change ? change.message || message.body : message.body, ...(change ? { versionNumber: change.versionNumber } : {}) })) };
       }
       const recipient = conversation.quoteRequest.client.status === 'ACTIVE' ? contactRecipient(conversation.quoteRequest.contact) : null;
-      return recipient ? { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, conversation.quoteRequestId), senderName: message.sender?.displayName ?? 'Tu equipo OCPOOL', messagePreview: message.body }] } : cancellation('NO_RECIPIENT');
+      if (!recipient) return cancellation('NO_RECIPIENT');
+      if (recipient.userId) return cancellation('INBOX_DIGEST');
+      return { kind: 'RECIPIENTS', contexts: [{ ...customerContext(recipient, conversation.quoteRequestId), senderName: message.sender?.displayName ?? 'Tu equipo OCPOOL', messagePreview: message.body }] };
     }
     case 'FILE.AVAILABLE': {
       if (event.aggregateType !== 'FILE_ATTACHMENT' || !isUuid(event.aggregateId)) return cancellation('INVALID_PAYLOAD');

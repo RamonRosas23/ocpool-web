@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { declineReasonLabel } from '@/lib/decline-request';
 import { normalizeNotificationEmail } from '@/server/modules/notifications/domain';
 import { brandContact, brandIdentity, brandWebsiteLabel } from '@/lib/brand';
 import { details, html, paragraph, quote, renderEmailLayout, strong, type EmailAudience, type EmailBlock, type EmailDetail } from '@/server/modules/notifications/email-layout';
@@ -21,6 +22,11 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   'file.available',
   'request.new_for_team',
   'quote.changes_requested',
+  'quote.declined',
+  'request.information_needed',
+  'project.started',
+  'project.assigned',
+  'quote.expiring',
 ] as const;
 export type NotificationTemplateKey = (typeof NOTIFICATION_TEMPLATE_KEYS)[number];
 
@@ -30,11 +36,16 @@ export const SUPPORTED_NOTIFICATION_EVENT_TYPES = [
   'AUTH.EMPLOYEE_INVITATION',
   'REQUEST.RECEIVED',
   'REQUEST.ASSIGNED',
+  'REQUEST.STATUS_CHANGED',
   'QUOTE.VERSION_STATUS_CHANGED',
   'QUOTE.PUBLISHED',
+  'QUOTE.DECLINED',
+  'QUOTE.EXPIRING',
   'QUOTE.APPROVAL_REQUESTED',
   'QUOTE.APPROVAL_RESOLVED',
   'QUOTE.ACCEPTED',
+  'PROJECT.CREATED',
+  'PROJECT.OWNER_CHANGED',
   'MESSAGE.CREATED',
   'FILE.AVAILABLE',
 ] as const;
@@ -67,6 +78,11 @@ export type NotificationMappingContext = {
   messagePreview?: string;
   fileName?: string;
   versionNumber?: number;
+  projectFolio?: string;
+  projectType?: string;
+  ownerName?: string;
+  clientName?: string;
+  expiresInHours?: number;
 };
 
 export type NotificationIntent = {
@@ -102,8 +118,13 @@ const authEmployeePayload = z.object({ tokenId: uuid, tokenCiphertext: z.string(
 const authEmployeeInvitationPayload = authEmployeePayload.extend({ invitedByName: z.string().min(1).max(180).optional(), roleLabel: z.string().min(1).max(60).optional() });
 const requestReceivedPayload = z.object({ quoteRequestId: uuid, folio, origin: z.enum(['PUBLIC_FORM', 'STAFF_CREATED']) }).passthrough();
 const requestAssignedPayload = z.object({ quoteRequestId: uuid, folio, assignedToId: uuid }).passthrough();
+const requestInformationPayload = z.object({ quoteRequestId: uuid, folio, fromStatus: z.string().min(1).max(40), toStatus: z.literal('INFORMACION_REQUERIDA'), source: z.literal('request_information'), messageId: uuid.optional() }).passthrough();
 const quoteStatusPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, fromStatus: z.string().min(1).max(40), toStatus: z.literal('ENVIADA') }).passthrough();
 const quotePublishedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio }).passthrough();
+const quoteDeclinedPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, versionNumber: z.number().int().positive(), reason: z.enum(['PRICE', 'SCOPE', 'TIMING', 'CHOSE_OTHER', 'POSTPONED', 'OTHER']) }).passthrough();
+const quoteExpiringPayload = z.object({ quoteId: uuid, quoteVersionId: uuid, quoteRequestId: uuid, folio, versionNumber: z.number().int().positive(), expiresInHours: z.union([z.literal(24), z.literal(72)]) }).passthrough();
+const projectCreatedPayload = z.object({ projectId: uuid, folio: z.string().min(1).max(24), quoteRequestId: uuid, source: z.enum(['staff', 'customer_acceptance']), ownerId: uuid.nullable(), createdById: uuid.optional() }).passthrough();
+const projectOwnerChangedPayload = z.object({ projectId: uuid, ownerId: uuid, assignedById: uuid.optional() }).passthrough();
 // UX audit fix: `PRICE_OVERRIDE` es el único tipo de `QUOTE_APPROVAL_TYPES` (approval-service.ts)
 // todavía bloqueado como "no habilitado" -- `SPECIAL_CONCEPT` sí es un flujo real y activo
 // (`requestSpecialApproval`/`decideSpecialApproval` en StaffQuotesPanel.tsx), pero faltaba aquí, así
@@ -122,11 +143,16 @@ const EVENT_AGGREGATE_TYPES: Record<string, string> = {
   'AUTH.EMPLOYEE_INVITATION': 'USER',
   'REQUEST.RECEIVED': 'QUOTE_REQUEST',
   'REQUEST.ASSIGNED': 'QUOTE_REQUEST',
+  'REQUEST.STATUS_CHANGED': 'QUOTE_REQUEST',
   'QUOTE.VERSION_STATUS_CHANGED': 'QUOTE',
   'QUOTE.PUBLISHED': 'QUOTE',
+  'QUOTE.DECLINED': 'QUOTE_REQUEST',
+  'QUOTE.EXPIRING': 'QUOTE',
   'QUOTE.APPROVAL_REQUESTED': 'QUOTE',
   'QUOTE.APPROVAL_RESOLVED': 'QUOTE',
   'QUOTE.ACCEPTED': 'QUOTE',
+  'PROJECT.CREATED': 'PROJECT',
+  'PROJECT.OWNER_CHANGED': 'PROJECT',
   'MESSAGE.CREATED': 'CONVERSATION',
   'FILE.AVAILABLE': 'FILE_ATTACHMENT',
 };
@@ -225,6 +251,32 @@ export function mapNotificationEvent(event: NotificationEventInput, context: Not
         if (scope) return scope;
         return makeIntent(context, 'request.assigned', { recipientName: context.recipient.displayName, folio: parsed.data.folio });
       }
+      case 'REQUEST.STATUS_CHANGED': {
+        const parsed = requestInformationPayload.safeParse(event.payload);
+        const scope = rejectScope(context, 'CUSTOMER');
+        if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        if (scope) return scope;
+        return makeIntent(context, 'request.information_needed', {
+          recipientName: context.recipient.displayName,
+          folio: parsed.data.folio,
+          ...(context.projectType ? { projectType: boundedText(context.projectType, 120, 'project type') } : {}),
+          ...(context.messagePreview ? { preview: boundedText(context.messagePreview, 500, 'message preview') } : {}),
+        });
+      }
+      case 'QUOTE.DECLINED': {
+        const parsed = quoteDeclinedPayload.safeParse(event.payload);
+        const scope = rejectScope(context, 'STAFF');
+        if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        if (scope) return scope;
+        return makeIntent(context, 'quote.declined', {
+          recipientName: context.recipient.displayName,
+          folio: parsed.data.folio,
+          versionNumber: parsed.data.versionNumber,
+          reason: declineReasonLabel(parsed.data.reason),
+          ...(context.senderName ? { senderName: boundedText(context.senderName, 180, 'client name') } : {}),
+          ...(context.messagePreview ? { preview: boundedText(context.messagePreview, 500, 'message preview') } : {}),
+        });
+      }
       case 'QUOTE.VERSION_STATUS_CHANGED': {
         const parsed = quoteStatusPayload.safeParse(event.payload);
         const scope = rejectScope(context, 'CUSTOMER');
@@ -264,6 +316,50 @@ export function mapNotificationEvent(event: NotificationEventInput, context: Not
         const scope = rejectScope(context, 'STAFF');
         if (scope) return scope;
         return makeIntent(context, 'quote.accepted', safePayload);
+      }
+      case 'PROJECT.CREATED': {
+        const parsed = projectCreatedPayload.safeParse(event.payload);
+        if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        if (context.recipient.audience === 'CUSTOMER') {
+          return makeIntent(context, 'project.started', {
+            recipientName: context.recipient.displayName,
+            folio: boundedText(context.folio ?? 'Tu expediente', 40, 'folio'),
+            projectFolio: boundedText(context.projectFolio ?? parsed.data.folio, 24, 'project folio'),
+            ...(context.ownerName ? { ownerName: boundedText(context.ownerName, 180, 'owner name') } : {}),
+          });
+        }
+        return makeIntent(context, 'project.assigned', {
+          recipientName: context.recipient.displayName,
+          folio: boundedText(context.folio ?? 'Tu expediente', 40, 'folio'),
+          projectFolio: boundedText(context.projectFolio ?? parsed.data.folio, 24, 'project folio'),
+          clientName: boundedText(context.clientName ?? 'El cliente', 180, 'client name'),
+          senderName: boundedText(context.senderName ?? 'El equipo OCPOOL', 180, 'staff name'),
+        });
+      }
+      case 'PROJECT.OWNER_CHANGED': {
+        const parsed = projectOwnerChangedPayload.safeParse(event.payload);
+        const scope = rejectScope(context, 'STAFF');
+        if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        if (scope) return scope;
+        return makeIntent(context, 'project.assigned', {
+          recipientName: context.recipient.displayName,
+          folio: boundedText(context.folio ?? 'Tu expediente', 40, 'folio'),
+          projectFolio: boundedText(context.projectFolio ?? 'Proyecto', 24, 'project folio'),
+          clientName: boundedText(context.clientName ?? 'El cliente', 180, 'client name'),
+          senderName: boundedText(context.senderName ?? 'El equipo OCPOOL', 180, 'staff name'),
+        });
+      }
+      case 'QUOTE.EXPIRING': {
+        const parsed = quoteExpiringPayload.safeParse(event.payload);
+        const scope = rejectScope(context, 'CUSTOMER');
+        if (!parsed.success) return { kind: 'REJECTED', reason: 'INVALID_PAYLOAD' };
+        if (scope) return scope;
+        return makeIntent(context, 'quote.expiring', {
+          recipientName: context.recipient.displayName,
+          folio: parsed.data.folio,
+          versionNumber: parsed.data.versionNumber,
+          expiresInHours: parsed.data.expiresInHours,
+        });
       }
       case 'MESSAGE.CREATED': {
         const parsed = messagePayload.safeParse(event.payload);
@@ -306,6 +402,12 @@ export type NotificationTemplateData = {
   fileName?: string;
   /** Rol con el que se invita a alguien al equipo (Ventas, Gerencia). */
   roleLabel?: string;
+  projectFolio?: string;
+  projectType?: string;
+  ownerName?: string;
+  clientName?: string;
+  reason?: string;
+  expiresInHours?: number;
 };
 
 export type RenderNotificationTemplateInput = {
@@ -394,6 +496,7 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
   const data = input.data;
   const actionUrl = validateActionUrl(data.appUrl, data.actionUrl);
   const folio = data.folio ? safeHeader(data.folio) : '';
+  const projectFolio = data.projectFolio ? safeHeader(data.projectFolio) : '';
   const version = data.versionNumber ? ` versión ${data.versionNumber}` : '';
   const approvalType = APPROVAL_TYPE_LABELS[data.approvalType ?? ''] ?? 'ajuste de precio';
   const preview = data.preview ?? '';
@@ -495,6 +598,20 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
         actionLabel: 'Abrir expediente',
         text: `Hola ${data.recipientName},\n\nLa solicitud ${folio} ahora está a tu cargo. Abre el expediente: ${actionUrl}`,
       });
+    case 'request.information_needed': {
+      const project = data.projectType ? ` sobre ${data.projectType}` : '';
+      const previewBlock = data.preview ? [quote(data.preview)] : [];
+      return compose({
+        audience: 'customer',
+        subject: safeHeader(`Necesitamos información para tu solicitud ${folio}`),
+        preheader: `Comparte la información pendiente${project} para continuar con ${folio}.`,
+        eyebrow: 'Siguiente paso',
+        title: 'Necesitamos información',
+        blocks: [paragraph(html`Para continuar con tu solicitud ${folio}${project}, necesitamos la información indicada por nuestro equipo.`), details(folioRows), ...previewBlock],
+        actionLabel: 'Responder solicitud',
+        text: `Hola ${data.recipientName},\n\nPara continuar con tu solicitud ${folio}${project}, comparte la información solicitada.${data.preview ? `\n\n${data.preview}` : ''}\n\nResponder en tu portal: ${actionUrl}`,
+      });
+    }
     case 'quote.version_sent':
       return compose({
         audience: 'customer',
@@ -638,6 +755,62 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
         blocks: [paragraph(html`${sender} pidió cambios a la propuesta${version} del expediente ${folio}:`), quote(preview)],
         actionLabel: data.actionLabel ?? 'Revisar propuesta',
         text: `Hola ${data.recipientName},\n\n${sender} pidió cambios a la propuesta${version} de ${folio}:\n\n${preview}\n\nRevisar: ${actionUrl}`,
+      });
+    }
+    case 'quote.declined': {
+      const client = data.senderName ?? 'El cliente';
+      const reason = data.reason ?? 'Motivo no especificado';
+      const previewBlock = data.preview ? [quote(data.preview)] : [];
+      return compose({
+        audience: 'staff',
+        subject: safeHeader(`${client} declinó la propuesta ${folio}${version}`.slice(0, 240)),
+        preheader: `${folio}${version}: ${reason}.`,
+        eyebrow: 'Propuesta declinada',
+        title: 'El cliente declinó la propuesta',
+        blocks: [paragraph(html`${client} declinó la propuesta${version} del expediente ${folio}. Motivo: ${strong(reason)}.`), details([...folioRows, ...versionRows, { label: 'Motivo', value: reason }]), ...previewBlock],
+        actionLabel: 'Revisar propuesta',
+        text: `Hola ${data.recipientName},\n\n${client} declinó la propuesta${version} de ${folio}. Motivo: ${reason}.${data.preview ? `\n\n${data.preview}` : ''}\n\nRevisar expediente: ${actionUrl}`,
+      });
+    }
+    case 'project.started': {
+      const owner = data.ownerName ? ` La persona responsable será ${data.ownerName}.` : '';
+      return compose({
+        audience: 'customer',
+        subject: safeHeader(`Tu proyecto ${projectFolio} comenzó`),
+        preheader: `El proyecto de tu expediente ${folio} ya está en marcha.`,
+        eyebrow: 'Proyecto iniciado',
+        title: 'Tu proyecto comenzó',
+        blocks: [paragraph(html`Tu proyecto ${strong(projectFolio)} del expediente ${folio} ya está en marcha.${owner}`), details([...folioRows, { label: 'Proyecto', value: projectFolio }])],
+        actionLabel: 'Ver mi expediente',
+        text: `Hola ${data.recipientName},\n\nTu proyecto ${projectFolio} del expediente ${folio} ya está en marcha.${owner}\n\nVer expediente: ${actionUrl}`,
+      });
+    }
+    case 'project.assigned': {
+      const client = data.clientName ?? 'el cliente';
+      const assignedBy = data.senderName ?? 'El equipo OCPOOL';
+      return compose({
+        audience: 'staff',
+        subject: safeHeader(`Te asignaron el proyecto ${projectFolio}`),
+        preheader: `${projectFolio} de ${client} ahora está a tu cargo.`,
+        eyebrow: 'Asignación de proyecto',
+        title: 'Nuevo proyecto a tu cargo',
+        blocks: [paragraph(html`${assignedBy} te asignó el proyecto ${strong(projectFolio)} de ${client}.`), details([...folioRows, { label: 'Proyecto', value: projectFolio }, { label: 'Cliente', value: client }])],
+        actionLabel: 'Abrir proyecto',
+        text: `Hola ${data.recipientName},\n\n${assignedBy} te asignó el proyecto ${projectFolio} de ${client}.${folio ? ` Expediente: ${folio}.` : ''}\n\nAbrir proyecto: ${actionUrl}`,
+      });
+    }
+    case 'quote.expiring': {
+      if (data.expiresInHours !== 24 && data.expiresInHours !== 72) throw new Error('Invalid quote expiration window.');
+      const expires = `${data.expiresInHours} horas`;
+      return compose({
+        audience: 'customer',
+        subject: safeHeader(`Tu cotización ${folio} vence pronto`),
+        preheader: `La vigencia de tu propuesta termina en ${expires}.`,
+        eyebrow: 'Cotización',
+        title: 'Tu cotización está por vencer',
+        blocks: [paragraph(html`La cotización ${folio}${version} mantiene su vigencia por ${strong(expires)}. Si quieres continuar, revísala desde tu expediente.`), details([...folioRows, ...versionRows])],
+        actionLabel: 'Revisar cotización',
+        text: `Hola ${data.recipientName},\n\nLa cotización ${folio}${version} mantiene su vigencia por ${expires}. Revísala aquí: ${actionUrl}`,
       });
     }
     case 'file.available': {

@@ -4,7 +4,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import type { Actor } from '@/server/auth/types';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
-import { notifyInbox, recordDomainEvent } from '@/server/modules/inbox/domain-events';
+import { recordDomainEvent } from '@/server/modules/inbox/domain-events';
 import { BUSINESS_TIMEZONE, timeZoneParts } from '@/lib/calendar-timezone';
 import { requireStaffRequestReadScope, staffRequestReadScopeWhere } from '@/server/auth/request-scope';
 import { formatProjectFolio, normalizeChecklistLabel, type ProjectHandoffStatus } from '@/server/modules/projects/domain';
@@ -150,7 +150,7 @@ async function createProjectFromAcceptance(prisma: PrismaClient, input: CreatePr
         eventType: 'PROJECT.CREATED',
         aggregateType: 'PROJECT',
         aggregateId: project.id,
-        payload: { projectId: project.id, folio: project.folio, quoteRequestId: acceptance.quote.quoteRequestId, source: input.source, ownerId },
+        payload: { projectId: project.id, folio: project.folio, quoteRequestId: acceptance.quote.quoteRequestId, source: input.source, ownerId, createdById: input.createdById },
       }, { now: input.now });
       if (request.status === 'ACEPTADA') {
         await transaction.quoteRequest.update({ where: { id: acceptance.quote.quoteRequestId }, data: { status: 'CONVERTIDA_EN_PROYECTO', updatedAt: input.now } });
@@ -551,6 +551,6 @@ export async function setProjectOwner(actor: Actor, projectIdInput: string, owne
         metadata: { ownerId },
       },
     });
-    if (ownerId) await notifyInbox(transaction, { actor: { userId: actor.userId, type: 'EMPLOYEE' }, eventType: 'PROJECT.OWNER_CHANGED', aggregateType: 'PROJECT', aggregateId: projectId, payload: { projectId, ownerId } });
+    if (ownerId) await recordDomainEvent(transaction, { actor: { userId: actor.userId, type: 'EMPLOYEE' }, eventType: 'PROJECT.OWNER_CHANGED', aggregateType: 'PROJECT', aggregateId: projectId, payload: { projectId, ownerId, assignedById: actor.userId } });
   });
 }
