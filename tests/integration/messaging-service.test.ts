@@ -107,6 +107,13 @@ describe('transactional messaging service', () => {
       expect(JSON.stringify(events)).not.toContain('Conversación reabierta');
     } finally {
       const requestIds = [requestA.quoteRequestId, requestB.quoteRequestId];
+      const notices = await prisma.inboxNotification.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true } });
+      const digestEvents = await prisma.outboxEvent.findMany({ where: { eventType: 'INBOX.DIGEST_DUE', aggregateId: { in: notices.map(({ id }) => id) } }, select: { id: true } });
+      const digestEventIds = digestEvents.map(({ id }) => id);
+      if (digestEventIds.length > 0) {
+        await prisma.notificationDelivery.deleteMany({ where: { outboxEventId: { in: digestEventIds } } });
+        await prisma.outboxEvent.deleteMany({ where: { id: { in: digestEventIds } } });
+      }
       await prisma.conversation.deleteMany({ where: { quoteRequestId: { in: requestIds } } });
       await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: requestIds } } });
       await prisma.auditLog.deleteMany({ where: { entityId: { in: requestIds } } });

@@ -131,4 +131,21 @@ describe('readServerEnv', () => {
     expect(() => readServerEnv({ ...base, CUSTOMER_MAGIC_LINK_TTL_MINUTES: '10' })).toThrow();
     expect(() => readServerEnv({ ...base, CUSTOMER_MAGIC_LINK_TTL_MINUTES: '20000' })).toThrow();
   });
+
+  it('defaults inbox activity digests to 10/15 minutes and accepts only positive bounded delays', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://ocpool:secret@localhost:55432/ocpool_dev?schema=public',
+      MFA_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+      AUTH_DELIVERY_ENCRYPTION_KEY: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+      NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+      AUDIT_CURSOR_SECRET: 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=',
+    };
+
+    expect(readServerEnv(base)).toMatchObject({ INBOX_DIGEST_DELAY_STAFF_MINUTES: 10, INBOX_DIGEST_DELAY_CUSTOMER_MINUTES: 15 });
+    expect(readServerEnv({ ...base, INBOX_DIGEST_DELAY_STAFF_MINUTES: '5', INBOX_DIGEST_DELAY_CUSTOMER_MINUTES: '20' })).toMatchObject({ INBOX_DIGEST_DELAY_STAFF_MINUTES: 5, INBOX_DIGEST_DELAY_CUSTOMER_MINUTES: 20 });
+    for (const value of ['0', '-1', '1.5', '1441']) {
+      expect(() => readServerEnv({ ...base, INBOX_DIGEST_DELAY_STAFF_MINUTES: value })).toThrow();
+      expect(() => readServerEnv({ ...base, INBOX_DIGEST_DELAY_CUSTOMER_MINUTES: value })).toThrow();
+    }
+  });
 });

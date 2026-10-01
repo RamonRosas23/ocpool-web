@@ -13,6 +13,7 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   'auth.employee.invitation',
   'request.received',
   'request.assigned',
+  'activity.digest',
   'quote.version_sent',
   'quote.approval_requested',
   'quote.approval_resolved',
@@ -83,6 +84,8 @@ export type NotificationMappingContext = {
   ownerName?: string;
   clientName?: string;
   expiresInHours?: number;
+  messages?: number;
+  files?: number;
 };
 
 export type NotificationIntent = {
@@ -408,6 +411,8 @@ export type NotificationTemplateData = {
   clientName?: string;
   reason?: string;
   expiresInHours?: number;
+  messages?: number;
+  files?: number;
 };
 
 export type RenderNotificationTemplateInput = {
@@ -470,6 +475,12 @@ function previewLine(value: string, maximum = 140): string {
   const cut = flat.slice(0, maximum - 1);
   const lastSpace = cut.lastIndexOf(' ');
   return `${(lastSpace > maximum * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+function digestCount(value: number | undefined, field: string): number {
+  if (value === undefined) return 0;
+  if (!Number.isSafeInteger(value) || value < 0 || value > 1000) throw new Error(`Invalid activity digest ${field}.`);
+  return value;
 }
 
 /** Pie del texto plano: el mismo contacto que el HTML, para quien lee el correo sin formato. */
@@ -610,6 +621,44 @@ export function renderNotificationTemplate(input: RenderNotificationTemplateInpu
         blocks: [paragraph(html`Para continuar con tu solicitud ${folio}${project}, necesitamos la información indicada por nuestro equipo.`), details(folioRows), ...previewBlock],
         actionLabel: 'Responder solicitud',
         text: `Hola ${data.recipientName},\n\nPara continuar con tu solicitud ${folio}${project}, comparte la información solicitada.${data.preview ? `\n\n${data.preview}` : ''}\n\nResponder en tu portal: ${actionUrl}`,
+      });
+    }
+    case 'activity.digest': {
+      const messages = digestCount(data.messages, 'message count');
+      const files = digestCount(data.files, 'file count');
+      const activityParts = [
+        ...(messages ? [`${messages} ${messages === 1 ? 'mensaje' : 'mensajes'}`] : []),
+        ...(files ? [`${files} ${files === 1 ? 'archivo' : 'archivos'}`] : []),
+      ];
+      const activity = activityParts.length > 0 ? activityParts.join(' y ') : 'una actualización';
+      const previewBlock = data.preview ? [quote(data.preview)] : [];
+      const countRows: EmailDetail[] = [
+        ...(messages ? [{ label: 'Mensajes', value: String(messages) }] : []),
+        ...(files ? [{ label: 'Archivos', value: String(files) }] : []),
+      ];
+      if (staffAudience) {
+        const client = data.clientName ?? 'El cliente';
+        return compose({
+          audience: 'staff',
+          subject: safeHeader(`Actividad nueva de ${client} en ${folio}`.slice(0, 240)),
+          preheader: `${client} registró ${activity} en ${folio}.`,
+          eyebrow: 'Resumen de actividad',
+          title: 'Actividad pendiente de revisar',
+          blocks: [paragraph(html`${client} registró ${activity} en el expediente ${folio}.`), details([...folioRows, ...countRows]), ...previewBlock],
+          actionLabel: 'Revisar expediente',
+          text: `Hola ${data.recipientName},\n\n${client} registró ${activity} en el expediente ${folio}.${data.preview ? `\n\n${data.preview}` : ''}\n\nRevisar expediente: ${actionUrl}`,
+        });
+      }
+      const project = data.projectType ? ` (${data.projectType})` : '';
+      return compose({
+        audience: 'customer',
+        subject: safeHeader(`Novedades en tu expediente ${folio}`),
+        preheader: `El equipo OCPOOL registró ${activity}${project}.`,
+        eyebrow: 'Resumen de actividad',
+        title: 'Hay novedades en tu expediente',
+        blocks: [paragraph(html`El equipo OCPOOL registró ${activity} en tu expediente ${folio}${project}.`), details([...folioRows, ...countRows]), ...previewBlock],
+        actionLabel: 'Ver mi expediente',
+        text: `Hola ${data.recipientName},\n\nEl equipo OCPOOL registró ${activity} en tu expediente ${folio}${project}.${data.preview ? `\n\n${data.preview}` : ''}\n\nVer mi expediente: ${actionUrl}`,
       });
     }
     case 'quote.version_sent':

@@ -1,4 +1,5 @@
 import { Prisma } from '@/generated/prisma/client';
+import { readServerEnv } from '@/server/env';
 import { publishRealtime } from '@/server/realtime/publish';
 import { sanitizeInboxData, type InboxData, type InboxKind, type InboxPriority } from './kinds';
 import { inboxOccurrences, mergeInboxData, renderInboxText } from './text';
@@ -67,6 +68,26 @@ function newRow(intent: InboxIntent, data: InboxData, now: Date) {
   };
 }
 
+async function scheduleActivityDigest(tx: Prisma.TransactionClient, notificationId: string, intent: InboxIntent, now: Date): Promise<void> {
+  if ((intent.kind !== 'customer.activity' && intent.kind !== 'team.activity') || !intent.quoteRequestId) return;
+  const recipient = await tx.user.findUnique({ where: { id: intent.recipientId }, select: { type: true, status: true } });
+  const expectedType = intent.kind === 'customer.activity' ? 'EMPLOYEE' : 'CUSTOMER';
+  if (recipient?.type !== expectedType || recipient.status !== 'ACTIVE') return;
+  const preference = await tx.inboxPreference.findUnique({ where: { userId: intent.recipientId }, select: { activityEmail: true } });
+  if (preference?.activityEmail === 'OFF') return;
+  const env = readServerEnv();
+  const delayMinutes = intent.kind === 'customer.activity' ? env.INBOX_DIGEST_DELAY_STAFF_MINUTES : env.INBOX_DIGEST_DELAY_CUSTOMER_MINUTES;
+  await tx.outboxEvent.create({
+    data: {
+      eventType: 'INBOX.DIGEST_DUE',
+      aggregateType: 'INBOX_NOTIFICATION',
+      aggregateId: notificationId,
+      payload: { notificationId, recipientId: intent.recipientId, quoteRequestId: intent.quoteRequestId },
+      availableAt: new Date(now.getTime() + delayMinutes * 60_000),
+    },
+  });
+}
+
 type OpenRow = { id: string; data: Prisma.JsonValue | null; occurrences: number; priority: InboxPriority };
 
 async function lockOpenGroup(tx: Prisma.TransactionClient, recipientId: string, groupKey: string): Promise<OpenRow | null> {
@@ -90,12 +111,14 @@ export async function recordInboxIntents(tx: Prisma.TransactionClient, intents: 
     const data = sanitizeInboxData(intent.kind, intent.data);
     if (!intent.groupKey) {
       const created = await tx.inboxNotification.create({ data: newRow(intent, data, now), select: { id: true } });
+      await scheduleActivityDigest(tx, created.id, intent, now);
       recorded.push({ id: created.id, recipientId: intent.recipientId, mode: 'created' });
       continue;
     }
     // ON CONFLICT DO NOTHING sobre el índice único parcial: si ya hay un aviso abierto del grupo, no inserta.
     const inserted = await tx.inboxNotification.createManyAndReturn({ data: [newRow(intent, data, now)], skipDuplicates: true, select: { id: true } });
     if (inserted[0]) {
+      await scheduleActivityDigest(tx, inserted[0].id, intent, now);
       recorded.push({ id: inserted[0].id, recipientId: intent.recipientId, mode: 'created' });
       continue;
     }
@@ -103,6 +126,7 @@ export async function recordInboxIntents(tx: Prisma.TransactionClient, intents: 
     if (!open) {
       // Se leyó o resolvió entre el INSERT y el SELECT: la actividad nueva abre otro aviso.
       const created = await tx.inboxNotification.create({ data: newRow(intent, data, now), select: { id: true } });
+      await scheduleActivityDigest(tx, created.id, intent, now);
       recorded.push({ id: created.id, recipientId: intent.recipientId, mode: 'created' });
       continue;
     }

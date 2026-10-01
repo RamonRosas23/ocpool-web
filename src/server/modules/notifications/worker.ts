@@ -10,6 +10,7 @@ import {
   type ClaimedNotificationDelivery,
 } from '@/server/modules/notifications/dispatcher';
 import { processNotificationFanoutBatch } from '@/server/modules/notifications/fanout';
+import { processInboxDigestDueBatch } from '@/server/modules/notifications/inbox-digest';
 import { createSmtpEmailProviderFromEnv, type EmailMessage, type EmailProvider } from '@/server/modules/notifications/email-provider';
 import { buildNotificationUrl, renderNotificationTemplate, type NotificationTemplateData } from '@/server/modules/notifications/templates';
 
@@ -48,7 +49,7 @@ function numberValue(payload: Record<string, unknown>, key: string): number | un
   return typeof payload[key] === 'number' && Number.isFinite(payload[key]) ? payload[key] : undefined;
 }
 
-const STAFF_TEMPLATE_KEYS: ReadonlySet<string> = new Set(['request.assigned', 'quote.accepted', 'request.new_for_team', 'quote.changes_requested']);
+const STAFF_TEMPLATE_KEYS: ReadonlySet<string> = new Set(['request.assigned', 'quote.accepted', 'request.new_for_team', 'quote.changes_requested', 'quote.declined', 'project.assigned']);
 
 function defaultNotificationPath(delivery: ClaimedNotificationDelivery): string {
   return STAFF_TEMPLATE_KEYS.has(delivery.templateKey) ? '/staff/requests' : '/portal';
@@ -85,6 +86,14 @@ export async function defaultRenderNotification(delivery: ClaimedNotificationDel
     ...(stringValue(payload, 'preview') ? { preview: stringValue(payload, 'preview') } : {}),
     ...(stringValue(payload, 'fileName') ? { fileName: stringValue(payload, 'fileName') } : {}),
     ...(stringValue(payload, 'roleLabel') ? { roleLabel: stringValue(payload, 'roleLabel') } : {}),
+    ...(stringValue(payload, 'projectFolio') ? { projectFolio: stringValue(payload, 'projectFolio') } : {}),
+    ...(stringValue(payload, 'projectType') ? { projectType: stringValue(payload, 'projectType') } : {}),
+    ...(stringValue(payload, 'ownerName') ? { ownerName: stringValue(payload, 'ownerName') } : {}),
+    ...(stringValue(payload, 'clientName') ? { clientName: stringValue(payload, 'clientName') } : {}),
+    ...(stringValue(payload, 'reason') ? { reason: stringValue(payload, 'reason') } : {}),
+    ...(numberValue(payload, 'expiresInHours') !== undefined ? { expiresInHours: numberValue(payload, 'expiresInHours') } : {}),
+    ...(numberValue(payload, 'messages') !== undefined ? { messages: numberValue(payload, 'messages') } : {}),
+    ...(numberValue(payload, 'files') !== undefined ? { files: numberValue(payload, 'files') } : {}),
     ...(numberValue(payload, 'expiresMinutes') !== undefined ? { expiresMinutes: numberValue(payload, 'expiresMinutes') } : {}),
     // UX audit fix: `NotificationTemplateData` ya declaraba estos dos campos y
     // `renderNotificationTemplate` ya los lee (quote.approval_requested/_resolved), pero nunca se
@@ -109,6 +118,10 @@ export type ProcessNotificationBatchInput = Readonly<{
 }>;
 
 export type ProcessNotificationBatchResult = {
+  digestClaimed?: number;
+  digestMaterialized?: number;
+  digestCancelled?: number;
+  digestFailed?: number;
   fanoutClaimed?: number;
   fanoutMaterialized?: number;
   fanoutCancelled?: number;
@@ -122,11 +135,16 @@ export type ProcessNotificationBatchResult = {
 export async function processNotificationBatch(input: ProcessNotificationBatchInput): Promise<ProcessNotificationBatchResult> {
   if (!Number.isInteger(input.maxAttempts) || input.maxAttempts < 1 || input.maxAttempts > 20) throw new Error('Invalid notification max attempts.');
   const now = input.now ?? new Date();
+  const digest = await processInboxDigestDueBatch({ prisma: input.prisma, now, batchSize: input.batchSize, leaseSeconds: input.leaseSeconds });
   const fanout = await processNotificationFanoutBatch({ prisma: input.prisma, now, batchSize: input.batchSize, leaseSeconds: input.leaseSeconds });
   const deliveries = await claimNotificationDeliveries(input.prisma, { now, batchSize: input.batchSize, leaseSeconds: input.leaseSeconds });
   const provider = input.provider ?? createSmtpEmailProviderFromEnv();
   const render = input.render ?? defaultRenderNotification;
   const result: ProcessNotificationBatchResult = {
+    digestClaimed: digest.claimed,
+    digestMaterialized: digest.materialized,
+    digestCancelled: digest.cancelled,
+    digestFailed: digest.failed,
     fanoutClaimed: fanout.claimed,
     fanoutMaterialized: fanout.materialized,
     fanoutCancelled: fanout.cancelled,
@@ -196,6 +214,6 @@ export async function runNotificationWorker(input: RunNotificationWorkerInput): 
     const result = await processBatch(input);
     input.onBatch?.(result);
     // `fanoutClaimed` es opcional: si falta, el lote igual cuenta como vacío (antes giraba sin pausa).
-    if (result.claimed === 0 && (result.fanoutClaimed ?? 0) === 0) await waitForPoll(input.signal, input.pollIntervalMs);
+    if (result.claimed === 0 && (result.digestClaimed ?? 0) === 0 && (result.fanoutClaimed ?? 0) === 0) await waitForPoll(input.signal, input.pollIntervalMs);
   }
 }

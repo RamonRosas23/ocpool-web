@@ -363,6 +363,27 @@ describe('notification mappers and templates', () => {
     expect(rendered.html).not.toContain('versión versión');
   });
 
+  it('renders activity.digest for staff and customers with grouped counts and escaped previews', () => {
+    const staff = renderNotificationTemplate({ templateKey: 'activity.digest', templateVersion: 'v1', data: {
+      appUrl: 'http://localhost:3000', recipientName: 'Laura', folio: 'OCQ-2026-000001', clientName: 'Ana & familia',
+      messages: 2, files: 1, preview: '<script>alert(1)</script>', actionUrl: 'http://localhost:3000/staff/requests?request=00000000-0000-4000-8000-000000000001',
+    } });
+    expect(staff.subject).toContain('OCQ-2026-000001');
+    expect(staff.text).toContain('2 mensajes');
+    expect(staff.text).toContain('1 archivo');
+    expect(staff.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(staff.html).toContain('Aviso automático del espacio interno');
+
+    const customer = renderNotificationTemplate({ templateKey: 'activity.digest', templateVersion: 'v1', data: {
+      appUrl: 'http://localhost:3000', recipientName: 'Ana', folio: 'OCQ-2026-000001', projectType: 'Alberca residencial',
+      messages: 1, files: 0, preview: 'Ya revisamos tu solicitud.', actionUrl: 'http://localhost:3000/portal?request=00000000-0000-4000-8000-000000000001',
+    } });
+    expect(customer.html).toContain('Alberca residencial');
+    expect(customer.text).toContain('1 mensaje');
+    expect(customer.html).toContain('Equipo OCPOOL');
+    expect(customer.text).toContain('http://localhost:3000/portal?request=00000000-0000-4000-8000-000000000001');
+  });
+
   it('signs a client reply with the client name, not with the team name', () => {
     const rendered = renderNotificationTemplate({ templateKey: 'message.created', templateVersion: 'v1', data: { appUrl: 'http://localhost:3000', recipientName: 'Laura', folio: 'OCQ-2026-000001', preview: 'Hola', actionUrl: 'http://localhost:3000/staff/requests' } });
     expect(rendered.html).toContain('El cliente respondió en el expediente OCQ-2026-000001:');

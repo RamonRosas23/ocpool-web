@@ -59,6 +59,10 @@ function fakeApprovalDelivery(templateKey: 'quote.approval_requested' | 'quote.a
   };
 }
 
+function fakeDigestDelivery(payload: Record<string, unknown>): ClaimedNotificationDelivery {
+  return { ...fakeApprovalDelivery('quote.approval_requested', payload), templateKey: 'activity.digest' };
+}
+
 describe('notification worker policies', () => {
   it('classifies provider failures without retaining raw error text', () => {
     expect(classifyNotificationError(Object.assign(new Error('SMTP secret response must not persist'), { code: 'SMTP_PROVIDER_ERROR' }))).toEqual({ code: 'TEMPORARY_PROVIDER', retryable: true });
@@ -164,5 +168,24 @@ describe('notification worker policies', () => {
     expect(resolved.subject).toContain('Aprobación autorizada');
     expect(resolved.text).toContain('fue autorizada');
     expect(resolved.text).not.toContain('fue rechazada');
+  });
+
+  it('renders activity digest deliveries from their persisted staff/customer-safe fields', async () => {
+    const staff = await defaultRenderNotification(fakeDigestDelivery({
+      recipientName: 'Laura', folio: 'OCQ-2026-000001', clientName: 'Ana & familia', messages: 2, files: 1,
+      preview: '¿Cómo va mi solicitud?', actionPath: '/staff/requests?request=00000000-0000-4000-8000-000000000001',
+    }));
+    expect(staff.to).toBe('manager@example.test');
+    expect(staff.text).toContain('2 mensajes y 1 archivo');
+    expect(staff.html).toContain('Ana &amp; familia');
+    expect(staff.text).toContain('/staff/requests?request=00000000-0000-4000-8000-000000000001');
+
+    const customer = await defaultRenderNotification(fakeDigestDelivery({
+      recipientName: 'Ana', folio: 'OCQ-2026-000001', projectType: 'Alberca residencial', messages: 1, files: 0,
+      preview: 'Ya revisamos tu solicitud.', actionPath: '/portal?request=00000000-0000-4000-8000-000000000001',
+    }));
+    expect(customer.text).toContain('1 mensaje');
+    expect(customer.html).toContain('Alberca residencial');
+    expect(customer.text).toContain('/portal?request=00000000-0000-4000-8000-000000000001');
   });
 });

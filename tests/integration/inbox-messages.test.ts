@@ -45,6 +45,16 @@ describe('inbox rules for messages and files', () => {
 
   const inboxOf = (recipientId: string) => prisma.inboxNotification.findMany({ where: { recipientId, quoteRequestId: requestId }, orderBy: { createdAt: 'asc' } });
 
+  async function deleteActivityDigestEvents(requestIds: string[]): Promise<void> {
+    const notices = await prisma.inboxNotification.findMany({ where: { quoteRequestId: { in: requestIds } }, select: { id: true } });
+    if (notices.length === 0) return;
+    const events = await prisma.outboxEvent.findMany({ where: { eventType: 'INBOX.DIGEST_DUE', aggregateId: { in: notices.map(({ id }) => id) } }, select: { id: true } });
+    const eventIds = events.map(({ id }) => id);
+    if (eventIds.length === 0) return;
+    await prisma.notificationDelivery.deleteMany({ where: { outboxEventId: { in: eventIds } } });
+    await prisma.outboxEvent.deleteMany({ where: { id: { in: eventIds } } });
+  }
+
   beforeAll(async () => {
     if (process.env.RUN_DB_TESTS !== '1') throw new Error('Run this suite with npm run test:integration after starting Docker and applying migrations.');
     await seedIdentityCatalog(prisma);
@@ -67,6 +77,7 @@ describe('inbox rules for messages and files', () => {
     if (fileId) await prisma.fileAttachment.delete({ where: { id: fileId } });
     if (storageObjectId) await prisma.storageObject.delete({ where: { id: storageObjectId } });
     const conversations = await prisma.conversation.findMany({ where: { quoteRequestId: requestId }, select: { id: true } });
+    await deleteActivityDigestEvents([requestId]);
     await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, ...conversations.map(({ id }) => id)] } } });
     await prisma.conversation.deleteMany({ where: { quoteRequestId: requestId } });
     await prisma.auditLog.deleteMany({ where: { entityId: requestId } });

@@ -59,6 +59,13 @@ describe('request signals on commit', () => {
   afterAll(async () => {
     await listener?.end();
     const conversations = await prisma.conversation.findMany({ where: { quoteRequestId: requestId }, select: { id: true } });
+    const notices = await prisma.inboxNotification.findMany({ where: { quoteRequestId: requestId }, select: { id: true } });
+    const digestEvents = await prisma.outboxEvent.findMany({ where: { eventType: 'INBOX.DIGEST_DUE', aggregateId: { in: notices.map(({ id }) => id) } }, select: { id: true } });
+    const digestEventIds = digestEvents.map(({ id }) => id);
+    if (digestEventIds.length > 0) {
+      await prisma.notificationDelivery.deleteMany({ where: { outboxEventId: { in: digestEventIds } } });
+      await prisma.outboxEvent.deleteMany({ where: { id: { in: digestEventIds } } });
+    }
     await prisma.outboxEvent.deleteMany({ where: { aggregateId: { in: [requestId, ...conversations.map(({ id }) => id)] } } });
     await prisma.auditLog.deleteMany({ where: { OR: [{ entityId: requestId }, { actorUserId: { in: [managerId, salesId, customerId] } }] } });
     await prisma.conversation.deleteMany({ where: { quoteRequestId: requestId } });

@@ -42,6 +42,8 @@ const serverEnvSchema = z.object({
   NOTIFICATION_LEASE_SECONDS: integerEnv(300, 5, 3600),
   NOTIFICATION_MAX_ATTEMPTS: integerEnv(5, 1, 20),
   NOTIFICATION_POLL_INTERVAL_MS: integerEnv(2000, 100, 60_000),
+  INBOX_DIGEST_DELAY_STAFF_MINUTES: integerEnv(10, 1, 1440),
+  INBOX_DIGEST_DELAY_CUSTOMER_MINUTES: integerEnv(15, 1, 1440),
   // Tiempo real (spec 2026-09-29 §12). Con REALTIME_ENABLED=false todos consultan cada 30 s, sin desplegar.
   REALTIME_ENABLED: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
   REALTIME_HEARTBEAT_SECONDS: integerEnv(25, 5, 120),
