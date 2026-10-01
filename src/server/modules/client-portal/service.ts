@@ -4,6 +4,7 @@ import type { Actor } from '@/server/auth/types';
 import { requirePermission } from '@/server/auth/permissions';
 import { getPrisma } from '@/server/db/client';
 import { AppError } from '@/server/http/errors';
+import { notifyInbox } from '@/server/modules/inbox/domain-events';
 import { isGeneratedQuotePdfReady } from '@/server/modules/quote-documents/domain';
 import { CUSTOMER_VISIBLE_QUOTE_VERSION_STATUSES, isCustomerVisibleQuoteVersionStatus } from '@/server/modules/quotes/customer-visibility';
 import { resolveCommercialTermsRecord } from '@/server/modules/quotes/service';
@@ -253,6 +254,7 @@ export async function listCustomerQuoteRequests(actor: Actor, filters: CustomerQ
 export async function getCustomerQuoteRequest(actor: Actor, requestId: string, dependencies: ClientPortalServiceDependencies = {}) {
   const clientId = requireCustomerScope(actor);
   const prisma = dependencies.prisma ?? getPrisma();
+  const now = dependencies.now ?? new Date();
   const id = requireUuid(requestId);
   const request = await prisma.quoteRequest.findFirst({
     where: { id, clientId },
@@ -336,6 +338,28 @@ export async function getCustomerQuoteRequest(actor: Actor, requestId: string, d
   const quote = request.quotes[0] ?? null;
   const versions = quote ? visibleVersions(quote.versions) : [];
   const currentVersion = quote ? selectVisibleVersion(versions, quote.publishedVersionId ?? quote.currentVersionId) : null;
+  if (quote?.publishedVersionId && currentVersion?.id === quote.publishedVersionId && isCustomerVisibleQuoteVersionStatus(currentVersion.status)) {
+    await prisma.$transaction(async (transaction) => {
+      const inserted = await transaction.quoteVersionView.createMany({
+        data: [{ quoteVersionId: currentVersion.id, userId: actor.userId, firstViewedAt: now, lastViewedAt: now }],
+        skipDuplicates: true,
+      });
+      if (inserted.count === 1) {
+        await notifyInbox(transaction, {
+          actor: { userId: actor.userId, type: 'CUSTOMER' },
+          eventType: 'QUOTE.VIEWED',
+          aggregateType: 'QUOTE_REQUEST',
+          aggregateId: request.id,
+          payload: { quoteRequestId: request.id, quoteVersionId: currentVersion.id, versionNumber: currentVersion.versionNumber, folio: request.folio },
+        }, { now });
+      } else {
+        await transaction.quoteVersionView.updateMany({
+          where: { quoteVersionId: currentVersion.id, userId: actor.userId, lastViewedAt: { lt: now } },
+          data: { lastViewedAt: now },
+        });
+      }
+    });
+  }
   const serializedVersions = await Promise.all(versions.map(async (version) => serializeVersion(
     { ...version, pdfReady: isGeneratedQuotePdfReady(version.generatedDocuments[0]) },
     await resolveCommercialTermsRecord(prisma, version.termsVersionId),

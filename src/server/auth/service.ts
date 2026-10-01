@@ -5,6 +5,7 @@ import { createMfaEnrollment, unprotectMfaSecret, verifyTotpCode } from '@/serve
 import { getPrisma } from '@/server/db/client';
 import { readServerEnv } from '@/server/env';
 import { publishSessionsClosed } from '@/server/realtime/publish';
+import { notifyInbox } from '@/server/modules/inbox/domain-events';
 import { Prisma } from '@/generated/prisma/client';
 import type { PrismaClient } from '@/generated/prisma/client';
 
@@ -326,6 +327,13 @@ export async function consumeCustomerMagicLink(rawToken: string, context: AuthRe
     if (token.user.status === 'INVITED') {
       const activated = await transaction.user.updateMany({ where: { id: token.userId, status: 'INVITED' }, data: { status: 'ACTIVE' } });
       if (activated.count !== 1) return null;
+      await notifyInbox(transaction, {
+        actor: { userId: token.userId, type: 'CUSTOMER' },
+        eventType: 'CUSTOMER.PORTAL_ACTIVATED',
+        aggregateType: 'USER',
+        aggregateId: token.userId,
+        payload: { clientId: token.user.clientId },
+      }, { now });
     }
 
     const session = await createSessionInTransaction(transaction, { userId: token.userId, ipAddress: context.ipAddress, userAgent: context.userAgent, mfaVerified: true, now, rawToken: sessionRawToken });

@@ -1,7 +1,7 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { DECLINE_REASON_CODES, declineReasonLabel, type DeclineReasonCode } from '@/lib/decline-request';
-import { QUOTE_REQUEST_CLOSABLE_STATUSES } from '@/server/modules/quote-requests/domain';
-import { activeEmployees, activeStaffWithPermissions, APPROVER_PERMISSIONS, displayNameOf, excludeUser, loadRequestInboxContext, MANAGER_PERMISSIONS, POOL_PERMISSIONS, PRICE_MANAGER_PERMISSIONS, textOf, uuidOf } from '../audience';
+import type { QuoteRequestStatus } from '@/server/modules/quote-requests/domain';
+import { activeEmployees, activeStaffWithPermissions, APPROVER_PERMISSIONS, displayNameOf, excludeUser, loadRequestInboxContext, MANAGER_PERMISSIONS, PRICE_MANAGER_PERMISSIONS, textOf, uuidOf } from '../audience';
 import { totalLabel } from '../format';
 import { customerRequestPath, STAFF_APPROVALS_PATH, STAFF_PENDING_PRICES_PATH, staffRequestPath } from '../paths';
 import { NO_INBOX_EFFECTS, type InboxEffects, type InboxIntent, type InboxResolution } from '../record';
@@ -19,11 +19,11 @@ async function staleApprovalResolutions(tx: Prisma.TransactionClient, quoteVersi
 }
 
 async function customerActionStaff(tx: Prisma.TransactionClient, assigneeId: string | null, actorId: string | null) {
-  const recipients = assigneeId
-    ? await activeEmployees(tx, [assigneeId])
-    : await activeStaffWithPermissions(tx, POOL_PERMISSIONS);
-  return excludeUser(recipients, actorId);
+  if (!assigneeId) return [];
+  return excludeUser(await activeEmployees(tx, [assigneeId]), actorId);
 }
+
+const PORTAL_OPEN_REQUEST_STATUSES: readonly QuoteRequestStatus[] = ['RECIBIDA', 'EN_REVISION', 'INFORMACION_REQUERIDA', 'EN_ELABORACION', 'COTIZACION_DISPONIBLE', 'EN_NEGOCIACION', 'PENDIENTE_DE_APROBACION'];
 
 export async function quoteDeclinedEffects(tx: Prisma.TransactionClient, event: DomainEventInput): Promise<InboxEffects> {
   const requestId = uuidOf(event.payload.quoteRequestId);
@@ -68,7 +68,7 @@ export async function portalActivatedEffects(tx: Prisma.TransactionClient, event
   if (!clientId) return NO_INBOX_EFFECTS;
   const actorId = event.actor?.userId ?? null;
   const actorName = (await displayNameOf(tx, actorId)) ?? 'El cliente';
-  const requests = await tx.quoteRequest.findMany({ where: { clientId, status: { in: [...QUOTE_REQUEST_CLOSABLE_STATUSES] } }, select: { id: true }, orderBy: { createdAt: 'asc' } });
+  const requests = await tx.quoteRequest.findMany({ where: { clientId, status: { in: [...PORTAL_OPEN_REQUEST_STATUSES] } }, select: { id: true }, orderBy: { createdAt: 'asc' } });
   const intents: InboxIntent[] = [];
   for (const request of requests) {
     const context = await loadRequestInboxContext(tx, request.id);
