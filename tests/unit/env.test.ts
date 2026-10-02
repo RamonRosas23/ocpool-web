@@ -148,4 +148,18 @@ describe('readServerEnv', () => {
       expect(() => readServerEnv({ ...base, INBOX_DIGEST_DELAY_CUSTOMER_MINUTES: value })).toThrow();
     }
   });
+
+  it('enables inbox reminders by default and accepts only explicit boolean strings', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://ocpool:secret@localhost:55432/ocpool_dev?schema=public',
+      MFA_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+      AUTH_DELIVERY_ENCRYPTION_KEY: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+      NOTIFICATION_RECIPIENT_ENCRYPTION_KEY: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+      AUDIT_CURSOR_SECRET: 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=',
+    };
+
+    expect(readServerEnv(base).INBOX_REMINDERS_ENABLED).toBe(true);
+    expect(readServerEnv({ ...base, INBOX_REMINDERS_ENABLED: 'false' }).INBOX_REMINDERS_ENABLED).toBe(false);
+    expect(() => readServerEnv({ ...base, INBOX_REMINDERS_ENABLED: 'yes' })).toThrow();
+  });
 });

@@ -34,6 +34,7 @@ export const REQUEST_SIGNAL_RULES: Readonly<Record<string, RequestSignalRule | n
   // Rechazar una versión que el cliente ya tenía cambia su propuesta; rechazarla en revisión, no.
   'QUOTE.VERSION_REJECTED': { parts: ['quote'], visibility: (payload) => (SENT_VERSION_STATUSES.has(String(payload.fromStatus)) ? 'C' : 'I') },
   'QUOTE.PUBLISHED': { parts: ['quote'], visibility: 'C' },
+  'QUOTE.EXPIRING': null,
   'QUOTE.PDF_READY': { parts: ['quote'], visibility: 'I' },
   'QUOTE.APPROVAL_REQUESTED': { parts: ['approvals'], visibility: 'I' },
   'QUOTE.APPROVAL_RESOLVED': { parts: ['approvals', 'quote'], visibility: 'I' },

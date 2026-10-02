@@ -1,5 +1,5 @@
 import { getEventListeners } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { encryptSecret } from '@/server/auth/crypto';
 import { readServerEnv } from '@/server/env';
 import { calculateNotificationRetryAt } from '@/server/modules/notifications/domain';
@@ -95,6 +95,7 @@ describe('notification worker policies', () => {
       maxAttempts: 3,
       pollIntervalMs: 100,
       signal: controller.signal,
+      reminderSweep: async () => ({ acquired: false, examined: 0, recorded: 0 }),
       processBatch: async () => {
         calls += 1;
         controller.abort();
@@ -118,6 +119,7 @@ describe('notification worker policies', () => {
       maxAttempts: 3,
       pollIntervalMs: 100,
       signal: controller.signal,
+      reminderSweep: async () => ({ acquired: false, examined: 0, recorded: 0 }),
       processBatch: async () => {
         calls += 1;
         listenersSeen = Math.max(listenersSeen, getEventListeners(controller.signal, 'abort').length);
@@ -129,6 +131,60 @@ describe('notification worker policies', () => {
     expect(calls).toBe(4);
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(3 * 100 - 20);
     expect(listenersSeen).toBe(0);
+  });
+
+  it('runs the reminder sweep immediately and no more than once every five minutes', async () => {
+    const controller = new AbortController();
+    const first = new Date('2026-10-05T15:00:00.000Z');
+    const times = [first, new Date(first.getTime() + 4 * 60_000 + 59_999), new Date(first.getTime() + 5 * 60_000)];
+    let clockIndex = 0;
+    let batches = 0;
+    const sweptAt: Date[] = [];
+    await runNotificationWorker({
+      prisma: {} as PrismaClient,
+      batchSize: 1,
+      leaseSeconds: 60,
+      maxAttempts: 3,
+      pollIntervalMs: 100,
+      signal: controller.signal,
+      clock: () => times[clockIndex++] ?? times[times.length - 1],
+      reminderSweep: async ({ now: sweepAt, timeZone, enabled }) => {
+        expect(timeZone).toBe(readServerEnv().APP_TIMEZONE);
+        expect(enabled).toBe(true);
+        if (sweepAt) sweptAt.push(sweepAt);
+        return { acquired: true, examined: 0, recorded: 0 };
+      },
+      processBatch: async () => {
+        batches += 1;
+        if (batches === 3) controller.abort();
+        return { claimed: 1, sent: 0, retried: 0, failed: 0 };
+      },
+    });
+    expect(sweptAt).toEqual([first, times[2]]);
+  });
+
+  it('skips the reminder sweep when INBOX_REMINDERS_ENABLED is false', async () => {
+    vi.stubEnv('INBOX_REMINDERS_ENABLED', 'false');
+    try {
+      const controller = new AbortController();
+      const reminderSweep = vi.fn(async () => ({ acquired: false, examined: 0, recorded: 0 }));
+      await runNotificationWorker({
+        prisma: {} as PrismaClient,
+        batchSize: 1,
+        leaseSeconds: 60,
+        maxAttempts: 3,
+        pollIntervalMs: 100,
+        signal: controller.signal,
+        reminderSweep,
+        processBatch: async () => {
+          controller.abort();
+          return { claimed: 1, sent: 0, retried: 0, failed: 0 };
+        },
+      });
+      expect(reminderSweep).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('deep-links a customer magic link to the exact request when the outbox carries one (D2-06/U1)', async () => {

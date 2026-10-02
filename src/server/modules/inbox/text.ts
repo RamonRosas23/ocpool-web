@@ -120,6 +120,20 @@ function draft(kind: InboxKind, data: InboxData): { title: string; body: string 
       return { title: `Tu proyecto ${data.projectFolio ?? ''} arrancó`, body: data.ownerName ? `Tu responsable es ${data.ownerName}` : 'Te contactaremos para coordinar el arranque' };
     case 'request.received':
       return { title: `Recibimos tu solicitud ${data.folio ?? ''}`, body: data.projectType ?? null };
+    case 'reminder.customer_waiting':
+      return { title: `El cliente espera respuesta en ${folio}`, body: data.clientName ?? null };
+    case 'reminder.customer_waiting_escalated':
+      return { title: `El cliente lleva más de 24 h esperando en ${folio}`, body: data.clientName ?? null };
+    case 'reminder.unassigned':
+      return { title: `Solicitud sin responsable: ${folio}`, body: joinParts([data.projectType, data.location, data.clientName]) };
+    case 'reminder.approval_pending':
+      return { title: `Aprobación pendiente${versionLabel(data)} en ${folio}`, body: approvalTypeLabel(data) };
+    case 'reminder.quote_expiring':
+      return { title: `La propuesta${versionLabel(data)} vence pronto`, body: folio };
+    case 'reminder.quote_expired':
+      return { title: `La propuesta${versionLabel(data)} venció en ${folio}`, body: null };
+    case 'reminder.follow_up':
+      return { title: `Seguimiento pendiente para ${folio}`, body: data.clientName ?? 'El cliente espera respuesta' };
   }
 }
 

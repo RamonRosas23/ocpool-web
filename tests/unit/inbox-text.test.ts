@@ -13,6 +13,9 @@ describe('inbox catalog', () => {
 
   it('recognizes only catalog kinds', () => {
     expect(isInboxKind('customer.activity')).toBe(true);
+    for (const kind of ['reminder.customer_waiting', 'reminder.customer_waiting_escalated', 'reminder.unassigned', 'reminder.approval_pending', 'reminder.quote_expiring', 'reminder.quote_expired', 'reminder.follow_up']) {
+      expect(isInboxKind(kind), kind).toBe(true);
+    }
     expect(isInboxKind('toString')).toBe(false);
     expect(isInboxKind('customer.unknown')).toBe(false);
   });
@@ -48,6 +51,13 @@ describe('inbox text', () => {
     expect(renderInboxText('customer.portal_activated', { actorName: 'Juan Pérez', folio: 'OCQ-2' })).toEqual({ title: 'Juan Pérez activó su portal', body: 'OCQ-2' });
     expect(renderInboxText('request.new_unassigned', { projectType: 'Alberca con jacuzzi', location: 'Monterrey', clientName: 'Sofía Garza', folio: 'OCQ-2026-000130' })).toEqual({ title: 'Nueva solicitud: Alberca con jacuzzi en Monterrey', body: 'Sofía Garza · OCQ-2026-000130' });
     expect(renderInboxText('approval.resolved', { actorName: 'Pedro', approvalType: 'DISCOUNT', approvalStatus: 'REJECTED', folio: 'OCQ-1', reason: 'Excede el margen' }).title).toBe('Pedro rechazó tu descuento en OCQ-1');
+    expect(renderInboxText('reminder.customer_waiting', { folio: 'OCQ-1', clientName: 'Ana' }).title).toContain('OCQ-1');
+    expect(renderInboxText('reminder.customer_waiting_escalated', { folio: 'OCQ-1' }).title).toContain('24 h');
+    expect(renderInboxText('reminder.unassigned', { folio: 'OCQ-1' }).title).toContain('OCQ-1');
+    expect(renderInboxText('reminder.approval_pending', { folio: 'OCQ-1', versionNumber: 2 }).title).toContain('V2');
+    expect(renderInboxText('reminder.quote_expiring', { folio: 'OCQ-1', versionNumber: 2 })).toEqual({ title: 'La propuesta V2 vence pronto', body: 'OCQ-1' });
+    expect(renderInboxText('reminder.quote_expired', { folio: 'OCQ-1' }).title).toContain('OCQ-1');
+    expect(renderInboxText('reminder.follow_up', { folio: 'OCQ-1' }).title).toContain('OCQ-1');
   });
 
   it('adds up grouped activity and keeps the latest preview', () => {

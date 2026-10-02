@@ -68,6 +68,13 @@ export const INBOX_KINDS = {
   'quote.ready': { audience: 'CUSTOMER', dataKeys: ['folio', 'projectType', 'versionNumber', 'totalLabel'] },
   'project.started': { audience: 'CUSTOMER', dataKeys: ['projectFolio', 'folio', 'ownerName'] },
   'request.received': { audience: 'CUSTOMER', dataKeys: ['folio', 'projectType'] },
+  'reminder.customer_waiting': { audience: 'STAFF', dataKeys: ['folio', 'clientName'] },
+  'reminder.customer_waiting_escalated': { audience: 'STAFF', dataKeys: ['folio', 'clientName'] },
+  'reminder.unassigned': { audience: 'STAFF', dataKeys: ['folio', 'clientName', 'projectType', 'location'] },
+  'reminder.approval_pending': { audience: 'STAFF', dataKeys: ['folio', 'versionNumber', 'approvalType'] },
+  'reminder.quote_expiring': { audience: 'CUSTOMER', dataKeys: ['folio', 'versionNumber'] },
+  'reminder.quote_expired': { audience: 'STAFF', dataKeys: ['folio', 'versionNumber'] },
+  'reminder.follow_up': { audience: 'STAFF', dataKeys: ['folio', 'clientName'] },
 } as const satisfies Record<string, InboxKindDefinition>;
 
 export type InboxKind = keyof typeof INBOX_KINDS;
@@ -100,6 +107,13 @@ export const INBOX_KIND_CATEGORY: Readonly<Record<InboxKind, InboxCategory>> = {
   'quote.ready': 'quotes',
   'project.started': 'projects',
   'request.received': 'requests',
+  'reminder.customer_waiting': 'requests',
+  'reminder.customer_waiting_escalated': 'requests',
+  'reminder.unassigned': 'requests',
+  'reminder.approval_pending': 'quotes',
+  'reminder.quote_expiring': 'quotes',
+  'reminder.quote_expired': 'quotes',
+  'reminder.follow_up': 'requests',
 };
 
 export function inboxKindsInCategory(category: InboxCategory): InboxKind[] {

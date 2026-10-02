@@ -74,10 +74,10 @@ describe('email routing corrections', () => {
     await prisma.quoteRequest.update({ where: { id: requestId }, data: { currentAssigneeId: null } });
   });
 
-  it('sends an unassigned customer message to managers and a change request with its own template', async () => {
+  it('suppresses an unread customer message email and keeps the dedicated change-request template', async () => {
     const plain = await prisma.conversationMessage.create({ data: { conversationId, senderUserId: customerId, visibility: 'CUSTOMER', body: '¿Alguien me atiende?' } });
     const plainEvent = { eventType: 'MESSAGE.CREATED', aggregateType: 'CONVERSATION', aggregateId: conversationId, payload: { conversationId, quoteRequestId: requestId, clientId, messageId: plain.id, visibility: 'CUSTOMER', folio } };
-    expect(mapNotificationEvent(plainEvent, await staffContextFor(plainEvent, managerId))).toMatchObject({ templateKey: 'message.created' });
+    await expect(resolveNotificationEvent(prisma, plainEvent)).resolves.toEqual({ kind: 'CANCELLED', reason: 'INBOX_DIGEST' });
 
     const change = await prisma.conversationMessage.create({ data: { conversationId, senderUserId: customerId, visibility: 'CUSTOMER', body: changeRequestBody(2, 'Agreguen calentador solar.') } });
     const changeEvent = { ...plainEvent, payload: { ...plainEvent.payload, messageId: change.id } };

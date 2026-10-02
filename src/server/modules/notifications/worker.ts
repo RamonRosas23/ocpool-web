@@ -11,6 +11,7 @@ import {
 } from '@/server/modules/notifications/dispatcher';
 import { processNotificationFanoutBatch } from '@/server/modules/notifications/fanout';
 import { processInboxDigestDueBatch } from '@/server/modules/notifications/inbox-digest';
+import { isInboxReminderSweepDue, runInboxReminderSweep } from '@/server/modules/inbox/reminders';
 import { createSmtpEmailProviderFromEnv, type EmailMessage, type EmailProvider } from '@/server/modules/notifications/email-provider';
 import { buildNotificationUrl, renderNotificationTemplate, type NotificationTemplateData } from '@/server/modules/notifications/templates';
 
@@ -184,6 +185,8 @@ export type RunNotificationWorkerInput = ProcessNotificationBatchInput & Readonl
   signal?: AbortSignal;
   onBatch?: (result: ProcessNotificationBatchResult) => void;
   processBatch?: (input: ProcessNotificationBatchInput) => Promise<ProcessNotificationBatchResult>;
+  reminderSweep?: typeof runInboxReminderSweep;
+  clock?: () => Date;
 }>;
 
 function assertPollInterval(pollIntervalMs: number): void {
@@ -210,7 +213,15 @@ function waitForPoll(signal: AbortSignal | undefined, pollIntervalMs: number): P
 export async function runNotificationWorker(input: RunNotificationWorkerInput): Promise<void> {
   assertPollInterval(input.pollIntervalMs);
   const processBatch = input.processBatch ?? processNotificationBatch;
+  const env = readServerEnv();
+  const reminderSweep = input.reminderSweep ?? runInboxReminderSweep;
+  let lastReminderSweepAt: number | null = null;
   while (!input.signal?.aborted) {
+    const now = input.clock?.() ?? new Date();
+    if (env.INBOX_REMINDERS_ENABLED && isInboxReminderSweepDue(now, lastReminderSweepAt)) {
+      lastReminderSweepAt = now.getTime();
+      await reminderSweep({ prisma: input.prisma, now, timeZone: env.APP_TIMEZONE, enabled: true });
+    }
     const result = await processBatch(input);
     input.onBatch?.(result);
     // `fanoutClaimed` es opcional: si falta, el lote igual cuenta como vacío (antes giraba sin pausa).

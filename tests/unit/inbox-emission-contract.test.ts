@@ -4,12 +4,14 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = path.resolve('src/server');
 // Los únicos lugares donde se escribe el outbox a mano: autenticación (tokens cifrados), catálogo y
-// conceptos especiales (sin avisos por persona), el PDF listo (interno) y el propio emisor único.
+// conceptos especiales (sin avisos por persona), el PDF listo, la programación interna del digest y
+// el propio emisor único de eventos de dominio.
 const ALLOWED = new Set([
   'auth/service.ts',
   'modules/catalog/service.ts',
   'modules/special-concepts/service.ts',
   'modules/quote-documents/service.ts',
+  'modules/inbox/record.ts',
   'modules/inbox/domain-events.ts',
 ].map((file) => path.join(ROOT, file)));
 
