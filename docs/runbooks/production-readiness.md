@@ -48,6 +48,8 @@ La retención se define por clase de dato y dependencia. No se ejecutan purgas a
 
 El supervisor elegido debe ejecutar una sola instancia por entorno lógico, reiniciar ante salida anormal, conservar `SIGTERM` para shutdown limpio y alertar por backlog, edad del evento, fallos permanentes y ausencia del proceso. `SENT` sólo significa aceptación del proveedor; no representa apertura ni lectura.
 
+El worker programa el resumen de actividad a 10 minutos para el equipo y 15 para clientes (`INBOX_DIGEST_DELAY_STAFF_MINUTES` y `INBOX_DIGEST_DELAY_CUSTOMER_MINUTES`). También ejecuta el barrido de recordatorios cada cinco minutos, de lunes a sábado entre 08:00 y 19:00 según `APP_TIMEZONE`. `INBOX_REMINDERS_ENABLED=false` desactiva el barrido al reiniciar el worker; el lock transaccional de PostgreSQL evita que dos instancias procesen candidatos a la vez. Mantén habilitado el worker de notificaciones para que se materialicen tanto los resúmenes diferidos como los correos `quote.expiring`.
+
 ## Tiempo real (`/api/realtime`)
 
 La campana, los contadores y el aviso flash llegan por un canal SSE (`GET /api/realtime`). Cada proceso de Next abre una conexión propia `LISTEN ocpool_realtime` a PostgreSQL, fuera del pool de Prisma, y reparte las señales a las pestañas conectadas; cada navegador abre una sola conexión, que comparten todas sus pestañas.
