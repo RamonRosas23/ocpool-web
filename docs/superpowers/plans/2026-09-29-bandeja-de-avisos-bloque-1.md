@@ -5428,4 +5428,3 @@ Fuera de este bloque, según la spec §14:
 - Bloque 3: pantallas en vivo y "Visto".
 - Bloque 4: declinar, "abrió la propuesta" y "entró a su portal".
 - Bloque 5: resumen por correo, recordatorios y preferencias.
-
